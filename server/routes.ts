@@ -1,13 +1,13 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
+import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
+import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import OpenAI from "openai";
 
-// Initialize OpenAI for sentiment analysis
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
@@ -17,6 +17,10 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Setup auth FIRST (required before other routes)
+  await setupAuth(app);
+  registerAuthRoutes(app);
+  
   // Register AI integration routes
   registerChatRoutes(app);
   registerImageRoutes(app);
@@ -26,14 +30,16 @@ export async function registerRoutes(
     try {
       const { address } = api.rugcheck.scan.input.parse(req.body);
       
-      // Mocking the scan logic since we don't have real Solana RPC
-      // In production, this would call Solana RPC / Helius / Solscan
-      const isGood = Math.random() > 0.3; // 70% chance of being "good" for demo
+      // Mock scan with realistic-looking data
+      const symbols = ["BONK", "WIF", "POPCAT", "TRUMP", "PEPE", "DOGE", "SHIB", "FLOKI"];
+      const randomSymbol = symbols[Math.floor(Math.random() * symbols.length)];
+      const isGood = Math.random() > 0.35;
+      
       const mockResult = {
         address,
-        symbol: isGood ? "SAFE" : "SCAM",
-        name: isGood ? "Safe Coin" : "Rug Pull Coin",
-        safetyScore: isGood ? Math.floor(Math.random() * 20 + 80) : Math.floor(Math.random() * 40),
+        symbol: `$${randomSymbol}`,
+        name: randomSymbol,
+        safetyScore: isGood ? Math.floor(Math.random() * 20 + 80) : Math.floor(Math.random() * 45),
         isLiquidityLocked: isGood,
         mintAuthorityDisabled: isGood,
         topHoldersPercentage: isGood ? Math.floor(Math.random() * 20 + 10) : Math.floor(Math.random() * 40 + 50),
@@ -88,8 +94,6 @@ export async function registerRoutes(
     try {
       const { symbol } = api.memetrend.analyze.input.parse(req.body);
       
-      // Use OpenAI to generate a "fake" analysis based on the symbol
-      // In reality, you'd feed it real tweets/news
       const prompt = `Analyze the sentiment for the memecoin ${symbol}. 
       Assume there is high social media activity. 
       Provide a JSON response with: 
@@ -117,6 +121,80 @@ export async function registerRoutes(
     }
   });
 
+  // === Subscription ===
+  app.get("/api/subscription", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const subscription = await storage.getSubscription(userId);
+      res.json(subscription || { plan: "free", status: "active" });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to get subscription" });
+    }
+  });
+
+  app.post("/api/subscription", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { paymentMethod, txHash } = req.body;
+      
+      // Create or update subscription
+      const expiresAt = new Date();
+      expiresAt.setMonth(expiresAt.getMonth() + 1);
+      
+      const subscription = await storage.createSubscription({
+        userId,
+        plan: "pro",
+        paymentMethod,
+        txHash,
+        status: "active",
+        expiresAt,
+      });
+      
+      res.status(201).json(subscription);
+    } catch (err) {
+      res.status(400).json({ message: "Failed to create subscription" });
+    }
+  });
+
+  // === DEX Scanner (New Feature) ===
+  app.get("/api/dex/new-tokens", async (req, res) => {
+    // Mock new tokens from multiple DEXes
+    const mockTokens = [
+      { symbol: "$MOODENG", name: "Moo Deng", chain: "SOL", dex: "Raydium", price: "0.00012", volume: "$2.3M", age: "2h", hype: 92, dexscreenerPaid: true },
+      { symbol: "$GOAT", name: "Goatseus Maximus", chain: "SOL", dex: "Jupiter", price: "0.45", volume: "$15M", age: "4h", hype: 88, dexscreenerPaid: true },
+      { symbol: "$BRETT", name: "Brett", chain: "BASE", dex: "Uniswap", price: "0.12", volume: "$8M", age: "1d", hype: 75, dexscreenerPaid: false },
+      { symbol: "$SIGMA", name: "Sigma", chain: "ETH", dex: "Uniswap", price: "0.0023", volume: "$1.2M", age: "3h", hype: 82, dexscreenerPaid: true },
+      { symbol: "$NEIRO", name: "Neiro", chain: "ETH", dex: "Uniswap", price: "0.0015", volume: "$5M", age: "12h", hype: 70, dexscreenerPaid: false },
+      { symbol: "$CAT", name: "Cat in Dogs World", chain: "SOL", dex: "Pump.fun", price: "0.00008", volume: "$890K", age: "30m", hype: 95, dexscreenerPaid: true },
+    ];
+    res.json(mockTokens);
+  });
+
+  // === Twitter Trends ===
+  app.get("/api/twitter/trends", async (req, res) => {
+    // Mock Twitter trends
+    const mockTrends = [
+      { tag: "#BONK", mentions: 15420, sentiment: "BULLISH", change: "+45%" },
+      { tag: "#WIF", mentions: 12300, sentiment: "BULLISH", change: "+28%" },
+      { tag: "#MOODENG", mentions: 8900, sentiment: "BULLISH", change: "+120%" },
+      { tag: "#GOAT", mentions: 7500, sentiment: "NEUTRAL", change: "+15%" },
+      { tag: "#TRUMP", mentions: 45000, sentiment: "BULLISH", change: "+89%" },
+    ];
+    res.json(mockTrends);
+  });
+
+  // === Launchpad Scanner ===
+  app.get("/api/launchpads/recent", async (req, res) => {
+    // Mock launchpad data
+    const mockLaunches = [
+      { platform: "Pump.fun", symbol: "$NEWDOG", name: "New Dog Coin", bondingCurve: 85, holders: 1234, liquidity: "$45K", status: "graduated" },
+      { platform: "Pump.fun", symbol: "$MOON", name: "To The Moon", bondingCurve: 45, holders: 567, liquidity: "$12K", status: "bonding" },
+      { platform: "Moonshot", symbol: "$LASER", name: "Laser Cat", bondingCurve: 92, holders: 2100, liquidity: "$78K", status: "graduated" },
+      { platform: "Pump.fun", symbol: "$FROG", name: "Pepe Frog", bondingCurve: 23, holders: 234, liquidity: "$5K", status: "bonding" },
+    ];
+    res.json(mockLaunches);
+  });
+
   // === Seed Data ===
   await seedDatabase();
 
@@ -127,27 +205,46 @@ async function seedDatabase() {
   const wallets = await storage.getTrackedWallets();
   if (wallets.length === 0) {
     await storage.createTrackedWallet({
-      address: "HN7c...k8j2",
-      label: "Smart Money Whale",
-      winRate: 85,
-      totalProfit: "450 SOL"
+      address: "HN7cABPNH...k8j2xZp",
+      label: "Smart Money Alpha",
+      winRate: 87,
+      totalProfit: "1,250 SOL"
     });
     await storage.createTrackedWallet({
-      address: "Ab9...xY3z",
-      label: "Insider 1",
+      address: "Ab9qPmL...xY3zKvM",
+      label: "Insider Whale",
       winRate: 92,
-      totalProfit: "1200 SOL"
+      totalProfit: "3,400 SOL"
+    });
+    await storage.createTrackedWallet({
+      address: "Fg4rTyU...nM8pQwE",
+      label: "Degen King",
+      winRate: 78,
+      totalProfit: "890 SOL"
     });
     
-    // Create some alerts for these wallets
-    const wallet1 = (await storage.getTrackedWallets())[0];
-    if (wallet1) {
+    const allWallets = await storage.getTrackedWallets();
+    if (allWallets.length > 0) {
       await storage.createWalletAlert({
-        walletId: wallet1.id,
-        tokenSymbol: "$PEPE",
+        walletId: allWallets[0].id,
+        tokenSymbol: "$BONK",
         type: "BUY",
-        amount: "50 SOL",
-        price: "0.0000042",
+        amount: "150 SOL",
+        price: "0.0000123",
+      });
+      await storage.createWalletAlert({
+        walletId: allWallets[1].id,
+        tokenSymbol: "$WIF",
+        type: "BUY",
+        amount: "500 SOL",
+        price: "2.34",
+      });
+      await storage.createWalletAlert({
+        walletId: allWallets[0].id,
+        tokenSymbol: "$MOODENG",
+        type: "SELL",
+        amount: "80 SOL",
+        price: "0.00015",
       });
     }
   }
@@ -157,25 +254,41 @@ async function seedDatabase() {
     await storage.createTrendingCoin({
       symbol: "$BONK",
       name: "Bonk",
-      price: "0.0000123",
-      volume24h: "$45M",
+      price: "0.0000234",
+      volume24h: "$145M",
       hypeScore: 95,
       trend: "UP",
     });
     await storage.createTrendingCoin({
       symbol: "$WIF",
       name: "dogwifhat",
-      price: "2.45",
-      volume24h: "$120M",
-      hypeScore: 88,
+      price: "2.89",
+      volume24h: "$320M",
+      hypeScore: 92,
       trend: "UP",
     });
     await storage.createTrendingCoin({
       symbol: "$POPCAT",
       name: "Popcat",
-      price: "0.45",
+      price: "0.78",
+      volume24h: "$45M",
+      hypeScore: 78,
+      trend: "UP",
+    });
+    await storage.createTrendingCoin({
+      symbol: "$MOODENG",
+      name: "Moo Deng",
+      price: "0.00018",
       volume24h: "$12M",
-      hypeScore: 65,
+      hypeScore: 88,
+      trend: "UP",
+    });
+    await storage.createTrendingCoin({
+      symbol: "$GOAT",
+      name: "Goatseus Maximus",
+      price: "0.56",
+      volume24h: "$89M",
+      hypeScore: 85,
       trend: "FLAT",
     });
   }

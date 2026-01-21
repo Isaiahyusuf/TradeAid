@@ -4,6 +4,8 @@ import { z } from "zod";
 
 // Export chat models from integration
 export * from "./models/chat";
+// Export auth models (REQUIRED for Replit Auth)
+export * from "./models/auth";
 
 // === RugShield ===
 export const scannedTokens = pgTable("scanned_tokens", {
@@ -69,6 +71,22 @@ export type InsertWalletAlert = z.infer<typeof insertWalletAlertSchema>;
 
 export type TrendingCoin = typeof trendingCoins.$inferSelect;
 export type InsertTrendingCoin = z.infer<typeof insertTrendingCoinSchema>;
+
+// === Subscriptions ===
+export const subscriptions = pgTable("subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  plan: text("plan").notNull().default("free"), // 'free' or 'pro'
+  paymentMethod: text("payment_method"), // 'SOL', 'ETH', 'BSC', 'BASE'
+  txHash: text("tx_hash"),
+  status: text("status").notNull().default("active"), // 'active', 'expired', 'pending'
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertSubscriptionSchema = createInsertSchema(subscriptions).omit({ id: true, createdAt: true });
+export type Subscription = typeof subscriptions.$inferSelect;
+export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
 
 // === API Request/Response Types ===
 export type ScanTokenRequest = { address: string };

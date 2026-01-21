@@ -1,11 +1,10 @@
 import { db } from "./db";
 import { 
-  scannedTokens, trackedWallets, walletAlerts, trendingCoins,
-  type InsertScannedToken, type InsertTrackedWallet, type InsertWalletAlert, type InsertTrendingCoin,
-  type ScannedToken, type TrackedWallet, type WalletAlert, type TrendingCoin
+  scannedTokens, trackedWallets, walletAlerts, trendingCoins, subscriptions,
+  type InsertScannedToken, type InsertTrackedWallet, type InsertWalletAlert, type InsertTrendingCoin, type InsertSubscription,
+  type ScannedToken, type TrackedWallet, type WalletAlert, type TrendingCoin, type Subscription
 } from "@shared/schema";
 import { eq, desc } from "drizzle-orm";
-import { chatStorage } from "./replit_integrations/chat/storage"; // Import chat storage
 
 export interface IStorage {
   // RugShield
@@ -23,6 +22,10 @@ export interface IStorage {
   // MemeTrend
   getTrendingCoins(): Promise<TrendingCoin[]>;
   createTrendingCoin(coin: InsertTrendingCoin): Promise<TrendingCoin>;
+
+  // Subscriptions
+  getSubscription(userId: string): Promise<Subscription | undefined>;
+  createSubscription(sub: InsertSubscription): Promise<Subscription>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -33,7 +36,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getScannedTokens(): Promise<ScannedToken[]> {
-    return await db.select().from(scannedTokens).orderBy(desc(scannedTokens.createdAt)).limit(10);
+    return await db.select().from(scannedTokens).orderBy(desc(scannedTokens.createdAt)).limit(20);
   }
 
   async getScannedTokenByAddress(address: string): Promise<ScannedToken | undefined> {
@@ -52,6 +55,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteTrackedWallet(id: number): Promise<void> {
+    await db.delete(walletAlerts).where(eq(walletAlerts.walletId, id));
     await db.delete(trackedWallets).where(eq(trackedWallets.id, id));
   }
 
@@ -61,7 +65,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getWalletAlerts(): Promise<(WalletAlert & { walletLabel: string })[]> {
-    // Join with wallet label
     const results = await db.select({
       id: walletAlerts.id,
       walletId: walletAlerts.walletId,
@@ -75,7 +78,7 @@ export class DatabaseStorage implements IStorage {
     .from(walletAlerts)
     .innerJoin(trackedWallets, eq(walletAlerts.walletId, trackedWallets.id))
     .orderBy(desc(walletAlerts.timestamp))
-    .limit(20);
+    .limit(50);
     
     return results;
   }
@@ -89,7 +92,17 @@ export class DatabaseStorage implements IStorage {
     const [newItem] = await db.insert(trendingCoins).values(coin).returning();
     return newItem;
   }
+
+  // Subscriptions
+  async getSubscription(userId: string): Promise<Subscription | undefined> {
+    const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).orderBy(desc(subscriptions.createdAt));
+    return sub;
+  }
+
+  async createSubscription(sub: InsertSubscription): Promise<Subscription> {
+    const [newSub] = await db.insert(subscriptions).values(sub).returning();
+    return newSub;
+  }
 }
 
 export const storage = new DatabaseStorage();
-export { chatStorage }; // Re-export for chat integration if needed
