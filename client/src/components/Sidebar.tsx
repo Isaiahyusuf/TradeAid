@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { 
   ShieldCheck, Eye, TrendingUp, LayoutDashboard, 
-  Zap, LogOut, User
+  Zap, LogOut, User, Radar
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
@@ -9,7 +9,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
-  { label: "Dashboard", href: "/", icon: LayoutDashboard },
+  { label: "Alpha Scanner", href: "/", icon: Radar },
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "RugShield", href: "/rugshield", icon: ShieldCheck },
   { label: "WhaleWatch", href: "/whalewatch", icon: Eye },
   { label: "MemeTrend", href: "/memetrend", icon: TrendingUp },

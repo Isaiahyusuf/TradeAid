@@ -6,12 +6,21 @@ import { z } from "zod";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
+import { registerScannerRoutes } from "./routes/scanner";
+import { startBackgroundScanner } from "./services/token-scanner";
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
+let openaiClient: OpenAI | null = null;
+
+function getOpenAI(): OpenAI {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({
+      apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+      baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+    });
+  }
+  return openaiClient;
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -24,6 +33,12 @@ export async function registerRoutes(
   // Register AI integration routes
   registerChatRoutes(app);
   registerImageRoutes(app);
+  
+  // Register token scanner routes (new powerful scanner)
+  registerScannerRoutes(app);
+  
+  // Start background token scanner (scans every 5 minutes)
+  startBackgroundScanner(5 * 60 * 1000);
 
   // === RugShield ===
   app.post(api.rugcheck.scan.path, async (req, res) => {
@@ -101,8 +116,8 @@ export async function registerRoutes(
       - score: number between 0-100
       - summary: A short witty summary of why (max 2 sentences).`;
 
-      const completion = await openai.chat.completions.create({
-        model: "gpt-5.1",
+      const completion = await getOpenAI().chat.completions.create({
+        model: "gpt-4.1-mini",
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_object" },
       });

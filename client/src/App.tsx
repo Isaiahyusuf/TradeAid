@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
 import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
+import AlphaScanner from "@/pages/AlphaScanner";
 import RugShield from "@/pages/RugShield";
 import WhaleWatch from "@/pages/WhaleWatch";
 import MemeTrend from "@/pages/MemeTrend";
@@ -18,7 +19,9 @@ function AuthenticatedRouter() {
   return (
     <>
       <Switch>
-        <Route path="/" component={Dashboard} />
+        <Route path="/" component={AlphaScanner} />
+        <Route path="/dashboard" component={Dashboard} />
+        <Route path="/scanner" component={AlphaScanner} />
         <Route path="/rugshield" component={RugShield} />
         <Route path="/whalewatch" component={WhaleWatch} />
         <Route path="/memetrend" component={MemeTrend} />
