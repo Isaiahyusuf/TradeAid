@@ -14,6 +14,7 @@ import {
   stopBackgroundScanner
 } from "../services/token-scanner";
 import { searchTokens, getTokenPairs } from "../services/dexscreener";
+import { multichainScanner } from "../services/multichain-scanner";
 
 const scanTokenSchema = z.object({
   address: z.string().min(20, "Invalid token address"),
@@ -262,6 +263,60 @@ export function registerScannerRoutes(app: Express): void {
     } catch (error) {
       console.error("Error fetching stats:", error);
       res.status(500).json({ error: "Failed to fetch stats" });
+    }
+  });
+
+  app.post("/api/scanner/multichain", async (req: Request, res: Response) => {
+    try {
+      res.json({ status: "scanning", message: "Multi-chain scan started" });
+      multichainScanner.scanAllLaunchpads().catch(console.error);
+    } catch (error) {
+      console.error("Error triggering multichain scan:", error);
+      res.status(500).json({ error: "Failed to trigger scan" });
+    }
+  });
+
+  app.get("/api/tokens/by-chain/:chain", async (req: Request, res: Response) => {
+    try {
+      const { chain } = req.params;
+      const { minSafetyScore = "50" } = req.query;
+      
+      const tokens = await db.select()
+        .from(scannedTokens)
+        .where(and(
+          eq(scannedTokens.chain, chain),
+          gte(scannedTokens.safetyScore, parseInt(minSafetyScore as string))
+        ))
+        .orderBy(desc(scannedTokens.safetyScore))
+        .limit(50);
+      
+      res.json(tokens);
+    } catch (error) {
+      console.error("Error fetching chain tokens:", error);
+      res.status(500).json({ error: "Failed to fetch tokens by chain" });
+    }
+  });
+
+  app.get("/api/tokens/safe-launchpad", async (req: Request, res: Response) => {
+    try {
+      const { chain, maxTopHolders = "30", maxDevWallet = "10" } = req.query;
+      
+      let query = db.select()
+        .from(scannedTokens)
+        .where(and(
+          gte(scannedTokens.safetyScore, 60),
+          sql`${scannedTokens.topHoldersPercentage} <= ${parseInt(maxTopHolders as string)}`,
+          sql`${scannedTokens.devWalletPercentage} <= ${parseInt(maxDevWallet as string)}`,
+          gte(scannedTokens.liquidity, 10000)
+        ))
+        .orderBy(desc(scannedTokens.safetyScore), desc(scannedTokens.volume24h))
+        .limit(50);
+      
+      const tokens = await query;
+      res.json(tokens);
+    } catch (error) {
+      console.error("Error fetching safe launchpad tokens:", error);
+      res.status(500).json({ error: "Failed to fetch safe tokens" });
     }
   });
 }

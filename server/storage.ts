@@ -9,6 +9,7 @@ import { eq, desc } from "drizzle-orm";
 export interface IStorage {
   // RugShield
   createScannedToken(token: InsertScannedToken): Promise<ScannedToken>;
+  updateScannedToken(id: number, token: Partial<InsertScannedToken>): Promise<ScannedToken>;
   getScannedTokens(): Promise<ScannedToken[]>;
   getScannedTokenByAddress(address: string): Promise<ScannedToken | undefined>;
 
@@ -37,6 +38,14 @@ export class DatabaseStorage implements IStorage {
   async createScannedToken(token: InsertScannedToken): Promise<ScannedToken> {
     const [newItem] = await db.insert(scannedTokens).values(token).returning();
     return newItem;
+  }
+
+  async updateScannedToken(id: number, token: Partial<InsertScannedToken>): Promise<ScannedToken> {
+    const [updated] = await db.update(scannedTokens)
+      .set({ ...token, lastScannedAt: new Date() })
+      .where(eq(scannedTokens.id, id))
+      .returning();
+    return updated;
   }
 
   async getScannedTokens(): Promise<ScannedToken[]> {

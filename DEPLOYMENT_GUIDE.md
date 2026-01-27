@@ -106,6 +106,7 @@ CREATE TABLE scanned_tokens (
   is_liquidity_locked BOOLEAN NOT NULL DEFAULT false,
   mint_authority_disabled BOOLEAN NOT NULL DEFAULT false,
   top_holders_percentage INTEGER NOT NULL DEFAULT 0,
+  dev_wallet_percentage INTEGER NOT NULL DEFAULT 0,
   is_honeypot BOOLEAN NOT NULL DEFAULT false,
   risk_level TEXT DEFAULT 'unknown',
   ai_signal TEXT DEFAULT 'hold',

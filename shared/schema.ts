@@ -29,6 +29,7 @@ export const scannedTokens = pgTable("scanned_tokens", {
   isLiquidityLocked: boolean("is_liquidity_locked").notNull().default(false),
   mintAuthorityDisabled: boolean("mint_authority_disabled").notNull().default(false),
   topHoldersPercentage: integer("top_holders_percentage").notNull().default(0),
+  devWalletPercentage: integer("dev_wallet_percentage").notNull().default(0),
   isHoneypot: boolean("is_honeypot").notNull().default(false),
   riskLevel: text("risk_level").default("unknown"),
   aiSignal: text("ai_signal").default("hold"),

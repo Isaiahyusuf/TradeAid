@@ -30,6 +30,7 @@ type ScannedToken = {
   symbol: string;
   name: string;
   chain: string;
+  dexId?: string;
   priceUsd: string;
   liquidity: number;
   marketCap: number;
@@ -39,6 +40,8 @@ type ScannedToken = {
   buys24h: number;
   sells24h: number;
   safetyScore: number;
+  topHoldersPercentage: number;
+  devWalletPercentage: number;
   isHoneypot: boolean;
   riskLevel: string;
   aiSignal: string;
@@ -154,6 +157,9 @@ function TokenRow({ token, onAnalyze, isPro, canAnalyze }: {
     return `$${n.toFixed(0)}`;
   };
 
+  const topHoldersOk = (token.topHoldersPercentage || 0) <= 30;
+  const devWalletOk = (token.devWalletPercentage || 0) <= 10;
+
   return (
     <div className="group flex items-center gap-4 p-4 rounded-xl bg-card/50 hover:bg-card border border-transparent hover:border-border transition-all">
       <SafetyScore score={token.safetyScore} size="sm" />
@@ -162,6 +168,11 @@ function TokenRow({ token, onAnalyze, isPro, canAnalyze }: {
         <div className="flex items-center gap-2 mb-1">
           <ChainBadge chain={token.chain as Chain} />
           <span className="font-bold truncate">${token.symbol}</span>
+          {token.dexId && (
+            <Badge variant="outline" className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-[10px]">
+              {token.dexId}
+            </Badge>
+          )}
           {isNew && (
             <Badge variant="outline" className="bg-purple-500/20 text-purple-400 border-purple-500/30 text-[10px]">
               <Rocket className="w-3 h-3 mr-1" /> NEW
@@ -174,6 +185,20 @@ function TokenRow({ token, onAnalyze, isPro, canAnalyze }: {
           )}
         </div>
         <div className="text-sm text-muted-foreground truncate">{token.name}</div>
+      </div>
+
+      <div className="hidden md:flex flex-col items-center min-w-[70px]">
+        <div className="text-[10px] text-muted-foreground">Top Holders</div>
+        <div className={cn("font-mono text-sm", topHoldersOk ? "text-emerald-400" : "text-red-400")}>
+          {token.topHoldersPercentage || 0}%
+        </div>
+      </div>
+
+      <div className="hidden md:flex flex-col items-center min-w-[60px]">
+        <div className="text-[10px] text-muted-foreground">Dev Wallet</div>
+        <div className={cn("font-mono text-sm", devWalletOk ? "text-emerald-400" : "text-red-400")}>
+          {token.devWalletPercentage || 0}%
+        </div>
       </div>
 
       <div className="hidden md:flex flex-col items-end text-right min-w-[100px]">
