@@ -157,6 +157,26 @@ export const insertSubscriptionSchema = createInsertSchema(subscriptions).omit({
 export type Subscription = typeof subscriptions.$inferSelect;
 export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
 
+// === Payment Records (for crypto payment verification) ===
+export const paymentRecords = pgTable("payment_records", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  chain: text("chain").notNull(),
+  txHash: text("tx_hash").notNull().unique(),
+  amount: text("amount").notNull(),
+  expectedAmount: text("expected_amount").notNull(),
+  senderAddress: text("sender_address"),
+  recipientAddress: text("recipient_address"),
+  status: text("status").notNull().default("pending"),
+  verificationError: text("verification_error"),
+  verifiedAt: timestamp("verified_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertPaymentRecordSchema = createInsertSchema(paymentRecords).omit({ id: true, createdAt: true, verifiedAt: true });
+export type PaymentRecord = typeof paymentRecords.$inferSelect;
+export type InsertPaymentRecord = z.infer<typeof insertPaymentRecordSchema>;
+
 // === Usage Tracking (for free tier limits) ===
 export const userUsage = pgTable("user_usage", {
   id: serial("id").primaryKey(),
@@ -181,10 +201,9 @@ export const FREE_TIER_LIMITS = {
   adsPerSession: 3,
 } as const;
 
-export const SUBSCRIPTION_PRICES = {
-  monthly: { sol: 0.5, eth: 0.01, bsc: 0.05, base: 0.01 },
-  yearly: { sol: 4.5, eth: 0.08, bsc: 0.4, base: 0.08 },
-} as const;
+export const SUBSCRIPTION_PRICE_USD = 100;
+
+export const SUPPORTED_PAYMENT_CHAINS = ["SOL", "ETH", "BSC", "BASE"] as const;
 
 // === API Request/Response Types ===
 export type ScanTokenRequest = { address: string };

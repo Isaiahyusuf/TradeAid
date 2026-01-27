@@ -8,7 +8,8 @@ import { registerImageRoutes } from "./replit_integrations/image";
 import { setupAuth, registerAuthRoutes, isAuthenticated, authStorage } from "./replit_integrations/auth";
 import { registerScannerRoutes } from "./routes/scanner";
 import { startBackgroundScanner, scanHotTokens } from "./services/token-scanner";
-import { FREE_TIER_LIMITS } from "@shared/schema";
+import { FREE_TIER_LIMITS, SUBSCRIPTION_PRICE_USD, SUPPORTED_PAYMENT_CHAINS } from "@shared/schema";
+import { cryptoPaymentService } from "./services/crypto-payment";
 import OpenAI from "openai";
 
 let openaiClient: OpenAI | null = null;
@@ -148,29 +149,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/subscription", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const { paymentMethod, txHash } = req.body;
-      
-      const expiresAt = new Date();
-      expiresAt.setMonth(expiresAt.getMonth() + 1);
-      
-      const subscription = await storage.createSubscription({
-        userId,
-        plan: "pro",
-        paymentMethod,
-        txHash,
-        status: "active",
-        expiresAt,
-      });
-      
-      res.status(201).json(subscription);
-    } catch (err) {
-      res.status(400).json({ message: "Failed to create subscription" });
-    }
-  });
-
+  
   app.get("/api/usage", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -193,6 +172,115 @@ export async function registerRoutes(
       res.json(usage);
     } catch (err) {
       res.status(400).json({ message: "Failed to increment usage" });
+    }
+  });
+
+  // === Crypto Payment Verification ===
+  app.get("/api/payment/amounts", async (req, res) => {
+    try {
+      const amounts = await cryptoPaymentService.calculatePaymentAmounts();
+      const addresses = cryptoPaymentService.getPaymentAddresses();
+      res.json({ 
+        amounts, 
+        addresses,
+        priceUsd: SUBSCRIPTION_PRICE_USD,
+        supportedChains: SUPPORTED_PAYMENT_CHAINS 
+      });
+    } catch (err) {
+      console.error("Failed to get payment amounts:", err);
+      res.status(500).json({ message: "Failed to get payment amounts" });
+    }
+  });
+
+  app.post("/api/payment/verify", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { chain, txHash } = req.body;
+
+      if (!chain || !txHash) {
+        return res.status(400).json({ message: "Chain and txHash are required" });
+      }
+
+      if (!SUPPORTED_PAYMENT_CHAINS.includes(chain.toUpperCase())) {
+        return res.status(400).json({ message: "Unsupported chain" });
+      }
+
+      const existingPayment = await storage.getPaymentByTxHash(txHash);
+      if (existingPayment) {
+        return res.status(400).json({ 
+          message: "Transaction already submitted",
+          status: existingPayment.status 
+        });
+      }
+
+      const amounts = await cryptoPaymentService.calculatePaymentAmounts();
+      const expectedAmount = amounts.find(a => a.chain === chain.toUpperCase())?.amount || "0";
+
+      const paymentRecord = await storage.createPaymentRecord({
+        userId,
+        chain: chain.toUpperCase(),
+        txHash,
+        amount: "0",
+        expectedAmount,
+        status: "pending",
+      });
+
+      const verification = await cryptoPaymentService.verifyTransaction(chain, txHash);
+
+      if (verification.isValid) {
+        await storage.updatePaymentRecord(paymentRecord.id, {
+          status: "verified",
+          amount: String(verification.amount),
+          senderAddress: verification.from,
+          recipientAddress: verification.to,
+          verifiedAt: new Date(),
+        });
+
+        const expiresAt = new Date();
+        expiresAt.setMonth(expiresAt.getMonth() + 1);
+
+        await storage.createSubscription({
+          userId,
+          plan: "pro",
+          paymentMethod: chain.toUpperCase(),
+          txHash,
+          status: "active",
+          expiresAt,
+        });
+
+        res.json({
+          success: true,
+          message: "Payment verified! Your Pro subscription is now active.",
+          verification,
+        });
+      } else {
+        await storage.updatePaymentRecord(paymentRecord.id, {
+          status: "failed",
+          verificationError: verification.error,
+          amount: String(verification.amount || 0),
+          senderAddress: verification.from,
+          recipientAddress: verification.to,
+        });
+
+        res.status(400).json({
+          success: false,
+          message: verification.error || "Payment verification failed",
+          verification,
+        });
+      }
+    } catch (err) {
+      console.error("Payment verification error:", err);
+      res.status(500).json({ message: "Failed to verify payment" });
+    }
+  });
+
+  app.get("/api/payment/history", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const payments = await storage.getUserPayments(userId);
+      res.json(payments);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to get payment history" });
     }
   });
 

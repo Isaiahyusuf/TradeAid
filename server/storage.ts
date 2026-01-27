@@ -1,8 +1,8 @@
 import { db } from "./db";
 import { 
-  scannedTokens, trackedWallets, walletAlerts, trendingCoins, subscriptions, userUsage,
-  type InsertScannedToken, type InsertTrackedWallet, type InsertWalletAlert, type InsertTrendingCoin, type InsertSubscription,
-  type ScannedToken, type TrackedWallet, type WalletAlert, type TrendingCoin, type Subscription, type UserUsage
+  scannedTokens, trackedWallets, walletAlerts, trendingCoins, subscriptions, userUsage, paymentRecords,
+  type InsertScannedToken, type InsertTrackedWallet, type InsertWalletAlert, type InsertTrendingCoin, type InsertSubscription, type InsertPaymentRecord,
+  type ScannedToken, type TrackedWallet, type WalletAlert, type TrendingCoin, type Subscription, type UserUsage, type PaymentRecord
 } from "@shared/schema";
 import { eq, desc } from "drizzle-orm";
 
@@ -31,6 +31,12 @@ export interface IStorage {
   // Usage tracking
   getUsage(userId: string): Promise<UserUsage>;
   incrementUsage(userId: string, type: string): Promise<UserUsage>;
+
+  // Payment records
+  createPaymentRecord(record: InsertPaymentRecord): Promise<PaymentRecord>;
+  getPaymentByTxHash(txHash: string): Promise<PaymentRecord | undefined>;
+  updatePaymentRecord(id: number, updates: Partial<InsertPaymentRecord & { status: string; verifiedAt: Date }>): Promise<PaymentRecord>;
+  getUserPayments(userId: string): Promise<PaymentRecord[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -157,6 +163,28 @@ export class DatabaseStorage implements IStorage {
       .returning();
     
     return updated;
+  }
+
+  async createPaymentRecord(record: InsertPaymentRecord): Promise<PaymentRecord> {
+    const [newRecord] = await db.insert(paymentRecords).values(record).returning();
+    return newRecord;
+  }
+
+  async getPaymentByTxHash(txHash: string): Promise<PaymentRecord | undefined> {
+    const [record] = await db.select().from(paymentRecords).where(eq(paymentRecords.txHash, txHash));
+    return record;
+  }
+
+  async updatePaymentRecord(id: number, updates: Partial<InsertPaymentRecord & { status: string; verifiedAt: Date }>): Promise<PaymentRecord> {
+    const [updated] = await db.update(paymentRecords)
+      .set(updates)
+      .where(eq(paymentRecords.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getUserPayments(userId: string): Promise<PaymentRecord[]> {
+    return await db.select().from(paymentRecords).where(eq(paymentRecords.userId, userId)).orderBy(desc(paymentRecords.createdAt));
   }
 }
 

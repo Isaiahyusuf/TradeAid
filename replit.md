@@ -70,6 +70,19 @@ A comprehensive crypto token scanner that monitors Telegram, Twitter, and DEXes 
 - `ALCHEMY_API_KEY` - Ethereum/Base holder analysis
 - `BSCSCAN_API_KEY` - BSC holder analysis
 
+## Payment Addresses (environment variables)
+- `PAYMENT_ADDRESS_SOL` - Solana wallet for receiving payments
+- `PAYMENT_ADDRESS_ETH` - Ethereum wallet for receiving payments  
+- `PAYMENT_ADDRESS_BSC` - BSC wallet for receiving payments
+- `PAYMENT_ADDRESS_BASE` - Base wallet for receiving payments
+
+## Crypto Payment System
+- $100/month subscription paid in crypto (SOL, ETH, BNB on BSC, ETH on Base)
+- Dynamic pricing: Fetches real-time prices from CoinGecko
+- Smart verification: Verifies on-chain payments automatically
+- 5% tolerance on payment amounts to account for price fluctuation
+- Payment verification uses Helius (Solana), Alchemy (ETH/Base), BscScan (BSC) APIs
+
 ## Integrations
 - **OpenAI**: AI-powered token analysis (javascript_openai_ai_integrations)
 - **Replit Auth**: User authentication (javascript_log_in_with_replit)

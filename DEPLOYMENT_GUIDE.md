@@ -155,6 +155,22 @@ CREATE TABLE token_signals (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Payment Records (Crypto Payment Verification)
+CREATE TABLE payment_records (
+  id SERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  chain TEXT NOT NULL,
+  tx_hash TEXT NOT NULL UNIQUE,
+  amount TEXT NOT NULL,
+  expected_amount TEXT NOT NULL,
+  sender_address TEXT,
+  recipient_address TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  verification_error TEXT,
+  verified_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
 -- Tracked Wallets (WhaleWatch)
 CREATE TABLE tracked_wallets (
   id SERIAL PRIMARY KEY,

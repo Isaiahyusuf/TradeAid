@@ -10,8 +10,8 @@ import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { 
-  CheckCircle2, Star, Zap, Copy, ExternalLink, 
-  Loader2, ShieldCheck
+  CheckCircle2, Star, Zap, Copy, 
+  Loader2, ShieldCheck, RefreshCw, AlertCircle
 } from "lucide-react";
 import { SiSolana, SiEthereum } from "react-icons/si";
 
@@ -22,18 +22,23 @@ type Subscription = {
   paymentMethod?: string;
 };
 
-const PAYMENT_ADDRESSES = {
-  SOL: "5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJk",
-  ETH: "0x742d35Cc6634C0532925a3b844Bc9e7595f60254",
-  BSC: "0x742d35Cc6634C0532925a3b844Bc9e7595f60254",
-  BASE: "0x742d35Cc6634C0532925a3b844Bc9e7595f60254",
+type PaymentAmount = {
+  chain: string;
+  amount: string;
+  symbol: string;
+  usdValue: number;
 };
 
-const PAYMENT_AMOUNTS = {
-  SOL: "0.5 SOL",
-  ETH: "0.03 ETH",
-  BSC: "0.17 BNB",
-  BASE: "0.03 ETH",
+type PaymentData = {
+  amounts: PaymentAmount[];
+  addresses: {
+    SOL: string;
+    ETH: string;
+    BSC: string;
+    BASE: string;
+  };
+  priceUsd: number;
+  supportedChains: string[];
 };
 
 function PaymentChainIcon({ chain }: { chain: string }) {
@@ -62,23 +67,27 @@ export default function Subscription() {
     enabled: !!user,
   });
 
-  const upgradeMutation = useMutation({
-    mutationFn: async (data: { paymentMethod: string; txHash: string }) => {
-      return apiRequest("POST", "/api/subscription", data);
+  const { data: paymentData, isLoading: paymentLoading, refetch: refetchPayment } = useQuery<PaymentData>({
+    queryKey: ["/api/payment/amounts"],
+  });
+
+  const verifyMutation = useMutation({
+    mutationFn: async (data: { chain: string; txHash: string }) => {
+      return apiRequest("POST", "/api/payment/verify", data);
     },
-    onSuccess: () => {
+    onSuccess: (response: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/subscription"] });
       toast({
-        title: "Subscription Activated!",
-        description: "Welcome to Pro! Your subscription is now active.",
+        title: "Payment Verified!",
+        description: response.message || "Your Pro subscription is now active.",
       });
       setSelectedChain(null);
       setTxHash("");
     },
-    onError: () => {
+    onError: (error: any) => {
       toast({
-        title: "Error",
-        description: "Failed to activate subscription. Please try again.",
+        title: "Verification Failed",
+        description: error.message || "Could not verify payment. Please check transaction details.",
         variant: "destructive",
       });
     },
@@ -93,6 +102,17 @@ export default function Subscription() {
   };
 
   const isPro = subscription?.plan === "pro" && subscription?.status === "active";
+
+  const getChainAmount = (chain: string): string => {
+    if (!paymentData?.amounts) return "Loading...";
+    const amount = paymentData.amounts.find(a => a.chain === chain);
+    return amount ? `${amount.amount} ${amount.symbol}` : "N/A";
+  };
+
+  const getChainAddress = (chain: string): string => {
+    if (!paymentData?.addresses) return "";
+    return paymentData.addresses[chain as keyof typeof paymentData.addresses] || "";
+  };
 
   return (
     <Layout>
@@ -130,12 +150,27 @@ export default function Subscription() {
         {!isPro && (
           <>
             <Card className="p-6 bg-gradient-to-br from-primary/10 to-accent/10 border-primary/30">
-              <div className="flex items-center gap-2 mb-4">
-                <Zap className="w-5 h-5 text-primary" />
-                <h3 className="text-xl font-bold">Upgrade to Pro</h3>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-primary" />
+                  <h3 className="text-xl font-bold">Upgrade to Pro</h3>
+                </div>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => refetchPayment()}
+                  disabled={paymentLoading}
+                  data-testid="button-refresh-prices"
+                >
+                  <RefreshCw className={`w-4 h-4 mr-1 ${paymentLoading ? "animate-spin" : ""}`} />
+                  Refresh Prices
+                </Button>
               </div>
-              <p className="text-muted-foreground mb-6">
-                Get unlimited access to all features for $100/month. Pay with your favorite crypto.
+              <p className="text-muted-foreground mb-2">
+                Get unlimited access to all features for <span className="font-bold text-primary">${paymentData?.priceUsd || 100}/month</span>. 
+              </p>
+              <p className="text-sm text-muted-foreground mb-6">
+                Pay with your favorite crypto. Prices update automatically based on current market rates.
               </p>
               
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -143,10 +178,13 @@ export default function Subscription() {
                   <button
                     key={chain}
                     onClick={() => setSelectedChain(chain)}
+                    disabled={!getChainAddress(chain)}
                     className={`p-4 rounded-xl border transition-all ${
                       selectedChain === chain 
                         ? "border-primary bg-primary/10" 
-                        : "border-border hover:border-primary/50 hover:bg-white/5"
+                        : !getChainAddress(chain)
+                          ? "border-border opacity-50 cursor-not-allowed"
+                          : "border-border hover:border-primary/50 hover:bg-white/5"
                     }`}
                     data-testid={`payment-chain-${chain}`}
                   >
@@ -154,23 +192,38 @@ export default function Subscription() {
                       <PaymentChainIcon chain={chain} />
                     </div>
                     <p className="font-semibold text-center">{chain}</p>
-                    <p className="text-xs text-muted-foreground text-center">{PAYMENT_AMOUNTS[chain]}</p>
+                    <p className="text-xs text-muted-foreground text-center">
+                      {paymentLoading ? "..." : getChainAmount(chain)}
+                    </p>
+                    {!getChainAddress(chain) && (
+                      <p className="text-xs text-destructive text-center mt-1">Not configured</p>
+                    )}
                   </button>
                 ))}
               </div>
 
-              {selectedChain && (
+              {selectedChain && getChainAddress(selectedChain) && (
                 <div className="space-y-4 p-4 rounded-xl bg-card/60 border border-border">
+                  <div className="flex items-start gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
+                    <AlertCircle className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                    <div className="text-sm">
+                      <p className="font-medium text-primary">Smart Verification</p>
+                      <p className="text-muted-foreground">
+                        After sending, paste your transaction hash below. We'll verify the payment on-chain automatically.
+                      </p>
+                    </div>
+                  </div>
+
                   <div>
-                    <Label className="text-sm text-muted-foreground">Send exactly {PAYMENT_AMOUNTS[selectedChain as keyof typeof PAYMENT_AMOUNTS]} to:</Label>
+                    <Label className="text-sm text-muted-foreground">Send exactly {getChainAmount(selectedChain)} to:</Label>
                     <div className="mt-2 flex items-center gap-2">
                       <code className="flex-1 bg-background p-3 rounded-lg font-mono text-sm break-all">
-                        {PAYMENT_ADDRESSES[selectedChain as keyof typeof PAYMENT_ADDRESSES]}
+                        {getChainAddress(selectedChain)}
                       </code>
                       <Button 
                         size="icon" 
                         variant="outline"
-                        onClick={() => copyAddress(PAYMENT_ADDRESSES[selectedChain as keyof typeof PAYMENT_ADDRESSES])}
+                        onClick={() => copyAddress(getChainAddress(selectedChain))}
                         data-testid="button-copy-address"
                       >
                         <Copy className="w-4 h-4" />
@@ -184,33 +237,41 @@ export default function Subscription() {
                       id="txHash"
                       value={txHash}
                       onChange={(e) => setTxHash(e.target.value)}
-                      placeholder="Enter your transaction hash after sending..."
+                      placeholder="Paste your transaction hash after sending..."
                       className="mt-2"
                       data-testid="input-tx-hash"
                     />
                     <p className="text-xs text-muted-foreground mt-1">
-                      Paste your transaction hash after sending payment
+                      We'll verify your payment on the {selectedChain} blockchain
                     </p>
                   </div>
 
                   <Button 
                     className="w-full"
-                    disabled={!txHash || upgradeMutation.isPending}
-                    onClick={() => upgradeMutation.mutate({ paymentMethod: selectedChain, txHash })}
-                    data-testid="button-confirm-payment"
+                    disabled={!txHash || verifyMutation.isPending}
+                    onClick={() => verifyMutation.mutate({ chain: selectedChain, txHash })}
+                    data-testid="button-verify-payment"
                   >
-                    {upgradeMutation.isPending ? (
+                    {verifyMutation.isPending ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Verifying...
+                        Verifying on-chain...
                       </>
                     ) : (
                       <>
                         <CheckCircle2 className="w-4 h-4 mr-2" />
-                        Confirm Payment
+                        Verify Payment
                       </>
                     )}
                   </Button>
+                </div>
+              )}
+
+              {selectedChain && !getChainAddress(selectedChain) && (
+                <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/30">
+                  <p className="text-sm text-destructive">
+                    Payment address for {selectedChain} is not configured. Please contact support.
+                  </p>
                 </div>
               )}
             </Card>
