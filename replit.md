@@ -14,6 +14,7 @@ A comprehensive crypto token scanner that monitors Telegram, Twitter, and DEXes 
 2. **Safety Analysis**: Multi-factor scoring (liquidity, volume, age, holder distribution)
 3. **AI Analysis**: Deep analysis with entry/target/stop-loss recommendations
 4. **Real-time Updates**: Auto-refresh every 30 seconds for tokens, signals
+5. **User Account System**: Editable profiles with username, bio, favorite chain, notification preferences, risk tolerance
 
 ## Project Architecture
 
@@ -23,6 +24,7 @@ A comprehensive crypto token scanner that monitors Telegram, Twitter, and DEXes 
 - `client/src/pages/RugShield.tsx` - Token safety analyzer
 - `client/src/pages/WhaleWatch.tsx` - Whale activity tracker
 - `client/src/pages/MemeTrend.tsx` - Trending meme analysis
+- `client/src/pages/Account.tsx` - User profile and settings management
 
 ### Backend (Express)
 - `server/services/dexscreener.ts` - DexScreener API integration
@@ -46,6 +48,8 @@ A comprehensive crypto token scanner that monitors Telegram, Twitter, and DEXes 
 - `GET /api/signals` - Get all trading signals
 - `GET /api/signals/:address` - Get signals for token
 - `POST /api/scanner/scan-now` - Trigger immediate scan
+- `GET /api/profile` - Get user profile (authenticated)
+- `PATCH /api/profile` - Update user profile with Zod validation (authenticated)
 
 ## Technical Notes
 - DexScreener API endpoints use `/latest/v1` format (e.g., `/token-profiles/latest/v1`)
