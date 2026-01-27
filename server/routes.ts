@@ -5,7 +5,7 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
-import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
+import { setupAuth, registerAuthRoutes, isAuthenticated, authStorage } from "./replit_integrations/auth";
 import { registerScannerRoutes } from "./routes/scanner";
 import { startBackgroundScanner, scanHotTokens } from "./services/token-scanner";
 import { FREE_TIER_LIMITS } from "@shared/schema";
@@ -233,6 +233,59 @@ export async function registerRoutes(
       { platform: "Pump.fun", symbol: "$FROG", name: "Pepe Frog", bondingCurve: 23, holders: 234, liquidity: "$5K", status: "bonding" },
     ];
     res.json(mockLaunches);
+  });
+
+  // === User Profile ===
+  const profileUpdateSchema = z.object({
+    username: z.string().min(1).max(50).optional(),
+    bio: z.string().max(500).optional(),
+    favoriteChain: z.enum(["solana", "ethereum", "bsc", "base"]).optional(),
+    notificationsEnabled: z.boolean().optional(),
+    emailAlertsEnabled: z.boolean().optional(),
+    riskTolerance: z.enum(["low", "medium", "high"]).optional(),
+  });
+
+  app.get("/api/profile", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await authStorage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      res.json(user);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to get profile" });
+    }
+  });
+
+  app.patch("/api/profile", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      
+      const existingUser = await authStorage.getUser(userId);
+      if (!existingUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const parsed = profileUpdateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid input", errors: parsed.error.errors });
+      }
+
+      const updates: any = {};
+      if (parsed.data.username !== undefined) updates.username = parsed.data.username;
+      if (parsed.data.bio !== undefined) updates.bio = parsed.data.bio;
+      if (parsed.data.favoriteChain !== undefined) updates.favoriteChain = parsed.data.favoriteChain;
+      if (parsed.data.notificationsEnabled !== undefined) updates.notificationsEnabled = parsed.data.notificationsEnabled;
+      if (parsed.data.emailAlertsEnabled !== undefined) updates.emailAlertsEnabled = parsed.data.emailAlertsEnabled;
+      if (parsed.data.riskTolerance !== undefined) updates.riskTolerance = parsed.data.riskTolerance;
+
+      const user = await authStorage.updateUser(userId, updates);
+      res.json(user);
+    } catch (err) {
+      console.error("Profile update error:", err);
+      res.status(400).json({ message: "Failed to update profile" });
+    }
   });
 
   // === Seed Data ===

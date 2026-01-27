@@ -9,11 +9,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
-  { label: "Alpha Scanner", href: "/", icon: Radar },
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Scanner", href: "/", icon: Radar },
   { label: "RugShield", href: "/rugshield", icon: ShieldCheck },
   { label: "WhaleWatch", href: "/whalewatch", icon: Eye },
   { label: "MemeTrend", href: "/memetrend", icon: TrendingUp },
+  { label: "Account", href: "/account", icon: User },
 ];
 
 export function Sidebar() {
@@ -99,30 +99,30 @@ export function MobileNav() {
   const [location] = useLocation();
   
   return (
-    <nav className="fixed bottom-0 left-0 w-full bg-card border-t border-border md:hidden z-50 px-4 py-2 flex justify-between items-center safe-area-bottom">
-      {NAV_ITEMS.map((item) => {
-        const Icon = item.icon;
-        const isActive = location === item.href;
-        
-        return (
-          <Link key={item.href} href={item.href}>
-            <button className="flex flex-col items-center gap-1 p-2" data-testid={`mobile-nav-${item.label.toLowerCase()}`}>
-              <Icon className={cn("w-6 h-6 transition-colors", isActive ? "text-primary" : "text-muted-foreground")} />
-              <span className={cn("text-[10px] font-medium", isActive ? "text-primary" : "text-muted-foreground")}>
-                {item.label}
-              </span>
-            </button>
-          </Link>
-        );
-      })}
-      <Link href="/subscription">
-        <button className="flex flex-col items-center gap-1 p-2" data-testid="mobile-nav-subscription">
-          <Zap className={cn("w-6 h-6 transition-colors", location === "/subscription" ? "text-accent" : "text-muted-foreground")} />
-          <span className={cn("text-[10px] font-medium", location === "/subscription" ? "text-accent" : "text-muted-foreground")}>
-            Pro
-          </span>
-        </button>
-      </Link>
+    <nav className="fixed bottom-0 left-0 w-full bg-card/95 backdrop-blur-lg border-t border-border md:hidden z-50 px-2 py-2 safe-area-bottom">
+      <div className="flex justify-around items-center max-w-md mx-auto">
+        {NAV_ITEMS.map((item) => {
+          const Icon = item.icon;
+          const isActive = location === item.href;
+          
+          return (
+            <Link key={item.href} href={item.href}>
+              <button 
+                className={cn(
+                  "flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors min-w-[56px]",
+                  isActive ? "text-primary bg-primary/10" : "text-muted-foreground"
+                )} 
+                data-testid={`mobile-nav-${item.label.toLowerCase()}`}
+              >
+                <Icon className="w-5 h-5" />
+                <span className="text-[10px] font-medium">
+                  {item.label}
+                </span>
+              </button>
+            </Link>
+          );
+        })}
+      </div>
     </nav>
   );
 }

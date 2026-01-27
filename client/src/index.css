@@ -65,6 +65,14 @@
   .text-gradient {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-primary via-accent to-purple-500;
   }
+
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }
 
 /* Custom scrollbar */

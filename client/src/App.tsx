@@ -11,6 +11,7 @@ import RugShield from "@/pages/RugShield";
 import WhaleWatch from "@/pages/WhaleWatch";
 import MemeTrend from "@/pages/MemeTrend";
 import Subscription from "@/pages/Subscription";
+import Account from "@/pages/Account";
 import NotFound from "@/pages/not-found";
 import { FloatingMemeTrend } from "@/components/FloatingMemeTrend";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,6 +27,7 @@ function AuthenticatedRouter() {
         <Route path="/whalewatch" component={WhaleWatch} />
         <Route path="/memetrend" component={MemeTrend} />
         <Route path="/subscription" component={Subscription} />
+        <Route path="/account" component={Account} />
         <Route component={NotFound} />
       </Switch>
       <FloatingMemeTrend />
