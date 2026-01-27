@@ -34,6 +34,43 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 Get from: https://platform.openai.com/api-keys
 
+### Twitter/X API (for scanning Twitter)
+```
+TWITTER_BEARER_TOKEN=your-twitter-bearer-token
+```
+Get from: https://developer.twitter.com/en/portal/dashboard
+
+### Multi-Chain RPC Endpoints
+```
+# Solana
+SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
+HELIUS_API_KEY=your-helius-api-key
+```
+Get Helius from: https://www.helius.dev/
+
+```
+# Ethereum
+ETHEREUM_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
+ALCHEMY_API_KEY=your-alchemy-api-key
+INFURA_API_KEY=your-infura-api-key
+```
+Get Alchemy from: https://www.alchemy.com/
+Get Infura from: https://www.infura.io/
+
+```
+# BSC (Binance Smart Chain)
+BSC_RPC_URL=https://bsc-dataseed.binance.org
+BSCSCAN_API_KEY=your-bscscan-api-key
+```
+Get BscScan API from: https://bscscan.com/apis
+
+```
+# Base
+BASE_RPC_URL=https://mainnet.base.org
+BASESCAN_API_KEY=your-basescan-api-key
+```
+Get BaseScan API from: https://basescan.org/apis
+
 ### App Configuration
 ```
 NODE_ENV=production
