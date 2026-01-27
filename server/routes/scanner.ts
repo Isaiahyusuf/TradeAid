@@ -71,6 +71,25 @@ export function registerScannerRoutes(app: Express): void {
     }
   });
 
+  app.get("/api/tokens/safe-picks", async (req: Request, res: Response) => {
+    try {
+      const tokens = await db.select()
+        .from(scannedTokens)
+        .where(and(
+          gte(scannedTokens.safetyScore, 65),
+          gte(scannedTokens.liquidity, 20000),
+          gte(scannedTokens.volume24h, 10000),
+          sql`${scannedTokens.aiSignal} IN ('buy', 'strong_buy')`
+        ))
+        .orderBy(desc(scannedTokens.safetyScore), desc(scannedTokens.volume24h))
+        .limit(10);
+      res.json(tokens);
+    } catch (error) {
+      console.error("Error fetching safe picks:", error);
+      res.status(500).json({ error: "Failed to fetch safe picks" });
+    }
+  });
+
   app.get("/api/tokens/:address", async (req: Request, res: Response) => {
     try {
       const { address } = req.params;

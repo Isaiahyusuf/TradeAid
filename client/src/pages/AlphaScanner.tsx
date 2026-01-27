@@ -343,6 +343,11 @@ export default function AlphaScanner() {
     refetchInterval: 60000,
   });
 
+  const { data: safePicks = [] } = useQuery<ScannedToken[]>({
+    queryKey: ["/api/tokens/safe-picks"],
+    refetchInterval: 30000,
+  });
+
   const incrementUsageMutation = useMutation({
     mutationFn: async (type: "scans" | "analyses" | "signals" | "ads") => {
       return apiRequest("POST", "/api/usage/increment", { type });
@@ -492,6 +497,71 @@ export default function AlphaScanner() {
             color="from-purple-500 to-pink-500"
           />
         </div>
+
+        {safePicks.length > 0 && (
+          <Card className="border-2 border-emerald-500/50 bg-gradient-to-r from-emerald-500/10 to-teal-500/10">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-emerald-400">
+                <ShieldCheck className="w-6 h-6" />
+                Top Safe Picks - Recommended Investments
+                <Badge className="bg-emerald-500 text-white">AI Selected</Badge>
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Tokens with high safety scores, strong liquidity, and positive momentum
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {safePicks.slice(0, 6).map((token) => (
+                  <div 
+                    key={token.id}
+                    className="p-4 rounded-lg border border-emerald-500/30 bg-background/50 hover-elevate"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="font-bold text-lg">{token.symbol}</div>
+                        <Badge className="bg-emerald-500/20 text-emerald-400 text-xs">
+                          {token.aiSignal === "strong_buy" ? "STRONG BUY" : "BUY"}
+                        </Badge>
+                      </div>
+                      <SafetyScore score={token.safetyScore} size="sm" />
+                    </div>
+                    <div className="text-sm text-muted-foreground mb-2">{token.name}</div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-muted-foreground">Liquidity:</span>
+                        <span className="ml-1 font-medium">${(token.liquidity / 1000).toFixed(1)}K</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Volume:</span>
+                        <span className="ml-1 font-medium">${(token.volume24h / 1000).toFixed(1)}K</span>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-muted-foreground">1h Change:</span>
+                        <span className={cn(
+                          "ml-1 font-medium",
+                          token.priceChange1h >= 0 ? "text-emerald-400" : "text-red-400"
+                        )}>
+                          {token.priceChange1h >= 0 ? "+" : ""}{token.priceChange1h.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                    <Button 
+                      size="sm" 
+                      className="w-full mt-3 bg-emerald-500 hover:bg-emerald-600"
+                      onClick={() => deepAnalyzeMutation.mutate(token.address)}
+                      disabled={deepAnalyzeMutation.isPending || (!isPro && !canAnalyze)}
+                      data-testid={`button-analyze-safe-${token.id}`}
+                    >
+                      <Brain className="w-3 h-3 mr-1" />
+                      Deep Analyze
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">

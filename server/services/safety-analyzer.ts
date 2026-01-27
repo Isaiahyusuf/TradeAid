@@ -134,9 +134,10 @@ export async function analyzeTokenSafety(pair: DexPair): Promise<SafetyReport> {
 }
 
 export function calculateSignal(safety: SafetyReport, pair: DexPair): {
-  signal: "buy" | "hold" | "sell" | "avoid";
+  signal: "strong_buy" | "buy" | "hold" | "sell" | "avoid";
   confidence: number;
   reasoning: string;
+  isSafeInvestment: boolean;
 } {
   const priceChange1h = pair.priceChange?.h1 || 0;
   const priceChange24h = pair.priceChange?.h24 || 0;
@@ -150,6 +151,7 @@ export function calculateSignal(safety: SafetyReport, pair: DexPair): {
       signal: "avoid",
       confidence: 90,
       reasoning: `Critical risk level. ${safety.risks.slice(0, 2).join(". ")}`,
+      isSafeInvestment: false,
     };
   }
 
@@ -158,20 +160,56 @@ export function calculateSignal(safety: SafetyReport, pair: DexPair): {
       signal: "avoid",
       confidence: 75,
       reasoning: `High risk. ${safety.risks.slice(0, 2).join(". ")}`,
+      isSafeInvestment: false,
     };
   }
 
-  const isNewToken = (Date.now() - pair.pairCreatedAt) < (6 * 60 * 60 * 1000);
+  const ageHours = (Date.now() - pair.pairCreatedAt) / (1000 * 60 * 60);
+  const isNewToken = ageHours < 6;
+  const hasStrongLiquidity = liquidity > 50000;
   const hasGoodLiquidity = liquidity > 20000;
+  const hasStrongVolume = volume > 50000;
   const hasGoodVolume = volume > 10000;
   const hasBuyPressure = buys > sells * 1.5;
+  const hasStrongBuyPressure = buys > sells * 2;
   const isRising = priceChange1h > 10 || priceChange24h > 50;
+  const isStronglyRising = priceChange1h > 30 && priceChange24h > 0;
+  const hasSocials = safety.positives.some(p => p.includes("social") || p.includes("website"));
 
-  if (isNewToken && hasGoodLiquidity && hasGoodVolume && hasBuyPressure && safety.score >= 60) {
+  // STRONG BUY: Best investment opportunities
+  if (
+    safety.score >= 70 &&
+    hasStrongLiquidity &&
+    hasStrongVolume &&
+    hasStrongBuyPressure &&
+    !safety.isHoneypot &&
+    priceChange1h > 0 &&
+    priceChange1h < 200
+  ) {
+    return {
+      signal: "strong_buy",
+      confidence: Math.min(95, safety.score + 10),
+      reasoning: `TOP PICK! Strong fundamentals: $${(liquidity/1000).toFixed(0)}K liquidity, $${(volume/1000).toFixed(0)}K volume, ${(buys/Math.max(sells,1)).toFixed(1)}x buy ratio. Safety: ${safety.score}/100`,
+      isSafeInvestment: true,
+    };
+  }
+
+  // BUY: Good investment opportunities
+  if (isNewToken && hasGoodLiquidity && hasGoodVolume && hasBuyPressure && safety.score >= 65) {
     return {
       signal: "buy",
       confidence: Math.min(85, safety.score),
-      reasoning: `New token with strong metrics. Liquidity: $${liquidity.toLocaleString()}, Volume: $${volume.toLocaleString()}, Buy/Sell ratio: ${(buys/Math.max(sells,1)).toFixed(1)}x`,
+      reasoning: `SAFE ENTRY: New token with strong metrics. Liquidity: $${liquidity.toLocaleString()}, Volume: $${volume.toLocaleString()}, Buy/Sell ratio: ${(buys/Math.max(sells,1)).toFixed(1)}x`,
+      isSafeInvestment: true,
+    };
+  }
+
+  if (hasGoodLiquidity && isRising && hasBuyPressure && safety.score >= 60 && hasSocials) {
+    return {
+      signal: "buy",
+      confidence: Math.min(75, safety.score),
+      reasoning: `GOOD OPPORTUNITY: Positive momentum +${priceChange1h.toFixed(1)}% in 1h. Verified socials. ${safety.positives.slice(0, 1).join(". ")}`,
+      isSafeInvestment: true,
     };
   }
 
@@ -180,6 +218,7 @@ export function calculateSignal(safety: SafetyReport, pair: DexPair): {
       signal: "buy",
       confidence: Math.min(70, safety.score),
       reasoning: `Positive momentum detected. ${priceChange1h > 10 ? `+${priceChange1h.toFixed(1)}% in 1h.` : ""} ${safety.positives.slice(0, 2).join(". ")}`,
+      isSafeInvestment: safety.score >= 65,
     };
   }
 
@@ -188,6 +227,7 @@ export function calculateSignal(safety: SafetyReport, pair: DexPair): {
       signal: "sell",
       confidence: 65,
       reasoning: `Bearish signals. ${priceChange1h < -20 ? `Price down ${priceChange1h.toFixed(1)}% in 1h.` : ""} Heavy sell pressure.`,
+      isSafeInvestment: false,
     };
   }
 
@@ -195,5 +235,6 @@ export function calculateSignal(safety: SafetyReport, pair: DexPair): {
     signal: "hold",
     confidence: 50,
     reasoning: `Neutral market conditions. Monitor for better entry/exit opportunities.`,
+    isSafeInvestment: safety.score >= 70,
   };
 }
