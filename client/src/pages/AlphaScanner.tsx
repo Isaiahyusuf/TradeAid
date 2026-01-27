@@ -348,6 +348,11 @@ export default function AlphaScanner() {
     refetchInterval: 30000,
   });
 
+  const { data: newTokens = [] } = useQuery<ScannedToken[]>({
+    queryKey: ["/api/tokens/new", { hours: 6 }],
+    refetchInterval: 15000,
+  });
+
   const incrementUsageMutation = useMutation({
     mutationFn: async (type: "scans" | "analyses" | "signals" | "ads") => {
       return apiRequest("POST", "/api/usage/increment", { type });
@@ -497,6 +502,65 @@ export default function AlphaScanner() {
             color="from-purple-500 to-pink-500"
           />
         </div>
+
+        {newTokens.length > 0 && (
+          <Card className="border-2 border-purple-500/50 bg-gradient-to-r from-purple-500/10 to-pink-500/10">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-purple-400">
+                <Rocket className="w-6 h-6" />
+                Newest Launches - Just Dropped
+                <Badge className="bg-purple-500 text-white animate-pulse">LIVE</Badge>
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Fresh tokens launched in the last 6 hours - act fast!
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-3">
+                {newTokens.slice(0, 8).map((token) => {
+                  const ageMs = token.pairCreatedAt ? Date.now() - new Date(token.pairCreatedAt).getTime() : 0;
+                  const ageMinutes = Math.floor(ageMs / 60000);
+                  const ageText = ageMinutes < 60 ? `${ageMinutes}m ago` : `${Math.floor(ageMinutes / 60)}h ago`;
+                  
+                  return (
+                    <div 
+                      key={token.id}
+                      className="p-3 rounded-lg border border-purple-500/30 bg-background/50 hover-elevate"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="font-bold">{token.symbol}</div>
+                        <Badge variant="outline" className="text-xs text-purple-400 border-purple-400">
+                          <Clock className="w-3 h-3 mr-1" />
+                          {ageText}
+                        </Badge>
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate mb-2">{token.name}</div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">Score:</span>
+                        <span className={cn(
+                          "font-medium",
+                          token.safetyScore >= 70 ? "text-emerald-400" : 
+                          token.safetyScore >= 50 ? "text-amber-400" : "text-red-400"
+                        )}>
+                          {token.safetyScore}/100
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs mt-1">
+                        <span className="text-muted-foreground">1h:</span>
+                        <span className={cn(
+                          "font-medium",
+                          token.priceChange1h >= 0 ? "text-emerald-400" : "text-red-400"
+                        )}>
+                          {token.priceChange1h >= 0 ? "+" : ""}{token.priceChange1h.toFixed(0)}%
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {safePicks.length > 0 && (
           <Card className="border-2 border-emerald-500/50 bg-gradient-to-r from-emerald-500/10 to-teal-500/10">
