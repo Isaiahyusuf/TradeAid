@@ -22,6 +22,11 @@ SESSION_SECRET=your-random-session-secret-min-32-chars
 ```
 Generate with: `openssl rand -hex 32`
 
+**IMPORTANT**: The current app uses Replit Auth (OIDC) which only works on Replit. For Railway, you'll need to:
+1. Replace with Firebase Auth, Auth0, Clerk, or custom JWT auth
+2. Or disable auth temporarily for testing
+3. The mobile app is designed to work with JWT token-based auth
+
 ### OpenAI (for AI Analysis)
 ```
 OPENAI_API_KEY=sk-your-openai-api-key

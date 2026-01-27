@@ -4,3 +4,21 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# Replit specific
+.replit
+.cache
+.config
+.upm
+replit.nix
+.local
+
+# Mobile app (separate project)
+mobile/node_modules
+mobile/.expo
+mobile/dist
+
+# Environment
+.env
+.env.local
+.env.production
