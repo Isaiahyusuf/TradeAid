@@ -1,8 +1,8 @@
 import { db } from "./db";
 import { 
-  scannedTokens, trackedWallets, walletAlerts, trendingCoins, subscriptions,
+  scannedTokens, trackedWallets, walletAlerts, trendingCoins, subscriptions, userUsage,
   type InsertScannedToken, type InsertTrackedWallet, type InsertWalletAlert, type InsertTrendingCoin, type InsertSubscription,
-  type ScannedToken, type TrackedWallet, type WalletAlert, type TrendingCoin, type Subscription
+  type ScannedToken, type TrackedWallet, type WalletAlert, type TrendingCoin, type Subscription, type UserUsage
 } from "@shared/schema";
 import { eq, desc } from "drizzle-orm";
 
@@ -26,6 +26,10 @@ export interface IStorage {
   // Subscriptions
   getSubscription(userId: string): Promise<Subscription | undefined>;
   createSubscription(sub: InsertSubscription): Promise<Subscription>;
+  
+  // Usage tracking
+  getUsage(userId: string): Promise<UserUsage>;
+  incrementUsage(userId: string, type: string): Promise<UserUsage>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -102,6 +106,48 @@ export class DatabaseStorage implements IStorage {
   async createSubscription(sub: InsertSubscription): Promise<Subscription> {
     const [newSub] = await db.insert(subscriptions).values(sub).returning();
     return newSub;
+  }
+
+  async getUsage(userId: string): Promise<UserUsage> {
+    const [existing] = await db.select().from(userUsage).where(eq(userUsage.userId, userId));
+    
+    if (!existing) {
+      const [created] = await db.insert(userUsage).values({ userId }).returning();
+      return created;
+    }
+
+    const lastReset = existing.lastResetAt ? new Date(existing.lastResetAt) : new Date(0);
+    const now = new Date();
+    const shouldReset = now.getDate() !== lastReset.getDate() || 
+                        now.getMonth() !== lastReset.getMonth() ||
+                        now.getFullYear() !== lastReset.getFullYear();
+
+    if (shouldReset) {
+      const [reset] = await db.update(userUsage)
+        .set({ dailyScans: 0, dailyDeepAnalyses: 0, dailySignalViews: 0, lastResetAt: now })
+        .where(eq(userUsage.userId, userId))
+        .returning();
+      return reset;
+    }
+
+    return existing;
+  }
+
+  async incrementUsage(userId: string, type: string): Promise<UserUsage> {
+    const usage = await this.getUsage(userId);
+    
+    const updates: Partial<UserUsage> = {};
+    if (type === "scans") updates.dailyScans = (usage.dailyScans || 0) + 1;
+    else if (type === "analyses") updates.dailyDeepAnalyses = (usage.dailyDeepAnalyses || 0) + 1;
+    else if (type === "signals") updates.dailySignalViews = (usage.dailySignalViews || 0) + 1;
+    else if (type === "ads") updates.adsViewed = (usage.adsViewed || 0) + 1;
+
+    const [updated] = await db.update(userUsage)
+      .set(updates)
+      .where(eq(userUsage.userId, userId))
+      .returning();
+    
+    return updated;
   }
 }
 

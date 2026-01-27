@@ -143,11 +143,11 @@ export type InsertTokenSignal = z.infer<typeof insertTokenSignalSchema>;
 // === Subscriptions ===
 export const subscriptions = pgTable("subscriptions", {
   id: serial("id").primaryKey(),
-  userId: text("user_id").notNull(),
-  plan: text("plan").notNull().default("free"), // 'free' or 'pro'
-  paymentMethod: text("payment_method"), // 'SOL', 'ETH', 'BSC', 'BASE'
+  userId: text("user_id").notNull().unique(),
+  plan: text("plan").notNull().default("free"),
+  paymentMethod: text("payment_method"),
   txHash: text("tx_hash"),
-  status: text("status").notNull().default("active"), // 'active', 'expired', 'pending'
+  status: text("status").notNull().default("active"),
   expiresAt: timestamp("expires_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -155,6 +155,35 @@ export const subscriptions = pgTable("subscriptions", {
 export const insertSubscriptionSchema = createInsertSchema(subscriptions).omit({ id: true, createdAt: true });
 export type Subscription = typeof subscriptions.$inferSelect;
 export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
+
+// === Usage Tracking (for free tier limits) ===
+export const userUsage = pgTable("user_usage", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull().unique(),
+  dailyScans: integer("daily_scans").default(0),
+  dailyDeepAnalyses: integer("daily_deep_analyses").default(0),
+  dailySignalViews: integer("daily_signal_views").default(0),
+  adsViewed: integer("ads_viewed").default(0),
+  lastResetAt: timestamp("last_reset_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertUserUsageSchema = createInsertSchema(userUsage).omit({ id: true, createdAt: true });
+export type UserUsage = typeof userUsage.$inferSelect;
+export type InsertUserUsage = z.infer<typeof insertUserUsageSchema>;
+
+// === Free tier limits ===
+export const FREE_TIER_LIMITS = {
+  dailyScans: 10,
+  dailyDeepAnalyses: 3,
+  dailySignalViews: 5,
+  adsPerSession: 3,
+} as const;
+
+export const SUBSCRIPTION_PRICES = {
+  monthly: { sol: 0.5, eth: 0.01, bsc: 0.05, base: 0.01 },
+  yearly: { sol: 4.5, eth: 0.08, bsc: 0.4, base: 0.08 },
+} as const;
 
 // === API Request/Response Types ===
 export type ScanTokenRequest = { address: string };

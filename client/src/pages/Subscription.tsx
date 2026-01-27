@@ -64,10 +64,7 @@ export default function Subscription() {
 
   const upgradeMutation = useMutation({
     mutationFn: async (data: { paymentMethod: string; txHash: string }) => {
-      return apiRequest("/api/subscription", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      return apiRequest("POST", "/api/subscription", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/subscription"] });

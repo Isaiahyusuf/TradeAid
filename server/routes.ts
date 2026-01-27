@@ -7,7 +7,8 @@ import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { registerScannerRoutes } from "./routes/scanner";
-import { startBackgroundScanner } from "./services/token-scanner";
+import { startBackgroundScanner, scanHotTokens } from "./services/token-scanner";
+import { FREE_TIER_LIMITS } from "@shared/schema";
 import OpenAI from "openai";
 
 let openaiClient: OpenAI | null = null;
@@ -152,7 +153,6 @@ export async function registerRoutes(
       const userId = req.user.claims.sub;
       const { paymentMethod, txHash } = req.body;
       
-      // Create or update subscription
       const expiresAt = new Date();
       expiresAt.setMonth(expiresAt.getMonth() + 1);
       
@@ -168,6 +168,31 @@ export async function registerRoutes(
       res.status(201).json(subscription);
     } catch (err) {
       res.status(400).json({ message: "Failed to create subscription" });
+    }
+  });
+
+  app.get("/api/usage", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const usage = await storage.getUsage(userId);
+      res.json({ ...usage, limits: FREE_TIER_LIMITS });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to get usage" });
+    }
+  });
+
+  app.post("/api/usage/increment", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { type } = req.body;
+      const validTypes = ["scans", "analyses", "signals", "ads"];
+      if (!validTypes.includes(type)) {
+        return res.status(400).json({ message: "Invalid usage type" });
+      }
+      const usage = await storage.incrementUsage(userId, type);
+      res.json(usage);
+    } catch (err) {
+      res.status(400).json({ message: "Failed to increment usage" });
     }
   });
 
