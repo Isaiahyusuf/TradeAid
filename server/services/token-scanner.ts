@@ -176,7 +176,7 @@ export async function performDeepAnalysis(tokenAddress: string): Promise<{
 
 let scanInterval: NodeJS.Timeout | null = null;
 
-export function startBackgroundScanner(intervalMs: number = 5 * 60 * 1000): void {
+export function startBackgroundScanner(intervalMs: number = 60 * 1000): void {
   if (scanInterval) {
     console.log("[Scanner] Already running");
     return;

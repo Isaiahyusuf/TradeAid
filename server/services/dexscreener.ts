@@ -116,7 +116,7 @@ export async function discoverHotTokens(chain: string = "solana"): Promise<DexPa
     getTopBoostedTokens(),
   ]);
   
-  const allProfiles = [...new Map([...latestProfiles, ...boosted, ...topBoosted].map(p => [p.tokenAddress, p])).values()];
+  const allProfiles = Array.from(new Map([...latestProfiles, ...boosted, ...topBoosted].map(p => [p.tokenAddress, p])).values());
   const chainProfiles = allProfiles.filter(p => p.chainId === chain);
   
   const hotPairs: DexPair[] = [];

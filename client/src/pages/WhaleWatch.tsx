@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Trash2, ArrowUpRight, ArrowDownRight, Wallet } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 export default function WhaleWatch() {
   const { data: wallets, isLoading: isLoadingWallets } = useTrackedWallets();

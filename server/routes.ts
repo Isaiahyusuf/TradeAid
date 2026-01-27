@@ -38,8 +38,8 @@ export async function registerRoutes(
   // Register token scanner routes (new powerful scanner)
   registerScannerRoutes(app);
   
-  // Start background token scanner (scans every 5 minutes)
-  startBackgroundScanner(5 * 60 * 1000);
+  // Start background token scanner (scans every 60 seconds for fresh tokens)
+  startBackgroundScanner(60 * 1000);
 
   // === RugShield ===
   app.post(api.rugcheck.scan.path, async (req, res) => {
