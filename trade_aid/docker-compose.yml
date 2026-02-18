@@ -1,0 +1,155 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trade_aid_backend
+    restart: always
+    env_file: .env
+    environment:
+      - TRADE_AID_ROLE=api
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - trade_aid_net
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  scanner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trade_aid_scanner
+    restart: always
+    env_file: .env
+    environment:
+      - TRADE_AID_ROLE=scanner
+    command: ["python", "-m", "app.scanner_runner"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - trade_aid_net
+    volumes:
+      - ./logs:/app/logs
+
+  ai_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.ai
+    container_name: trade_aid_ai
+    restart: always
+    env_file: .env
+    ports:
+      - "8001:8001"
+    networks:
+      - trade_aid_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trade_aid_worker
+    restart: always
+    env_file: .env
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - trade_aid_net
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trade_aid_beat
+    restart: always
+    env_file: .env
+    command: celery -A app.workers.celery_app beat --loglevel=info
+    depends_on:
+      - redis
+    networks:
+      - trade_aid_net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: trade_aid_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-trade_aid}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - trade_aid_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: trade_aid_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - trade_aid_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  nginx:
+    image: nginx:alpine
+    container_name: trade_aid_nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - backend
+      - ai_service
+    networks:
+      - trade_aid_net
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  trade_aid_net:
+    driver: bridge
