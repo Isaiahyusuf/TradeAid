@@ -42,6 +42,49 @@ A comprehensive crypto token scanner that monitors Telegram, Twitter, and DEXes 
 - `userAlerts` - User notification preferences
 - `watchlists` - User watchlists
 
+## Trade Aid Backend (Python/FastAPI)
+
+### Overview
+Production-ready blockchain intelligence backend located in `trade_aid/` directory. Designed for VPS deployment via Docker.
+
+### Architecture
+- **Backend API**: FastAPI + SQLAlchemy + PostgreSQL (single worker for WebSocket support)
+- **Scanner Service**: Dedicated single-process for DexScreener polling + chain WebSocket listeners (7 chains)
+- **AI Scoring Service**: Separate FastAPI microservice (PyTorch/TensorFlow ready)
+- **Workers**: Celery + Redis for async task processing
+- **Infrastructure**: Docker Compose with 7 services (backend, scanner, ai_service, celery_worker, celery_beat, postgres, redis, nginx)
+
+### Trade Aid Project Structure
+```
+trade_aid/
+  app/
+    main.py - FastAPI application
+    config.py - Settings with .env support
+    database.py - Async SQLAlchemy setup
+    scanner_runner.py - Dedicated scanner process
+    models/models.py - 9 database tables
+    routers/ - API endpoints (auth, tokens, wallets, scoring, alerts)
+    services/ - Auth service, alert service
+    scanners/ - DexScreener + chain WebSocket listeners
+    intelligence/ - Developer intel, trader intel, wallet clustering (NetworkX)
+    scoring/ - Eligibility checker + scoring service
+    workers/ - Celery app + tasks
+    websocket/ - WebSocket connection manager
+    utils/ - Security, Redis, rate limiting, logging
+  ai_service/
+    main.py - AI scoring endpoint
+    scoring_model.py - PyTorch/TensorFlow ready model
+  docker-compose.yml
+  Dockerfile, Dockerfile.ai
+  nginx/nginx.conf
+  requirements.txt, requirements.ai.txt
+  alembic/ - Database migrations
+  .env.example
+```
+
+### Trade Aid Database Tables
+- tokens, developers, traders, wallet_clusters, rug_history, alerts, scoring_history, liquidity_events, users
+
 ## API Endpoints
 - `GET /api/tokens` - List all scanned tokens
 - `GET /api/tokens/hot` - Get hot tokens (sorted by score)
