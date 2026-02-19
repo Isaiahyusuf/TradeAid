@@ -85,11 +85,7 @@ async def debug_db():
         safe_url = "***@" + parts[-1]
     return {
         "db_url_masked": safe_url,
-        "PGHOST": os.environ.get("PGHOST", "(not set)"),
-        "PGPORT": os.environ.get("PGPORT", "(not set)"),
-        "PGUSER": os.environ.get("PGUSER", "(not set)"),
-        "PGDATABASE": os.environ.get("PGDATABASE", "(not set)"),
-        "POSTGRES_PASSWORD": "set" if os.environ.get("POSTGRES_PASSWORD") else "(not set)",
+        "DATABASE_URL": "set" if os.environ.get("DATABASE_URL") else "(not set)",
     }
 
 
