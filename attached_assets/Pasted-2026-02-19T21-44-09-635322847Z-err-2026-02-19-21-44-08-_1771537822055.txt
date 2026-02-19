@@ -1,0 +1,19 @@
+2026-02-19T21:44:09.635322847Z [err]  [2026-02-19 21:44:08 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T21:44:09.635332767Z [err]  [2026-02-19 21:44:08 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T21:44:09.635392307Z [err]  [2026-02-19 21:44:08 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T21:44:09.635398627Z [err]  [2026-02-19 21:44:08 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T21:44:09.659809546Z [err]  [TRADE-AID] DB target: ***@localhost:5432/trade_aid
+2026-02-19T21:44:09.686814835Z [inf]  Starting Container
+2026-02-19T21:44:10.253187968Z [err]  [2026-02-19 21:44:10 +0000] [2] [INFO] Started server process [2]
+2026-02-19T21:44:10.253193199Z [err]  [2026-02-19 21:44:10 +0000] [2] [INFO] Waiting for application startup.
+2026-02-19T21:44:10.253198128Z [inf]  2026-02-19 21:44:10 | INFO     | trade_aid | Trade Aid API starting up...
+2026-02-19T21:44:10.253204319Z [err]  [TRADE-AID] DB attempt 1/5 failed: [Errno 111] Connection refused. Retry in 1s...
+2026-02-19T21:44:11.246630206Z [err]  [TRADE-AID] DB attempt 2/5 failed: [Errno 111] Connection refused. Retry in 2s...
+2026-02-19T21:44:13.310017080Z [err]  [TRADE-AID] DB attempt 3/5 failed: [Errno 111] Connection refused. Retry in 4s...
+2026-02-19T21:44:17.293684018Z [err]  [TRADE-AID] DB attempt 4/5 failed: [Errno 111] Connection refused. Retry in 8s...
+2026-02-19T21:44:25.264695095Z [err]  [TRADE-AID] DB attempt 5/5 failed: [Errno 111] Connection refused. Retry in 16s...
+2026-02-19T21:44:45.269201715Z [err]  [TRADE-AID] WARNING: Could not connect to DB after 5 attempts.
+2026-02-19T21:44:45.269207425Z [inf]  2026-02-19 21:44:41 | INFO     | trade_aid | Database initialized
+2026-02-19T21:44:45.269212365Z [inf]  2026-02-19 21:44:41 | INFO     | trade_aid | WebSocket Redis subscriber started
+2026-02-19T21:44:45.269217785Z [err]  [2026-02-19 21:44:41 +0000] [2] [INFO] Application startup complete.
+2026-02-19T21:44:45.269222915Z [inf]  2026-02-19 21:44:41 | INFO     | trade_aid | [WS] Redis subscriber started
