@@ -74,6 +74,25 @@ async def health():
     return {"status": "healthy"}
 
 
+@app.get("/debug/db")
+async def debug_db():
+    import os
+    from app.config import build_database_url
+    url = build_database_url(async_driver=True)
+    safe_url = url
+    if "@" in safe_url:
+        parts = safe_url.split("@")
+        safe_url = "***@" + parts[-1]
+    return {
+        "db_url_masked": safe_url,
+        "PGHOST": os.environ.get("PGHOST", "(not set)"),
+        "PGPORT": os.environ.get("PGPORT", "(not set)"),
+        "PGUSER": os.environ.get("PGUSER", "(not set)"),
+        "PGDATABASE": os.environ.get("PGDATABASE", "(not set)"),
+        "POSTGRES_PASSWORD": "set" if os.environ.get("POSTGRES_PASSWORD") else "(not set)",
+    }
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await ws_manager.connect(websocket)
