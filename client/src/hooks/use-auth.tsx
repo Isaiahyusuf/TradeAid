@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, createContext, useContext } from "react";
 import { apiGet, apiPost, setToken, clearToken } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -10,7 +10,18 @@ export type User = {
   totp_enabled: boolean;
 };
 
-export function useAuth() {
+type AuthContextType = {
+  user: User | null;
+  isLoading: boolean;
+  isAuthenticated: boolean;
+  login: (username: string, password: string, totp_code?: string) => Promise<any>;
+  register: (username: string, email: string, password: string) => Promise<any>;
+  logout: () => void;
+};
+
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const queryClient = useQueryClient();
@@ -62,12 +73,24 @@ export function useAuth() {
     queryClient.clear();
   };
 
-  return {
-    user,
-    isLoading,
-    isAuthenticated: !!user,
-    login,
-    register,
-    logout,
-  };
+  return (
+    <AuthContext.Provider value={{
+      user,
+      isLoading,
+      isAuthenticated: !!user,
+      login,
+      register,
+      logout,
+    }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return ctx;
 }
