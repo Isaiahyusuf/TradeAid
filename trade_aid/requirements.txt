@@ -8,7 +8,7 @@ alembic==1.14.1
 redis[hiredis]==5.2.1
 celery[redis]==5.4.0
 httpx==0.28.1
-websockets==14.1
+websockets==13.1
 web3==7.6.0
 networkx==3.4.2
 python-jose[cryptography]==3.3.0

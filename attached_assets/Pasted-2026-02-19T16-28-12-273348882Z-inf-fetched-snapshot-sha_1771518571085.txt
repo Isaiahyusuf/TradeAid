@@ -1,0 +1,258 @@
+2026-02-19T16:28:12.273348882Z [inf]  fetched snapshot sha256:8fd14255aa9204d5edde0c598b104c787659127e9484ae8517b4f0eb2aa3af74 (230 kB bytes)
+2026-02-19T16:28:12.273444195Z [inf]  fetching snapshot
+2026-02-19T16:28:12.603858298Z [inf]  scheduling build on Metal builder "builder-ujioms"
+2026-02-19T16:28:12.919052737Z [inf]  unpacking archive
+2026-02-19T16:28:14.507282212Z [inf]  [internal] load build definition from trade_aid/Dockerfile
+2026-02-19T16:28:14.507335983Z [inf]  [internal] load build definition from trade_aid/Dockerfile
+2026-02-19T16:28:14.507490124Z [inf]  [internal] load build definition from trade_aid/Dockerfile
+2026-02-19T16:28:15.229614551Z [inf]  [internal] load build definition from trade_aid/Dockerfile
+2026-02-19T16:28:15.365517936Z [inf]  [internal] load metadata for docker.io/library/python:3.11-slim
+2026-02-19T16:28:15.782348016Z [inf]  [internal] load metadata for docker.io/library/python:3.11-slim
+2026-02-19T16:28:15.782944181Z [inf]  [internal] load .dockerignore
+2026-02-19T16:28:15.782955488Z [inf]  [internal] load .dockerignore
+2026-02-19T16:28:15.783265673Z [inf]  [internal] load .dockerignore
+2026-02-19T16:28:15.919044773Z [inf]  [internal] load .dockerignore
+2026-02-19T16:28:15.952624877Z [inf]  [6/6] COPY trade_aid/ .
+2026-02-19T16:28:15.952628213Z [inf]  [5/6] RUN pip install --no-cache-dir -r requirements.txt
+2026-02-19T16:28:15.952629104Z [inf]  [4/6] COPY trade_aid/requirements.txt .
+2026-02-19T16:28:15.952629494Z [inf]  [internal] load build context
+2026-02-19T16:28:15.952630065Z [inf]  [3/6] RUN apt-get update && apt-get install -y --no-install-recommends     gcc     libpq-dev     curl     && rm -rf /var/lib/apt/lists/*
+2026-02-19T16:28:15.952630626Z [inf]  [2/6] WORKDIR /app
+2026-02-19T16:28:15.952631167Z [inf]  [1/6] FROM docker.io/library/python:3.11-slim@sha256:0b23cfb7425d065008b778022a17b1551c82f8b4866ee5a7a200084b7e2eafbf
+2026-02-19T16:28:15.952855624Z [inf]  [1/6] FROM docker.io/library/python:3.11-slim@sha256:0b23cfb7425d065008b778022a17b1551c82f8b4866ee5a7a200084b7e2eafbf
+2026-02-19T16:28:15.952857116Z [inf]  [internal] load build context
+2026-02-19T16:28:15.952916896Z [inf]  [internal] load build context
+2026-02-19T16:28:15.953312280Z [inf]  [internal] load build context
+2026-02-19T16:28:15.976324658Z [inf]  [1/6] FROM docker.io/library/python:3.11-slim@sha256:0b23cfb7425d065008b778022a17b1551c82f8b4866ee5a7a200084b7e2eafbf
+2026-02-19T16:28:16.138900619Z [inf]  [internal] load build context
+2026-02-19T16:28:16.520031602Z [inf]  [2/6] WORKDIR /app
+2026-02-19T16:28:16.520035217Z [inf]  [3/6] RUN apt-get update && apt-get install -y --no-install-recommends     gcc     libpq-dev     curl     && rm -rf /var/lib/apt/lists/*
+2026-02-19T16:28:16.520035828Z [inf]  [4/6] COPY trade_aid/requirements.txt .
+2026-02-19T16:28:16.571034093Z [inf]  [4/6] COPY trade_aid/requirements.txt .
+2026-02-19T16:28:16.571076046Z [inf]  [5/6] RUN pip install --no-cache-dir -r requirements.txt
+2026-02-19T16:28:18.955532201Z [inf]  Collecting fastapi==0.115.6 (from -r requirements.txt (line 1))
+
+2026-02-19T16:28:18.976596214Z [inf]    Downloading fastapi-0.115.6-py3-none-any.whl.metadata (27 kB)
+
+2026-02-19T16:28:19.007986281Z [inf]  Collecting uvicorn==0.34.0 (from uvicorn[standard]==0.34.0->-r requirements.txt (line 2))
+
+2026-02-19T16:28:19.012099767Z [inf]    Downloading uvicorn-0.34.0-py3-none-any.whl.metadata (6.5 kB)
+
+2026-02-19T16:28:19.031800344Z [inf]  Collecting gunicorn==23.0.0 (from -r requirements.txt (line 3))
+
+2026-02-19T16:28:19.035717325Z [inf]    Downloading gunicorn-23.0.0-py3-none-any.whl.metadata (4.4 kB)
+
+2026-02-19T16:28:19.316677949Z [inf]  Collecting sqlalchemy==2.0.36 (from sqlalchemy[asyncio]==2.0.36->-r requirements.txt (line 4))
+
+2026-02-19T16:28:19.322031757Z [inf]    Downloading SQLAlchemy-2.0.36-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (9.7 kB)
+
+2026-02-19T16:28:19.360948614Z [inf]  Collecting asyncpg==0.30.0 (from -r requirements.txt (line 5))
+
+2026-02-19T16:28:19.364730171Z [inf]    Downloading asyncpg-0.30.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (5.0 kB)
+
+2026-02-19T16:28:19.421935736Z [inf]  Collecting psycopg2-binary==2.9.10 (from -r requirements.txt (line 6))
+
+2026-02-19T16:28:19.425599136Z [inf]    Downloading psycopg2_binary-2.9.10-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.9 kB)
+
+2026-02-19T16:28:19.456589232Z [inf]  Collecting alembic==1.14.1 (from -r requirements.txt (line 7))
+
+2026-02-19T16:28:19.460367024Z [inf]    Downloading alembic-1.14.1-py3-none-any.whl.metadata (7.4 kB)
+
+2026-02-19T16:28:19.516064734Z [inf]  Collecting redis==5.2.1 (from redis[hiredis]==5.2.1->-r requirements.txt (line 8))
+
+2026-02-19T16:28:19.5210973Z [inf]    Downloading redis-5.2.1-py3-none-any.whl.metadata (9.1 kB)
+
+2026-02-19T16:28:19.576819618Z [inf]  Collecting celery==5.4.0 (from celery[redis]==5.4.0->-r requirements.txt (line 9))
+
+2026-02-19T16:28:19.580423478Z [inf]    Downloading celery-5.4.0-py3-none-any.whl.metadata (21 kB)
+
+2026-02-19T16:28:19.604882699Z [inf]  Collecting httpx==0.28.1 (from -r requirements.txt (line 10))
+
+2026-02-19T16:28:19.608490746Z [inf]    Downloading httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+
+2026-02-19T16:28:19.689159106Z [inf]  Collecting websockets==14.1 (from -r requirements.txt (line 11))
+
+2026-02-19T16:28:19.693700014Z [inf]    Downloading websockets-14.1-cp311-cp311-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.7 kB)
+
+2026-02-19T16:28:19.746143659Z [inf]  Collecting web3==7.6.0 (from -r requirements.txt (line 12))
+
+2026-02-19T16:28:19.751330456Z [inf]    Downloading web3-7.6.0-py3-none-any.whl.metadata (5.4 kB)
+
+2026-02-19T16:28:19.777089128Z [inf]  Collecting networkx==3.4.2 (from -r requirements.txt (line 13))
+
+2026-02-19T16:28:19.780759929Z [inf]    Downloading networkx-3.4.2-py3-none-any.whl.metadata (6.3 kB)
+
+2026-02-19T16:28:19.798516297Z [inf]  Collecting python-jose==3.3.0 (from python-jose[cryptography]==3.3.0->-r requirements.txt (line 14))
+
+2026-02-19T16:28:19.801987228Z [inf]    Downloading python_jose-3.3.0-py2.py3-none-any.whl.metadata (5.4 kB)
+
+2026-02-19T16:28:19.814911602Z [inf]  Collecting passlib==1.7.4 (from passlib[bcrypt]==1.7.4->-r requirements.txt (line 15))
+
+2026-02-19T16:28:19.81856725Z [inf]    Downloading passlib-1.7.4-py2.py3-none-any.whl.metadata (1.7 kB)
+
+2026-02-19T16:28:20.077633544Z [inf]  Collecting cryptography==44.0.0 (from -r requirements.txt (line 16))
+
+2026-02-19T16:28:20.081642413Z [inf]    Downloading cryptography-44.0.0-cp39-abi3-manylinux_2_28_x86_64.whl.metadata (5.7 kB)
+
+2026-02-19T16:28:20.094547487Z [inf]  Collecting pyotp==2.9.0 (from -r requirements.txt (line 17))
+
+2026-02-19T16:28:20.098231799Z [inf]    Downloading pyotp-2.9.0-py3-none-any.whl.metadata (9.8 kB)
+
+2026-02-19T16:28:20.208670834Z [inf]  Collecting pydantic==2.10.3 (from -r requirements.txt (line 18))
+
+2026-02-19T16:28:20.214213936Z [inf]    Downloading pydantic-2.10.3-py3-none-any.whl.metadata (172 kB)
+
+2026-02-19T16:28:20.217554532Z [inf]       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 172.0/172.0 kB 178.4 MB/s eta 0:00:00
+2026-02-19T16:28:20.217628102Z [inf]  
+2026-02-19T16:28:20.240672409Z [inf]  Collecting pydantic-settings==2.7.0 (from -r requirements.txt (line 19))
+
+2026-02-19T16:28:20.244293055Z [inf]    Downloading pydantic_settings-2.7.0-py3-none-any.whl.metadata (3.5 kB)
+
+2026-02-19T16:28:20.258790731Z [inf]  Collecting email-validator==2.2.0 (from -r requirements.txt (line 20))
+
+2026-02-19T16:28:20.262584707Z [inf]    Downloading email_validator-2.2.0-py3-none-any.whl.metadata (25 kB)
+
+2026-02-19T16:28:20.277849154Z [inf]  Collecting python-multipart==0.0.20 (from -r requirements.txt (line 21))
+
+2026-02-19T16:28:20.281528157Z [inf]    Downloading python_multipart-0.0.20-py3-none-any.whl.metadata (1.8 kB)
+
+2026-02-19T16:28:20.532091055Z [inf]  Collecting numpy==2.2.1 (from -r requirements.txt (line 22))
+
+2026-02-19T16:28:20.537018432Z [inf]    Downloading numpy-2.2.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (62 kB)
+
+2026-02-19T16:28:20.53922826Z [inf]       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 62.0/62.0 kB 342.2 MB/s eta 0:00:00
+2026-02-19T16:28:20.539322471Z [inf]  
+2026-02-19T16:28:20.597722439Z [inf]  Collecting starlette<0.42.0,>=0.40.0 (from fastapi==0.115.6->-r requirements.txt (line 1))
+
+2026-02-19T16:28:20.602493081Z [inf]    Downloading starlette-0.41.3-py3-none-any.whl.metadata (6.0 kB)
+
+2026-02-19T16:28:20.667356853Z [inf]  Collecting typing-extensions>=4.8.0 (from fastapi==0.115.6->-r requirements.txt (line 1))
+
+2026-02-19T16:28:20.671341605Z [inf]    Downloading typing_extensions-4.15.0-py3-none-any.whl.metadata (3.3 kB)
+
+2026-02-19T16:28:20.698198316Z [inf]  Collecting click>=7.0 (from uvicorn==0.34.0->uvicorn[standard]==0.34.0->-r requirements.txt (line 2))
+
+2026-02-19T16:28:20.702003199Z [inf]    Downloading click-8.3.1-py3-none-any.whl.metadata (2.6 kB)
+
+2026-02-19T16:28:20.713530956Z [inf]  Collecting h11>=0.8 (from uvicorn==0.34.0->uvicorn[standard]==0.34.0->-r requirements.txt (line 2))
+
+2026-02-19T16:28:20.717130229Z [inf]    Downloading h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+
+2026-02-19T16:28:20.743000479Z [inf]  Collecting packaging (from gunicorn==23.0.0->-r requirements.txt (line 3))
+
+2026-02-19T16:28:20.746735707Z [inf]    Downloading packaging-26.0-py3-none-any.whl.metadata (3.3 kB)
+
+2026-02-19T16:28:20.885985046Z [inf]  Collecting greenlet!=0.4.17 (from sqlalchemy==2.0.36->sqlalchemy[asyncio]==2.0.36->-r requirements.txt (line 4))
+
+2026-02-19T16:28:20.890329599Z [inf]    Downloading greenlet-3.3.1-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (3.7 kB)
+
+2026-02-19T16:28:20.930605656Z [inf]  Collecting Mako (from alembic==1.14.1->-r requirements.txt (line 7))
+
+2026-02-19T16:28:20.934513293Z [inf]    Downloading mako-1.3.10-py3-none-any.whl.metadata (2.9 kB)
+
+2026-02-19T16:28:20.990315811Z [inf]  Collecting billiard<5.0,>=4.2.0 (from celery==5.4.0->celery[redis]==5.4.0->-r requirements.txt (line 9))
+
+2026-02-19T16:28:20.994174985Z [inf]    Downloading billiard-4.2.4-py3-none-any.whl.metadata (4.8 kB)
+
+2026-02-19T16:28:21.029297475Z [inf]  Collecting kombu<6.0,>=5.3.4 (from celery==5.4.0->celery[redis]==5.4.0->-r requirements.txt (line 9))
+
+2026-02-19T16:28:21.033026544Z [inf]    Downloading kombu-5.6.2-py3-none-any.whl.metadata (3.5 kB)
+
+2026-02-19T16:28:21.045833091Z [inf]  Collecting vine<6.0,>=5.1.0 (from celery==5.4.0->celery[redis]==5.4.0->-r requirements.txt (line 9))
+
+2026-02-19T16:28:21.049478293Z [inf]    Downloading vine-5.1.0-py3-none-any.whl.metadata (2.7 kB)
+
+2026-02-19T16:28:21.065396241Z [inf]  Collecting click-didyoumean>=0.3.0 (from celery==5.4.0->celery[redis]==5.4.0->-r requirements.txt (line 9))
+
+2026-02-19T16:28:21.069479341Z [inf]    Downloading click_didyoumean-0.3.1-py3-none-any.whl.metadata (3.9 kB)
+
+2026-02-19T16:28:21.081538416Z [inf]  Collecting click-repl>=0.2.0 (from celery==5.4.0->celery[redis]==5.4.0->-r requirements.txt (line 9))
+
+2026-02-19T16:28:21.086164772Z [inf]    Downloading click_repl-0.3.0-py3-none-any.whl.metadata (3.6 kB)
+
+2026-02-19T16:28:21.097341231Z [inf]  Collecting click-plugins>=1.1.1 (from celery==5.4.0->celery[redis]==5.4.0->-r requirements.txt (line 9))
+
+2026-02-19T16:28:21.101547206Z [inf]    Downloading click_plugins-1.1.1.2-py2.py3-none-any.whl.metadata (6.5 kB)
+
+2026-02-19T16:28:21.117903292Z [inf]  Collecting tzdata>=2022.7 (from celery==5.4.0->celery[redis]==5.4.0->-r requirements.txt (line 9))
+
+2026-02-19T16:28:21.121760322Z [inf]    Downloading tzdata-2025.3-py2.py3-none-any.whl.metadata (1.4 kB)
+
+2026-02-19T16:28:21.137750719Z [inf]  Collecting python-dateutil>=2.8.2 (from celery==5.4.0->celery[redis]==5.4.0->-r requirements.txt (line 9))
+
+2026-02-19T16:28:21.14198731Z [inf]    Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl.metadata (8.4 kB)
+
+2026-02-19T16:28:21.172804827Z [inf]  Collecting anyio (from httpx==0.28.1->-r requirements.txt (line 10))
+
+2026-02-19T16:28:21.177394728Z [inf]    Downloading anyio-4.12.1-py3-none-any.whl.metadata (4.3 kB)
+
+2026-02-19T16:28:21.198562969Z [inf]  Collecting certifi (from httpx==0.28.1->-r requirements.txt (line 10))
+
+2026-02-19T16:28:21.202747661Z [inf]    Downloading certifi-2026.1.4-py3-none-any.whl.metadata (2.5 kB)
+
+2026-02-19T16:28:21.225587371Z [inf]  Collecting httpcore==1.* (from httpx==0.28.1->-r requirements.txt (line 10))
+
+2026-02-19T16:28:21.2304621Z [inf]    Downloading httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+
+2026-02-19T16:28:21.246092636Z [inf]  Collecting idna (from httpx==0.28.1->-r requirements.txt (line 10))
+
+2026-02-19T16:28:21.250576528Z [inf]    Downloading idna-3.11-py3-none-any.whl.metadata (8.4 kB)
+
+2026-02-19T16:28:21.294647784Z [inf]  Collecting eth-abi>=5.0.1 (from web3==7.6.0->-r requirements.txt (line 12))
+
+2026-02-19T16:28:21.299571425Z [inf]    Downloading eth_abi-5.2.0-py3-none-any.whl.metadata (3.8 kB)
+
+2026-02-19T16:28:21.408852222Z [inf]  Collecting eth-account>=0.13.1 (from web3==7.6.0->-r requirements.txt (line 12))
+
+2026-02-19T16:28:21.413867722Z [inf]    Downloading eth_account-0.13.7-py3-none-any.whl.metadata (3.7 kB)
+
+2026-02-19T16:28:21.429871148Z [inf]  Collecting eth-hash>=0.5.1 (from eth-hash[pycryptodome]>=0.5.1->web3==7.6.0->-r requirements.txt (line 12))
+
+2026-02-19T16:28:21.43474812Z [inf]    Downloading eth_hash-0.7.1-py3-none-any.whl.metadata (4.2 kB)
+
+2026-02-19T16:28:21.456441599Z [inf]  Collecting eth-typing>=5.0.0 (from web3==7.6.0->-r requirements.txt (line 12))
+
+2026-02-19T16:28:21.46107117Z [inf]    Downloading eth_typing-5.2.1-py3-none-any.whl.metadata (3.2 kB)
+
+2026-02-19T16:28:21.487978426Z [inf]  Collecting eth-utils>=5.0.0 (from web3==7.6.0->-r requirements.txt (line 12))
+
+2026-02-19T16:28:21.494303703Z [inf]    Downloading eth_utils-5.3.1-py3-none-any.whl.metadata (5.7 kB)
+
+2026-02-19T16:28:21.508175949Z [inf]  Collecting hexbytes>=1.2.0 (from web3==7.6.0->-r requirements.txt (line 12))
+
+2026-02-19T16:28:21.511805809Z [inf]    Downloading hexbytes-1.3.1-py3-none-any.whl.metadata (3.3 kB)
+
+2026-02-19T16:28:22.076698429Z [inf]  Collecting aiohttp>=3.7.4.post0 (from web3==7.6.0->-r requirements.txt (line 12))
+
+2026-02-19T16:28:22.080432715Z [inf]    Downloading aiohttp-3.13.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (8.1 kB)
+
+2026-02-19T16:28:22.153601285Z [inf]  Collecting requests>=2.23.0 (from web3==7.6.0->-r requirements.txt (line 12))
+
+2026-02-19T16:28:22.157357475Z [inf]    Downloading requests-2.32.5-py3-none-any.whl.metadata (4.9 kB)
+
+2026-02-19T16:28:22.192136459Z [inf]  Collecting types-requests>=2.0.0 (from web3==7.6.0->-r requirements.txt (line 12))
+
+2026-02-19T16:28:22.195929284Z [inf]    Downloading types_requests-2.32.4.20260107-py3-none-any.whl.metadata (2.0 kB)
+
+2026-02-19T16:28:22.199298151Z [inf]  INFO: pip is looking at multiple versions of web3 to determine which version is compatible with other requirements. This could take a while.
+
+2026-02-19T16:28:22.293836295Z [inf]  ERROR: Cannot install -r requirements.txt (line 12) and websockets==14.1 because these package versions have conflicting dependencies.
+
+2026-02-19T16:28:22.294525289Z [inf]  
+The conflict is caused by:
+    The user requested websockets==14.1
+    web3 7.6.0 depends on websockets<14.0.0 and >=10.0.0
+
+To fix this you could try to:
+1. loosen the range of package versions you've specified
+2. remove package versions to allow pip attempt to solve the dependency conflict
+
+
+2026-02-19T16:28:22.294887172Z [inf]  ERROR: ResolutionImpossible: for help visit https://pip.pypa.io/en/latest/topics/dependency-resolution/#dealing-with-dependency-conflicts
+
+2026-02-19T16:28:22.385643387Z [inf]  
+[notice] A new release of pip is available: 24.0 -> 26.0.1
+[notice] To update, run: pip install --upgrade pip
+
+2026-02-19T16:28:23.489343354Z [err]  [5/6] RUN pip install --no-cache-dir -r requirements.txt
+2026-02-19T16:28:23.517753788Z [err]  Build Failed: build daemon returned an error < failed to solve: process "/bin/sh -c pip install --no-cache-dir -r requirements.txt" did not complete successfully: exit code: 1 >
