@@ -1,0 +1,52 @@
+2026-02-19T16:43:26.921173723Z [inf]  [snapshot] received sha256:84a65f06f6c42afe4c85f3b8fd2f4863af53fe6ae615db0ff1e89ad2f670e6f3 md5:cbdac13a4169975ffda78b3efa9d88dd
+2026-02-19T16:43:26.921234444Z [inf]  receiving snapshot
+2026-02-19T16:43:26.935915706Z [dbg]  found 'nixpacks.toml' at 'nixpacks.toml'
+2026-02-19T16:43:26.935920313Z [dbg]  found 'railway.json' at 'railway.json'
+2026-02-19T16:43:26.935924109Z [dbg]  skipping 'Dockerfile' at 'trade_aid/Dockerfile' as it is not rooted at a valid path (root_dir=, fileOpts={acceptChildOfRepoRoot:false})
+2026-02-19T16:43:26.936015415Z [inf]  analyzing snapshot
+2026-02-19T16:43:26.936544790Z [inf]  uploading snapshot
+2026-02-19T16:43:26.957957056Z [inf]  scheduling build on Metal builder "builder-ujioms"
+2026-02-19T16:43:32.245110496Z [inf]  fetched snapshot sha256:84a65f06f6c42afe4c85f3b8fd2f4863af53fe6ae615db0ff1e89ad2f670e6f3 (251 kB bytes)
+2026-02-19T16:43:32.245249014Z [inf]  fetching snapshot
+2026-02-19T16:43:32.476876388Z [inf]  scheduling build on Metal builder "builder-ujioms"
+2026-02-19T16:43:32.935016562Z [inf]  unpacking archive
+2026-02-19T16:43:34.545904235Z [inf]  [internal] load build definition from trade_aid/Dockerfile
+2026-02-19T16:43:34.545924976Z [inf]  [internal] load build definition from trade_aid/Dockerfile
+2026-02-19T16:43:34.546067190Z [inf]  [internal] load build definition from trade_aid/Dockerfile
+2026-02-19T16:43:34.648494117Z [inf]  [internal] load build definition from trade_aid/Dockerfile
+2026-02-19T16:43:34.686260116Z [inf]  [internal] load metadata for docker.io/library/python:3.11-slim
+2026-02-19T16:43:34.861108681Z [inf]  [internal] load metadata for docker.io/library/python:3.11-slim
+2026-02-19T16:43:34.861550875Z [inf]  [internal] load .dockerignore
+2026-02-19T16:43:34.861624305Z [inf]  [internal] load .dockerignore
+2026-02-19T16:43:34.861891146Z [inf]  [internal] load .dockerignore
+2026-02-19T16:43:35.275347470Z [inf]  [internal] load .dockerignore
+2026-02-19T16:43:35.337774774Z [inf]  [6/6] COPY trade_aid/ .
+2026-02-19T16:43:35.337778760Z [inf]  [5/6] RUN pip install --no-cache-dir -r requirements.txt
+2026-02-19T16:43:35.337779180Z [inf]  [4/6] COPY trade_aid/requirements.txt .
+2026-02-19T16:43:35.337782345Z [inf]  [internal] load build context
+2026-02-19T16:43:35.337782906Z [inf]  [3/6] RUN apt-get update && apt-get install -y --no-install-recommends     gcc     libpq-dev     curl     && rm -rf /var/lib/apt/lists/*
+2026-02-19T16:43:35.337783066Z [inf]  [2/6] WORKDIR /app
+2026-02-19T16:43:35.337783227Z [inf]  [1/6] FROM docker.io/library/python:3.11-slim@sha256:0b23cfb7425d065008b778022a17b1551c82f8b4866ee5a7a200084b7e2eafbf
+2026-02-19T16:43:35.338099121Z [inf]  [1/6] FROM docker.io/library/python:3.11-slim@sha256:0b23cfb7425d065008b778022a17b1551c82f8b4866ee5a7a200084b7e2eafbf
+2026-02-19T16:43:35.338111089Z [inf]  [internal] load build context
+2026-02-19T16:43:35.338376387Z [inf]  [internal] load build context
+2026-02-19T16:43:35.366015542Z [inf]  [1/6] FROM docker.io/library/python:3.11-slim@sha256:0b23cfb7425d065008b778022a17b1551c82f8b4866ee5a7a200084b7e2eafbf
+2026-02-19T16:43:35.489525511Z [inf]  [internal] load build context
+2026-02-19T16:43:35.548571449Z [inf]  [2/6] WORKDIR /app
+2026-02-19T16:43:35.548575655Z [inf]  [3/6] RUN apt-get update && apt-get install -y --no-install-recommends     gcc     libpq-dev     curl     && rm -rf /var/lib/apt/lists/*
+2026-02-19T16:43:35.548576236Z [inf]  [4/6] COPY trade_aid/requirements.txt .
+2026-02-19T16:43:35.548576386Z [inf]  [5/6] RUN pip install --no-cache-dir -r requirements.txt
+2026-02-19T16:43:35.548576587Z [inf]  [6/6] COPY trade_aid/ .
+2026-02-19T16:43:35.550845403Z [inf]  exporting to docker image format
+2026-02-19T16:43:36.484868850Z [inf]  exporting to docker image format
+2026-02-19T16:43:36.506915259Z [inf]  containerimage.digest: sha256:312176fbd0cbe86caaa8f5a525640b70adf0275f2f167d769bb92ffc868ff19f
+2026-02-19T16:43:36.506929670Z [inf]  containerimage.descriptor: eyJtZWRpYVR5cGUiOiJhcHBsaWNhdGlvbi92bmQub2NpLmltYWdlLm1hbmlmZXN0LnYxK2pzb24iLCJkaWdlc3QiOiJzaGEyNTY6MzEyMTc2ZmJkMGNiZTg2Y2FhYThmNWE1MjU2NDBiNzBhZGYwMjc1ZjJmMTY3ZDc2OWJiOTJmZmM4NjhmZjE5ZiIsInNpemUiOjIwMDYsImFubm90YXRpb25zIjp7Im9yZy5vcGVuY29udGFpbmVycy5pbWFnZS5jcmVhdGVkIjoiMjAyNi0wMi0xOVQxNjo0MzozNVoifSwicGxhdGZvcm0iOnsiYXJjaGl0ZWN0dXJlIjoiYW1kNjQiLCJvcyI6ImxpbnV4In19
+2026-02-19T16:43:36.506933676Z [inf]  containerimage.config.digest: sha256:deb418e7f24a781590aa8570aba2765b07fff217573d464c845505a51c383533
+2026-02-19T16:43:41.812847941Z [inf]  image push
+2026-02-19T16:44:00.638882305Z [inf]  
+2026-02-19T16:44:00.638919577Z [inf]  =========================
+2026-02-19T16:44:00.638924447Z [inf]  Container failed to start
+2026-02-19T16:44:00.638927845Z [inf]  =========================
+2026-02-19T16:44:00.638932602Z [inf]  
+2026-02-19T16:44:00.638938331Z [inf]  The executable `npm` could not be found.
+2026-02-19T16:44:00.638941843Z [inf] 
