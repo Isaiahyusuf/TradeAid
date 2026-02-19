@@ -44,3 +44,8 @@ outputType = "webview"
 [agent]
 integrations = ["javascript_openai_ai_integrations:2.0.0", "javascript_log_in_with_replit:2.0.0"]
 expertMode = true
+
+[userenv]
+
+[userenv.shared]
+VITE_API_URL = "https://tradeaid-4e908.up.railway.app"

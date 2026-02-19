@@ -4,42 +4,36 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
-import Landing from "@/pages/Landing";
+import AuthPage from "@/pages/AuthPage";
 import Dashboard from "@/pages/Dashboard";
 import AlphaScanner from "@/pages/AlphaScanner";
 import RugShield from "@/pages/RugShield";
 import WhaleWatch from "@/pages/WhaleWatch";
 import MemeTrend from "@/pages/MemeTrend";
-import Subscription from "@/pages/Subscription";
 import Account from "@/pages/Account";
 import NotFound from "@/pages/not-found";
-import { FloatingMemeTrend } from "@/components/FloatingMemeTrend";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function AuthenticatedRouter() {
   return (
-    <>
-      <Switch>
-        <Route path="/" component={AlphaScanner} />
-        <Route path="/dashboard" component={Dashboard} />
-        <Route path="/scanner" component={AlphaScanner} />
-        <Route path="/rugshield" component={RugShield} />
-        <Route path="/whalewatch" component={WhaleWatch} />
-        <Route path="/memetrend" component={MemeTrend} />
-        <Route path="/subscription" component={Subscription} />
-        <Route path="/account" component={Account} />
-        <Route component={NotFound} />
-      </Switch>
-      <FloatingMemeTrend />
-    </>
+    <Switch>
+      <Route path="/" component={Dashboard} />
+      <Route path="/dashboard" component={Dashboard} />
+      <Route path="/scanner" component={AlphaScanner} />
+      <Route path="/rugshield" component={RugShield} />
+      <Route path="/whalewatch" component={WhaleWatch} />
+      <Route path="/memetrend" component={MemeTrend} />
+      <Route path="/account" component={Account} />
+      <Route component={NotFound} />
+    </Switch>
   );
 }
 
 function UnauthenticatedRouter() {
   return (
     <Switch>
-      <Route path="/" component={Landing} />
-      <Route component={Landing} />
+      <Route path="/" component={AuthPage} />
+      <Route component={AuthPage} />
     </Switch>
   );
 }

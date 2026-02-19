@@ -1,30 +1,31 @@
 import { Link, useLocation } from "wouter";
 import { 
   ShieldCheck, Eye, TrendingUp, LayoutDashboard, 
-  Zap, LogOut, User, Radar
+  LogOut, User, Radar, Bell
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
-  { label: "Scanner", href: "/", icon: Radar },
+  { label: "Dashboard", href: "/", icon: LayoutDashboard },
+  { label: "Scanner", href: "/scanner", icon: Radar },
   { label: "RugShield", href: "/rugshield", icon: ShieldCheck },
   { label: "WhaleWatch", href: "/whalewatch", icon: Eye },
-  { label: "MemeTrend", href: "/memetrend", icon: TrendingUp },
+  { label: "Tokens", href: "/memetrend", icon: TrendingUp },
   { label: "Account", href: "/account", icon: User },
 ];
 
 export function Sidebar() {
   const [location] = useLocation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-64 bg-card border-r border-border hidden md:flex flex-col z-40">
       <div className="p-6 border-b border-border">
         <h1 className="text-2xl font-bold font-sans tracking-tighter">
-          <span className="text-primary">Meme</span>Scanner<span className="text-accent">AI</span>
+          <span className="text-primary">Trade</span> Aid
         </h1>
       </div>
 
@@ -50,46 +51,33 @@ export function Sidebar() {
             </Link>
           );
         })}
-
-        <Link href="/subscription">
-          <button
-            className={cn(
-              "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-medium mt-4",
-              location === "/subscription"
-                ? "bg-accent/10 text-accent"
-                : "text-muted-foreground hover:text-foreground hover:bg-white/5"
-            )}
-            data-testid="nav-subscription"
-          >
-            <Zap className={cn("w-5 h-5", location === "/subscription" ? "text-accent" : "text-muted-foreground")} />
-            Subscription
-          </button>
-        </Link>
       </nav>
 
       <div className="p-4 border-t border-border space-y-3">
         {user && (
           <div className="flex items-center gap-3 px-2">
             <Avatar className="h-8 w-8">
-              <AvatarImage src={user.profileImageUrl || undefined} />
               <AvatarFallback className="bg-primary/10 text-primary text-xs">
-                {user.firstName?.charAt(0) || user.email?.charAt(0) || "U"}
+                {user.username?.charAt(0)?.toUpperCase() || "U"}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">
-                {user.firstName || user.email?.split("@")[0] || "User"}
+                {user.username || "User"}
               </p>
               <p className="text-xs text-muted-foreground truncate">{user.email}</p>
             </div>
           </div>
         )}
-        <a href="/api/logout" className="block">
-          <Button variant="ghost" className="w-full justify-start text-muted-foreground hover:text-foreground" data-testid="button-logout">
-            <LogOut className="w-4 h-4 mr-2" />
-            Logout
-          </Button>
-        </a>
+        <Button
+          variant="ghost"
+          className="w-full justify-start text-muted-foreground"
+          onClick={logout}
+          data-testid="button-logout"
+        >
+          <LogOut className="w-4 h-4 mr-2" />
+          Logout
+        </Button>
       </div>
     </aside>
   );
@@ -101,7 +89,7 @@ export function MobileNav() {
   return (
     <nav className="fixed bottom-0 left-0 w-full bg-card/95 backdrop-blur-lg border-t border-border md:hidden z-50 px-2 py-2 safe-area-bottom">
       <div className="flex justify-around items-center max-w-md mx-auto">
-        {NAV_ITEMS.map((item) => {
+        {NAV_ITEMS.slice(0, 5).map((item) => {
           const Icon = item.icon;
           const isActive = location === item.href;
           

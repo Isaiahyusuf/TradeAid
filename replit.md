@@ -1,131 +1,61 @@
-# MemeScannerAI - Crypto Token Scanner
+# Trade Aid - Crypto Trading Intelligence Platform
 
 ## Overview
-A comprehensive crypto token scanner that monitors Telegram, Twitter, and DEXes for new token launches. The system calculates safety scores, identifies high-potential tokens, provides entry/exit signals using AI analysis, sends notifications, and tracks charts/trading activity in real-time.
+A comprehensive cryptocurrency trading intelligence platform that provides token scanning, risk scoring, wallet intelligence, and alerts for trading across multiple blockchains (Solana, Ethereum, BSC, Base, etc.).
 
-## Current State
-- **Alpha Scanner** is the main feature - discovers and analyzes NEW hot tokens automatically
-- **Multi-chain scanner** covers Solana (Pump.fun), Ethereum, BSC, and Base
-- Background scanner runs every 5 minutes to continuously discover tokens
-- AI-powered analysis using OpenAI GPT-4.1-mini for entry/exit signals
-- Safety scoring with holder analysis (top 10 holders %, dev wallet %)
+## Current State (Feb 2026)
+- **Frontend**: React + Vite app running on Replit, connects to Railway backend via JWT auth
+- **Backend**: FastAPI Python app deployed on Railway at `https://tradeaid-4e908.up.railway.app/`
+- **Database**: PostgreSQL on Railway
+- **Auth**: JWT-based (login/register via Railway API)
+- **PWA**: Manifest configured for mobile "Add to Home Screen"
 
-## Key Features
-1. **Multi-Chain Token Discovery**: Pump.fun (Solana), DexScreener (ETH/BSC/Base)
-2. **Holder Analysis**: Top 10 holders % and dev wallet % using Helius, Alchemy, BscScan APIs
-3. **Safety Filtering**: Only shows tokens with top holders <=30%, dev wallet <=10%
-4. **AI Analysis**: Deep analysis with entry/target/stop-loss recommendations
-5. **Real-time Updates**: Auto-refresh every 30 seconds for tokens, signals
-6. **User Account System**: Editable profiles with username, bio, favorite chain, notification preferences, risk tolerance
+## Architecture
 
-## Project Architecture
+### Frontend (React + Vite + TailwindCSS)
+- `client/src/pages/AuthPage.tsx` - Login/register page with JWT auth
+- `client/src/pages/Dashboard.tsx` - Main dashboard with token/alert stats
+- `client/src/pages/AlphaScanner.tsx` - Token discovery with quick-score
+- `client/src/pages/RugShield.tsx` - Token risk scanner (scoring API)
+- `client/src/pages/WhaleWatch.tsx` - Wallet intelligence (developer/trader profiles)
+- `client/src/pages/MemeTrend.tsx` - Token explorer with chain filter
+- `client/src/pages/Account.tsx` - User account details
 
-### Frontend (React + Vite)
-- `client/src/pages/AlphaScanner.tsx` - Main token scanner dashboard
-- `client/src/pages/Dashboard.tsx` - Overview dashboard
-- `client/src/pages/RugShield.tsx` - Token safety analyzer
-- `client/src/pages/WhaleWatch.tsx` - Whale activity tracker
-- `client/src/pages/MemeTrend.tsx` - Trending meme analysis
-- `client/src/pages/Account.tsx` - User profile and settings management
+### API Client Layer
+- `client/src/lib/api.ts` - Railway API client with JWT Bearer token auth
+- `client/src/lib/queryClient.ts` - React Query client configured for Railway API
+- `client/src/hooks/use-auth.ts` - JWT login/register/logout hook
+- `client/src/hooks/use-memetrend.ts` - Token listing and stats hooks
+- `client/src/hooks/use-rugcheck.ts` - Token scoring hooks
+- `client/src/hooks/use-whalewatch.ts` - Wallet analysis hooks (developer/trader)
+- `client/src/hooks/use-alerts.ts` - Alerts CRUD hooks
 
-### Backend (Express)
-- `server/services/dexscreener.ts` - DexScreener API integration
-- `server/services/multichain-scanner.ts` - Multi-chain launchpad scanner with holder analysis
-- `server/services/safety-analyzer.ts` - Safety score calculation
-- `server/services/ai-analyzer.ts` - OpenAI-powered token analysis
-- `server/services/token-scanner.ts` - Background scanning service
-- `server/routes/scanner.ts` - Scanner API endpoints
+### Backend (Railway - Python/FastAPI)
+Located in `trade_aid/` directory:
+- `/api/auth/` - JWT authentication (login, register, me)
+- `/api/tokens/` - Token CRUD and stats
+- `/api/scoring/` - Token risk scoring
+- `/api/wallets/` - Wallet intelligence (developer/trader profiles)
+- `/api/alerts/` - Alert management
 
-### Database (PostgreSQL with Drizzle)
-- `scannedTokens` - Discovered tokens with metadata
-- `tokenSignals` - AI-generated trading signals
-- `userAlerts` - User notification preferences
-- `watchlists` - User watchlists
+### Local Express Backend (Legacy Scanner)
+- `server/` directory - Express server with DexScreener scanning
+- Auto-discovers tokens from Pump.fun, DexScreener
+- AI analysis via OpenAI GPT-4.1-mini
+- Background scanner runs every 60 seconds
 
-## Trade Aid Backend (Python/FastAPI)
+## Environment Variables
+- `VITE_API_URL` - Railway backend URL (shared)
+- `DATABASE_URL` - Local PostgreSQL (for Express scanner)
 
-### Overview
-Production-ready blockchain intelligence backend located in `trade_aid/` directory. Designed for VPS deployment via Docker.
+## Key Design Decisions
+- JWT tokens stored in localStorage with Bearer auth
+- All Railway API calls go through `api.ts` with auto-auth headers
+- Mobile-first responsive design with bottom nav bar
+- PWA manifest for "Add to Home Screen" on iOS/Android
+- Dark theme by default with green (#22c55e) primary color
 
-### Architecture
-- **Backend API**: FastAPI + SQLAlchemy + PostgreSQL (single worker for WebSocket support)
-- **Scanner Service**: Dedicated single-process for DexScreener polling + chain WebSocket listeners (7 chains)
-- **AI Scoring Service**: Separate FastAPI microservice (PyTorch/TensorFlow ready)
-- **Workers**: Celery + Redis for async task processing
-- **Infrastructure**: Docker Compose with 7 services (backend, scanner, ai_service, celery_worker, celery_beat, postgres, redis, nginx)
-
-### Trade Aid Project Structure
-```
-trade_aid/
-  app/
-    main.py - FastAPI application
-    config.py - Settings with .env support
-    database.py - Async SQLAlchemy setup
-    scanner_runner.py - Dedicated scanner process
-    models/models.py - 9 database tables
-    routers/ - API endpoints (auth, tokens, wallets, scoring, alerts)
-    services/ - Auth service, alert service
-    scanners/ - DexScreener + chain WebSocket listeners
-    intelligence/ - Developer intel, trader intel, wallet clustering (NetworkX)
-    scoring/ - Eligibility checker + scoring service
-    workers/ - Celery app + tasks
-    websocket/ - WebSocket connection manager
-    utils/ - Security, Redis, rate limiting, logging
-  ai_service/
-    main.py - AI scoring endpoint
-    scoring_model.py - PyTorch/TensorFlow ready model
-  docker-compose.yml
-  Dockerfile, Dockerfile.ai
-  nginx/nginx.conf
-  requirements.txt, requirements.ai.txt
-  alembic/ - Database migrations
-  .env.example
-```
-
-### Trade Aid Database Tables
-- tokens, developers, traders, wallet_clusters, rug_history, alerts, scoring_history, liquidity_events, users
-
-## API Endpoints
-- `GET /api/tokens` - List all scanned tokens
-- `GET /api/tokens/hot` - Get hot tokens (sorted by score)
-- `GET /api/tokens/:address` - Get token details
-- `GET /api/tokens/by-chain/:chain` - Get tokens filtered by chain
-- `GET /api/tokens/safe-launchpad` - Get safe launchpad tokens only
-- `POST /api/tokens/scan` - Manually scan a token address
-- `POST /api/tokens/:address/deep-analyze` - AI deep analysis
-- `GET /api/signals` - Get all trading signals
-- `GET /api/signals/:address` - Get signals for token
-- `POST /api/scanner/scan-now` - Trigger immediate scan
-- `POST /api/scanner/multichain` - Trigger multi-chain scan
-- `GET /api/profile` - Get user profile (authenticated)
-- `PATCH /api/profile` - Update user profile with Zod validation (authenticated)
-
-## Technical Notes
-- DexScreener API endpoints use `/latest/v1` format (e.g., `/token-profiles/latest/v1`)
-- OpenAI client uses lazy initialization to ensure env vars are loaded
-- Background scanner interval: 300 seconds (5 minutes)
-- Frontend bound to 0.0.0.0:5000
-- Safety thresholds: Top holders <=30%, Dev wallet <=10%, Min liquidity $10k
-- Holder analysis returns -1% when unavailable (filtered out as unsafe)
-
-## Required API Keys (for holder analysis)
-- `HELIUS_API_KEY` - Solana holder analysis
-- `ALCHEMY_API_KEY` - Ethereum/Base holder analysis
-- `BSCSCAN_API_KEY` - BSC holder analysis
-
-## Payment Addresses (environment variables)
-- `PAYMENT_ADDRESS_SOL` - Solana wallet for receiving payments
-- `PAYMENT_ADDRESS_ETH` - Ethereum wallet for receiving payments  
-- `PAYMENT_ADDRESS_BSC` - BSC wallet for receiving payments
-- `PAYMENT_ADDRESS_BASE` - Base wallet for receiving payments
-
-## Crypto Payment System
-- $100/month subscription paid in crypto (SOL, ETH, BNB on BSC, ETH on Base)
-- Dynamic pricing: Fetches real-time prices from CoinGecko
-- Smart verification: Verifies on-chain payments automatically
-- 5% tolerance on payment amounts to account for price fluctuation
-- Payment verification uses Helius (Solana), Alchemy (ETH/Base), BscScan (BSC) APIs
-
-## Integrations
-- **OpenAI**: AI-powered token analysis (javascript_openai_ai_integrations)
-- **Replit Auth**: User authentication (javascript_log_in_with_replit)
+## User Preferences
+- Mobile-friendly design priority
+- Dark theme
+- Multi-chain support (SOL, ETH, BSC, Base)

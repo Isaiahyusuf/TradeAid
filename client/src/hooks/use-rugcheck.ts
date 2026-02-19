@@ -1,37 +1,35 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, buildUrl, type ScanTokenRequest } from "@shared/routes";
+import { apiPost, apiGet } from "@/lib/api";
+
+export type ScoreResult = {
+  rug_probability: number;
+  liquidity_stability: number;
+  holder_distribution: number;
+  smart_wallet_signal: number;
+  trade_confidence_index: number;
+  eligible: boolean;
+  eligibility_reason?: string;
+};
 
 export function useScanToken() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: ScanTokenRequest) => {
-      const res = await fetch(api.rugcheck.scan.path, {
-        method: api.rugcheck.scan.method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+    mutationFn: async (data: { address: string; chain?: string }) => {
+      return apiPost<ScoreResult>("/api/scoring/score-token", {
+        contract_address: data.address,
+        chain: data.chain || "solana",
       });
-      if (!res.ok) {
-        if (res.status === 400) {
-          const error = api.rugcheck.scan.responses[400].parse(await res.json());
-          throw new Error(error.message);
-        }
-        throw new Error('Failed to scan token');
-      }
-      return api.rugcheck.scan.responses[200].parse(await res.json());
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [api.rugcheck.history.path] });
+      queryClient.invalidateQueries({ queryKey: ["scoring-history"] });
     },
   });
 }
 
-export function useScanHistory() {
+export function useScanHistory(chain?: string, address?: string) {
   return useQuery({
-    queryKey: [api.rugcheck.history.path],
-    queryFn: async () => {
-      const res = await fetch(api.rugcheck.history.path);
-      if (!res.ok) throw new Error('Failed to fetch scan history');
-      return api.rugcheck.history.responses[200].parse(await res.json());
-    },
+    queryKey: ["scoring-history", chain, address],
+    queryFn: () => apiGet<{ history: ScoreResult[] }>(`/api/scoring/history/${chain || "solana"}/${address || ""}`),
+    enabled: !!chain && !!address,
   });
 }

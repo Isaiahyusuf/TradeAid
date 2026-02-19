@@ -1,27 +1,39 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { api, type AnalyzeSentimentRequest } from "@shared/routes";
+import { useQuery } from "@tanstack/react-query";
+import { apiGet } from "@/lib/api";
 
-export function useTrendingCoins() {
+export type TokenItem = {
+  id: string;
+  contract_address: string;
+  chain: string;
+  name: string;
+  symbol: string;
+  market_cap_usd: number;
+  liquidity_usd: number;
+  holder_count: number;
+  is_mintable: boolean;
+  is_ownership_renounced: boolean;
+  dex_id: string;
+  created_at: string;
+};
+
+export function useTokens(chain?: string) {
   return useQuery({
-    queryKey: [api.memetrend.list.path],
-    queryFn: async () => {
-      const res = await fetch(api.memetrend.list.path);
-      if (!res.ok) throw new Error('Failed to fetch trending coins');
-      return api.memetrend.list.responses[200].parse(await res.json());
-    },
+    queryKey: ["tokens", chain],
+    queryFn: () => apiGet<{ tokens: TokenItem[]; count: number }>(`/api/tokens${chain ? `?chain=${chain}` : ""}`),
   });
 }
 
-export function useAnalyzeSentiment() {
-  return useMutation({
-    mutationFn: async (data: AnalyzeSentimentRequest) => {
-      const res = await fetch(api.memetrend.analyze.path, {
-        method: api.memetrend.analyze.method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error('Failed to analyze sentiment');
-      return api.memetrend.analyze.responses[200].parse(await res.json());
-    },
+export function useTokenStats() {
+  return useQuery({
+    queryKey: ["token-stats"],
+    queryFn: () => apiGet<{ total_tokens: number; by_chain: Record<string, number> }>("/api/tokens/stats/overview"),
+  });
+}
+
+export function useTokenDetail(chain: string, address: string) {
+  return useQuery({
+    queryKey: ["token-detail", chain, address],
+    queryFn: () => apiGet(`/api/tokens/${chain}/${address}`),
+    enabled: !!chain && !!address,
   });
 }
