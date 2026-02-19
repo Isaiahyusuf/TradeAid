@@ -203,7 +203,7 @@ export const FREE_TIER_LIMITS = {
 
 export const SUBSCRIPTION_PRICE_USD = 100;
 
-export const SUPPORTED_PAYMENT_CHAINS = ["SOL", "ETH", "BSC", "BASE"] as const;
+export const SUPPORTED_PAYMENT_CHAINS = ["SOL"] as const;
 
 // === API Request/Response Types ===
 export type ScanTokenRequest = { address: string };

@@ -1,152 +1,124 @@
-# Trade Aid - Blockchain Intelligence Backend
+# Trade Aid — Blockchain Intelligence Backend
 
-Production-ready blockchain intelligence system with cross-chain scanning, AI risk scoring, wallet clustering, and real-time alerts.
+Trade Aid is a production-ready backend for blockchain intelligence: token discovery, safety scoring, wallet clustering, AI-assisted analysis, background scanning, and alerting. This repository contains the Python/FastAPI backend and an AI microservice designed to run via Docker Compose for easy deployment.
+
+TL;DR — to run locally using Docker Compose:
+
+```powershell
+# copy and fill env
+Copy-Item .env.example .env
+notepad .env
+
+# build & start everything (from repo root)
+docker compose -f trade_aid\\docker-compose.yml up -d --build
+```
+
+## What's in `trade_aid/`
+- `Dockerfile` — main Python backend image
+- `Dockerfile.ai` — AI microservice image
+- `docker-compose.yml` — full stack compose (backend, scanner, ai_service, celery, postgres, redis, nginx)
+- `.env.example` — environment variables (copy to `.env`)
+- `app/` — FastAPI application code
+- `requirements.txt` / `requirements.ai.txt` — Python deps
+- `alembic/` — DB migrations
+- `nginx/` — optional nginx config and SSL folder
 
 ## Architecture
+- Backend: FastAPI + async SQLAlchemy + Alembic
+- AI service: FastAPI microservice (PyTorch/TensorFlow capable)
+- Background: scanner process (DexScreener + chain listeners)
+- Workers: Celery with Redis broker/result backend
+- DB: PostgreSQL
+- Reverse proxy: nginx (optional, included in compose)
 
-- **Backend**: FastAPI + SQLAlchemy + PostgreSQL
-- **AI Service**: Separate FastAPI microservice (PyTorch/TensorFlow ready)
-- **Workers**: Celery + Redis for async task processing
-- **WebSocket**: Real-time alerts and chain event streaming
-- **Scanner**: Dedicated single-process service for DexScreener polling + chain WebSocket listeners
+## Prerequisites
+- Docker and Docker Compose (Docker Desktop or Linux package)
+- At least 2–4 GB RAM for local development (more for production)
 
-## Supported Chains
+## Setup (local / VPS)
 
-Solana, Ethereum, BSC, Base, Arbitrum, Avalanche, Polygon
+1. From repository root copy environment file and fill required values:
 
-## Quick Start (VPS Deployment)
-
-### Prerequisites
-
-- Ubuntu 22.04+ VPS (minimum 4GB RAM, 2 CPU)
-- Docker and Docker Compose installed
-- Domain name (optional, for SSL)
-
-### 1. Install Docker
-
-```bash
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-sudo usermod -aG docker $USER
-sudo apt install docker-compose-plugin
+```powershell
+Copy-Item trade_aid\\.env.example trade_aid\\.env
+notepad trade_aid\\.env
 ```
 
-### 2. Clone and Configure
+2. From repository root, build and start the Trade Aid stack:
 
-```bash
-git clone <your-repo-url> trade_aid
-cd trade_aid
-cp .env.example .env
-nano .env  # Fill in your values
+```powershell
+docker compose -f trade_aid\\docker-compose.yml up -d --build
 ```
 
-### 3. Launch
+3. Verify services are healthy and running:
 
-```bash
-docker compose up --build -d
+```powershell
+docker compose -f trade_aid\\docker-compose.yml ps
+docker compose -f trade_aid\\docker-compose.yml logs -f backend
 ```
 
-### 4. Verify
+4. Run database migrations (inside the backend container):
 
-```bash
-# Check all services are running
-docker compose ps
-
-# Check backend health
-curl http://localhost/health
-
-# Check AI service health
-curl http://localhost:8001/health
-
-# View logs
-docker compose logs -f backend
+```powershell
+docker compose -f trade_aid\\docker-compose.yml exec backend alembic upgrade head
+# if alembic isn't on PATH inside container
+docker compose -f trade_aid\\docker-compose.yml exec backend sh -c "python -m alembic upgrade head"
 ```
 
-### 5. Run Database Migrations
+## Common Docker/Compose commands for this project
+- Build & start full stack: `docker compose -f trade_aid\\docker-compose.yml up -d --build`
+- Start a single service: `docker compose -f trade_aid\\docker-compose.yml up -d backend`
+- Stop & remove containers: `docker compose -f trade_aid\\docker-compose.yml down`
+- Stop, remove containers and volumes: `docker compose -f trade_aid\\docker-compose.yml down -v`
+- Follow logs: `docker compose -f trade_aid\\docker-compose.yml logs -f backend`
+- Exec into running container: `docker compose -f trade_aid\\docker-compose.yml exec backend sh`
+- View service status: `docker compose -f trade_aid\\docker-compose.yml ps`
 
-```bash
-docker compose exec backend alembic upgrade head
+Service names available in the compose file: `backend`, `scanner`, `ai_service`, `celery_worker`, `celery_beat`, `postgres`, `redis`, `nginx`.
+
+## Environment variables
+Edit `trade_aid/.env` (copy from `trade_aid/.env.example`) and set values for:
+- `DATABASE_URL` / `DATABASE_URL_SYNC` — connection strings to `postgres` service
+- `REDIS_URL`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`
+- JWT and security keys: `JWT_SECRET_KEY`, `MASTER_ACCESS_KEY`, `ENCRYPTION_KEY`
+- API keys for chain providers: `HELIUS_API_KEY`, `ALCHEMY_API_KEY`, `BSCSCAN_API_KEY`
+- Optional: `AI_SERVICE_URL` if running the AI service separately
+
+Important: `.env` is in `.gitignore` by default.
+
+## Running / development notes
+- The main backend listens on port `8000` inside the container; compose maps it to host `8000`.
+- The AI microservice exposes `8001` and is built from `Dockerfile.ai`.
+- Logs are written to `./logs` (mounted into containers by compose) — check that path exists and is writable.
+- For faster iterative development you can mount code into the container and install dev dependencies locally instead of building full images.
+
+## Migrations
+- Create or edit migrations in `alembic/` and run:
+
+```powershell
+docker compose -f trade_aid\\docker-compose.yml exec backend alembic revision --autogenerate -m "message"
+docker compose -f trade_aid\\docker-compose.yml exec backend alembic upgrade head
 ```
 
-## API Endpoints
+## Troubleshooting
+- Container fails to start: inspect logs with `docker compose -f trade_aid\\docker-compose.yml logs <service>`.
+- DB connection errors: ensure `trade_aid/.env` has correct `POSTGRES_*` values and that `postgres` container is healthy.
+- Redis errors: validate `REDIS_URL` in `.env` and container health.
+- Permission issues writing logs: ensure `./logs` exists and has correct permissions for Docker.
 
-### Authentication
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login (returns JWT)
-- `GET /api/auth/me` - Current user profile
-- `POST /api/auth/2fa/setup` - Setup 2FA
-- `POST /api/auth/2fa/enable` - Enable 2FA
-- `POST /api/auth/api-key/generate` - Generate API key
+## Production / Deploy tips
+- Use a secrets manager or environment variables injected by your host (don't commit `.env`).
+- For production scale, separate workers from web processes, increase Celery concurrency, and run multiple backend instances behind nginx.
+- Use `docker compose -f trade_aid\\docker-compose.yml up -d --scale celery_worker=3` to scale workers.
 
-### Tokens
-- `GET /api/tokens` - List tokens (filter by chain)
-- `GET /api/tokens/{chain}/{contract}` - Token details + liquidity events
-- `GET /api/tokens/stats/overview` - Token statistics
+## Useful scripts
+- The repository contains `scripts/` with helper scripts. Consider adding a `scripts/docker-commands.ps1` with the common commands above for convenience.
 
-### Scoring
-- `POST /api/scoring/score-token` - Score a token (sync)
-- `POST /api/scoring/score-token/async` - Score a token (async via Celery)
-- `GET /api/scoring/history/{chain}/{contract}` - Scoring history
+## Contributing
+- Follow the existing code style. Open a PR and include tests for new features where applicable.
 
-### Wallets
-- `GET /api/wallets/developer/{address}` - Developer profile
-- `GET /api/wallets/trader/{address}` - Trader profile
-- `GET /api/wallets/cluster/{address}` - Wallet cluster analysis
-- `POST /api/wallets/developer/{address}/analyze` - Queue developer analysis
-- `POST /api/wallets/trader/{address}/analyze` - Queue trader analysis
+## License
+See repository root for license information.
 
-### Alerts
-- `GET /api/alerts` - List alerts (filter by chain, type, severity)
-- `POST /api/alerts` - Create custom alert
-- `PATCH /api/alerts/{id}/read` - Mark alert as read
-
-### WebSocket
-- `ws://your-domain/ws` - General event stream
-- `ws://your-domain/ws/alerts` - Alerts channel
-
-### AI Service
-- `POST /score-token` (port 8001) - AI-powered token scoring
-
-## API Documentation
-
-Once running, visit:
-- Swagger UI: `http://your-domain/docs`
-- ReDoc: `http://your-domain/redoc`
-- AI Service docs: `http://your-domain:8001/docs`
-
-## SSL Setup (Optional)
-
-1. Install Certbot:
-```bash
-sudo apt install certbot
-sudo certbot certonly --standalone -d yourdomain.com
-```
-
-2. Copy certs to nginx/ssl/ and update nginx.conf for HTTPS.
-
-## Monitoring
-
-```bash
-# View all logs
-docker compose logs -f
-
-# View specific service
-docker compose logs -f backend
-docker compose logs -f celery_worker
-
-# Restart a service
-docker compose restart backend
-
-# Scale workers
-docker compose up -d --scale celery_worker=4
-```
-
-## Mobile App Integration
-
-This backend is designed to be consumed by iOS and Android mobile apps:
-
-- All endpoints return JSON
-- JWT authentication for session management
-- WebSocket support for real-time push notifications
-- Device binding field for per-device auth
-- Telegram bot integration for push alerts outside the app
+---
+If you'd like, I can also add a small `scripts/docker-commands.ps1` cheat-sheet into `scripts/` with the commands shown above. Want me to add it?

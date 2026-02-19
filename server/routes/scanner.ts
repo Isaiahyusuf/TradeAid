@@ -1,3 +1,4 @@
+import { normalizeChain } from "../utils/chain";
 import type { Express, Request, Response } from "express";
 import { db } from "../db";
 import { scannedTokens, tokenSignals, userAlerts, watchlists } from "@shared/schema";
@@ -124,7 +125,8 @@ export function registerScannerRoutes(app: Express): void {
       }
       
       const { address, chain } = parsed.data;
-      const result = await scanAndAnalyzeToken(address, chain);
+      const normalizedChain = normalizeChain(chain);
+      const result = await scanAndAnalyzeToken(address, normalizedChain);
       if (!result) {
         return res.status(404).json({ error: "Token not found on DEX" });
       }
@@ -199,7 +201,7 @@ export function registerScannerRoutes(app: Express): void {
   app.post("/api/scanner/scan-now", async (req: Request, res: Response) => {
     try {
       const parsed = scanNowSchema.safeParse(req.body);
-      const chain = parsed.success ? parsed.data.chain : "solana";
+      const chain = normalizeChain(parsed.success ? parsed.data.chain : "solana");
       res.json({ status: "scanning", message: "Scan started in background" });
       scanHotTokens(chain).catch(console.error);
     } catch (error) {

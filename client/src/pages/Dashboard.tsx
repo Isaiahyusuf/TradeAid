@@ -65,12 +65,16 @@ type WalletAlert = {
 };
 
 function ChainIcon({ chain }: { chain: string }) {
-  switch (chain) {
+  const key = String(chain || "").toUpperCase();
+  switch (key) {
     case "SOL":
+    case "SOLANA":
       return <SiSolana className="w-4 h-4 text-[#9945FF]" />;
     case "ETH":
+    case "ETHEREUM":
       return <SiEthereum className="w-4 h-4 text-[#627EEA]" />;
     case "BSC":
+    case "BNB":
       return <div className="w-4 h-4 rounded-full bg-[#F3BA2F] flex items-center justify-center text-black font-bold text-[8px]">B</div>;
     case "BASE":
       return <div className="w-4 h-4 rounded-full bg-[#0052FF] flex items-center justify-center text-white font-bold text-[8px]">B</div>;

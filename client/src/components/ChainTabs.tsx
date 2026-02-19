@@ -2,7 +2,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SiSolana, SiEthereum } from "react-icons/si";
 import { cn } from "@/lib/utils";
 
-export type Chain = "solana" | "ethereum" | "bsc" | "base";
+export type Chain = "solana";
 
 interface ChainInfo {
   id: Chain;
@@ -24,41 +24,6 @@ export const CHAINS: ChainInfo[] = [
     color: "text-[#9945FF]",
     bgColor: "bg-[#9945FF]/10",
   },
-  {
-    id: "ethereum",
-    name: "Ethereum",
-    shortName: "ETH",
-    icon: <SiEthereum className="w-4 h-4" />,
-    launchpad: "Uniswap",
-    color: "text-[#627EEA]",
-    bgColor: "bg-[#627EEA]/10",
-  },
-  {
-    id: "bsc",
-    name: "BNB Chain",
-    shortName: "BSC",
-    icon: (
-      <div className="w-4 h-4 rounded-full bg-[#F3BA2F] flex items-center justify-center">
-        <span className="text-[8px] font-bold text-black">B</span>
-      </div>
-    ),
-    launchpad: "PancakeSwap",
-    color: "text-[#F3BA2F]",
-    bgColor: "bg-[#F3BA2F]/10",
-  },
-  {
-    id: "base",
-    name: "Base",
-    shortName: "BASE",
-    icon: (
-      <div className="w-4 h-4 rounded-full bg-[#0052FF] flex items-center justify-center">
-        <span className="text-[8px] font-bold text-white">B</span>
-      </div>
-    ),
-    launchpad: "Aerodrome",
-    color: "text-[#0052FF]",
-    bgColor: "bg-[#0052FF]/10",
-  },
 ];
 
 interface ChainTabsProps {
@@ -68,30 +33,11 @@ interface ChainTabsProps {
 }
 
 export function ChainTabs({ value, onChange, className }: ChainTabsProps) {
+  // Single-chain UI: display Solana badge and keep API compatible
   return (
-    <Tabs value={value} onValueChange={(v) => onChange(v as Chain)} className={className}>
-      <TabsList className="grid grid-cols-4 h-auto p-1 bg-muted/50">
-        {CHAINS.map((chain) => (
-          <TabsTrigger
-            key={chain.id}
-            value={chain.id}
-            className={cn(
-              "flex flex-col gap-1 py-3 px-2 data-[state=active]:shadow-lg transition-all",
-              value === chain.id && chain.bgColor
-            )}
-            data-testid={`tab-chain-${chain.id}`}
-          >
-            <div className="flex items-center gap-1.5">
-              <span className={chain.color}>{chain.icon}</span>
-              <span className="font-medium text-xs sm:text-sm">{chain.shortName}</span>
-            </div>
-            <span className="text-[10px] text-muted-foreground hidden sm:block">
-              {chain.launchpad}
-            </span>
-          </TabsTrigger>
-        ))}
-      </TabsList>
-    </Tabs>
+    <div className={cn("inline-flex items-center gap-2", className)}>
+      <ChainBadge chain={value} />
+    </div>
   );
 }
 

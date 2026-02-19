@@ -1,6 +1,6 @@
 # MemeScannerAI Mobile App
 
-React Native mobile app for MemeScannerAI crypto token scanner.
+React Native mobile app for MemeScannerAI Solana token scanner.
 
 ## Setup
 
@@ -26,6 +26,41 @@ npm start
 - Press `i` for iOS Simulator
 - Press `a` for Android Emulator
 - Scan QR code with Expo Go app for physical device
+
+## Building and publishing (Expo EAS)
+
+1. Install EAS CLI and login:
+```bash
+npm install -g eas-cli
+eas login
+```
+
+2. Configure build (first time):
+```bash
+cd mobile
+eas build:configure
+```
+
+3. Build for Android (internal or store):
+```bash
+eas build --platform android --profile production
+```
+
+4. Build for iOS (archive for App Store):
+```bash
+eas build --platform ios --profile production
+```
+
+5. Submit to stores (optional):
+```bash
+eas submit --platform android
+eas submit --platform ios
+```
+
+Notes:
+- Set `API_URL` env var in Railway (or EAS secrets) to point to your deployed backend.
+- Recommended `expo` packages to install for polish: `expo-font`, `expo-splash-screen`, `expo-asset`.
+- For local development use `expo start` and Expo Go on device.
 
 ## Building for App Stores
 
@@ -81,9 +116,9 @@ mobile/
 
 ## Features
 
-- Alpha Scanner with safe picks and hot tokens
-- RugShield token safety analyzer
-- WhaleWatch wallet tracker
+- Alpha Scanner for Solana tokens with safe picks and hot tokens
+- RugShield token safety analyzer focused on Solana token checks
+- WhaleWatch wallet tracker for Solana wallets
 - MemeTrend social sentiment
 - User account management
 

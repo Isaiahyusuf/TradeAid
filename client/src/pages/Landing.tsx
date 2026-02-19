@@ -45,8 +45,8 @@ export default function Landing() {
           </h2>
           
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-10">
-            The most advanced memecoin trading intelligence platform. 
-            Multi-chain scanner, whale tracking, AI sentiment analysis, and real-time DEX alerts.
+            The most advanced memecoin trading intelligence platform focused on Solana.
+            Whale tracking, AI sentiment analysis, and real-time DEX alerts for Solana tokens.
           </p>
           
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-10">
@@ -71,35 +71,23 @@ export default function Landing() {
               Pay with crypto
             </div>
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-primary" />
-              Multi-chain support
+                <CheckCircle2 className="w-4 h-4 text-primary" />
+                Solana-only support
             </div>
           </div>
           
           <div className="mt-16 flex items-center justify-center gap-8">
             <div className="flex items-center gap-2 text-muted-foreground">
               <SiSolana className="w-6 h-6 text-[#9945FF]" />
-              <span>Solana</span>
-            </div>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <SiEthereum className="w-6 h-6 text-[#627EEA]" />
-              <span>Ethereum</span>
-            </div>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <div className="w-6 h-6 rounded-full bg-[#F3BA2F] flex items-center justify-center text-black font-bold text-xs">B</div>
-              <span>BSC</span>
-            </div>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <div className="w-6 h-6 rounded-full bg-[#0052FF] flex items-center justify-center text-white font-bold text-xs">B</div>
-              <span>Base</span>
+              <span>Solana only</span>
             </div>
           </div>
         </section>
 
         <section id="features" className="max-w-7xl mx-auto px-4 py-20">
           <h3 className="text-3xl font-bold text-center mb-4">Everything You Need to Win</h3>
-          <p className="text-muted-foreground text-center mb-12 max-w-xl mx-auto">
-            Professional-grade tools used by top memecoin traders. All in one platform.
+            <p className="text-muted-foreground text-center mb-12 max-w-xl mx-auto">
+            Professional-grade tools for Solana memecoins used by top traders.
           </p>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

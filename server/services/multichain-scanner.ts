@@ -25,21 +25,11 @@ interface HolderInfo {
   isContract: boolean;
 }
 
+// Only Solana launchpads are supported in production builds for this app.
 const LAUNCHPADS = {
   solana: [
     { name: "pump.fun", url: "https://frontend-api.pump.fun" },
     { name: "moonshot", url: "https://api.moonshot.cc" },
-  ],
-  ethereum: [
-    { name: "uniswap", dexId: "uniswap" },
-  ],
-  bsc: [
-    { name: "four.meme", url: "https://api.four.meme" },
-    { name: "pancakeswap", dexId: "pancakeswap" },
-  ],
-  base: [
-    { name: "aerodrome", dexId: "aerodrome" },
-    { name: "uniswap", dexId: "uniswap" },
   ],
 };
 
@@ -64,13 +54,10 @@ export class MultichainLaunchpadScanner {
     console.log("[Multichain] Starting multi-chain launchpad scan...");
 
     try {
+      // Only scan Solana sources in production. Keep other scanners disabled.
       const results = await Promise.allSettled([
         this.scanPumpFun(),
-        this.scanBSCNewTokens(),
         this.scanDexScreenerLaunches("solana"),
-        this.scanDexScreenerLaunches("ethereum"),
-        this.scanDexScreenerLaunches("bsc"),
-        this.scanDexScreenerLaunches("base"),
       ]);
 
       const allTokens: LaunchpadToken[] = [];
@@ -110,23 +97,41 @@ export class MultichainLaunchpadScanner {
       const data = await response.json();
       const tokens: LaunchpadToken[] = [];
 
-      for (const coin of data.slice(0, 30)) {
-        const holderAnalysis = await this.analyzeHolders(coin.mint, "solana");
-        
+      for (const coin of (Array.isArray(data) ? data : []).slice(0, 30)) {
+        const mint = coin?.mint || coin?.address || "";
+        if (!mint) continue;
+
+        const holderAnalysis = await this.analyzeHolders(mint, "solana");
+
+        const createdAtRaw = coin?.created_timestamp || coin?.createdAt || Date.now();
+        const createdAt = isNaN(Number(createdAtRaw)) ? new Date(createdAtRaw) : new Date(Number(createdAtRaw));
+
+        const priceUsd = (() => {
+          const m = coin?.usd_market_cap;
+          if (!m) return "0";
+          try {
+            return String(m);
+          } catch (e) {
+            return "0";
+          }
+        })();
+
+        const liquidity = coin?.virtual_sol_reserves ? Number(coin.virtual_sol_reserves) * 100 : 0;
+
         tokens.push({
-          address: coin.mint,
-          symbol: coin.symbol || "???",
-          name: coin.name || "Unknown",
+          address: mint,
+          symbol: coin?.symbol || coin?.ticker || "UNKNOWN",
+          name: coin?.name || coin?.title || "Unknown",
           chain: "solana",
           launchpad: "pump.fun",
-          priceUsd: coin.usd_market_cap ? (coin.usd_market_cap / 1000000000).toFixed(10) : "0",
-          liquidity: coin.virtual_sol_reserves * 100 || 0,
-          marketCap: coin.usd_market_cap || 0,
-          volume24h: 0,
-          holders: coin.holder_count || 0,
+          priceUsd,
+          liquidity,
+          marketCap: coin?.usd_market_cap || 0,
+          volume24h: coin?.volume_24h || 0,
+          holders: coin?.holder_count || 0,
           topHoldersPercentage: holderAnalysis.topHoldersPercentage,
           devWalletPercentage: holderAnalysis.devWalletPercentage,
-          createdAt: new Date(coin.created_timestamp),
+          createdAt,
         });
       }
 

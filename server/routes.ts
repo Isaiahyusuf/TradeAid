@@ -3,11 +3,13 @@ import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
+import { normalizeChain } from "./utils/chain";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
 import { setupAuth, registerAuthRoutes, isAuthenticated, authStorage } from "./replit_integrations/auth";
 import { registerScannerRoutes } from "./routes/scanner";
 import { startBackgroundScanner, scanHotTokens } from "./services/token-scanner";
+import { multichainScanner } from "./services/multichain-scanner";
 import { FREE_TIER_LIMITS, SUBSCRIPTION_PRICE_USD, SUPPORTED_PAYMENT_CHAINS } from "@shared/schema";
 import { cryptoPaymentService } from "./services/crypto-payment";
 import OpenAI from "openai";
@@ -41,6 +43,17 @@ export async function registerRoutes(
   
   // Start background token scanner (scans every 60 seconds for fresh tokens)
   startBackgroundScanner(60 * 1000);
+
+  // Start periodic multichain launchpad scans (every 5 minutes)
+  try {
+    setInterval(() => {
+      multichainScanner.scanAllLaunchpads().catch(console.error);
+    }, 5 * 60 * 1000);
+    // run once on startup
+    multichainScanner.scanAllLaunchpads().catch(console.error);
+  } catch (e) {
+    console.error("Failed to start multichain scanner:", e);
+  }
 
   // === RugShield ===
   app.post(api.rugcheck.scan.path, async (req, res) => {
@@ -201,7 +214,13 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Chain and txHash are required" });
       }
 
-      if (!SUPPORTED_PAYMENT_CHAINS.includes(chain.toUpperCase())) {
+      // Normalize and verify chain is Solana-only
+      const normalizedChain = normalizeChain(chain);
+      if (normalizedChain !== "solana") {
+        return res.status(400).json({ message: "Only Solana payments are supported" });
+      }
+
+      if (!SUPPORTED_PAYMENT_CHAINS.includes(normalizedChain.toUpperCase())) {
         return res.status(400).json({ message: "Unsupported chain" });
       }
 
@@ -214,18 +233,18 @@ export async function registerRoutes(
       }
 
       const amounts = await cryptoPaymentService.calculatePaymentAmounts();
-      const expectedAmount = amounts.find(a => a.chain === chain.toUpperCase())?.amount || "0";
+      const expectedAmount = amounts.find(a => a.chain === normalizedChain.toUpperCase())?.amount || "0";
 
       const paymentRecord = await storage.createPaymentRecord({
         userId,
-        chain: chain.toUpperCase(),
+        chain: normalizedChain.toUpperCase(),
         txHash,
         amount: "0",
         expectedAmount,
         status: "pending",
       });
 
-      const verification = await cryptoPaymentService.verifyTransaction(chain, txHash);
+      const verification = await cryptoPaymentService.verifyTransaction(normalizedChain, txHash);
 
       if (verification.isValid) {
         await storage.updatePaymentRecord(paymentRecord.id, {
@@ -288,12 +307,12 @@ export async function registerRoutes(
   app.get("/api/dex/new-tokens", async (req, res) => {
     // Mock new tokens from multiple DEXes
     const mockTokens = [
-      { symbol: "$MOODENG", name: "Moo Deng", chain: "SOL", dex: "Raydium", price: "0.00012", volume: "$2.3M", age: "2h", hype: 92, dexscreenerPaid: true },
-      { symbol: "$GOAT", name: "Goatseus Maximus", chain: "SOL", dex: "Jupiter", price: "0.45", volume: "$15M", age: "4h", hype: 88, dexscreenerPaid: true },
-      { symbol: "$BRETT", name: "Brett", chain: "BASE", dex: "Uniswap", price: "0.12", volume: "$8M", age: "1d", hype: 75, dexscreenerPaid: false },
-      { symbol: "$SIGMA", name: "Sigma", chain: "ETH", dex: "Uniswap", price: "0.0023", volume: "$1.2M", age: "3h", hype: 82, dexscreenerPaid: true },
-      { symbol: "$NEIRO", name: "Neiro", chain: "ETH", dex: "Uniswap", price: "0.0015", volume: "$5M", age: "12h", hype: 70, dexscreenerPaid: false },
-      { symbol: "$CAT", name: "Cat in Dogs World", chain: "SOL", dex: "Pump.fun", price: "0.00008", volume: "$890K", age: "30m", hype: 95, dexscreenerPaid: true },
+      { symbol: "$MOODENG", name: "Moo Deng", chain: "solana", dex: "Raydium", price: "0.00012", volume: "$2.3M", age: "2h", hype: 92, dexscreenerPaid: true },
+      { symbol: "$GOAT", name: "Goatseus Maximus", chain: "solana", dex: "Jupiter", price: "0.45", volume: "$15M", age: "4h", hype: 88, dexscreenerPaid: true },
+      { symbol: "$BRETT", name: "Brett", chain: "base", dex: "Uniswap", price: "0.12", volume: "$8M", age: "1d", hype: 75, dexscreenerPaid: false },
+      { symbol: "$SIGMA", name: "Sigma", chain: "ethereum", dex: "Uniswap", price: "0.0023", volume: "$1.2M", age: "3h", hype: 82, dexscreenerPaid: true },
+      { symbol: "$NEIRO", name: "Neiro", chain: "ethereum", dex: "Uniswap", price: "0.0015", volume: "$5M", age: "12h", hype: 70, dexscreenerPaid: false },
+      { symbol: "$CAT", name: "Cat in Dogs World", chain: "solana", dex: "Pump.fun", price: "0.00008", volume: "$890K", age: "30m", hype: 95, dexscreenerPaid: true },
     ];
     res.json(mockTokens);
   });
@@ -313,14 +332,37 @@ export async function registerRoutes(
 
   // === Launchpad Scanner ===
   app.get("/api/launchpads/recent", async (req, res) => {
-    // Mock launchpad data
-    const mockLaunches = [
-      { platform: "Pump.fun", symbol: "$NEWDOG", name: "New Dog Coin", bondingCurve: 85, holders: 1234, liquidity: "$45K", status: "graduated" },
-      { platform: "Pump.fun", symbol: "$MOON", name: "To The Moon", bondingCurve: 45, holders: 567, liquidity: "$12K", status: "bonding" },
-      { platform: "Moonshot", symbol: "$LASER", name: "Laser Cat", bondingCurve: 92, holders: 2100, liquidity: "$78K", status: "graduated" },
-      { platform: "Pump.fun", symbol: "$FROG", name: "Pepe Frog", bondingCurve: 23, holders: 234, liquidity: "$5K", status: "bonding" },
-    ];
-    res.json(mockLaunches);
+    try {
+      // Prefer recent saved scanned tokens that came from launchpads (pump.fun first)
+      const tokens = await storage.getScannedTokens();
+
+      // Map stored tokens into a compact launchpad view
+      const launches = tokens
+        .filter((t: any) => t.dexId && String(t.chain).toLowerCase() === "solana")
+        .slice(0, 20)
+        .map((t: any) => ({
+          platform: t.dexId || "launchpad",
+          symbol: t.symbol || "$UNK",
+          name: t.name || "Unknown",
+          bondingCurve: Math.round((t.liquidity || 0) / 1000),
+          holders: t.topHoldersPercentage || 0,
+          liquidity: `$${t.liquidity || 0}`,
+          status: t.riskLevel || "unknown",
+        }));
+
+      // If no launchpad tokens saved yet, return a small seed set
+      if (launches.length === 0) {
+        return res.json([
+          { platform: "Pump.fun", symbol: "$NEWDOG", name: "New Dog Coin", bondingCurve: 85, holders: 1234, liquidity: "$45K", status: "graduated" },
+          { platform: "Pump.fun", symbol: "$MOON", name: "To The Moon", bondingCurve: 45, holders: 567, liquidity: "$12K", status: "bonding" },
+        ]);
+      }
+
+      res.json(launches);
+    } catch (err) {
+      console.error("Error fetching launchpads:", err);
+      res.status(500).json({ error: "Failed to fetch recent launchpads" });
+    }
   });
 
   // === User Profile ===

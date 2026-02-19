@@ -173,8 +173,8 @@ export default function Subscription() {
                 Pay with your favorite crypto. Prices update automatically based on current market rates.
               </p>
               
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                {(["SOL", "ETH", "BSC", "BASE"] as const).map((chain) => (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                {( ["SOL"] as const).map((chain) => (
                   <button
                     key={chain}
                     onClick={() => setSelectedChain(chain)}
