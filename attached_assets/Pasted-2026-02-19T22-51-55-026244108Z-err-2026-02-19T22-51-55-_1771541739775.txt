@@ -1,0 +1,1001 @@
+2026-02-19T22:51:55.026244108Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.026247708Z [err]    File "/app/app/routers/auth.py", line 35, in register
+2026-02-19T22:51:55.026250988Z [err]      user = await register_user(db, req.username, req.email, req.password, req.device_id)
+2026-02-19T22:51:55.026254408Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.026257598Z [err]    File "/app/app/services/auth_service.py", line 38, in register_user
+2026-02-19T22:51:55.026260958Z [err]      hashed_password=hash_password(password),
+2026-02-19T22:51:55.026264648Z [err]                      ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.026267888Z [err]    File "/app/app/utils/security.py", line 26, in hash_password
+2026-02-19T22:51:55.026271258Z [err]      return pwd_context.hash(password)
+2026-02-19T22:51:55.026274877Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.026280107Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/context.py", line 2258, in hash
+2026-02-19T22:51:55.026283177Z [err]      return record.hash(secret, **kwds)
+2026-02-19T22:51:55.026286527Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.026289867Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 779, in hash
+2026-02-19T22:51:55.026293287Z [err]      self.checksum = self._calc_checksum(secret)
+2026-02-19T22:51:55.026296767Z [err]                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.027059444Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 591, in _calc_checksum
+2026-02-19T22:51:55.027062964Z [err]      self._stub_requires_backend()
+2026-02-19T22:51:55.027067324Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2254, in _stub_requires_backend
+2026-02-19T22:51:55.027070394Z [err]      cls.set_backend()
+2026-02-19T22:51:55.027073874Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2156, in set_backend
+2026-02-19T22:51:55.027076944Z [err]      return owner.set_backend(name, dryrun=dryrun)
+2026-02-19T22:51:55.027079894Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.027082544Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2163, in set_backend
+2026-02-19T22:51:55.027085584Z [err]      return cls.set_backend(name, dryrun=dryrun)
+2026-02-19T22:51:55.027088464Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.027091284Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2188, in set_backend
+2026-02-19T22:51:55.027093904Z [err]      cls._set_backend(name, dryrun)
+2026-02-19T22:51:55.027096414Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2311, in _set_backend
+2026-02-19T22:51:55.027098734Z [err]      super(SubclassBackendMixin, cls)._set_backend(name, dryrun)
+2026-02-19T22:51:55.027101274Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2224, in _set_backend
+2026-02-19T22:51:55.027104124Z [err]      ok = loader(**kwds)
+2026-02-19T22:51:55.027107074Z [err]           ^^^^^^^^^^^^^^
+2026-02-19T22:51:55.027109824Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 626, in _load_backend_mixin
+2026-02-19T22:51:55.027112394Z [err]      return mixin_cls._finalize_backend_mixin(name, dryrun)
+2026-02-19T22:51:55.027983431Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.027986501Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 421, in _finalize_backend_mixin
+2026-02-19T22:51:55.027989351Z [err]      if detect_wrap_bug(IDENT_2A):
+2026-02-19T22:51:55.027990081Z [err]  (trapped) error reading bcrypt version
+2026-02-19T22:51:55.027992221Z [err]         ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.027993221Z [err]  Traceback (most recent call last):
+2026-02-19T22:51:55.027995431Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 380, in detect_wrap_bug
+2026-02-19T22:51:55.027996761Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 620, in _load_backend_mixin
+2026-02-19T22:51:55.027998441Z [err]      if verify(secret, bug_hash):
+2026-02-19T22:51:55.027999681Z [err]      version = _bcrypt.__about__.__version__
+2026-02-19T22:51:55.028001321Z [err]         ^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.028004241Z [err]                ^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.028005841Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 792, in verify
+2026-02-19T22:51:55.028009331Z [err]  AttributeError: module 'bcrypt' has no attribute '__about__'
+2026-02-19T22:51:55.028010341Z [err]      return consteq(self._calc_checksum(secret), chk)
+2026-02-19T22:51:55.028012571Z [err]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.028020011Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 655, in _calc_checksum
+2026-02-19T22:51:55.028024491Z [err]      hash = _bcrypt.hashpw(secret, config)
+2026-02-19T22:51:55.028029231Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.028033551Z [err]  ValueError: password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])
+2026-02-19T22:51:55.029675986Z [err]  [2026-02-19 22:51:54 +0000] [2] [ERROR] Exception in ASGI application
+2026-02-19T22:51:55.029681525Z [err]    + Exception Group Traceback (most recent call last):
+2026-02-19T22:51:55.029686165Z [err]    |   File "/usr/local/lib/python3.11/site-packages/starlette/_utils.py", line 76, in collapse_excgroups
+2026-02-19T22:51:55.029690755Z [err]    |     yield
+2026-02-19T22:51:55.029694975Z [err]    |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 186, in __call__
+2026-02-19T22:51:55.029698935Z [err]    |     async with anyio.create_task_group() as task_group:
+2026-02-19T22:51:55.029703295Z [err]    |   File "/usr/local/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 783, in __aexit__
+2026-02-19T22:51:55.029707155Z [err]    |     raise BaseExceptionGroup(
+2026-02-19T22:51:55.029710995Z [err]    | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+2026-02-19T22:51:55.029715055Z [err]    +-+---------------- 1 ----------------
+2026-02-19T22:51:55.029720115Z [err]      | Traceback (most recent call last):
+2026-02-19T22:51:55.029723835Z [err]      |   File "/usr/local/lib/python3.11/site-packages/uvicorn/protocols/http/httptools_impl.py", line 409, in run_asgi
+2026-02-19T22:51:55.029727915Z [err]      |     result = await app(  # type: ignore[func-returns-value]
+2026-02-19T22:51:55.029731385Z [err]      |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.029735145Z [err]      |   File "/usr/local/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+2026-02-19T22:51:55.029738455Z [err]      |     return await self.app(scope, receive, send)
+2026-02-19T22:51:55.029742875Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.029746625Z [err]      |   File "/usr/local/lib/python3.11/site-packages/fastapi/applications.py", line 1054, in __call__
+2026-02-19T22:51:55.031070810Z [err]      |     response = await self.dispatch_func(request, call_next)
+2026-02-19T22:51:55.031075750Z [err]      |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.031079700Z [err]      |   File "/app/app/utils/rate_limiter.py", line 33, in dispatch
+2026-02-19T22:51:55.031084670Z [err]      |     response = await call_next(request)
+2026-02-19T22:51:55.031087860Z [err]      |     await super().__call__(scope, receive, send)
+2026-02-19T22:51:55.031091300Z [err]      |                ^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.031095420Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/applications.py", line 113, in __call__
+2026-02-19T22:51:55.031098390Z [err]      |     await self.middleware_stack(scope, receive, send)
+2026-02-19T22:51:55.031101340Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 187, in __call__
+2026-02-19T22:51:55.031104360Z [err]      |     raise exc
+2026-02-19T22:51:55.031107580Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 165, in __call__
+2026-02-19T22:51:55.031110870Z [err]      |     await self.app(scope, receive, _send)
+2026-02-19T22:51:55.031113870Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 185, in __call__
+2026-02-19T22:51:55.031116880Z [err]      |     with collapse_excgroups():
+2026-02-19T22:51:55.031119880Z [err]      |   File "/usr/local/lib/python3.11/contextlib.py", line 158, in __exit__
+2026-02-19T22:51:55.031123490Z [err]      |     self.gen.throw(typ, value, traceback)
+2026-02-19T22:51:55.031126470Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_utils.py", line 82, in collapse_excgroups
+2026-02-19T22:51:55.031129040Z [err]      |     raise exc
+2026-02-19T22:51:55.031131910Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 187, in __call__
+2026-02-19T22:51:55.031832358Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 163, in call_next
+2026-02-19T22:51:55.031834188Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 715, in __call__
+2026-02-19T22:51:55.031841838Z [err]      |     await self.middleware_stack(scope, receive, send)
+2026-02-19T22:51:55.031842118Z [err]      |     raise app_exc
+2026-02-19T22:51:55.031849518Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 735, in app
+2026-02-19T22:51:55.031852858Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 149, in coro
+2026-02-19T22:51:55.031854018Z [err]      |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+2026-02-19T22:51:55.031860458Z [err]      |     await self.app(scope, receive_or_disconnect, send_no_error)
+2026-02-19T22:51:55.031863788Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-19T22:51:55.031867948Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/cors.py", line 93, in __call__
+2026-02-19T22:51:55.031871018Z [err]      |     raise exc
+2026-02-19T22:51:55.031875088Z [err]      |     await self.simple_response(scope, receive, send, request_headers=headers)
+2026-02-19T22:51:55.031879018Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-19T22:51:55.031883998Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/cors.py", line 144, in simple_response
+2026-02-19T22:51:55.031887048Z [err]      |     await app(scope, receive, sender)
+2026-02-19T22:51:55.031890388Z [err]      |     await self.app(scope, receive, send)
+2026-02-19T22:51:55.031894248Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 62, in __call__
+2026-02-19T22:51:55.033170733Z [err]      |   File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 212, in run_endpoint_function
+2026-02-19T22:51:55.033174343Z [err]      |     return await dependant.call(**values)
+2026-02-19T22:51:55.033177893Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.033178523Z [err]      |     await route.handle(scope, receive, send)
+2026-02-19T22:51:55.033181683Z [err]      |   File "/app/app/routers/auth.py", line 35, in register
+2026-02-19T22:51:55.033184563Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 288, in handle
+2026-02-19T22:51:55.033188813Z [err]      |     await self.app(scope, receive, send)
+2026-02-19T22:51:55.033192403Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 76, in app
+2026-02-19T22:51:55.033196903Z [err]      |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+2026-02-19T22:51:55.033201203Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-19T22:51:55.033205493Z [err]      |     raise exc
+2026-02-19T22:51:55.033209443Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 73, in app
+2026-02-19T22:51:55.033210223Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-19T22:51:55.033215503Z [err]      |     await app(scope, receive, sender)
+2026-02-19T22:51:55.033222383Z [err]      |     response = await f(request)
+2026-02-19T22:51:55.033228173Z [err]      |                ^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.033233273Z [err]      |   File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 301, in app
+2026-02-19T22:51:55.033240533Z [err]      |     raw_response = await run_endpoint_function(
+2026-02-19T22:51:55.033245753Z [err]      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.034494359Z [err]      |     cls.set_backend()
+2026-02-19T22:51:55.034499529Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2156, in set_backend
+2026-02-19T22:51:55.034503069Z [err]      |     user = await register_user(db, req.username, req.email, req.password, req.device_id)
+2026-02-19T22:51:55.034508059Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.034511299Z [err]      |   File "/app/app/services/auth_service.py", line 38, in register_user
+2026-02-19T22:51:55.034514619Z [err]      |     hashed_password=hash_password(password),
+2026-02-19T22:51:55.034517839Z [err]      |                     ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.034521129Z [err]      |   File "/app/app/utils/security.py", line 26, in hash_password
+2026-02-19T22:51:55.034523799Z [err]      |     return pwd_context.hash(password)
+2026-02-19T22:51:55.034526739Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.034530249Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/context.py", line 2258, in hash
+2026-02-19T22:51:55.034533319Z [err]      |     return record.hash(secret, **kwds)
+2026-02-19T22:51:55.034536269Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.034539119Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 779, in hash
+2026-02-19T22:51:55.034541999Z [err]      |     self.checksum = self._calc_checksum(secret)
+2026-02-19T22:51:55.034544639Z [err]      |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.034547619Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 591, in _calc_checksum
+2026-02-19T22:51:55.034550399Z [err]      |     self._stub_requires_backend()
+2026-02-19T22:51:55.034553169Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2254, in _stub_requires_backend
+2026-02-19T22:51:55.035578715Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 421, in _finalize_backend_mixin
+2026-02-19T22:51:55.035585555Z [err]      |     if detect_wrap_bug(IDENT_2A):
+2026-02-19T22:51:55.035586485Z [err]      |     return owner.set_backend(name, dryrun=dryrun)
+2026-02-19T22:51:55.035593205Z [err]      |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.035596735Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.035600365Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2163, in set_backend
+2026-02-19T22:51:55.035603155Z [err]      |     return cls.set_backend(name, dryrun=dryrun)
+2026-02-19T22:51:55.035605795Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.035608515Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2188, in set_backend
+2026-02-19T22:51:55.035611455Z [err]      |     cls._set_backend(name, dryrun)
+2026-02-19T22:51:55.035614045Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2311, in _set_backend
+2026-02-19T22:51:55.035616725Z [err]      |     super(SubclassBackendMixin, cls)._set_backend(name, dryrun)
+2026-02-19T22:51:55.035619425Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2224, in _set_backend
+2026-02-19T22:51:55.035622685Z [err]      |     ok = loader(**kwds)
+2026-02-19T22:51:55.035625785Z [err]      |          ^^^^^^^^^^^^^^
+2026-02-19T22:51:55.035628415Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 626, in _load_backend_mixin
+2026-02-19T22:51:55.035630895Z [err]      |     return mixin_cls._finalize_backend_mixin(name, dryrun)
+2026-02-19T22:51:55.035633565Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.037682478Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 380, in detect_wrap_bug
+2026-02-19T22:51:55.037688298Z [err]      |     if verify(secret, bug_hash):
+2026-02-19T22:51:55.037692688Z [err]      |        ^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.037693918Z [err]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.037696708Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 792, in verify
+2026-02-19T22:51:55.037699658Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+2026-02-19T22:51:55.037700918Z [err]      |     return consteq(self._calc_checksum(secret), chk)
+2026-02-19T22:51:55.037705388Z [err]      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.037709708Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 655, in _calc_checksum
+2026-02-19T22:51:55.037713908Z [err]      |     hash = _bcrypt.hashpw(secret, config)
+2026-02-19T22:51:55.037717898Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.037721938Z [err]      | ValueError: password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])
+2026-02-19T22:51:55.037725388Z [err]      +------------------------------------
+2026-02-19T22:51:55.037729638Z [err]  
+2026-02-19T22:51:55.037733378Z [err]  During handling of the above exception, another exception occurred:
+2026-02-19T22:51:55.037738158Z [err]  
+2026-02-19T22:51:55.037742068Z [err]  Traceback (most recent call last):
+2026-02-19T22:51:55.037745628Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/protocols/http/httptools_impl.py", line 409, in run_asgi
+2026-02-19T22:51:55.037749158Z [err]      result = await app(  # type: ignore[func-returns-value]
+2026-02-19T22:51:55.038964764Z [err]      return await self.app(scope, receive, send)
+2026-02-19T22:51:55.038975414Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.038975984Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 185, in __call__
+2026-02-19T22:51:55.038984994Z [err]      with collapse_excgroups():
+2026-02-19T22:51:55.038987224Z [err]    File "/usr/local/lib/python3.11/site-packages/fastapi/applications.py", line 1054, in __call__
+2026-02-19T22:51:55.038991644Z [err]    File "/usr/local/lib/python3.11/contextlib.py", line 158, in __exit__
+2026-02-19T22:51:55.038998324Z [err]      self.gen.throw(typ, value, traceback)
+2026-02-19T22:51:55.038999924Z [err]      await super().__call__(scope, receive, send)
+2026-02-19T22:51:55.039003794Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_utils.py", line 82, in collapse_excgroups
+2026-02-19T22:51:55.039011164Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/applications.py", line 113, in __call__
+2026-02-19T22:51:55.039011204Z [err]      raise exc
+2026-02-19T22:51:55.039016864Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 187, in __call__
+2026-02-19T22:51:55.039022814Z [err]      await self.middleware_stack(scope, receive, send)
+2026-02-19T22:51:55.039023924Z [err]      response = await self.dispatch_func(request, call_next)
+2026-02-19T22:51:55.039031404Z [err]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.039034324Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 187, in __call__
+2026-02-19T22:51:55.039041124Z [err]      raise exc
+2026-02-19T22:51:55.039047464Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 165, in __call__
+2026-02-19T22:51:55.039053193Z [err]      await self.app(scope, receive, _send)
+2026-02-19T22:51:55.039354172Z [err]    File "/app/app/utils/rate_limiter.py", line 33, in dispatch
+2026-02-19T22:51:55.039356832Z [err]      response = await call_next(request)
+2026-02-19T22:51:55.039359402Z [err]                 ^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.039362242Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 163, in call_next
+2026-02-19T22:51:55.039365352Z [err]      raise app_exc
+2026-02-19T22:51:55.039368042Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 149, in coro
+2026-02-19T22:51:55.039370412Z [err]      await self.app(scope, receive_or_disconnect, send_no_error)
+2026-02-19T22:51:55.039372732Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/cors.py", line 93, in __call__
+2026-02-19T22:51:55.039375332Z [err]      await self.simple_response(scope, receive, send, request_headers=headers)
+2026-02-19T22:51:55.039377912Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/cors.py", line 144, in simple_response
+2026-02-19T22:51:55.039380272Z [err]      await self.app(scope, receive, send)
+2026-02-19T22:51:55.039382702Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 62, in __call__
+2026-02-19T22:51:55.039385092Z [err]      await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+2026-02-19T22:51:55.039387572Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-19T22:51:55.039390252Z [err]      raise exc
+2026-02-19T22:51:55.039392512Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-19T22:51:55.039394722Z [err]      await app(scope, receive, sender)
+2026-02-19T22:51:55.039397332Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 715, in __call__
+2026-02-19T22:51:55.040781007Z [err]      await self.middleware_stack(scope, receive, send)
+2026-02-19T22:51:55.040784027Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 735, in app
+2026-02-19T22:51:55.040786967Z [err]      await route.handle(scope, receive, send)
+2026-02-19T22:51:55.040790067Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 288, in handle
+2026-02-19T22:51:55.040794217Z [err]      await self.app(scope, receive, send)
+2026-02-19T22:51:55.040796817Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 76, in app
+2026-02-19T22:51:55.040799657Z [err]      await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+2026-02-19T22:51:55.040803697Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-19T22:51:55.040806317Z [err]      raise exc
+2026-02-19T22:51:55.040808977Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-19T22:51:55.040811397Z [err]      await app(scope, receive, sender)
+2026-02-19T22:51:55.040814027Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 73, in app
+2026-02-19T22:51:55.040816887Z [err]      response = await f(request)
+2026-02-19T22:51:55.040819147Z [err]                 ^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.040822957Z [err]    File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 301, in app
+2026-02-19T22:51:55.040825847Z [err]      raw_response = await run_endpoint_function(
+2026-02-19T22:51:55.040828757Z [err]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.040831416Z [err]    File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 212, in run_endpoint_function
+2026-02-19T22:51:55.040833836Z [err]      return await dependant.call(**values)
+2026-02-19T22:51:55.042291412Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.042294972Z [err]    File "/app/app/routers/auth.py", line 35, in register
+2026-02-19T22:51:55.042297982Z [err]      user = await register_user(db, req.username, req.email, req.password, req.device_id)
+2026-02-19T22:51:55.042300432Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.042302842Z [err]    File "/app/app/services/auth_service.py", line 38, in register_user
+2026-02-19T22:51:55.042305172Z [err]      hashed_password=hash_password(password),
+2026-02-19T22:51:55.042307382Z [err]                      ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.042309712Z [err]    File "/app/app/utils/security.py", line 26, in hash_password
+2026-02-19T22:51:55.042312102Z [err]      return pwd_context.hash(password)
+2026-02-19T22:51:55.042315222Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.042317412Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/context.py", line 2258, in hash
+2026-02-19T22:51:55.042319712Z [err]      return record.hash(secret, **kwds)
+2026-02-19T22:51:55.042322352Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.042324632Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 779, in hash
+2026-02-19T22:51:55.042326802Z [err]      self.checksum = self._calc_checksum(secret)
+2026-02-19T22:51:55.042328972Z [err]                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.042332402Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 591, in _calc_checksum
+2026-02-19T22:51:55.042335262Z [err]      self._stub_requires_backend()
+2026-02-19T22:51:55.042337642Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2254, in _stub_requires_backend
+2026-02-19T22:51:55.042340002Z [err]      cls.set_backend()
+2026-02-19T22:51:55.043474957Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2156, in set_backend
+2026-02-19T22:51:55.043477857Z [err]      return owner.set_backend(name, dryrun=dryrun)
+2026-02-19T22:51:55.043480127Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.043482507Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2163, in set_backend
+2026-02-19T22:51:55.043485227Z [err]      return cls.set_backend(name, dryrun=dryrun)
+2026-02-19T22:51:55.043487617Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.043489957Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2188, in set_backend
+2026-02-19T22:51:55.043493307Z [err]      cls._set_backend(name, dryrun)
+2026-02-19T22:51:55.043495867Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2311, in _set_backend
+2026-02-19T22:51:55.043498307Z [err]      super(SubclassBackendMixin, cls)._set_backend(name, dryrun)
+2026-02-19T22:51:55.043500837Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2224, in _set_backend
+2026-02-19T22:51:55.043503197Z [err]      ok = loader(**kwds)
+2026-02-19T22:51:55.043505957Z [err]           ^^^^^^^^^^^^^^
+2026-02-19T22:51:55.043508317Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 626, in _load_backend_mixin
+2026-02-19T22:51:55.043510777Z [err]      return mixin_cls._finalize_backend_mixin(name, dryrun)
+2026-02-19T22:51:55.043513227Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.043515727Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 421, in _finalize_backend_mixin
+2026-02-19T22:51:55.043518417Z [err]      if detect_wrap_bug(IDENT_2A):
+2026-02-19T22:51:55.043521407Z [err]         ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.044548194Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 380, in detect_wrap_bug
+2026-02-19T22:51:55.044552094Z [err]      if verify(secret, bug_hash):
+2026-02-19T22:51:55.044554914Z [err]         ^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.044557484Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 792, in verify
+2026-02-19T22:51:55.044560044Z [err]      return consteq(self._calc_checksum(secret), chk)
+2026-02-19T22:51:55.044562354Z [err]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.044564564Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 655, in _calc_checksum
+2026-02-19T22:51:55.044566904Z [err]      hash = _bcrypt.hashpw(secret, config)
+2026-02-19T22:51:55.044569704Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:51:55.044572964Z [err]  ValueError: password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])
+2026-02-19T22:52:00.441409278Z [err]  (trapped) error reading bcrypt version
+2026-02-19T22:52:00.441414818Z [err]  Traceback (most recent call last):
+2026-02-19T22:52:00.441419618Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 620, in _load_backend_mixin
+2026-02-19T22:52:00.441424608Z [err]      version = _bcrypt.__about__.__version__
+2026-02-19T22:52:00.441429718Z [err]                ^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.441433728Z [err]  AttributeError: module 'bcrypt' has no attribute '__about__'
+2026-02-19T22:52:00.451062555Z [err]  [2026-02-19 22:52:00 +0000] [2] [ERROR] Exception in ASGI application
+2026-02-19T22:52:00.451066925Z [err]    + Exception Group Traceback (most recent call last):
+2026-02-19T22:52:00.451071205Z [err]    |   File "/usr/local/lib/python3.11/site-packages/starlette/_utils.py", line 76, in collapse_excgroups
+2026-02-19T22:52:00.451075895Z [err]    |     yield
+2026-02-19T22:52:00.451080235Z [err]    |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 186, in __call__
+2026-02-19T22:52:00.451084615Z [err]    |     async with anyio.create_task_group() as task_group:
+2026-02-19T22:52:00.451088675Z [err]    |   File "/usr/local/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 783, in __aexit__
+2026-02-19T22:52:00.451093535Z [err]    |     raise BaseExceptionGroup(
+2026-02-19T22:52:00.451098455Z [err]    | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+2026-02-19T22:52:00.451102555Z [err]    +-+---------------- 1 ----------------
+2026-02-19T22:52:00.451107075Z [err]      | Traceback (most recent call last):
+2026-02-19T22:52:00.451111885Z [err]      |   File "/usr/local/lib/python3.11/site-packages/uvicorn/protocols/http/httptools_impl.py", line 409, in run_asgi
+2026-02-19T22:52:00.451116175Z [err]      |     result = await app(  # type: ignore[func-returns-value]
+2026-02-19T22:52:00.451120705Z [err]      |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.451125265Z [err]      |   File "/usr/local/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+2026-02-19T22:52:00.451129635Z [err]      |     return await self.app(scope, receive, send)
+2026-02-19T22:52:00.451134535Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.451139235Z [err]      |   File "/usr/local/lib/python3.11/site-packages/fastapi/applications.py", line 1054, in __call__
+2026-02-19T22:52:00.451516443Z [err]      |     await super().__call__(scope, receive, send)
+2026-02-19T22:52:00.451521083Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/applications.py", line 113, in __call__
+2026-02-19T22:52:00.451525423Z [err]      |     await self.middleware_stack(scope, receive, send)
+2026-02-19T22:52:00.451529203Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 187, in __call__
+2026-02-19T22:52:00.451533503Z [err]      |     raise exc
+2026-02-19T22:52:00.451537253Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 165, in __call__
+2026-02-19T22:52:00.451541403Z [err]      |     await self.app(scope, receive, _send)
+2026-02-19T22:52:00.451545653Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 185, in __call__
+2026-02-19T22:52:00.451549503Z [err]      |     with collapse_excgroups():
+2026-02-19T22:52:00.451553053Z [err]      |   File "/usr/local/lib/python3.11/contextlib.py", line 158, in __exit__
+2026-02-19T22:52:00.451556803Z [err]      |     self.gen.throw(typ, value, traceback)
+2026-02-19T22:52:00.451560173Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_utils.py", line 82, in collapse_excgroups
+2026-02-19T22:52:00.451563733Z [err]      |     raise exc
+2026-02-19T22:52:00.451566933Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 187, in __call__
+2026-02-19T22:52:00.451570523Z [err]      |     response = await self.dispatch_func(request, call_next)
+2026-02-19T22:52:00.451574303Z [err]      |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.451577503Z [err]      |   File "/app/app/utils/rate_limiter.py", line 33, in dispatch
+2026-02-19T22:52:00.451582103Z [err]      |     response = await call_next(request)
+2026-02-19T22:52:00.451585493Z [err]      |                ^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.452544460Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 735, in app
+2026-02-19T22:52:00.452556400Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 163, in call_next
+2026-02-19T22:52:00.452563390Z [err]      |     raise app_exc
+2026-02-19T22:52:00.452568460Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 149, in coro
+2026-02-19T22:52:00.452572960Z [err]      |     await self.app(scope, receive_or_disconnect, send_no_error)
+2026-02-19T22:52:00.452577540Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/cors.py", line 93, in __call__
+2026-02-19T22:52:00.452581650Z [err]      |     await self.simple_response(scope, receive, send, request_headers=headers)
+2026-02-19T22:52:00.452586540Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/cors.py", line 144, in simple_response
+2026-02-19T22:52:00.452592090Z [err]      |     await self.app(scope, receive, send)
+2026-02-19T22:52:00.452596800Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 62, in __call__
+2026-02-19T22:52:00.452601130Z [err]      |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+2026-02-19T22:52:00.452605330Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-19T22:52:00.452609550Z [err]      |     raise exc
+2026-02-19T22:52:00.452613480Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-19T22:52:00.452617310Z [err]      |     await app(scope, receive, sender)
+2026-02-19T22:52:00.452621280Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 715, in __call__
+2026-02-19T22:52:00.452626980Z [err]      |     await self.middleware_stack(scope, receive, send)
+2026-02-19T22:52:00.453117018Z [err]      |   File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 212, in run_endpoint_function
+2026-02-19T22:52:00.453127378Z [err]      |     return await dependant.call(**values)
+2026-02-19T22:52:00.453130068Z [err]      |     await route.handle(scope, receive, send)
+2026-02-19T22:52:00.453134848Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.453139568Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 288, in handle
+2026-02-19T22:52:00.453144378Z [err]      |   File "/app/app/routers/auth.py", line 35, in register
+2026-02-19T22:52:00.453148248Z [err]      |     await self.app(scope, receive, send)
+2026-02-19T22:52:00.453152528Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 76, in app
+2026-02-19T22:52:00.453157028Z [err]      |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+2026-02-19T22:52:00.453163078Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-19T22:52:00.453167808Z [err]      |     raise exc
+2026-02-19T22:52:00.453171428Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-19T22:52:00.453175568Z [err]      |     await app(scope, receive, sender)
+2026-02-19T22:52:00.453179798Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 73, in app
+2026-02-19T22:52:00.453183678Z [err]      |     response = await f(request)
+2026-02-19T22:52:00.453187618Z [err]      |                ^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.453192268Z [err]      |   File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 301, in app
+2026-02-19T22:52:00.453196898Z [err]      |     raw_response = await run_endpoint_function(
+2026-02-19T22:52:00.453201488Z [err]      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.453956925Z [err]      |     user = await register_user(db, req.username, req.email, req.password, req.device_id)
+2026-02-19T22:52:00.453962995Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.453968405Z [err]      |   File "/app/app/services/auth_service.py", line 38, in register_user
+2026-02-19T22:52:00.453975525Z [err]      |     hashed_password=hash_password(password),
+2026-02-19T22:52:00.453980625Z [err]      |                     ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.453985405Z [err]      |   File "/app/app/utils/security.py", line 26, in hash_password
+2026-02-19T22:52:00.453990475Z [err]      |     return pwd_context.hash(password)
+2026-02-19T22:52:00.453995675Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.454000415Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/context.py", line 2258, in hash
+2026-02-19T22:52:00.454004725Z [err]      |     return record.hash(secret, **kwds)
+2026-02-19T22:52:00.454009055Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.454014865Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 779, in hash
+2026-02-19T22:52:00.454019945Z [err]      |     self.checksum = self._calc_checksum(secret)
+2026-02-19T22:52:00.454025335Z [err]      |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.454037845Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 591, in _calc_checksum
+2026-02-19T22:52:00.454041595Z [err]      |     self._stub_requires_backend()
+2026-02-19T22:52:00.454045265Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2254, in _stub_requires_backend
+2026-02-19T22:52:00.454049515Z [err]      |     cls.set_backend()
+2026-02-19T22:52:00.454052915Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2156, in set_backend
+2026-02-19T22:52:00.456247097Z [err]      |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.456262347Z [err]      |     return owner.set_backend(name, dryrun=dryrun)
+2026-02-19T22:52:00.456278327Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.456289217Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2163, in set_backend
+2026-02-19T22:52:00.456294337Z [err]      |     return cls.set_backend(name, dryrun=dryrun)
+2026-02-19T22:52:00.456298877Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.456303437Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2188, in set_backend
+2026-02-19T22:52:00.456309637Z [err]      |     cls._set_backend(name, dryrun)
+2026-02-19T22:52:00.456316117Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2311, in _set_backend
+2026-02-19T22:52:00.456320837Z [err]      |     super(SubclassBackendMixin, cls)._set_backend(name, dryrun)
+2026-02-19T22:52:00.456325557Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2224, in _set_backend
+2026-02-19T22:52:00.456330097Z [err]      |     ok = loader(**kwds)
+2026-02-19T22:52:00.456336117Z [err]      |          ^^^^^^^^^^^^^^
+2026-02-19T22:52:00.456340507Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 626, in _load_backend_mixin
+2026-02-19T22:52:00.456344817Z [err]      |     return mixin_cls._finalize_backend_mixin(name, dryrun)
+2026-02-19T22:52:00.456349237Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.456353817Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 421, in _finalize_backend_mixin
+2026-02-19T22:52:00.456358947Z [err]      |     if detect_wrap_bug(IDENT_2A):
+2026-02-19T22:52:00.457292823Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 380, in detect_wrap_bug
+2026-02-19T22:52:00.457298783Z [err]      |     if verify(secret, bug_hash):
+2026-02-19T22:52:00.457303053Z [err]      |        ^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.457307953Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 792, in verify
+2026-02-19T22:52:00.457312233Z [err]      |     return consteq(self._calc_checksum(secret), chk)
+2026-02-19T22:52:00.457316123Z [err]      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.457321043Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 655, in _calc_checksum
+2026-02-19T22:52:00.457325283Z [err]      |     hash = _bcrypt.hashpw(secret, config)
+2026-02-19T22:52:00.457329163Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.457333433Z [err]      | ValueError: password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])
+2026-02-19T22:52:00.457337763Z [err]      +------------------------------------
+2026-02-19T22:52:00.457341993Z [err]  
+2026-02-19T22:52:00.457347983Z [err]  During handling of the above exception, another exception occurred:
+2026-02-19T22:52:00.457352663Z [err]  
+2026-02-19T22:52:00.457359933Z [err]  Traceback (most recent call last):
+2026-02-19T22:52:00.457364583Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/protocols/http/httptools_impl.py", line 409, in run_asgi
+2026-02-19T22:52:00.457369093Z [err]      result = await app(  # type: ignore[func-returns-value]
+2026-02-19T22:52:00.457374763Z [err]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.457381013Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+2026-02-19T22:52:00.458980898Z [err]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.458993937Z [err]      return await self.app(scope, receive, send)
+2026-02-19T22:52:00.459002187Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.459008127Z [err]    File "/usr/local/lib/python3.11/site-packages/fastapi/applications.py", line 1054, in __call__
+2026-02-19T22:52:00.459013737Z [err]      await super().__call__(scope, receive, send)
+2026-02-19T22:52:00.459019327Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/applications.py", line 113, in __call__
+2026-02-19T22:52:00.459025437Z [err]      await self.middleware_stack(scope, receive, send)
+2026-02-19T22:52:00.459031167Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 187, in __call__
+2026-02-19T22:52:00.459035857Z [err]      raise exc
+2026-02-19T22:52:00.459040587Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 165, in __call__
+2026-02-19T22:52:00.459045127Z [err]      await self.app(scope, receive, _send)
+2026-02-19T22:52:00.459049777Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 185, in __call__
+2026-02-19T22:52:00.459054897Z [err]      with collapse_excgroups():
+2026-02-19T22:52:00.459059567Z [err]    File "/usr/local/lib/python3.11/contextlib.py", line 158, in __exit__
+2026-02-19T22:52:00.459064447Z [err]      self.gen.throw(typ, value, traceback)
+2026-02-19T22:52:00.459069077Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_utils.py", line 82, in collapse_excgroups
+2026-02-19T22:52:00.459073167Z [err]      raise exc
+2026-02-19T22:52:00.459077797Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 187, in __call__
+2026-02-19T22:52:00.459083197Z [err]      response = await self.dispatch_func(request, call_next)
+2026-02-19T22:52:00.460081034Z [err]    File "/app/app/utils/rate_limiter.py", line 33, in dispatch
+2026-02-19T22:52:00.460085374Z [err]      await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+2026-02-19T22:52:00.460090174Z [err]      response = await call_next(request)
+2026-02-19T22:52:00.460097024Z [err]                 ^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.460099414Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-19T22:52:00.460103304Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 163, in call_next
+2026-02-19T22:52:00.460111494Z [err]      raise exc
+2026-02-19T22:52:00.460111564Z [err]      raise app_exc
+2026-02-19T22:52:00.460120534Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 149, in coro
+2026-02-19T22:52:00.460124814Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-19T22:52:00.460126804Z [err]      await self.app(scope, receive_or_disconnect, send_no_error)
+2026-02-19T22:52:00.460133454Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/cors.py", line 93, in __call__
+2026-02-19T22:52:00.460135464Z [err]      await app(scope, receive, sender)
+2026-02-19T22:52:00.460141554Z [err]      await self.simple_response(scope, receive, send, request_headers=headers)
+2026-02-19T22:52:00.460144834Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 715, in __call__
+2026-02-19T22:52:00.460147734Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/cors.py", line 144, in simple_response
+2026-02-19T22:52:00.460151434Z [err]      await self.app(scope, receive, send)
+2026-02-19T22:52:00.460155214Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 62, in __call__
+2026-02-19T22:52:00.461486619Z [err]      await self.middleware_stack(scope, receive, send)
+2026-02-19T22:52:00.461491949Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 735, in app
+2026-02-19T22:52:00.461496359Z [err]      await route.handle(scope, receive, send)
+2026-02-19T22:52:00.461500659Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 288, in handle
+2026-02-19T22:52:00.461505089Z [err]      await self.app(scope, receive, send)
+2026-02-19T22:52:00.461510159Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 76, in app
+2026-02-19T22:52:00.461514809Z [err]      await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+2026-02-19T22:52:00.461519379Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-19T22:52:00.461523419Z [err]      raise exc
+2026-02-19T22:52:00.461528129Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-19T22:52:00.461532259Z [err]      await app(scope, receive, sender)
+2026-02-19T22:52:00.461537189Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 73, in app
+2026-02-19T22:52:00.461541969Z [err]      response = await f(request)
+2026-02-19T22:52:00.461545749Z [err]                 ^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.461549288Z [err]    File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 301, in app
+2026-02-19T22:52:00.461552738Z [err]      raw_response = await run_endpoint_function(
+2026-02-19T22:52:00.461556018Z [err]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.461560168Z [err]    File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 212, in run_endpoint_function
+2026-02-19T22:52:00.461563508Z [err]      return await dependant.call(**values)
+2026-02-19T22:52:00.463003004Z [err]      cls.set_backend()
+2026-02-19T22:52:00.463003664Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.463011574Z [err]    File "/app/app/routers/auth.py", line 35, in register
+2026-02-19T22:52:00.463017674Z [err]      user = await register_user(db, req.username, req.email, req.password, req.device_id)
+2026-02-19T22:52:00.463022454Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.463027234Z [err]    File "/app/app/services/auth_service.py", line 38, in register_user
+2026-02-19T22:52:00.463032414Z [err]      hashed_password=hash_password(password),
+2026-02-19T22:52:00.463037904Z [err]                      ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.463046564Z [err]    File "/app/app/utils/security.py", line 26, in hash_password
+2026-02-19T22:52:00.463060914Z [err]      return pwd_context.hash(password)
+2026-02-19T22:52:00.463066764Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.463072574Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/context.py", line 2258, in hash
+2026-02-19T22:52:00.463078364Z [err]      return record.hash(secret, **kwds)
+2026-02-19T22:52:00.463083714Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.463089164Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 779, in hash
+2026-02-19T22:52:00.463094484Z [err]      self.checksum = self._calc_checksum(secret)
+2026-02-19T22:52:00.463100294Z [err]                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.463107344Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 591, in _calc_checksum
+2026-02-19T22:52:00.463112704Z [err]      self._stub_requires_backend()
+2026-02-19T22:52:00.463118134Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2254, in _stub_requires_backend
+2026-02-19T22:52:00.463401512Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 421, in _finalize_backend_mixin
+2026-02-19T22:52:00.463406222Z [err]      if detect_wrap_bug(IDENT_2A):
+2026-02-19T22:52:00.463414232Z [err]         ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.463420032Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2156, in set_backend
+2026-02-19T22:52:00.463427832Z [err]      return owner.set_backend(name, dryrun=dryrun)
+2026-02-19T22:52:00.463432562Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.463436902Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2163, in set_backend
+2026-02-19T22:52:00.463441642Z [err]      return cls.set_backend(name, dryrun=dryrun)
+2026-02-19T22:52:00.463445492Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.463448872Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2188, in set_backend
+2026-02-19T22:52:00.463452652Z [err]      cls._set_backend(name, dryrun)
+2026-02-19T22:52:00.463456462Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2311, in _set_backend
+2026-02-19T22:52:00.463460132Z [err]      super(SubclassBackendMixin, cls)._set_backend(name, dryrun)
+2026-02-19T22:52:00.463463832Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2224, in _set_backend
+2026-02-19T22:52:00.463467962Z [err]      ok = loader(**kwds)
+2026-02-19T22:52:00.463471762Z [err]           ^^^^^^^^^^^^^^
+2026-02-19T22:52:00.463475082Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 626, in _load_backend_mixin
+2026-02-19T22:52:00.463478472Z [err]      return mixin_cls._finalize_backend_mixin(name, dryrun)
+2026-02-19T22:52:00.463481702Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.464636228Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 380, in detect_wrap_bug
+2026-02-19T22:52:00.464642978Z [err]      if verify(secret, bug_hash):
+2026-02-19T22:52:00.464647928Z [err]         ^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.464652678Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 792, in verify
+2026-02-19T22:52:00.464657278Z [err]      return consteq(self._calc_checksum(secret), chk)
+2026-02-19T22:52:00.464661688Z [err]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.464665958Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 655, in _calc_checksum
+2026-02-19T22:52:00.464670908Z [err]      hash = _bcrypt.hashpw(secret, config)
+2026-02-19T22:52:00.464677178Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:52:00.464683018Z [err]  ValueError: password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])
+2026-02-19T22:53:20.479276331Z [err]  (trapped) error reading bcrypt version
+2026-02-19T22:53:20.479281461Z [err]  Traceback (most recent call last):
+2026-02-19T22:53:20.479284391Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 620, in _load_backend_mixin
+2026-02-19T22:53:20.479287461Z [err]      version = _bcrypt.__about__.__version__
+2026-02-19T22:53:20.479290091Z [err]                ^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.479292571Z [err]  AttributeError: module 'bcrypt' has no attribute '__about__'
+2026-02-19T22:53:20.479295671Z [err]  [2026-02-19 22:53:14 +0000] [2] [ERROR] Exception in ASGI application
+2026-02-19T22:53:20.479299411Z [err]    + Exception Group Traceback (most recent call last):
+2026-02-19T22:53:20.479301721Z [err]    |   File "/usr/local/lib/python3.11/site-packages/starlette/_utils.py", line 76, in collapse_excgroups
+2026-02-19T22:53:20.479304071Z [err]    |     yield
+2026-02-19T22:53:20.479306611Z [err]    |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 186, in __call__
+2026-02-19T22:53:20.479309831Z [err]    |     async with anyio.create_task_group() as task_group:
+2026-02-19T22:53:20.479312751Z [err]    |   File "/usr/local/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 783, in __aexit__
+2026-02-19T22:53:20.479315261Z [err]    |     raise BaseExceptionGroup(
+2026-02-19T22:53:20.479318370Z [err]    | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+2026-02-19T22:53:20.479320850Z [err]    +-+---------------- 1 ----------------
+2026-02-19T22:53:20.479323620Z [err]      | Traceback (most recent call last):
+2026-02-19T22:53:20.479326200Z [err]      |   File "/usr/local/lib/python3.11/site-packages/uvicorn/protocols/http/httptools_impl.py", line 409, in run_asgi
+2026-02-19T22:53:20.479328830Z [err]      |     result = await app(  # type: ignore[func-returns-value]
+2026-02-19T22:53:20.479331380Z [err]      |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.481307554Z [err]      |   File "/usr/local/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+2026-02-19T22:53:20.481321514Z [err]      |     return await self.app(scope, receive, send)
+2026-02-19T22:53:20.481327634Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.481331534Z [err]      |   File "/usr/local/lib/python3.11/site-packages/fastapi/applications.py", line 1054, in __call__
+2026-02-19T22:53:20.481335664Z [err]      |     await super().__call__(scope, receive, send)
+2026-02-19T22:53:20.481340714Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/applications.py", line 113, in __call__
+2026-02-19T22:53:20.481344314Z [err]      |     await self.middleware_stack(scope, receive, send)
+2026-02-19T22:53:20.481348194Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 187, in __call__
+2026-02-19T22:53:20.481351784Z [err]      |     raise exc
+2026-02-19T22:53:20.481362854Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 165, in __call__
+2026-02-19T22:53:20.481367444Z [err]      |     await self.app(scope, receive, _send)
+2026-02-19T22:53:20.481371354Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 185, in __call__
+2026-02-19T22:53:20.481375014Z [err]      |     with collapse_excgroups():
+2026-02-19T22:53:20.481378944Z [err]      |   File "/usr/local/lib/python3.11/contextlib.py", line 158, in __exit__
+2026-02-19T22:53:20.481382694Z [err]      |     self.gen.throw(typ, value, traceback)
+2026-02-19T22:53:20.481386454Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_utils.py", line 82, in collapse_excgroups
+2026-02-19T22:53:20.481389994Z [err]      |     raise exc
+2026-02-19T22:53:20.481395254Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 187, in __call__
+2026-02-19T22:53:20.484189334Z [err]      |     await app(scope, receive, sender)
+2026-02-19T22:53:20.484198403Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 715, in __call__
+2026-02-19T22:53:20.484211293Z [err]      |     response = await self.dispatch_func(request, call_next)
+2026-02-19T22:53:20.484215573Z [err]      |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.484219563Z [err]      |   File "/app/app/utils/rate_limiter.py", line 33, in dispatch
+2026-02-19T22:53:20.484222983Z [err]      |     response = await call_next(request)
+2026-02-19T22:53:20.484226683Z [err]      |                ^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.484230323Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 163, in call_next
+2026-02-19T22:53:20.484233783Z [err]      |     raise app_exc
+2026-02-19T22:53:20.484236953Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 149, in coro
+2026-02-19T22:53:20.484240793Z [err]      |     await self.app(scope, receive_or_disconnect, send_no_error)
+2026-02-19T22:53:20.484244773Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/cors.py", line 85, in __call__
+2026-02-19T22:53:20.484248483Z [err]      |     await self.app(scope, receive, send)
+2026-02-19T22:53:20.484251703Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 62, in __call__
+2026-02-19T22:53:20.484254983Z [err]      |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+2026-02-19T22:53:20.484258703Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-19T22:53:20.484261893Z [err]      |     raise exc
+2026-02-19T22:53:20.484264933Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-19T22:53:20.485580679Z [err]      |     await self.middleware_stack(scope, receive, send)
+2026-02-19T22:53:20.485584059Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 735, in app
+2026-02-19T22:53:20.485586899Z [err]      |     await route.handle(scope, receive, send)
+2026-02-19T22:53:20.485589529Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 288, in handle
+2026-02-19T22:53:20.485592119Z [err]      |     await self.app(scope, receive, send)
+2026-02-19T22:53:20.485595359Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 76, in app
+2026-02-19T22:53:20.485598379Z [err]      |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+2026-02-19T22:53:20.485601089Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-19T22:53:20.485603459Z [err]      |     raise exc
+2026-02-19T22:53:20.485605779Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-19T22:53:20.485608279Z [err]      |     await app(scope, receive, sender)
+2026-02-19T22:53:20.485611009Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 73, in app
+2026-02-19T22:53:20.485614009Z [err]      |     response = await f(request)
+2026-02-19T22:53:20.485617099Z [err]      |                ^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.485619929Z [err]      |   File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 301, in app
+2026-02-19T22:53:20.485622629Z [err]      |     raw_response = await run_endpoint_function(
+2026-02-19T22:53:20.485625129Z [err]      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.485627509Z [err]      |   File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 212, in run_endpoint_function
+2026-02-19T22:53:20.487244553Z [err]      |     return await dependant.call(**values)
+2026-02-19T22:53:20.487249263Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.487252243Z [err]      |   File "/app/app/routers/auth.py", line 35, in register
+2026-02-19T22:53:20.487254863Z [err]      |     user = await register_user(db, req.username, req.email, req.password, req.device_id)
+2026-02-19T22:53:20.487257533Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.487260343Z [err]      |   File "/app/app/services/auth_service.py", line 38, in register_user
+2026-02-19T22:53:20.487262893Z [err]      |     hashed_password=hash_password(password),
+2026-02-19T22:53:20.487265163Z [err]      |                     ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.487267663Z [err]      |   File "/app/app/utils/security.py", line 26, in hash_password
+2026-02-19T22:53:20.487270223Z [err]      |     return pwd_context.hash(password)
+2026-02-19T22:53:20.487272903Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.487275313Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/context.py", line 2258, in hash
+2026-02-19T22:53:20.487277623Z [err]      |     return record.hash(secret, **kwds)
+2026-02-19T22:53:20.487279933Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.487282273Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 779, in hash
+2026-02-19T22:53:20.487285773Z [err]      |     self.checksum = self._calc_checksum(secret)
+2026-02-19T22:53:20.487288433Z [err]      |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.487290903Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 591, in _calc_checksum
+2026-02-19T22:53:20.487293353Z [err]      |     self._stub_requires_backend()
+2026-02-19T22:53:20.488645938Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2254, in _stub_requires_backend
+2026-02-19T22:53:20.488649978Z [err]      |     cls.set_backend()
+2026-02-19T22:53:20.488652978Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2156, in set_backend
+2026-02-19T22:53:20.488655958Z [err]      |     return owner.set_backend(name, dryrun=dryrun)
+2026-02-19T22:53:20.488658478Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.488661258Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2163, in set_backend
+2026-02-19T22:53:20.488664128Z [err]      |     return cls.set_backend(name, dryrun=dryrun)
+2026-02-19T22:53:20.488666628Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.488669098Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2188, in set_backend
+2026-02-19T22:53:20.488671758Z [err]      |     cls._set_backend(name, dryrun)
+2026-02-19T22:53:20.488674158Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2311, in _set_backend
+2026-02-19T22:53:20.488677158Z [err]      |     super(SubclassBackendMixin, cls)._set_backend(name, dryrun)
+2026-02-19T22:53:20.488680108Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2224, in _set_backend
+2026-02-19T22:53:20.488682698Z [err]      |     ok = loader(**kwds)
+2026-02-19T22:53:20.488685168Z [err]      |          ^^^^^^^^^^^^^^
+2026-02-19T22:53:20.488687778Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 626, in _load_backend_mixin
+2026-02-19T22:53:20.488690668Z [err]      |     return mixin_cls._finalize_backend_mixin(name, dryrun)
+2026-02-19T22:53:20.488693598Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.489963123Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 421, in _finalize_backend_mixin
+2026-02-19T22:53:20.489967393Z [err]      |     if detect_wrap_bug(IDENT_2A):
+2026-02-19T22:53:20.489970223Z [err]      |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.489972943Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 380, in detect_wrap_bug
+2026-02-19T22:53:20.489975563Z [err]      |     if verify(secret, bug_hash):
+2026-02-19T22:53:20.489978213Z [err]      |        ^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.489981903Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 792, in verify
+2026-02-19T22:53:20.489985833Z [err]      |     return consteq(self._calc_checksum(secret), chk)
+2026-02-19T22:53:20.489989133Z [err]      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.489991683Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 655, in _calc_checksum
+2026-02-19T22:53:20.489994313Z [err]      |     hash = _bcrypt.hashpw(secret, config)
+2026-02-19T22:53:20.489996913Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.490059353Z [err]      | ValueError: password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])
+2026-02-19T22:53:20.490062243Z [err]      +------------------------------------
+2026-02-19T22:53:20.490064983Z [err]  
+2026-02-19T22:53:20.490067873Z [err]  During handling of the above exception, another exception occurred:
+2026-02-19T22:53:20.490070623Z [err]  
+2026-02-19T22:53:20.490073603Z [err]  Traceback (most recent call last):
+2026-02-19T22:53:20.490086943Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/protocols/http/httptools_impl.py", line 409, in run_asgi
+2026-02-19T22:53:20.491371649Z [err]      await self.app(scope, receive, _send)
+2026-02-19T22:53:20.491380139Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 185, in __call__
+2026-02-19T22:53:20.491388109Z [err]      result = await app(  # type: ignore[func-returns-value]
+2026-02-19T22:53:20.491388349Z [err]      with collapse_excgroups():
+2026-02-19T22:53:20.491395899Z [err]    File "/usr/local/lib/python3.11/contextlib.py", line 158, in __exit__
+2026-02-19T22:53:20.491397049Z [err]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.491403549Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+2026-02-19T22:53:20.491406159Z [err]      self.gen.throw(typ, value, traceback)
+2026-02-19T22:53:20.491411049Z [err]      return await self.app(scope, receive, send)
+2026-02-19T22:53:20.491414639Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_utils.py", line 82, in collapse_excgroups
+2026-02-19T22:53:20.491419339Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.491425219Z [err]      raise exc
+2026-02-19T22:53:20.491426939Z [err]    File "/usr/local/lib/python3.11/site-packages/fastapi/applications.py", line 1054, in __call__
+2026-02-19T22:53:20.491432689Z [err]      await super().__call__(scope, receive, send)
+2026-02-19T22:53:20.491436319Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/applications.py", line 113, in __call__
+2026-02-19T22:53:20.491439529Z [err]      await self.middleware_stack(scope, receive, send)
+2026-02-19T22:53:20.491442929Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 187, in __call__
+2026-02-19T22:53:20.491446099Z [err]      raise exc
+2026-02-19T22:53:20.491448839Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 165, in __call__
+2026-02-19T22:53:20.492156446Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 187, in __call__
+2026-02-19T22:53:20.492164226Z [err]      response = await self.dispatch_func(request, call_next)
+2026-02-19T22:53:20.492164896Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 715, in __call__
+2026-02-19T22:53:20.492168176Z [err]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.492172956Z [err]    File "/app/app/utils/rate_limiter.py", line 33, in dispatch
+2026-02-19T22:53:20.492176066Z [err]      await self.app(scope, receive_or_disconnect, send_no_error)
+2026-02-19T22:53:20.492179246Z [err]      response = await call_next(request)
+2026-02-19T22:53:20.492186946Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/cors.py", line 85, in __call__
+2026-02-19T22:53:20.492187076Z [err]                 ^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.492194356Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 163, in call_next
+2026-02-19T22:53:20.492197506Z [err]      await self.app(scope, receive, send)
+2026-02-19T22:53:20.492200896Z [err]      raise app_exc
+2026-02-19T22:53:20.492206816Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 149, in coro
+2026-02-19T22:53:20.492208736Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 62, in __call__
+2026-02-19T22:53:20.492217556Z [err]      await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+2026-02-19T22:53:20.492222736Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-19T22:53:20.492227176Z [err]      raise exc
+2026-02-19T22:53:20.492231566Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-19T22:53:20.492236276Z [err]      await app(scope, receive, sender)
+2026-02-19T22:53:20.493320743Z [err]      await self.middleware_stack(scope, receive, send)
+2026-02-19T22:53:20.493324953Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 735, in app
+2026-02-19T22:53:20.493328083Z [err]      await route.handle(scope, receive, send)
+2026-02-19T22:53:20.493378512Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 288, in handle
+2026-02-19T22:53:20.493380932Z [err]      await self.app(scope, receive, send)
+2026-02-19T22:53:20.493383852Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 76, in app
+2026-02-19T22:53:20.493386682Z [err]      await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+2026-02-19T22:53:20.493389572Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-19T22:53:20.493392502Z [err]      raise exc
+2026-02-19T22:53:20.493395802Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-19T22:53:20.493398382Z [err]      await app(scope, receive, sender)
+2026-02-19T22:53:20.493400922Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 73, in app
+2026-02-19T22:53:20.493403622Z [err]      response = await f(request)
+2026-02-19T22:53:20.493406012Z [err]                 ^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.493408882Z [err]    File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 301, in app
+2026-02-19T22:53:20.493411222Z [err]      raw_response = await run_endpoint_function(
+2026-02-19T22:53:20.493413512Z [err]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.493416062Z [err]    File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 212, in run_endpoint_function
+2026-02-19T22:53:20.493418602Z [err]      return await dependant.call(**values)
+2026-02-19T22:53:20.495681484Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.495684314Z [err]    File "/app/app/routers/auth.py", line 35, in register
+2026-02-19T22:53:20.495687394Z [err]      user = await register_user(db, req.username, req.email, req.password, req.device_id)
+2026-02-19T22:53:20.495690454Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.495693634Z [err]    File "/app/app/services/auth_service.py", line 38, in register_user
+2026-02-19T22:53:20.495696684Z [err]      hashed_password=hash_password(password),
+2026-02-19T22:53:20.495700224Z [err]                      ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.495703064Z [err]    File "/app/app/utils/security.py", line 26, in hash_password
+2026-02-19T22:53:20.495706154Z [err]      return pwd_context.hash(password)
+2026-02-19T22:53:20.495709603Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.495712233Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/context.py", line 2258, in hash
+2026-02-19T22:53:20.495715423Z [err]      return record.hash(secret, **kwds)
+2026-02-19T22:53:20.495718033Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.495720743Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 779, in hash
+2026-02-19T22:53:20.495723413Z [err]      self.checksum = self._calc_checksum(secret)
+2026-02-19T22:53:20.495726043Z [err]                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.495728603Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 591, in _calc_checksum
+2026-02-19T22:53:20.495731073Z [err]      self._stub_requires_backend()
+2026-02-19T22:53:20.495733573Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2254, in _stub_requires_backend
+2026-02-19T22:53:20.495736583Z [err]      cls.set_backend()
+2026-02-19T22:53:20.497580467Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2156, in set_backend
+2026-02-19T22:53:20.497594777Z [err]      return mixin_cls._finalize_backend_mixin(name, dryrun)
+2026-02-19T22:53:20.497595877Z [err]      return owner.set_backend(name, dryrun=dryrun)
+2026-02-19T22:53:20.497601547Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.497606537Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2163, in set_backend
+2026-02-19T22:53:20.497609877Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.497616057Z [err]      return cls.set_backend(name, dryrun=dryrun)
+2026-02-19T22:53:20.497617907Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 421, in _finalize_backend_mixin
+2026-02-19T22:53:20.497623147Z [err]      if detect_wrap_bug(IDENT_2A):
+2026-02-19T22:53:20.497628777Z [err]         ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.497631567Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.497637147Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2188, in set_backend
+2026-02-19T22:53:20.497641487Z [err]      cls._set_backend(name, dryrun)
+2026-02-19T22:53:20.497645487Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2311, in _set_backend
+2026-02-19T22:53:20.497649537Z [err]      super(SubclassBackendMixin, cls)._set_backend(name, dryrun)
+2026-02-19T22:53:20.497653677Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2224, in _set_backend
+2026-02-19T22:53:20.497657417Z [err]      ok = loader(**kwds)
+2026-02-19T22:53:20.497662267Z [err]           ^^^^^^^^^^^^^^
+2026-02-19T22:53:20.497666307Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 626, in _load_backend_mixin
+2026-02-19T22:53:20.498785534Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 380, in detect_wrap_bug
+2026-02-19T22:53:20.498788884Z [err]      if verify(secret, bug_hash):
+2026-02-19T22:53:20.498791714Z [err]         ^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.498794634Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 792, in verify
+2026-02-19T22:53:20.498797703Z [err]      return consteq(self._calc_checksum(secret), chk)
+2026-02-19T22:53:20.498800123Z [err]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.498803013Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 655, in _calc_checksum
+2026-02-19T22:53:20.498805613Z [err]      hash = _bcrypt.hashpw(secret, config)
+2026-02-19T22:53:20.498808033Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.498810423Z [err]  ValueError: password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])
+2026-02-19T22:53:20.498812803Z [err]  (trapped) error reading bcrypt version
+2026-02-19T22:53:20.498815153Z [err]  Traceback (most recent call last):
+2026-02-19T22:53:20.498818003Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 620, in _load_backend_mixin
+2026-02-19T22:53:20.498820503Z [err]      version = _bcrypt.__about__.__version__
+2026-02-19T22:53:20.498822963Z [err]                ^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.498825403Z [err]  AttributeError: module 'bcrypt' has no attribute '__about__'
+2026-02-19T22:53:20.498827903Z [err]  [2026-02-19 22:53:19 +0000] [2] [ERROR] Exception in ASGI application
+2026-02-19T22:53:20.498830893Z [err]    + Exception Group Traceback (most recent call last):
+2026-02-19T22:53:20.498833653Z [err]    |   File "/usr/local/lib/python3.11/site-packages/starlette/_utils.py", line 76, in collapse_excgroups
+2026-02-19T22:53:20.500192548Z [err]    |     yield
+2026-02-19T22:53:20.500201828Z [err]    |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 186, in __call__
+2026-02-19T22:53:20.500211708Z [err]    |     async with anyio.create_task_group() as task_group:
+2026-02-19T22:53:20.500216748Z [err]    |   File "/usr/local/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 783, in __aexit__
+2026-02-19T22:53:20.500222738Z [err]    |     raise BaseExceptionGroup(
+2026-02-19T22:53:20.500228658Z [err]    | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+2026-02-19T22:53:20.500233428Z [err]    +-+---------------- 1 ----------------
+2026-02-19T22:53:20.500237398Z [err]      | Traceback (most recent call last):
+2026-02-19T22:53:20.500242178Z [err]      |   File "/usr/local/lib/python3.11/site-packages/uvicorn/protocols/http/httptools_impl.py", line 409, in run_asgi
+2026-02-19T22:53:20.500247158Z [err]      |     result = await app(  # type: ignore[func-returns-value]
+2026-02-19T22:53:20.500259318Z [err]      |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.500263778Z [err]      |   File "/usr/local/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+2026-02-19T22:53:20.500268228Z [err]      |     return await self.app(scope, receive, send)
+2026-02-19T22:53:20.500273708Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.500277978Z [err]      |   File "/usr/local/lib/python3.11/site-packages/fastapi/applications.py", line 1054, in __call__
+2026-02-19T22:53:20.500283048Z [err]      |     await super().__call__(scope, receive, send)
+2026-02-19T22:53:20.500288028Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/applications.py", line 113, in __call__
+2026-02-19T22:53:20.500292628Z [err]      |     await self.middleware_stack(scope, receive, send)
+2026-02-19T22:53:20.501405564Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 149, in coro
+2026-02-19T22:53:20.501414834Z [err]      |     response = await call_next(request)
+2026-02-19T22:53:20.501420354Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 187, in __call__
+2026-02-19T22:53:20.501425464Z [err]      |                ^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.501428664Z [err]      |     raise exc
+2026-02-19T22:53:20.501435344Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 165, in __call__
+2026-02-19T22:53:20.501436604Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 163, in call_next
+2026-02-19T22:53:20.501440294Z [err]      |     await self.app(scope, receive, _send)
+2026-02-19T22:53:20.501446334Z [err]      |     raise app_exc
+2026-02-19T22:53:20.501449464Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 185, in __call__
+2026-02-19T22:53:20.501454504Z [err]      |     with collapse_excgroups():
+2026-02-19T22:53:20.501457714Z [err]      |   File "/usr/local/lib/python3.11/contextlib.py", line 158, in __exit__
+2026-02-19T22:53:20.501461014Z [err]      |     self.gen.throw(typ, value, traceback)
+2026-02-19T22:53:20.501464424Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_utils.py", line 82, in collapse_excgroups
+2026-02-19T22:53:20.501467484Z [err]      |     raise exc
+2026-02-19T22:53:20.501470684Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 187, in __call__
+2026-02-19T22:53:20.501473214Z [err]      |     response = await self.dispatch_func(request, call_next)
+2026-02-19T22:53:20.501476124Z [err]      |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.501479634Z [err]      |   File "/app/app/utils/rate_limiter.py", line 33, in dispatch
+2026-02-19T22:53:20.502855159Z [err]      |     await self.app(scope, receive_or_disconnect, send_no_error)
+2026-02-19T22:53:20.502863099Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/cors.py", line 85, in __call__
+2026-02-19T22:53:20.502867829Z [err]      |     await self.app(scope, receive, send)
+2026-02-19T22:53:20.502873179Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 62, in __call__
+2026-02-19T22:53:20.502876709Z [err]      |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+2026-02-19T22:53:20.502880499Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-19T22:53:20.502883839Z [err]      |     raise exc
+2026-02-19T22:53:20.502886889Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-19T22:53:20.502890199Z [err]      |     await app(scope, receive, sender)
+2026-02-19T22:53:20.502893499Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 715, in __call__
+2026-02-19T22:53:20.502896389Z [err]      |     await self.middleware_stack(scope, receive, send)
+2026-02-19T22:53:20.502899379Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 735, in app
+2026-02-19T22:53:20.502902419Z [err]      |     await route.handle(scope, receive, send)
+2026-02-19T22:53:20.502905689Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 288, in handle
+2026-02-19T22:53:20.502908949Z [err]      |     await self.app(scope, receive, send)
+2026-02-19T22:53:20.502912219Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 76, in app
+2026-02-19T22:53:20.502915039Z [err]      |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+2026-02-19T22:53:20.504104975Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-19T22:53:20.504113175Z [err]      |     raise exc
+2026-02-19T22:53:20.504118115Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-19T22:53:20.504122135Z [err]      |     await app(scope, receive, sender)
+2026-02-19T22:53:20.504126495Z [err]      |   File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 73, in app
+2026-02-19T22:53:20.504131515Z [err]      |     response = await f(request)
+2026-02-19T22:53:20.504132025Z [err]      |     user = await register_user(db, req.username, req.email, req.password, req.device_id)
+2026-02-19T22:53:20.504136895Z [err]      |                ^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.504138715Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.504141765Z [err]      |   File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 301, in app
+2026-02-19T22:53:20.504143385Z [err]      |   File "/app/app/services/auth_service.py", line 38, in register_user
+2026-02-19T22:53:20.504147005Z [err]      |     raw_response = await run_endpoint_function(
+2026-02-19T22:53:20.504147545Z [err]      |     hashed_password=hash_password(password),
+2026-02-19T22:53:20.504151215Z [err]      |                     ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.504152915Z [err]      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.504157315Z [err]      |   File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 212, in run_endpoint_function
+2026-02-19T22:53:20.504161325Z [err]      |     return await dependant.call(**values)
+2026-02-19T22:53:20.504165825Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.504170555Z [err]      |   File "/app/app/routers/auth.py", line 35, in register
+2026-02-19T22:53:20.505654249Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2254, in _stub_requires_backend
+2026-02-19T22:53:20.505656579Z [err]      |     return cls.set_backend(name, dryrun=dryrun)
+2026-02-19T22:53:20.505660419Z [err]      |     cls.set_backend()
+2026-02-19T22:53:20.505662119Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.505664819Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2156, in set_backend
+2026-02-19T22:53:20.505668249Z [err]      |     return owner.set_backend(name, dryrun=dryrun)
+2026-02-19T22:53:20.505671909Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.505675269Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2163, in set_backend
+2026-02-19T22:53:20.505884828Z [err]      |   File "/app/app/utils/security.py", line 26, in hash_password
+2026-02-19T22:53:20.505892148Z [err]      |     return pwd_context.hash(password)
+2026-02-19T22:53:20.505896758Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.505900798Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/context.py", line 2258, in hash
+2026-02-19T22:53:20.505904148Z [err]      |     return record.hash(secret, **kwds)
+2026-02-19T22:53:20.505911138Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.505914708Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 779, in hash
+2026-02-19T22:53:20.505918288Z [err]      |     self.checksum = self._calc_checksum(secret)
+2026-02-19T22:53:20.505921708Z [err]      |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.505924768Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 591, in _calc_checksum
+2026-02-19T22:53:20.505928538Z [err]      |     self._stub_requires_backend()
+2026-02-19T22:53:20.507283294Z [err]      |        ^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.507287164Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 792, in verify
+2026-02-19T22:53:20.507290814Z [err]      |     return consteq(self._calc_checksum(secret), chk)
+2026-02-19T22:53:20.507298604Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2188, in set_backend
+2026-02-19T22:53:20.507302414Z [err]      |     cls._set_backend(name, dryrun)
+2026-02-19T22:53:20.507306374Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2311, in _set_backend
+2026-02-19T22:53:20.507310084Z [err]      |     super(SubclassBackendMixin, cls)._set_backend(name, dryrun)
+2026-02-19T22:53:20.507313974Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2224, in _set_backend
+2026-02-19T22:53:20.507318144Z [err]      |     ok = loader(**kwds)
+2026-02-19T22:53:20.507322134Z [err]      |          ^^^^^^^^^^^^^^
+2026-02-19T22:53:20.507326214Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 626, in _load_backend_mixin
+2026-02-19T22:53:20.507329704Z [err]      |     return mixin_cls._finalize_backend_mixin(name, dryrun)
+2026-02-19T22:53:20.507336234Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.507339954Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 421, in _finalize_backend_mixin
+2026-02-19T22:53:20.507343694Z [err]      |     if detect_wrap_bug(IDENT_2A):
+2026-02-19T22:53:20.507347544Z [err]      |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.507351284Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 380, in detect_wrap_bug
+2026-02-19T22:53:20.507354894Z [err]      |     if verify(secret, bug_hash):
+2026-02-19T22:53:20.508135981Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/applications.py", line 113, in __call__
+2026-02-19T22:53:20.508142771Z [err]      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.508147741Z [err]      |   File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 655, in _calc_checksum
+2026-02-19T22:53:20.508150511Z [err]      |     hash = _bcrypt.hashpw(secret, config)
+2026-02-19T22:53:20.508156471Z [err]      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.508159591Z [err]      | ValueError: password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])
+2026-02-19T22:53:20.508163151Z [err]      +------------------------------------
+2026-02-19T22:53:20.508166280Z [err]  
+2026-02-19T22:53:20.508169380Z [err]  During handling of the above exception, another exception occurred:
+2026-02-19T22:53:20.508172360Z [err]  
+2026-02-19T22:53:20.508176710Z [err]  Traceback (most recent call last):
+2026-02-19T22:53:20.508179760Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/protocols/http/httptools_impl.py", line 409, in run_asgi
+2026-02-19T22:53:20.508182560Z [err]      result = await app(  # type: ignore[func-returns-value]
+2026-02-19T22:53:20.508185570Z [err]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.508189180Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+2026-02-19T22:53:20.508192490Z [err]      return await self.app(scope, receive, send)
+2026-02-19T22:53:20.508195580Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.508198490Z [err]    File "/usr/local/lib/python3.11/site-packages/fastapi/applications.py", line 1054, in __call__
+2026-02-19T22:53:20.508201490Z [err]      await super().__call__(scope, receive, send)
+2026-02-19T22:53:20.510089864Z [err]      await self.middleware_stack(scope, receive, send)
+2026-02-19T22:53:20.510096034Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 187, in __call__
+2026-02-19T22:53:20.510101414Z [err]      raise exc
+2026-02-19T22:53:20.510106034Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 165, in __call__
+2026-02-19T22:53:20.510109754Z [err]      await self.app(scope, receive, _send)
+2026-02-19T22:53:20.510113464Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 185, in __call__
+2026-02-19T22:53:20.510124804Z [err]      with collapse_excgroups():
+2026-02-19T22:53:20.510128044Z [err]    File "/usr/local/lib/python3.11/contextlib.py", line 158, in __exit__
+2026-02-19T22:53:20.510131104Z [err]      self.gen.throw(typ, value, traceback)
+2026-02-19T22:53:20.510135334Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_utils.py", line 82, in collapse_excgroups
+2026-02-19T22:53:20.510139314Z [err]      raise exc
+2026-02-19T22:53:20.510142514Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 187, in __call__
+2026-02-19T22:53:20.510145834Z [err]      response = await self.dispatch_func(request, call_next)
+2026-02-19T22:53:20.510149324Z [err]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.510152624Z [err]    File "/app/app/utils/rate_limiter.py", line 33, in dispatch
+2026-02-19T22:53:20.510156064Z [err]      response = await call_next(request)
+2026-02-19T22:53:20.510159254Z [err]                 ^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.510163134Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 163, in call_next
+2026-02-19T22:53:20.510166284Z [err]      raise app_exc
+2026-02-19T22:53:20.510169394Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/base.py", line 149, in coro
+2026-02-19T22:53:20.511165230Z [err]      await self.app(scope, receive_or_disconnect, send_no_error)
+2026-02-19T22:53:20.511167900Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/cors.py", line 85, in __call__
+2026-02-19T22:53:20.511171290Z [err]      await self.app(scope, receive, send)
+2026-02-19T22:53:20.511174090Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 62, in __call__
+2026-02-19T22:53:20.511176570Z [err]      await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+2026-02-19T22:53:20.511179020Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-19T22:53:20.511181400Z [err]      raise exc
+2026-02-19T22:53:20.511184270Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-19T22:53:20.511186960Z [err]      await app(scope, receive, sender)
+2026-02-19T22:53:20.511189350Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 715, in __call__
+2026-02-19T22:53:20.511191630Z [err]      await self.middleware_stack(scope, receive, send)
+2026-02-19T22:53:20.511193860Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 735, in app
+2026-02-19T22:53:20.511196510Z [err]      await route.handle(scope, receive, send)
+2026-02-19T22:53:20.511198750Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 288, in handle
+2026-02-19T22:53:20.511201220Z [err]      await self.app(scope, receive, send)
+2026-02-19T22:53:20.511204080Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 76, in app
+2026-02-19T22:53:20.511206910Z [err]      await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+2026-02-19T22:53:20.511209560Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+2026-02-19T22:53:20.512698995Z [err]      raise exc
+2026-02-19T22:53:20.512701615Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+2026-02-19T22:53:20.512704105Z [err]      await app(scope, receive, sender)
+2026-02-19T22:53:20.512707115Z [err]    File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 73, in app
+2026-02-19T22:53:20.512710005Z [err]      response = await f(request)
+2026-02-19T22:53:20.512713005Z [err]                 ^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.512715915Z [err]    File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 301, in app
+2026-02-19T22:53:20.512718385Z [err]      raw_response = await run_endpoint_function(
+2026-02-19T22:53:20.512720865Z [err]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.512723155Z [err]    File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 212, in run_endpoint_function
+2026-02-19T22:53:20.512725495Z [err]      return await dependant.call(**values)
+2026-02-19T22:53:20.512727965Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.512730775Z [err]    File "/app/app/routers/auth.py", line 35, in register
+2026-02-19T22:53:20.512733065Z [err]      user = await register_user(db, req.username, req.email, req.password, req.device_id)
+2026-02-19T22:53:20.512735445Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.512737645Z [err]    File "/app/app/services/auth_service.py", line 38, in register_user
+2026-02-19T22:53:20.512740175Z [err]      hashed_password=hash_password(password),
+2026-02-19T22:53:20.512743025Z [err]                      ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.512745225Z [err]    File "/app/app/utils/security.py", line 26, in hash_password
+2026-02-19T22:53:20.512747445Z [err]      return pwd_context.hash(password)
+2026-02-19T22:53:20.514065321Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.514067951Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/context.py", line 2258, in hash
+2026-02-19T22:53:20.514070351Z [err]      return record.hash(secret, **kwds)
+2026-02-19T22:53:20.514073831Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.514076241Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 779, in hash
+2026-02-19T22:53:20.514078661Z [err]      self.checksum = self._calc_checksum(secret)
+2026-02-19T22:53:20.514081371Z [err]                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.514084411Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 591, in _calc_checksum
+2026-02-19T22:53:20.514086981Z [err]      self._stub_requires_backend()
+2026-02-19T22:53:20.514090351Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2254, in _stub_requires_backend
+2026-02-19T22:53:20.514092921Z [err]      cls.set_backend()
+2026-02-19T22:53:20.514095261Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2156, in set_backend
+2026-02-19T22:53:20.514098321Z [err]      return owner.set_backend(name, dryrun=dryrun)
+2026-02-19T22:53:20.514100801Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.514103691Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2163, in set_backend
+2026-02-19T22:53:20.514113651Z [err]      return cls.set_backend(name, dryrun=dryrun)
+2026-02-19T22:53:20.514116101Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.514118621Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2188, in set_backend
+2026-02-19T22:53:20.514121161Z [err]      cls._set_backend(name, dryrun)
+2026-02-19T22:53:20.514123861Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2311, in _set_backend
+2026-02-19T22:53:20.515395296Z [err]      super(SubclassBackendMixin, cls)._set_backend(name, dryrun)
+2026-02-19T22:53:20.515397706Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 2224, in _set_backend
+2026-02-19T22:53:20.515400436Z [err]      ok = loader(**kwds)
+2026-02-19T22:53:20.515403996Z [err]           ^^^^^^^^^^^^^^
+2026-02-19T22:53:20.515406656Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 626, in _load_backend_mixin
+2026-02-19T22:53:20.515409216Z [err]      return mixin_cls._finalize_backend_mixin(name, dryrun)
+2026-02-19T22:53:20.515411866Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.515414276Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 421, in _finalize_backend_mixin
+2026-02-19T22:53:20.515416886Z [err]      if detect_wrap_bug(IDENT_2A):
+2026-02-19T22:53:20.515419986Z [err]         ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.515422436Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 380, in detect_wrap_bug
+2026-02-19T22:53:20.515425586Z [err]      if verify(secret, bug_hash):
+2026-02-19T22:53:20.515427986Z [err]         ^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.515430496Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/utils/handlers.py", line 792, in verify
+2026-02-19T22:53:20.515433526Z [err]      return consteq(self._calc_checksum(secret), chk)
+2026-02-19T22:53:20.515435986Z [err]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.515439056Z [err]    File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 655, in _calc_checksum
+2026-02-19T22:53:20.515441466Z [err]      hash = _bcrypt.hashpw(secret, config)
+2026-02-19T22:53:20.515443836Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T22:53:20.515446186Z [err]  ValueError: password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])
