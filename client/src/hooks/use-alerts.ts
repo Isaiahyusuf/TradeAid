@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPatch } from "@/lib/api";
+import { useAuth } from "@/hooks/use-auth";
 
 export type Alert = {
   id: string;
@@ -14,6 +15,7 @@ export type Alert = {
 };
 
 export function useAlerts(params?: { chain?: string; alert_type?: string; severity?: string }) {
+  const { hasToken } = useAuth();
   const queryString = new URLSearchParams();
   if (params?.chain) queryString.set("chain", params.chain);
   if (params?.alert_type) queryString.set("alert_type", params.alert_type);
@@ -24,6 +26,8 @@ export function useAlerts(params?: { chain?: string; alert_type?: string; severi
     queryKey: ["alerts", params],
     queryFn: () => apiGet<{ alerts: Alert[]; count: number }>(`/api/alerts${qs ? `?${qs}` : ""}`),
     refetchInterval: 30000,
+    enabled: hasToken,
+    retry: 1,
   });
 }
 

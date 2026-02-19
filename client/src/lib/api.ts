@@ -31,7 +31,9 @@ export async function apiFetch<T = any>(
   });
 
   if (res.status === 401) {
-    clearToken();
+    if (path.includes("/api/auth/me")) {
+      clearToken();
+    }
     throw new Error("Unauthorized");
   }
 

@@ -13,6 +13,7 @@ import { SiSolana, SiEthereum } from "react-icons/si";
 import { Link } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 
 function ChainIcon({ chain }: { chain: string }) {
   const key = String(chain || "").toUpperCase();
@@ -41,9 +42,17 @@ function formatNumber(n: number) {
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const { data: tokenData, isLoading: tokensLoading } = useTokens();
-  const { data: stats, isLoading: statsLoading } = useTokenStats();
-  const { data: alertData, isLoading: alertsLoading } = useAlerts();
+  const qc = useQueryClient();
+  const { data: tokenData, isLoading: tokensLoading, error: tokensError } = useTokens();
+  const { data: stats, isLoading: statsLoading, error: statsError } = useTokenStats();
+  const { data: alertData, isLoading: alertsLoading, error: alertsError } = useAlerts();
+  const hasError = tokensError || statsError || alertsError;
+
+  const retryAll = () => {
+    qc.refetchQueries({ queryKey: ["tokens"] });
+    qc.refetchQueries({ queryKey: ["token-stats"] });
+    qc.refetchQueries({ queryKey: ["alerts"] });
+  };
 
   return (
     <Layout>
@@ -56,6 +65,24 @@ export default function Dashboard() {
             <p className="text-muted-foreground">Your trading command center</p>
           </div>
         </div>
+
+        {hasError && (
+          <Card className="p-4 bg-destructive/10 border-destructive/20">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-sm text-destructive">
+                Could not load some data. The server may be temporarily unavailable.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="button-retry-dashboard"
+                onClick={retryAll}
+              >
+                Retry
+              </Button>
+            </div>
+          </Card>
+        )}
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="p-4 bg-card/60 backdrop-blur">

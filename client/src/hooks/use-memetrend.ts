@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "@/lib/api";
+import { useAuth } from "@/hooks/use-auth";
 
 export type TokenItem = {
   id: string;
@@ -17,20 +18,26 @@ export type TokenItem = {
 };
 
 export function useTokens(chain?: string) {
+  const { hasToken } = useAuth();
   return useQuery({
     queryKey: ["tokens", chain],
     queryFn: () => apiGet<{ tokens: TokenItem[]; count: number }>(`/api/tokens${chain ? `?chain=${chain}` : ""}`),
     staleTime: 30000,
     refetchInterval: 60000,
+    enabled: hasToken,
+    retry: 1,
   });
 }
 
 export function useTokenStats() {
+  const { hasToken } = useAuth();
   return useQuery({
     queryKey: ["token-stats"],
     queryFn: () => apiGet<{ total_tokens: number; by_chain: Record<string, number> }>("/api/tokens/stats/overview"),
     staleTime: 30000,
     refetchInterval: 60000,
+    enabled: hasToken,
+    retry: 1,
   });
 }
 

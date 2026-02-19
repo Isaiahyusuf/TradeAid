@@ -14,6 +14,7 @@ type AuthContextType = {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  hasToken: boolean;
   login: (username: string, password: string, totp_code?: string) => Promise<any>;
   register: (username: string, email: string, password: string) => Promise<any>;
   logout: () => void;
@@ -24,21 +25,25 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [tokenState, setTokenState] = useState<boolean>(!!localStorage.getItem("trade_aid_token"));
   const queryClient = useQueryClient();
 
   const checkAuth = useCallback(async () => {
     const token = localStorage.getItem("trade_aid_token");
     if (!token) {
       setUser(null);
+      setTokenState(false);
       setIsLoading(false);
       return;
     }
+    setTokenState(true);
     try {
       const data = await apiGet<User>("/api/auth/me");
       setUser(data);
     } catch {
       clearToken();
       setUser(null);
+      setTokenState(false);
     } finally {
       setIsLoading(false);
     }
@@ -55,8 +60,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       totp_code,
     });
     setToken(data.access_token);
+    setTokenState(true);
     const me = await apiGet<User>("/api/auth/me");
     setUser(me);
+    queryClient.invalidateQueries();
     return data;
   };
 
@@ -72,6 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   const logout = () => {
     clearToken();
     setUser(null);
+    setTokenState(false);
     queryClient.clear();
   };
 
@@ -80,6 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       user,
       isLoading,
       isAuthenticated: !!user,
+      hasToken: tokenState,
       login,
       register,
       logout,
