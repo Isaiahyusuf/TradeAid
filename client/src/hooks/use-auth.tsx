@@ -21,7 +21,7 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const queryClient = useQueryClient();
@@ -29,6 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const checkAuth = useCallback(async () => {
     const token = localStorage.getItem("trade_aid_token");
     if (!token) {
+      setUser(null);
       setIsLoading(false);
       return;
     }
@@ -54,7 +55,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       totp_code,
     });
     setToken(data.access_token);
-    await checkAuth();
+    const me = await apiGet<User>("/api/auth/me");
+    setUser(me);
     return data;
   };
 
