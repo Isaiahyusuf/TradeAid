@@ -1,6 +1,30 @@
 import os
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from urllib.parse import urlparse, urlunparse
+
+
+def fix_database_url(url: str, async_driver: bool = False) -> str:
+    if not url:
+        return url
+    parsed = urlparse(url)
+    host = parsed.hostname or "localhost"
+    port = parsed.port
+    if port is None:
+        port = 5432
+    scheme = parsed.scheme
+    if async_driver:
+        if scheme == "postgresql" or scheme == "postgres":
+            scheme = "postgresql+asyncpg"
+        elif not scheme.startswith("postgresql+asyncpg"):
+            scheme = "postgresql+asyncpg"
+    else:
+        if scheme == "postgres":
+            scheme = "postgresql"
+        elif scheme.startswith("postgresql+asyncpg"):
+            scheme = "postgresql"
+    netloc = f"{parsed.username or ''}:{parsed.password or ''}@{host}:{port}" if parsed.username else f"{host}:{port}"
+    return urlunparse((scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
 
 
 class Settings(BaseSettings):
@@ -10,6 +34,24 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/trade_aid"
     DATABASE_URL_SYNC: str = "postgresql://postgres:postgres@localhost:5432/trade_aid"
+
+    PGHOST: str = ""
+    PGPORT: str = "5432"
+    PGUSER: str = ""
+    PGPASSWORD: str = ""
+    PGDATABASE: str = ""
+
+    def get_async_database_url(self) -> str:
+        if self.PGHOST and self.PGUSER:
+            port = self.PGPORT or "5432"
+            return f"postgresql+asyncpg://{self.PGUSER}:{self.PGPASSWORD}@{self.PGHOST}:{port}/{self.PGDATABASE}"
+        return fix_database_url(self.DATABASE_URL, async_driver=True)
+
+    def get_sync_database_url(self) -> str:
+        if self.PGHOST and self.PGUSER:
+            port = self.PGPORT or "5432"
+            return f"postgresql://{self.PGUSER}:{self.PGPASSWORD}@{self.PGHOST}:{port}/{self.PGDATABASE}"
+        return fix_database_url(self.DATABASE_URL_SYNC, async_driver=False)
 
     REDIS_URL: str = "redis://localhost:6379/0"
 

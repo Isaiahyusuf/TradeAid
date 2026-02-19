@@ -1,0 +1,749 @@
+2026-02-19T20:40:54.056653532Z [err]  [2026-02-19 20:40:53 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:40:54.056657222Z [err]  [2026-02-19 20:40:53 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:40:54.056660932Z [err]  [2026-02-19 20:40:53 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:40:54.056664162Z [err]  [2026-02-19 20:40:53 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:40:54.293752997Z [err]  [2026-02-19 20:40:54 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:40:54.293767157Z [err]  Traceback (most recent call last):
+2026-02-19T20:40:54.293774227Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:40:54.293779537Z [err]      worker.init_process()
+2026-02-19T20:40:54.293784737Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:40:54.293790057Z [err]      super().init_process()
+2026-02-19T20:40:54.293795487Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:40:54.293800017Z [err]      self.load_wsgi()
+2026-02-19T20:40:54.293805377Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:40:54.293810397Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:40:54.293814627Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:40:54.293824386Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:40:54.293830576Z [err]      self.callable = self.load()
+2026-02-19T20:40:54.293835336Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:40:54.293839596Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:40:54.293842986Z [err]      return self.load_wsgiapp()
+2026-02-19T20:40:54.293846826Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:54.293851236Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:40:54.293855136Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:40:54.293860816Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:54.293864686Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:40:54.294792667Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:40:54.294802677Z [err]    File "/app/app/main.py", line 7, in <module>
+2026-02-19T20:40:54.294811717Z [err]      from app.database import init_db, close_db
+2026-02-19T20:40:54.294811817Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:40:54.294816746Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:54.294822346Z [err]    File "/app/app/database.py", line 7, in <module>
+2026-02-19T20:40:54.294823386Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:40:54.294830986Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:40:54.294833416Z [err]      engine = create_async_engine(
+2026-02-19T20:40:54.294837126Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:54.294843946Z [err]               ^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:54.294844906Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:40:54.294850626Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:40:54.294853846Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/ext/asyncio/engine.py", line 120, in create_async_engine
+2026-02-19T20:40:54.294856806Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:40:54.294863466Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:40:54.294866116Z [err]      sync_engine = _create_engine(url, **kw)
+2026-02-19T20:40:54.294870706Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:40:54.294873876Z [err]                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:54.294878656Z [err]    File "<string>", line 2, in create_engine
+2026-02-19T20:40:54.295579459Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 211, in create
+2026-02-19T20:40:54.295585979Z [err]      cls._assert_port(port),
+2026-02-19T20:40:54.295593079Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/deprecations.py", line 281, in warned
+2026-02-19T20:40:54.295594079Z [err]      ^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:54.295598259Z [err]      return fn(*args, **kwargs)  # type: ignore[no-any-return]
+2026-02-19T20:40:54.295604518Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 221, in _assert_port
+2026-02-19T20:40:54.295607118Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:54.295613508Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/create.py", line 546, in create_engine
+2026-02-19T20:40:54.295613938Z [err]      return int(port)
+2026-02-19T20:40:54.295620508Z [err]      u = _url.make_url(url)
+2026-02-19T20:40:54.295624188Z [err]             ^^^^^^^^^
+2026-02-19T20:40:54.295630218Z [err]          ^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:54.295631698Z [err]  ValueError: invalid literal for int() with base 10: ''
+2026-02-19T20:40:54.295639388Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 842, in make_url
+2026-02-19T20:40:54.295639668Z [err]  [2026-02-19 20:40:54 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:40:54.295644798Z [err]      return _parse_url(name_or_url)
+2026-02-19T20:40:54.295647778Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:54.295650788Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 905, in _parse_url
+2026-02-19T20:40:54.295653758Z [err]      return URL.create(name, **components)  # type: ignore
+2026-02-19T20:40:54.295656708Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:54.430555256Z [err]  [2026-02-19 20:40:54 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:40:54.430560446Z [err]  [2026-02-19 20:40:54 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:40:54.430564196Z [err]  [2026-02-19 20:40:54 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:40:54.727742733Z [inf]  Starting Container
+2026-02-19T20:40:55.223753592Z [err]  [2026-02-19 20:40:55 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:40:55.223757212Z [err]  [2026-02-19 20:40:55 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:40:55.223760232Z [err]  [2026-02-19 20:40:55 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:40:55.223763732Z [err]  [2026-02-19 20:40:55 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:40:55.601293809Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:55.601304099Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:40:55.601319169Z [err]  [2026-02-19 20:40:55 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:40:55.601326489Z [err]  Traceback (most recent call last):
+2026-02-19T20:40:55.601331779Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:40:55.601337769Z [err]      worker.init_process()
+2026-02-19T20:40:55.601343569Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:40:55.601349179Z [err]      super().init_process()
+2026-02-19T20:40:55.601354219Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:40:55.601359129Z [err]      self.load_wsgi()
+2026-02-19T20:40:55.601366569Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:40:55.601372729Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:40:55.601378229Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:40:55.601384709Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:40:55.601390668Z [err]      self.callable = self.load()
+2026-02-19T20:40:55.601395448Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:40:55.601400398Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:40:55.601404998Z [err]      return self.load_wsgiapp()
+2026-02-19T20:40:55.601410158Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:55.601414668Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:40:55.601421118Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:40:55.601748835Z [err]    File "<string>", line 2, in create_engine
+2026-02-19T20:40:55.601757325Z [err]    File "/app/app/main.py", line 7, in <module>
+2026-02-19T20:40:55.601758705Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:40:55.601766865Z [err]      from app.database import init_db, close_db
+2026-02-19T20:40:55.601770825Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:55.601775035Z [err]    File "/app/app/database.py", line 7, in <module>
+2026-02-19T20:40:55.601781505Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:40:55.601784715Z [err]      engine = create_async_engine(
+2026-02-19T20:40:55.601789044Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:40:55.601794544Z [err]               ^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:55.601798464Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:55.601805314Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/ext/asyncio/engine.py", line 120, in create_async_engine
+2026-02-19T20:40:55.601808454Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:40:55.601815184Z [err]      sync_engine = _create_engine(url, **kw)
+2026-02-19T20:40:55.601817414Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:40:55.601825284Z [err]                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:55.601827464Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:40:55.601833324Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:40:55.601838054Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:40:55.601843144Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:40:55.602396919Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/deprecations.py", line 281, in warned
+2026-02-19T20:40:55.602399959Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:55.602401789Z [err]      return fn(*args, **kwargs)  # type: ignore[no-any-return]
+2026-02-19T20:40:55.602404439Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 211, in create
+2026-02-19T20:40:55.602406109Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:55.602408089Z [err]      cls._assert_port(port),
+2026-02-19T20:40:55.602410539Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/create.py", line 546, in create_engine
+2026-02-19T20:40:55.602411899Z [err]      ^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:55.602415009Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 221, in _assert_port
+2026-02-19T20:40:55.602415299Z [err]      u = _url.make_url(url)
+2026-02-19T20:40:55.602418269Z [err]      return int(port)
+2026-02-19T20:40:55.602420079Z [err]          ^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:55.602421849Z [err]             ^^^^^^^^^
+2026-02-19T20:40:55.602424299Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 842, in make_url
+2026-02-19T20:40:55.602425249Z [err]  ValueError: invalid literal for int() with base 10: ''
+2026-02-19T20:40:55.602428229Z [err]      return _parse_url(name_or_url)
+2026-02-19T20:40:55.602428889Z [err]  [2026-02-19 20:40:55 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:40:55.602433189Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:55.602437339Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 905, in _parse_url
+2026-02-19T20:40:55.602440979Z [err]      return URL.create(name, **components)  # type: ignore
+2026-02-19T20:40:55.745274140Z [err]  [2026-02-19 20:40:55 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:40:55.745287049Z [err]  [2026-02-19 20:40:55 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:40:55.745294379Z [err]  [2026-02-19 20:40:55 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:40:56.526431042Z [err]  [2026-02-19 20:40:56 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:40:56.526435272Z [err]  [2026-02-19 20:40:56 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:40:56.526438492Z [err]  [2026-02-19 20:40:56 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:40:56.526442592Z [err]  [2026-02-19 20:40:56 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:40:57.018496206Z [err]  [2026-02-19 20:40:56 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:40:57.018499006Z [err]  Traceback (most recent call last):
+2026-02-19T20:40:57.018502906Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:40:57.018505546Z [err]      worker.init_process()
+2026-02-19T20:40:57.018508436Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:40:57.018511256Z [err]      super().init_process()
+2026-02-19T20:40:57.018513916Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:40:57.018516766Z [err]      self.load_wsgi()
+2026-02-19T20:40:57.018519506Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:40:57.018522556Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:40:57.018525996Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:40:57.018528636Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:40:57.018531716Z [err]      self.callable = self.load()
+2026-02-19T20:40:57.018534856Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:40:57.018537866Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:40:57.018540656Z [err]      return self.load_wsgiapp()
+2026-02-19T20:40:57.018543466Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:57.018546446Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:40:57.018549646Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:40:57.018553476Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:57.018556006Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:40:57.019363127Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:40:57.019367207Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:57.019370657Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:40:57.019374627Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:40:57.019378357Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:57.019382317Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:40:57.019386027Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:40:57.019389707Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:40:57.019394157Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:40:57.019397347Z [err]  [2026-02-19 20:40:56 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:40:57.019398517Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:40:57.019402197Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:40:57.019405907Z [err]    File "/app/app/main.py", line 7, in <module>
+2026-02-19T20:40:57.019409577Z [err]      from app.database import init_db, close_db
+2026-02-19T20:40:57.019413927Z [err]    File "/app/app/database.py", line 7, in <module>
+2026-02-19T20:40:57.019416017Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/create.py", line 546, in create_engine
+2026-02-19T20:40:57.019418537Z [err]      engine = create_async_engine(
+2026-02-19T20:40:57.019422907Z [err]               ^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:57.019423207Z [err]      u = _url.make_url(url)
+2026-02-19T20:40:57.019427087Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/ext/asyncio/engine.py", line 120, in create_async_engine
+2026-02-19T20:40:57.019428467Z [err]          ^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:57.019431687Z [err]      sync_engine = _create_engine(url, **kw)
+2026-02-19T20:40:57.019433577Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 842, in make_url
+2026-02-19T20:40:57.019436027Z [err]                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:57.019438647Z [err]      return _parse_url(name_or_url)
+2026-02-19T20:40:57.019440397Z [err]    File "<string>", line 2, in create_engine
+2026-02-19T20:40:57.019444867Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:57.019450927Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 905, in _parse_url
+2026-02-19T20:40:57.019457046Z [err]      return URL.create(name, **components)  # type: ignore
+2026-02-19T20:40:57.019460216Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/deprecations.py", line 281, in warned
+2026-02-19T20:40:57.019466316Z [err]      return fn(*args, **kwargs)  # type: ignore[no-any-return]
+2026-02-19T20:40:57.019467466Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:57.019471366Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:57.019475176Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 211, in create
+2026-02-19T20:40:57.019479516Z [err]      cls._assert_port(port),
+2026-02-19T20:40:57.019483366Z [err]      ^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:57.019486956Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 221, in _assert_port
+2026-02-19T20:40:57.019490506Z [err]      return int(port)
+2026-02-19T20:40:57.019494446Z [err]             ^^^^^^^^^
+2026-02-19T20:40:57.019497546Z [err]  ValueError: invalid literal for int() with base 10: ''
+2026-02-19T20:40:57.070892836Z [err]  [2026-02-19 20:40:57 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:40:57.070899076Z [err]  [2026-02-19 20:40:57 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:40:57.070902736Z [err]  [2026-02-19 20:40:57 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:40:57.762808897Z [err]  [2026-02-19 20:40:57 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:40:57.762812157Z [err]  [2026-02-19 20:40:57 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:40:57.762815157Z [err]  [2026-02-19 20:40:57 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:40:57.784730704Z [err]  [2026-02-19 20:40:57 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:40:58.161021314Z [err]  [2026-02-19 20:40:58 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:40:58.161026724Z [err]  Traceback (most recent call last):
+2026-02-19T20:40:58.161030334Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:40:58.161034344Z [err]      worker.init_process()
+2026-02-19T20:40:58.161038014Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:40:58.161042414Z [err]      super().init_process()
+2026-02-19T20:40:58.161046324Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:40:58.161050234Z [err]      self.load_wsgi()
+2026-02-19T20:40:58.161053834Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:40:58.161057294Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:40:58.161061103Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:40:58.161064443Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:40:58.161067903Z [err]      self.callable = self.load()
+2026-02-19T20:40:58.161070983Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:40:58.161074383Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:40:58.161078853Z [err]      return self.load_wsgiapp()
+2026-02-19T20:40:58.161083303Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:58.161086873Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:40:58.161090913Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:40:58.161094493Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:58.161098073Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:40:58.161480050Z [err]    File "/app/app/database.py", line 7, in <module>
+2026-02-19T20:40:58.161488480Z [err]      engine = create_async_engine(
+2026-02-19T20:40:58.161495910Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:40:58.161496290Z [err]               ^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:58.161501190Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/ext/asyncio/engine.py", line 120, in create_async_engine
+2026-02-19T20:40:58.161508320Z [err]      sync_engine = _create_engine(url, **kw)
+2026-02-19T20:40:58.161508470Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:58.161519400Z [err]                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:58.161519530Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:40:58.161529010Z [err]    File "<string>", line 2, in create_engine
+2026-02-19T20:40:58.161529590Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:40:58.161536420Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:58.161540590Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:40:58.161544230Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:40:58.161548370Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:40:58.161553879Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:40:58.161557689Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:40:58.161561079Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:40:58.161565559Z [err]    File "/app/app/main.py", line 7, in <module>
+2026-02-19T20:40:58.161568969Z [err]      from app.database import init_db, close_db
+2026-02-19T20:40:58.162124164Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/deprecations.py", line 281, in warned
+2026-02-19T20:40:58.162128684Z [err]      return fn(*args, **kwargs)  # type: ignore[no-any-return]
+2026-02-19T20:40:58.162132864Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:58.162136604Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/create.py", line 546, in create_engine
+2026-02-19T20:40:58.162141034Z [err]      u = _url.make_url(url)
+2026-02-19T20:40:58.162146253Z [err]          ^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:58.162150073Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 842, in make_url
+2026-02-19T20:40:58.162153263Z [err]      return _parse_url(name_or_url)
+2026-02-19T20:40:58.162156473Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:58.162159833Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 905, in _parse_url
+2026-02-19T20:40:58.162163793Z [err]      return URL.create(name, **components)  # type: ignore
+2026-02-19T20:40:58.162167153Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:58.162170693Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 211, in create
+2026-02-19T20:40:58.162173903Z [err]      cls._assert_port(port),
+2026-02-19T20:40:58.162177163Z [err]      ^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:58.162180453Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 221, in _assert_port
+2026-02-19T20:40:58.162183633Z [err]      return int(port)
+2026-02-19T20:40:58.162187393Z [err]             ^^^^^^^^^
+2026-02-19T20:40:58.162191003Z [err]  ValueError: invalid literal for int() with base 10: ''
+2026-02-19T20:40:58.162194073Z [err]  [2026-02-19 20:40:58 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:40:58.336092342Z [err]  [2026-02-19 20:40:58 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:40:58.336098622Z [err]  [2026-02-19 20:40:58 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:40:58.336102462Z [err]  [2026-02-19 20:40:58 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:40:59.203134959Z [err]  [2026-02-19 20:40:59 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:40:59.203140469Z [err]  [2026-02-19 20:40:59 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:40:59.203143659Z [err]  [2026-02-19 20:40:59 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:40:59.203147939Z [err]  [2026-02-19 20:40:59 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:40:59.598576183Z [err]  [2026-02-19 20:40:59 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:40:59.598579903Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:40:59.598583503Z [err]  Traceback (most recent call last):
+2026-02-19T20:40:59.598587413Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:40:59.598588313Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:40:59.598590833Z [err]      worker.init_process()
+2026-02-19T20:40:59.598593863Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:59.598594283Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:40:59.598597613Z [err]      super().init_process()
+2026-02-19T20:40:59.598600322Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:40:59.598600902Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:40:59.598603152Z [err]      self.load_wsgi()
+2026-02-19T20:40:59.598605812Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:40:59.598608902Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:40:59.598612022Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:40:59.598615062Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:40:59.598618372Z [err]      self.callable = self.load()
+2026-02-19T20:40:59.598621512Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:40:59.598623922Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:40:59.598626962Z [err]      return self.load_wsgiapp()
+2026-02-19T20:40:59.598629632Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:59.599220186Z [err]    File "/app/app/main.py", line 7, in <module>
+2026-02-19T20:40:59.599220316Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:40:59.599223596Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:59.599226326Z [err]      from app.database import init_db, close_db
+2026-02-19T20:40:59.599228086Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:40:59.599231196Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:40:59.599231206Z [err]    File "/app/app/database.py", line 7, in <module>
+2026-02-19T20:40:59.599234356Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:59.599237296Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:40:59.599238216Z [err]      engine = create_async_engine(
+2026-02-19T20:40:59.599240736Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:40:59.599242756Z [err]               ^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:59.599243716Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:40:59.599246526Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:40:59.599247936Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/ext/asyncio/engine.py", line 120, in create_async_engine
+2026-02-19T20:40:59.599249226Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:40:59.599252646Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:40:59.599252686Z [err]      sync_engine = _create_engine(url, **kw)
+2026-02-19T20:40:59.599256936Z [err]                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:59.599260456Z [err]    File "<string>", line 2, in create_engine
+2026-02-19T20:40:59.601636283Z [err]      cls._assert_port(port),
+2026-02-19T20:40:59.601665872Z [err]      ^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:59.601676042Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 221, in _assert_port
+2026-02-19T20:40:59.601685032Z [err]      return int(port)
+2026-02-19T20:40:59.601688752Z [err]             ^^^^^^^^^
+2026-02-19T20:40:59.601692912Z [err]  ValueError: invalid literal for int() with base 10: ''
+2026-02-19T20:40:59.601697482Z [err]  [2026-02-19 20:40:59 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:40:59.601705862Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/deprecations.py", line 281, in warned
+2026-02-19T20:40:59.601711222Z [err]      return fn(*args, **kwargs)  # type: ignore[no-any-return]
+2026-02-19T20:40:59.601715462Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:59.601719442Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/create.py", line 546, in create_engine
+2026-02-19T20:40:59.601723552Z [err]      u = _url.make_url(url)
+2026-02-19T20:40:59.601728462Z [err]          ^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:59.601732152Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 842, in make_url
+2026-02-19T20:40:59.601736392Z [err]      return _parse_url(name_or_url)
+2026-02-19T20:40:59.601740632Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:59.601745032Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 905, in _parse_url
+2026-02-19T20:40:59.601748732Z [err]      return URL.create(name, **components)  # type: ignore
+2026-02-19T20:40:59.601753132Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:40:59.601757701Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 211, in create
+2026-02-19T20:40:59.720111251Z [err]  [2026-02-19 20:40:59 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:40:59.720248309Z [err]  [2026-02-19 20:40:59 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:40:59.720255759Z [err]  [2026-02-19 20:40:59 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:41:00.727059757Z [err]  [2026-02-19 20:41:00 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:41:00.727063117Z [err]  [2026-02-19 20:41:00 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:41:00.727065687Z [err]  [2026-02-19 20:41:00 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:41:00.727068397Z [err]  [2026-02-19 20:41:00 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:41:01.179927262Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:41:01.179937602Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:41:01.179943912Z [err]      self.callable = self.load()
+2026-02-19T20:41:01.179945902Z [err]  [2026-02-19 20:41:01 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:41:01.179948032Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:41:01.179951012Z [err]  Traceback (most recent call last):
+2026-02-19T20:41:01.179952442Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:41:01.179954922Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:41:01.179956712Z [err]      return self.load_wsgiapp()
+2026-02-19T20:41:01.179959142Z [err]      worker.init_process()
+2026-02-19T20:41:01.179960552Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:01.179963232Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:41:01.179964152Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:41:01.179967632Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:41:01.179968602Z [err]      super().init_process()
+2026-02-19T20:41:01.179971452Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:01.179972762Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:41:01.179975162Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:41:01.179976782Z [err]      self.load_wsgi()
+2026-02-19T20:41:01.179980412Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:41:01.179987582Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:41:01.180881873Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:41:01.180892333Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:01.180899043Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:41:01.180902823Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:41:01.180908603Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:01.180915273Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:41:01.180919373Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:41:01.180922933Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:41:01.180926722Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:41:01.180930842Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:41:01.180934122Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:41:01.180937922Z [err]    File "/app/app/main.py", line 7, in <module>
+2026-02-19T20:41:01.180942302Z [err]      from app.database import init_db, close_db
+2026-02-19T20:41:01.180945922Z [err]    File "/app/app/database.py", line 7, in <module>
+2026-02-19T20:41:01.180950022Z [err]      engine = create_async_engine(
+2026-02-19T20:41:01.180953732Z [err]               ^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:01.180956902Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/ext/asyncio/engine.py", line 120, in create_async_engine
+2026-02-19T20:41:01.180961212Z [err]      sync_engine = _create_engine(url, **kw)
+2026-02-19T20:41:01.180964772Z [err]                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:01.180969282Z [err]    File "<string>", line 2, in create_engine
+2026-02-19T20:41:01.181732325Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/deprecations.py", line 281, in warned
+2026-02-19T20:41:01.181732775Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:01.181738555Z [err]      return fn(*args, **kwargs)  # type: ignore[no-any-return]
+2026-02-19T20:41:01.181744765Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 211, in create
+2026-02-19T20:41:01.181744885Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:01.181749235Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/create.py", line 546, in create_engine
+2026-02-19T20:41:01.181754825Z [err]      cls._assert_port(port),
+2026-02-19T20:41:01.181756135Z [err]      u = _url.make_url(url)
+2026-02-19T20:41:01.181763565Z [err]      ^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:01.181764695Z [err]          ^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:01.181771875Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 842, in make_url
+2026-02-19T20:41:01.181774935Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 221, in _assert_port
+2026-02-19T20:41:01.181781495Z [err]      return _parse_url(name_or_url)
+2026-02-19T20:41:01.181782585Z [err]      return int(port)
+2026-02-19T20:41:01.181791685Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:01.181791985Z [err]             ^^^^^^^^^
+2026-02-19T20:41:01.181800555Z [err]  ValueError: invalid literal for int() with base 10: ''
+2026-02-19T20:41:01.181802525Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 905, in _parse_url
+2026-02-19T20:41:01.181808445Z [err]  [2026-02-19 20:41:01 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:41:01.181811885Z [err]      return URL.create(name, **components)  # type: ignore
+2026-02-19T20:41:01.334156702Z [err]  [2026-02-19 20:41:01 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:41:01.334161182Z [err]  [2026-02-19 20:41:01 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:41:01.334165622Z [err]  [2026-02-19 20:41:01 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:41:02.175425751Z [err]  [2026-02-19 20:41:02 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:41:02.175431301Z [err]  [2026-02-19 20:41:02 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:41:02.175435461Z [err]  [2026-02-19 20:41:02 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:41:02.176570609Z [err]  [2026-02-19 20:41:02 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:41:02.601597445Z [err]  [2026-02-19 20:41:02 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:41:02.601601905Z [err]  Traceback (most recent call last):
+2026-02-19T20:41:02.601605625Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:41:02.601609205Z [err]      worker.init_process()
+2026-02-19T20:41:02.601615095Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:41:02.601619005Z [err]      super().init_process()
+2026-02-19T20:41:02.601622655Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:41:02.601625825Z [err]      self.load_wsgi()
+2026-02-19T20:41:02.601629105Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:41:02.601632575Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:41:02.601635985Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:41:02.601639165Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:41:02.601642055Z [err]      self.callable = self.load()
+2026-02-19T20:41:02.601644955Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:41:02.601647835Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:41:02.601651175Z [err]      return self.load_wsgiapp()
+2026-02-19T20:41:02.601654125Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:02.601657405Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:41:02.601660284Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:41:02.601669994Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:02.601673614Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:41:02.604327608Z [err]                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:02.604339048Z [err]    File "<string>", line 2, in create_engine
+2026-02-19T20:41:02.604356958Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:41:02.604360338Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:02.604363558Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:41:02.604367158Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:41:02.604370848Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:02.604373688Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:41:02.604376678Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:41:02.604379348Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:41:02.604382408Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:41:02.604385568Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:41:02.604388618Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:41:02.604391718Z [err]    File "/app/app/main.py", line 7, in <module>
+2026-02-19T20:41:02.604394578Z [err]      from app.database import init_db, close_db
+2026-02-19T20:41:02.604397708Z [err]    File "/app/app/database.py", line 7, in <module>
+2026-02-19T20:41:02.604401778Z [err]      engine = create_async_engine(
+2026-02-19T20:41:02.604406268Z [err]               ^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:02.604410308Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/ext/asyncio/engine.py", line 120, in create_async_engine
+2026-02-19T20:41:02.604414499Z [err]      sync_engine = _create_engine(url, **kw)
+2026-02-19T20:41:02.605393259Z [err]      cls._assert_port(port),
+2026-02-19T20:41:02.605397839Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/deprecations.py", line 281, in warned
+2026-02-19T20:41:02.605401729Z [err]      ^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:02.605409339Z [err]      return fn(*args, **kwargs)  # type: ignore[no-any-return]
+2026-02-19T20:41:02.605411368Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 221, in _assert_port
+2026-02-19T20:41:02.605418808Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:02.605419748Z [err]      return int(port)
+2026-02-19T20:41:02.605426558Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/create.py", line 546, in create_engine
+2026-02-19T20:41:02.605429998Z [err]             ^^^^^^^^^
+2026-02-19T20:41:02.605435248Z [err]      u = _url.make_url(url)
+2026-02-19T20:41:02.605437648Z [err]  ValueError: invalid literal for int() with base 10: ''
+2026-02-19T20:41:02.605443278Z [err]          ^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:02.605444948Z [err]  [2026-02-19 20:41:02 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:41:02.605449388Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 842, in make_url
+2026-02-19T20:41:02.605452918Z [err]      return _parse_url(name_or_url)
+2026-02-19T20:41:02.605456818Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:02.605460208Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 905, in _parse_url
+2026-02-19T20:41:02.605463478Z [err]      return URL.create(name, **components)  # type: ignore
+2026-02-19T20:41:02.605466898Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:02.605476128Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 211, in create
+2026-02-19T20:41:02.767767659Z [err]  [2026-02-19 20:41:02 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:41:02.767771199Z [err]  [2026-02-19 20:41:02 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:41:02.767774479Z [err]  [2026-02-19 20:41:02 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:41:04.086525313Z [err]  [2026-02-19 20:41:03 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:41:04.086656032Z [err]  [2026-02-19 20:41:03 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:41:04.086660732Z [err]  [2026-02-19 20:41:03 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:41:04.086664891Z [err]  [2026-02-19 20:41:03 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:41:04.383079529Z [err]  [2026-02-19 20:41:04 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:41:04.383089509Z [err]  Traceback (most recent call last):
+2026-02-19T20:41:04.383095708Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:41:04.383100998Z [err]      worker.init_process()
+2026-02-19T20:41:04.383105928Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:41:04.383110788Z [err]      super().init_process()
+2026-02-19T20:41:04.383115438Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:41:04.383120318Z [err]      self.load_wsgi()
+2026-02-19T20:41:04.383124538Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:41:04.383128558Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:41:04.383133338Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:41:04.383137608Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:41:04.383141778Z [err]      self.callable = self.load()
+2026-02-19T20:41:04.383146028Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:41:04.383152358Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:41:04.383156648Z [err]      return self.load_wsgiapp()
+2026-02-19T20:41:04.383160628Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:04.383164938Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:41:04.383168698Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:41:04.383172718Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:04.383177868Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:41:04.383182678Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:41:04.383187218Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:04.383191487Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:41:04.383195677Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:41:04.383200447Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:04.383204727Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:41:04.383209027Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:41:04.383214037Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:41:04.383218237Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:41:04.383222837Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:41:04.383228367Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:41:04.383232637Z [err]    File "/app/app/main.py", line 7, in <module>
+2026-02-19T20:41:04.383236977Z [err]      from app.database import init_db, close_db
+2026-02-19T20:41:04.383241927Z [err]    File "/app/app/database.py", line 7, in <module>
+2026-02-19T20:41:04.383246697Z [err]      engine = create_async_engine(
+2026-02-19T20:41:04.383250637Z [err]               ^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:04.383254807Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/ext/asyncio/engine.py", line 120, in create_async_engine
+2026-02-19T20:41:04.383259347Z [err]      sync_engine = _create_engine(url, **kw)
+2026-02-19T20:41:04.383263937Z [err]                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:04.383269037Z [err]    File "<string>", line 2, in create_engine
+2026-02-19T20:41:04.383273137Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/deprecations.py", line 281, in warned
+2026-02-19T20:41:04.383277377Z [err]      return fn(*args, **kwargs)  # type: ignore[no-any-return]
+2026-02-19T20:41:04.383281927Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:04.383286647Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/create.py", line 546, in create_engine
+2026-02-19T20:41:04.383290646Z [err]      u = _url.make_url(url)
+2026-02-19T20:41:04.383295126Z [err]          ^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:04.383299156Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 842, in make_url
+2026-02-19T20:41:04.383303126Z [err]      return _parse_url(name_or_url)
+2026-02-19T20:41:04.383307236Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:04.383311506Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 905, in _parse_url
+2026-02-19T20:41:04.383316006Z [err]      return URL.create(name, **components)  # type: ignore
+2026-02-19T20:41:04.383320436Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:04.383324376Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 211, in create
+2026-02-19T20:41:04.383328196Z [err]      cls._assert_port(port),
+2026-02-19T20:41:04.383332336Z [err]      ^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:04.383336786Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 221, in _assert_port
+2026-02-19T20:41:04.383341966Z [err]      return int(port)
+2026-02-19T20:41:04.383345856Z [err]             ^^^^^^^^^
+2026-02-19T20:41:04.383350196Z [err]  ValueError: invalid literal for int() with base 10: ''
+2026-02-19T20:41:04.383354246Z [err]  [2026-02-19 20:41:04 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:41:04.508329530Z [err]  [2026-02-19 20:41:04 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:41:04.508332680Z [err]  [2026-02-19 20:41:04 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:41:04.508336530Z [err]  [2026-02-19 20:41:04 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:41:05.426969906Z [err]  [2026-02-19 20:41:05 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:41:05.426981066Z [err]  [2026-02-19 20:41:05 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:41:05.426991296Z [err]  [2026-02-19 20:41:05 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:41:05.426995896Z [err]  [2026-02-19 20:41:05 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:41:05.844672433Z [err]  [2026-02-19 20:41:05 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:41:05.844677183Z [err]  Traceback (most recent call last):
+2026-02-19T20:41:05.844681253Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:41:05.844684533Z [err]      worker.init_process()
+2026-02-19T20:41:05.844689163Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:41:05.844692893Z [err]      super().init_process()
+2026-02-19T20:41:05.844696213Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:41:05.844699353Z [err]      self.load_wsgi()
+2026-02-19T20:41:05.844702503Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:41:05.844711073Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:41:05.844713933Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:41:05.844717083Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:41:05.844720513Z [err]      self.callable = self.load()
+2026-02-19T20:41:05.844724223Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:41:05.844727323Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:41:05.844730423Z [err]      return self.load_wsgiapp()
+2026-02-19T20:41:05.844733123Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:05.844736793Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:41:05.844740133Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:41:05.844743513Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:05.844746473Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:41:05.846153449Z [err]      sync_engine = _create_engine(url, **kw)
+2026-02-19T20:41:05.846165119Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:41:05.846166389Z [err]                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:05.846171129Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:05.846175819Z [err]    File "<string>", line 2, in create_engine
+2026-02-19T20:41:05.846178149Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:41:05.846182099Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:41:05.846186959Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:05.846191429Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:41:05.846195299Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:41:05.846201999Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:41:05.846206069Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:41:05.846210259Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:41:05.846213639Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:41:05.846216989Z [err]    File "/app/app/main.py", line 7, in <module>
+2026-02-19T20:41:05.846220139Z [err]      from app.database import init_db, close_db
+2026-02-19T20:41:05.846224689Z [err]    File "/app/app/database.py", line 7, in <module>
+2026-02-19T20:41:05.846227509Z [err]      engine = create_async_engine(
+2026-02-19T20:41:05.846230219Z [err]               ^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:05.846233239Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/ext/asyncio/engine.py", line 120, in create_async_engine
+2026-02-19T20:41:05.847303488Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/deprecations.py", line 281, in warned
+2026-02-19T20:41:05.847307858Z [err]      return fn(*args, **kwargs)  # type: ignore[no-any-return]
+2026-02-19T20:41:05.847310698Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:05.847313348Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/create.py", line 546, in create_engine
+2026-02-19T20:41:05.847315818Z [err]      u = _url.make_url(url)
+2026-02-19T20:41:05.847318388Z [err]          ^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:05.847320988Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 842, in make_url
+2026-02-19T20:41:05.847323488Z [err]      return _parse_url(name_or_url)
+2026-02-19T20:41:05.847326317Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:05.847329807Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 905, in _parse_url
+2026-02-19T20:41:05.847332277Z [err]      return URL.create(name, **components)  # type: ignore
+2026-02-19T20:41:05.847334737Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:05.847337317Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 211, in create
+2026-02-19T20:41:05.847340007Z [err]      cls._assert_port(port),
+2026-02-19T20:41:05.847342327Z [err]      ^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:05.847344607Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 221, in _assert_port
+2026-02-19T20:41:05.847347047Z [err]      return int(port)
+2026-02-19T20:41:05.847349487Z [err]             ^^^^^^^^^
+2026-02-19T20:41:05.847352037Z [err]  ValueError: invalid literal for int() with base 10: ''
+2026-02-19T20:41:05.847355157Z [err]  [2026-02-19 20:41:05 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:41:06.112881765Z [err]  [2026-02-19 20:41:05 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:41:06.112938844Z [err]  [2026-02-19 20:41:05 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:41:06.112945134Z [err]  [2026-02-19 20:41:05 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:41:06.687167999Z [err]  [2026-02-19 20:41:06 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:41:06.687173439Z [err]  [2026-02-19 20:41:06 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:41:06.687179009Z [err]  [2026-02-19 20:41:06 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:41:06.687183979Z [err]  [2026-02-19 20:41:06 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:41:07.121991270Z [err]      return self.load_wsgiapp()
+2026-02-19T20:41:07.121998310Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:07.122003560Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:41:07.122008150Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:41:07.122012960Z [err]  Traceback (most recent call last):
+2026-02-19T20:41:07.122013630Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:07.122025510Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:41:07.122049459Z [err]      worker.init_process()
+2026-02-19T20:41:07.122054949Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:41:07.122060199Z [err]      super().init_process()
+2026-02-19T20:41:07.122067659Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:41:07.122074199Z [err]      self.load_wsgi()
+2026-02-19T20:41:07.122080659Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:41:07.122086199Z [err]  [2026-02-19 20:41:07 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:41:07.122086389Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:41:07.122099439Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:41:07.122106799Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:41:07.122110999Z [err]      self.callable = self.load()
+2026-02-19T20:41:07.122115399Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:41:07.122120629Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:41:07.122237848Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:41:07.122766762Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:41:07.122774132Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:07.122778562Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:41:07.122796673Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:41:07.122802433Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:07.122807073Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:41:07.122812383Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:41:07.122817463Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:41:07.122821683Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:41:07.122825453Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:41:07.122828993Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:41:07.122832523Z [err]    File "/app/app/main.py", line 7, in <module>
+2026-02-19T20:41:07.122837062Z [err]      from app.database import init_db, close_db
+2026-02-19T20:41:07.122842112Z [err]    File "/app/app/database.py", line 7, in <module>
+2026-02-19T20:41:07.122846292Z [err]      engine = create_async_engine(
+2026-02-19T20:41:07.122850032Z [err]               ^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:07.122853182Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/ext/asyncio/engine.py", line 120, in create_async_engine
+2026-02-19T20:41:07.122856312Z [err]      sync_engine = _create_engine(url, **kw)
+2026-02-19T20:41:07.122859572Z [err]                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:07.122863672Z [err]    File "<string>", line 2, in create_engine
+2026-02-19T20:41:07.123887312Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 221, in _assert_port
+2026-02-19T20:41:07.123893202Z [err]      return int(port)
+2026-02-19T20:41:07.123898172Z [err]             ^^^^^^^^^
+2026-02-19T20:41:07.123902542Z [err]  ValueError: invalid literal for int() with base 10: ''
+2026-02-19T20:41:07.123917112Z [err]  [2026-02-19 20:41:07 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:41:07.123926361Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/deprecations.py", line 281, in warned
+2026-02-19T20:41:07.123930061Z [err]      return fn(*args, **kwargs)  # type: ignore[no-any-return]
+2026-02-19T20:41:07.123934531Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:07.123939031Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/create.py", line 546, in create_engine
+2026-02-19T20:41:07.123944201Z [err]      u = _url.make_url(url)
+2026-02-19T20:41:07.123948781Z [err]          ^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:07.123953671Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 842, in make_url
+2026-02-19T20:41:07.123958101Z [err]      return _parse_url(name_or_url)
+2026-02-19T20:41:07.123961701Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:07.123965551Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 905, in _parse_url
+2026-02-19T20:41:07.123969701Z [err]      return URL.create(name, **components)  # type: ignore
+2026-02-19T20:41:07.123974271Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:07.123979201Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 211, in create
+2026-02-19T20:41:07.123983531Z [err]      cls._assert_port(port),
+2026-02-19T20:41:07.123988041Z [err]      ^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:07.231760942Z [err]  [2026-02-19 20:41:07 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:41:07.231766042Z [err]  [2026-02-19 20:41:07 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:41:07.231769022Z [err]  [2026-02-19 20:41:07 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:41:08.110086170Z [err]  [2026-02-19 20:41:08 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:41:08.110090240Z [err]  [2026-02-19 20:41:08 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:41:08.110094660Z [err]  [2026-02-19 20:41:08 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:41:08.110099570Z [err]  [2026-02-19 20:41:08 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:41:08.445976963Z [err]  [2026-02-19 20:41:08 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:41:08.445986663Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:41:08.445987573Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:41:08.445990573Z [err]  Traceback (most recent call last):
+2026-02-19T20:41:08.445999553Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:41:08.446004623Z [err]      worker.init_process()
+2026-02-19T20:41:08.446006283Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:41:08.446011972Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:41:08.446016812Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:41:08.446020982Z [err]      super().init_process()
+2026-02-19T20:41:08.446029652Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:41:08.446030112Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:41:08.446039522Z [err]      self.load_wsgi()
+2026-02-19T20:41:08.446040772Z [err]      self.callable = self.load()
+2026-02-19T20:41:08.446047352Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:41:08.446052762Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:41:08.446059632Z [err]      return self.load_wsgiapp()
+2026-02-19T20:41:08.446064392Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:08.446069672Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:41:08.446075462Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:41:08.446080842Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:08.446805944Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:41:08.446805954Z [err]      engine = create_async_engine(
+2026-02-19T20:41:08.446811424Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:08.446812824Z [err]               ^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:08.446816024Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:41:08.446816144Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/ext/asyncio/engine.py", line 120, in create_async_engine
+2026-02-19T20:41:08.446819384Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:41:08.446819854Z [err]      sync_engine = _create_engine(url, **kw)
+2026-02-19T20:41:08.446822804Z [err]                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:08.446822884Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:08.446825675Z [err]    File "<string>", line 2, in create_engine
+2026-02-19T20:41:08.446825775Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:41:08.446828815Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:41:08.446831695Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:41:08.446834615Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:41:08.446837205Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:41:08.446840035Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:41:08.446842795Z [err]    File "/app/app/main.py", line 7, in <module>
+2026-02-19T20:41:08.446891505Z [err]      from app.database import init_db, close_db
+2026-02-19T20:41:08.446895775Z [err]    File "/app/app/database.py", line 7, in <module>
+2026-02-19T20:41:08.447985244Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/deprecations.py", line 281, in warned
+2026-02-19T20:41:08.447989734Z [err]      return fn(*args, **kwargs)  # type: ignore[no-any-return]
+2026-02-19T20:41:08.447994824Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:08.447997243Z [err]      return int(port)
+2026-02-19T20:41:08.448001133Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/create.py", line 546, in create_engine
+2026-02-19T20:41:08.448008393Z [err]             ^^^^^^^^^
+2026-02-19T20:41:08.448008633Z [err]      u = _url.make_url(url)
+2026-02-19T20:41:08.448015853Z [err]          ^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:08.448017173Z [err]  ValueError: invalid literal for int() with base 10: ''
+2026-02-19T20:41:08.448035433Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 842, in make_url
+2026-02-19T20:41:08.448040553Z [err]  [2026-02-19 20:41:08 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:41:08.448042063Z [err]      return _parse_url(name_or_url)
+2026-02-19T20:41:08.448046293Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:08.448050213Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 905, in _parse_url
+2026-02-19T20:41:08.448053783Z [err]      return URL.create(name, **components)  # type: ignore
+2026-02-19T20:41:08.448056703Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:08.448059823Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 211, in create
+2026-02-19T20:41:08.448062423Z [err]      cls._assert_port(port),
+2026-02-19T20:41:08.448065293Z [err]      ^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:41:08.448068743Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/url.py", line 221, in _assert_port
+2026-02-19T20:41:08.598150634Z [err]  [2026-02-19 20:41:08 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:41:08.598153864Z [err]  [2026-02-19 20:41:08 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:41:08.598157034Z [err]  [2026-02-19 20:41:08 +0000] [1] [ERROR] Reason: Worker failed to boot.
