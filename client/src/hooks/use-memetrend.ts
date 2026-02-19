@@ -20,6 +20,8 @@ export function useTokens(chain?: string) {
   return useQuery({
     queryKey: ["tokens", chain],
     queryFn: () => apiGet<{ tokens: TokenItem[]; count: number }>(`/api/tokens${chain ? `?chain=${chain}` : ""}`),
+    staleTime: 30000,
+    refetchInterval: 60000,
   });
 }
 
@@ -27,6 +29,8 @@ export function useTokenStats() {
   return useQuery({
     queryKey: ["token-stats"],
     queryFn: () => apiGet<{ total_tokens: number; by_chain: Record<string, number> }>("/api/tokens/stats/overview"),
+    staleTime: 30000,
+    refetchInterval: 60000,
   });
 }
 
