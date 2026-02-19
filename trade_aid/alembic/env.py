@@ -16,9 +16,9 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-db_url = os.environ.get("DATABASE_URL_SYNC")
-if db_url:
-    config.set_main_option("sqlalchemy.url", db_url)
+from app.config import build_database_url
+db_url = build_database_url(async_driver=False)
+config.set_main_option("sqlalchemy.url", db_url)
 
 
 def run_migrations_offline():
