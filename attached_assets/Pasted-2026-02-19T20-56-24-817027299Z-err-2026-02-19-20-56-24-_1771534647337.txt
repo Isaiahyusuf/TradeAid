@@ -1,0 +1,672 @@
+2026-02-19T20:56:24.817027299Z [err]  [2026-02-19 20:56:24 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:56:24.817033298Z [err]  [2026-02-19 20:56:24 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:56:24.817039602Z [err]  [2026-02-19 20:56:24 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:56:24.817046235Z [err]  [2026-02-19 20:56:24 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:56:25.068630968Z [err]  [2026-02-19 20:56:25 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:56:25.068642166Z [err]  Traceback (most recent call last):
+2026-02-19T20:56:25.068642374Z [err]      return self.load_wsgiapp()
+2026-02-19T20:56:25.068649401Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:56:25.068657019Z [err]      worker.init_process()
+2026-02-19T20:56:25.068662979Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:25.068664416Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:56:25.068673275Z [err]      super().init_process()
+2026-02-19T20:56:25.068679576Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:56:25.068681823Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:56:25.068691888Z [err]      self.load_wsgi()
+2026-02-19T20:56:25.068694688Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:56:25.068707886Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:56:25.068708116Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:25.068723346Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:56:25.068727695Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:56:25.068732900Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:56:25.068737277Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:56:25.068741421Z [err]      self.callable = self.load()
+2026-02-19T20:56:25.068745416Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:56:25.068749676Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:56:25.069983060Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:56:25.069983947Z [err]    File "/app/app/services/auth_service.py", line 9, in <module>
+2026-02-19T20:56:25.069994039Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:25.069996088Z [err]      from app.models.models import User
+2026-02-19T20:56:25.070002762Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:56:25.070012734Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:56:25.070019481Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:25.070023851Z [err]    File "/app/app/models/models.py", line 33, in <module>
+2026-02-19T20:56:25.070027208Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:56:25.070033682Z [err]      class Token(Base):
+2026-02-19T20:56:25.070034706Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:56:25.070041298Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_api.py", line 836, in __init_subclass__
+2026-02-19T20:56:25.070041909Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:56:25.070048275Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:56:25.070055994Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:56:25.070062977Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:56:25.070069835Z [err]    File "/app/app/main.py", line 12, in <module>
+2026-02-19T20:56:25.070077105Z [err]      from app.routers import auth, tokens, wallets, scoring, alerts
+2026-02-19T20:56:25.070083267Z [err]    File "/app/app/routers/auth.py", line 6, in <module>
+2026-02-19T20:56:25.070089474Z [err]      from app.services.auth_service import (
+2026-02-19T20:56:25.071335992Z [err]      _as_declarative(cls._sa_registry, cls, cls.__dict__)
+2026-02-19T20:56:25.071345244Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 244, in _as_declarative
+2026-02-19T20:56:25.071345726Z [err]      raise exc.InvalidRequestError(
+2026-02-19T20:56:25.071351884Z [err]      return _MapperConfig.setup_mapping(registry, cls, dict_, None, {})
+2026-02-19T20:56:25.071359208Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:25.071362233Z [err]  sqlalchemy.exc.InvalidRequestError: Attribute name 'metadata' is reserved when using the Declarative API.
+2026-02-19T20:56:25.071366893Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 325, in setup_mapping
+2026-02-19T20:56:25.071372578Z [err]  [2026-02-19 20:56:25 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:56:25.071375165Z [err]      return _ClassScanMapperConfig(
+2026-02-19T20:56:25.071381111Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:25.071386490Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 572, in __init__
+2026-02-19T20:56:25.071391907Z [err]      self._extract_mappable_attributes()
+2026-02-19T20:56:25.071397724Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 1533, in _extract_mappable_attributes
+2026-02-19T20:56:25.073910972Z [inf]  Starting Container
+2026-02-19T20:56:25.264239012Z [err]  [2026-02-19 20:56:25 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:56:25.264242690Z [err]  [2026-02-19 20:56:25 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:56:25.264246536Z [err]  [2026-02-19 20:56:25 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:56:26.926386926Z [err]  [2026-02-19 20:56:26 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:56:26.926399332Z [err]  [2026-02-19 20:56:26 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:56:26.926421792Z [err]  [2026-02-19 20:56:26 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:56:26.926426974Z [err]  [2026-02-19 20:56:26 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:56:27.210957931Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:56:27.210971228Z [err]      worker.init_process()
+2026-02-19T20:56:27.210978049Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:56:27.210983407Z [err]      super().init_process()
+2026-02-19T20:56:27.210989275Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:56:27.210996881Z [err]      self.load_wsgi()
+2026-02-19T20:56:27.211002863Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:56:27.211012667Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:56:27.211017661Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:56:27.211023488Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:56:27.211029155Z [err]      self.callable = self.load()
+2026-02-19T20:56:27.211034248Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:56:27.211040399Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:56:27.211046245Z [err]      return self.load_wsgiapp()
+2026-02-19T20:56:27.211052573Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:27.211058776Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:56:27.211065408Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:56:27.211073114Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:27.211079916Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:56:27.211484285Z [err]  [2026-02-19 20:56:27 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:56:27.211489252Z [err]  Traceback (most recent call last):
+2026-02-19T20:56:27.212427780Z [err]    File "/app/app/models/models.py", line 33, in <module>
+2026-02-19T20:56:27.212436028Z [err]      class Token(Base):
+2026-02-19T20:56:27.212441313Z [err]      from app.routers import auth, tokens, wallets, scoring, alerts
+2026-02-19T20:56:27.212444664Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_api.py", line 836, in __init_subclass__
+2026-02-19T20:56:27.212448987Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:56:27.212451281Z [err]    File "/app/app/routers/auth.py", line 6, in <module>
+2026-02-19T20:56:27.212457802Z [err]      from app.services.auth_service import (
+2026-02-19T20:56:27.212458633Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:27.212465092Z [err]    File "/app/app/services/auth_service.py", line 9, in <module>
+2026-02-19T20:56:27.212465484Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:56:27.212471907Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:56:27.212472344Z [err]      from app.models.models import User
+2026-02-19T20:56:27.212476976Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:27.212482277Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:56:27.212487761Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:56:27.212494162Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:56:27.212500123Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:56:27.212505603Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:56:27.212510287Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:56:27.212515055Z [err]    File "/app/app/main.py", line 12, in <module>
+2026-02-19T20:56:27.214069447Z [err]      _as_declarative(cls._sa_registry, cls, cls.__dict__)
+2026-02-19T20:56:27.214078086Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 244, in _as_declarative
+2026-02-19T20:56:27.214083125Z [err]      return _MapperConfig.setup_mapping(registry, cls, dict_, None, {})
+2026-02-19T20:56:27.214089666Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:27.214093945Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 325, in setup_mapping
+2026-02-19T20:56:27.214098967Z [err]      return _ClassScanMapperConfig(
+2026-02-19T20:56:27.214103452Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:27.214107624Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 572, in __init__
+2026-02-19T20:56:27.214111667Z [err]      self._extract_mappable_attributes()
+2026-02-19T20:56:27.214116151Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 1533, in _extract_mappable_attributes
+2026-02-19T20:56:27.214120372Z [err]      raise exc.InvalidRequestError(
+2026-02-19T20:56:27.214125020Z [err]  sqlalchemy.exc.InvalidRequestError: Attribute name 'metadata' is reserved when using the Declarative API.
+2026-02-19T20:56:27.214129388Z [err]  [2026-02-19 20:56:27 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:56:27.370917039Z [err]  [2026-02-19 20:56:27 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:56:27.370923638Z [err]  [2026-02-19 20:56:27 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:56:27.370930273Z [err]  [2026-02-19 20:56:27 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:56:29.044187149Z [err]  [2026-02-19 20:56:28 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:56:29.044192467Z [err]  [2026-02-19 20:56:28 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:56:29.044197883Z [err]  [2026-02-19 20:56:28 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:56:29.044203588Z [err]  [2026-02-19 20:56:28 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:56:29.340258876Z [err]  [2026-02-19 20:56:29 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:56:29.340259630Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:56:29.340267259Z [err]  Traceback (most recent call last):
+2026-02-19T20:56:29.340267941Z [err]      self.callable = self.load()
+2026-02-19T20:56:29.340273557Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:56:29.340275574Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:56:29.340279591Z [err]      worker.init_process()
+2026-02-19T20:56:29.340282028Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:56:29.340285426Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:56:29.340289485Z [err]      return self.load_wsgiapp()
+2026-02-19T20:56:29.340291416Z [err]      super().init_process()
+2026-02-19T20:56:29.340295693Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:29.340297688Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:56:29.340301310Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:56:29.340303568Z [err]      self.load_wsgi()
+2026-02-19T20:56:29.340307190Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:56:29.340309011Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:56:29.340313474Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:29.340316905Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:56:29.340319284Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:56:29.340322448Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:56:29.342928595Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:56:29.342937955Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:29.342939634Z [err]      from app.services.auth_service import (
+2026-02-19T20:56:29.342943742Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:56:29.342949187Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:56:29.342953278Z [err]    File "/app/app/services/auth_service.py", line 9, in <module>
+2026-02-19T20:56:29.342959836Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:29.342962202Z [err]      from app.models.models import User
+2026-02-19T20:56:29.342965839Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:56:29.342971862Z [err]    File "/app/app/models/models.py", line 33, in <module>
+2026-02-19T20:56:29.342971955Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:56:29.342978851Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:56:29.342980324Z [err]      class Token(Base):
+2026-02-19T20:56:29.342984706Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:56:29.342990193Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_api.py", line 836, in __init_subclass__
+2026-02-19T20:56:29.342991240Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:56:29.342996150Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:56:29.343001387Z [err]    File "/app/app/main.py", line 12, in <module>
+2026-02-19T20:56:29.343006468Z [err]      from app.routers import auth, tokens, wallets, scoring, alerts
+2026-02-19T20:56:29.343011252Z [err]    File "/app/app/routers/auth.py", line 6, in <module>
+2026-02-19T20:56:29.344944940Z [err]      _as_declarative(cls._sa_registry, cls, cls.__dict__)
+2026-02-19T20:56:29.344945577Z [err]      raise exc.InvalidRequestError(
+2026-02-19T20:56:29.344952452Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 244, in _as_declarative
+2026-02-19T20:56:29.344957852Z [err]  sqlalchemy.exc.InvalidRequestError: Attribute name 'metadata' is reserved when using the Declarative API.
+2026-02-19T20:56:29.344958234Z [err]      return _MapperConfig.setup_mapping(registry, cls, dict_, None, {})
+2026-02-19T20:56:29.344964421Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:29.344966780Z [err]  [2026-02-19 20:56:29 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:56:29.344970898Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 325, in setup_mapping
+2026-02-19T20:56:29.344975408Z [err]      return _ClassScanMapperConfig(
+2026-02-19T20:56:29.344979651Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:29.344984217Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 572, in __init__
+2026-02-19T20:56:29.344988547Z [err]      self._extract_mappable_attributes()
+2026-02-19T20:56:29.344992926Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 1533, in _extract_mappable_attributes
+2026-02-19T20:56:29.959083758Z [err]  [2026-02-19 20:56:29 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:56:29.959089474Z [err]  [2026-02-19 20:56:29 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:56:29.959095378Z [err]  [2026-02-19 20:56:29 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:56:30.929676462Z [err]  [2026-02-19 20:56:30 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:56:30.929730411Z [err]  [2026-02-19 20:56:30 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:56:30.929740389Z [err]  [2026-02-19 20:56:30 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:56:30.929744742Z [err]  [2026-02-19 20:56:30 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:56:31.458231823Z [err]  [2026-02-19 20:56:31 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:56:31.458237661Z [err]  Traceback (most recent call last):
+2026-02-19T20:56:31.458420386Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:56:31.458428206Z [err]      worker.init_process()
+2026-02-19T20:56:31.458434449Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:56:31.458439198Z [err]      super().init_process()
+2026-02-19T20:56:31.458443972Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:56:31.458448682Z [err]      self.load_wsgi()
+2026-02-19T20:56:31.458454291Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:56:31.458459445Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:56:31.458464515Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:56:31.458470204Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:56:31.458475741Z [err]      self.callable = self.load()
+2026-02-19T20:56:31.458481021Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:56:31.458485942Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:56:31.458490820Z [err]      return self.load_wsgiapp()
+2026-02-19T20:56:31.458495918Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:31.458503975Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:56:31.458509277Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:56:31.458514283Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:31.458521049Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:56:31.974503389Z [err]      from app.services.auth_service import (
+2026-02-19T20:56:31.974514084Z [err]    File "/app/app/services/auth_service.py", line 9, in <module>
+2026-02-19T20:56:31.974520876Z [err]      from app.models.models import User
+2026-02-19T20:56:31.974528219Z [err]    File "/app/app/models/models.py", line 33, in <module>
+2026-02-19T20:56:31.974529592Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:56:31.974537621Z [err]      class Token(Base):
+2026-02-19T20:56:31.974540516Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:56:31.974545968Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_api.py", line 836, in __init_subclass__
+2026-02-19T20:56:31.974548550Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:31.974555103Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:56:31.974560489Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:56:31.974562603Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:56:31.974570701Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:56:31.974577092Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:56:31.974583545Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:56:31.974589426Z [err]    File "/app/app/main.py", line 12, in <module>
+2026-02-19T20:56:31.974595698Z [err]      from app.routers import auth, tokens, wallets, scoring, alerts
+2026-02-19T20:56:31.974604772Z [err]    File "/app/app/routers/auth.py", line 6, in <module>
+2026-02-19T20:56:31.974609169Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:56:31.974615489Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:31.974994243Z [err]  [2026-02-19 20:56:31 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:56:31.975003561Z [err]  [2026-02-19 20:56:31 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:56:31.975013519Z [err]  [2026-02-19 20:56:31 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:56:31.975021184Z [err]  [2026-02-19 20:56:31 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:56:31.975054386Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:31.975058535Z [err]      _as_declarative(cls._sa_registry, cls, cls.__dict__)
+2026-02-19T20:56:31.975063614Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 572, in __init__
+2026-02-19T20:56:31.975069447Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 244, in _as_declarative
+2026-02-19T20:56:31.975072548Z [err]      self._extract_mappable_attributes()
+2026-02-19T20:56:31.975078307Z [err]      return _MapperConfig.setup_mapping(registry, cls, dict_, None, {})
+2026-02-19T20:56:31.975081431Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 1533, in _extract_mappable_attributes
+2026-02-19T20:56:31.975086662Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:31.975089884Z [err]      raise exc.InvalidRequestError(
+2026-02-19T20:56:31.975093789Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 325, in setup_mapping
+2026-02-19T20:56:31.975098314Z [err]  sqlalchemy.exc.InvalidRequestError: Attribute name 'metadata' is reserved when using the Declarative API.
+2026-02-19T20:56:31.975101692Z [err]      return _ClassScanMapperConfig(
+2026-02-19T20:56:32.935665293Z [err]  [2026-02-19 20:56:32 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:56:32.935676046Z [err]  [2026-02-19 20:56:32 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:56:32.935787288Z [err]  [2026-02-19 20:56:32 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:56:32.935793467Z [err]  [2026-02-19 20:56:32 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:56:33.449396151Z [err]  [2026-02-19 20:56:33 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:56:33.449405050Z [err]  Traceback (most recent call last):
+2026-02-19T20:56:33.449411425Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:56:33.449419395Z [err]      worker.init_process()
+2026-02-19T20:56:33.449433965Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:56:33.449439417Z [err]      super().init_process()
+2026-02-19T20:56:33.449444577Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:56:33.449450649Z [err]      self.load_wsgi()
+2026-02-19T20:56:33.449458101Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:56:33.449463143Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:56:33.449467995Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:56:33.449472688Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:56:33.449477767Z [err]      self.callable = self.load()
+2026-02-19T20:56:33.449499377Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:56:33.449505822Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:56:33.449510989Z [err]      return self.load_wsgiapp()
+2026-02-19T20:56:33.449516397Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:33.449521747Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:56:33.449529190Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:56:33.449534512Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:33.449539242Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:56:33.451460948Z [err]      class Token(Base):
+2026-02-19T20:56:33.451470743Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_api.py", line 836, in __init_subclass__
+2026-02-19T20:56:33.451481284Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:56:33.451493812Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:33.451501550Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:56:33.451508251Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:56:33.451513946Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:33.451520271Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:56:33.451526268Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:56:33.451534545Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:56:33.451540766Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:56:33.451546704Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:56:33.451555038Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:56:33.451560776Z [err]    File "/app/app/main.py", line 12, in <module>
+2026-02-19T20:56:33.451566752Z [err]      from app.routers import auth, tokens, wallets, scoring, alerts
+2026-02-19T20:56:33.451573053Z [err]    File "/app/app/routers/auth.py", line 6, in <module>
+2026-02-19T20:56:33.451578145Z [err]      from app.services.auth_service import (
+2026-02-19T20:56:33.451583953Z [err]    File "/app/app/services/auth_service.py", line 9, in <module>
+2026-02-19T20:56:33.451590582Z [err]      from app.models.models import User
+2026-02-19T20:56:33.451598561Z [err]    File "/app/app/models/models.py", line 33, in <module>
+2026-02-19T20:56:33.453561819Z [err]      _as_declarative(cls._sa_registry, cls, cls.__dict__)
+2026-02-19T20:56:33.453568129Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 244, in _as_declarative
+2026-02-19T20:56:33.453573445Z [err]      return _MapperConfig.setup_mapping(registry, cls, dict_, None, {})
+2026-02-19T20:56:33.453580282Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:33.453587418Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 325, in setup_mapping
+2026-02-19T20:56:33.453593634Z [err]      return _ClassScanMapperConfig(
+2026-02-19T20:56:33.453600230Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:33.453605389Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 572, in __init__
+2026-02-19T20:56:33.453617377Z [err]      self._extract_mappable_attributes()
+2026-02-19T20:56:33.453625035Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 1533, in _extract_mappable_attributes
+2026-02-19T20:56:33.453629305Z [err]      raise exc.InvalidRequestError(
+2026-02-19T20:56:33.453633520Z [err]  sqlalchemy.exc.InvalidRequestError: Attribute name 'metadata' is reserved when using the Declarative API.
+2026-02-19T20:56:33.453637975Z [err]  [2026-02-19 20:56:33 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:56:33.922189149Z [err]  [2026-02-19 20:56:33 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:56:33.922204154Z [err]  [2026-02-19 20:56:33 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:56:33.922211204Z [err]  [2026-02-19 20:56:33 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:56:34.956928841Z [err]  [2026-02-19 20:56:34 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:56:34.956938229Z [err]  [2026-02-19 20:56:34 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:56:34.956944378Z [err]  [2026-02-19 20:56:34 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:56:34.956950456Z [err]  [2026-02-19 20:56:34 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:56:35.517608867Z [err]      self.load_wsgi()
+2026-02-19T20:56:35.517620817Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:56:35.517628722Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:56:35.517635504Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:56:35.517640951Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:56:35.517647253Z [err]      self.callable = self.load()
+2026-02-19T20:56:35.517798752Z [err]  [2026-02-19 20:56:35 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:56:35.517804185Z [err]  Traceback (most recent call last):
+2026-02-19T20:56:35.517810887Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:56:35.517817092Z [err]      worker.init_process()
+2026-02-19T20:56:35.517822666Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:56:35.517829081Z [err]      super().init_process()
+2026-02-19T20:56:35.517835388Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:56:35.518874533Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:56:35.518886489Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:56:35.518892532Z [err]      return self.load_wsgiapp()
+2026-02-19T20:56:35.518898980Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:35.518903038Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:56:35.518908001Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:56:35.518912606Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:35.518917996Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:56:35.940407804Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_api.py", line 836, in __init_subclass__
+2026-02-19T20:56:35.940450699Z [err]    File "/app/app/main.py", line 12, in <module>
+2026-02-19T20:56:35.940467362Z [err]      from app.routers import auth, tokens, wallets, scoring, alerts
+2026-02-19T20:56:35.940482123Z [err]    File "/app/app/routers/auth.py", line 6, in <module>
+2026-02-19T20:56:35.940488785Z [err]      from app.services.auth_service import (
+2026-02-19T20:56:35.940496503Z [err]    File "/app/app/services/auth_service.py", line 9, in <module>
+2026-02-19T20:56:35.940504151Z [err]      from app.models.models import User
+2026-02-19T20:56:35.940513551Z [err]    File "/app/app/models/models.py", line 33, in <module>
+2026-02-19T20:56:35.940518051Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:56:35.940524435Z [err]      class Token(Base):
+2026-02-19T20:56:35.940530402Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:35.940536519Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:56:35.940541725Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:56:35.940546454Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:35.940551570Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:56:35.940556492Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:56:35.940561501Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:56:35.940566066Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:56:35.940570970Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:56:35.940576528Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:56:35.942514833Z [err]      self._extract_mappable_attributes()
+2026-02-19T20:56:35.942527372Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 1533, in _extract_mappable_attributes
+2026-02-19T20:56:35.942534252Z [err]      raise exc.InvalidRequestError(
+2026-02-19T20:56:35.942540417Z [err]  sqlalchemy.exc.InvalidRequestError: Attribute name 'metadata' is reserved when using the Declarative API.
+2026-02-19T20:56:35.942545664Z [err]  [2026-02-19 20:56:35 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:56:35.942552464Z [err]  [2026-02-19 20:56:35 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:56:35.942559334Z [err]  [2026-02-19 20:56:35 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:56:35.942566405Z [err]  [2026-02-19 20:56:35 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:56:35.942664986Z [err]      _as_declarative(cls._sa_registry, cls, cls.__dict__)
+2026-02-19T20:56:35.942673259Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 244, in _as_declarative
+2026-02-19T20:56:35.942681026Z [err]      return _MapperConfig.setup_mapping(registry, cls, dict_, None, {})
+2026-02-19T20:56:35.942687014Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:35.942695408Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 325, in setup_mapping
+2026-02-19T20:56:35.942701306Z [err]      return _ClassScanMapperConfig(
+2026-02-19T20:56:35.942707530Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:35.942713317Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 572, in __init__
+2026-02-19T20:56:37.064913258Z [err]  [2026-02-19 20:56:36 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:56:37.064921555Z [err]  [2026-02-19 20:56:36 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:56:37.064976773Z [err]  [2026-02-19 20:56:36 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:56:37.064986691Z [err]  [2026-02-19 20:56:36 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:56:37.994225599Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:56:37.994227189Z [err]      self.load_wsgi()
+2026-02-19T20:56:37.994229093Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:56:37.994234557Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:56:37.994237154Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:56:37.994243294Z [err]      self.callable = self.load()
+2026-02-19T20:56:37.994248295Z [err]      super().init_process()
+2026-02-19T20:56:37.994248560Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:56:37.994253212Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:56:37.994258896Z [err]      return self.load_wsgiapp()
+2026-02-19T20:56:37.994264681Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:37.994265804Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:56:37.994269854Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:56:37.994274247Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:56:37.994279075Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:37.994283354Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:56:37.994297116Z [err]  [2026-02-19 20:56:37 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:56:37.994297900Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:56:37.994298210Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:56:37.994305932Z [err]  Traceback (most recent call last):
+2026-02-19T20:56:37.994308725Z [err]      worker.init_process()
+2026-02-19T20:56:37.995730539Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:56:37.995733896Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_api.py", line 836, in __init_subclass__
+2026-02-19T20:56:37.995743650Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:37.995750238Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:56:37.995758574Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:56:37.995765214Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:56:37.995772080Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:56:37.995779516Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:56:37.995788683Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:56:37.995795939Z [err]    File "/app/app/main.py", line 12, in <module>
+2026-02-19T20:56:37.995803438Z [err]      from app.routers import auth, tokens, wallets, scoring, alerts
+2026-02-19T20:56:37.995810637Z [err]    File "/app/app/routers/auth.py", line 6, in <module>
+2026-02-19T20:56:37.995817475Z [err]      from app.services.auth_service import (
+2026-02-19T20:56:37.995824678Z [err]    File "/app/app/services/auth_service.py", line 9, in <module>
+2026-02-19T20:56:37.995831656Z [err]      from app.models.models import User
+2026-02-19T20:56:37.995840214Z [err]    File "/app/app/models/models.py", line 33, in <module>
+2026-02-19T20:56:37.995847964Z [err]      class Token(Base):
+2026-02-19T20:56:37.995867316Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:56:37.995874317Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:37.995881170Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:56:37.998455669Z [err]  [2026-02-19 20:56:37 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:56:37.998467925Z [err]  [2026-02-19 20:56:37 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:56:37.998473286Z [err]  [2026-02-19 20:56:37 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:56:37.998493063Z [err]      _as_declarative(cls._sa_registry, cls, cls.__dict__)
+2026-02-19T20:56:37.998503612Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 244, in _as_declarative
+2026-02-19T20:56:37.998507128Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 325, in setup_mapping
+2026-02-19T20:56:37.998521122Z [err]      return _MapperConfig.setup_mapping(registry, cls, dict_, None, {})
+2026-02-19T20:56:37.998522643Z [err]      return _ClassScanMapperConfig(
+2026-02-19T20:56:37.998534693Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:37.998539039Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:37.998544803Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 572, in __init__
+2026-02-19T20:56:37.998553773Z [err]      self._extract_mappable_attributes()
+2026-02-19T20:56:37.998561940Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 1533, in _extract_mappable_attributes
+2026-02-19T20:56:37.998570955Z [err]      raise exc.InvalidRequestError(
+2026-02-19T20:56:37.998577334Z [err]  sqlalchemy.exc.InvalidRequestError: Attribute name 'metadata' is reserved when using the Declarative API.
+2026-02-19T20:56:37.998585935Z [err]  [2026-02-19 20:56:37 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:56:38.982838329Z [err]  [2026-02-19 20:56:38 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:56:38.982845082Z [err]  [2026-02-19 20:56:38 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:56:38.982861382Z [err]  [2026-02-19 20:56:38 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:56:38.986308270Z [err]  [2026-02-19 20:56:38 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:56:40.011888181Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:56:40.011897409Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:56:40.011905359Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:40.011906281Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:56:40.011914997Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:56:40.011915683Z [err]      self.callable = self.load()
+2026-02-19T20:56:40.011925252Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:56:40.011925749Z [err]  [2026-02-19 20:56:39 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:56:40.011931625Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:56:40.011934101Z [err]  Traceback (most recent call last):
+2026-02-19T20:56:40.011934738Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:56:40.011942073Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:40.011942628Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:56:40.011943657Z [err]      return self.load_wsgiapp()
+2026-02-19T20:56:40.011948854Z [err]      worker.init_process()
+2026-02-19T20:56:40.011953873Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:56:40.011958305Z [err]      super().init_process()
+2026-02-19T20:56:40.011964376Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:56:40.011968316Z [err]      self.load_wsgi()
+2026-02-19T20:56:40.011973133Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:56:40.011977726Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:56:40.014049678Z [err]    File "/app/app/services/auth_service.py", line 9, in <module>
+2026-02-19T20:56:40.014059015Z [err]      from app.models.models import User
+2026-02-19T20:56:40.014066004Z [err]    File "/app/app/models/models.py", line 33, in <module>
+2026-02-19T20:56:40.014073394Z [err]      class Token(Base):
+2026-02-19T20:56:40.014079732Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_api.py", line 836, in __init_subclass__
+2026-02-19T20:56:40.014094834Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:56:40.014100987Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:56:40.014108366Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:56:40.014109586Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:56:40.014116000Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:40.014118649Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:56:40.014122930Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:56:40.014128399Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:56:40.014131557Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:56:40.014137617Z [err]    File "/app/app/main.py", line 12, in <module>
+2026-02-19T20:56:40.014140269Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:40.014147057Z [err]      from app.routers import auth, tokens, wallets, scoring, alerts
+2026-02-19T20:56:40.014148137Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:56:40.014155626Z [err]    File "/app/app/routers/auth.py", line 6, in <module>
+2026-02-19T20:56:40.014162363Z [err]      from app.services.auth_service import (
+2026-02-19T20:56:40.016924711Z [err]      _as_declarative(cls._sa_registry, cls, cls.__dict__)
+2026-02-19T20:56:40.016925615Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 1533, in _extract_mappable_attributes
+2026-02-19T20:56:40.016930731Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 244, in _as_declarative
+2026-02-19T20:56:40.016937035Z [err]      raise exc.InvalidRequestError(
+2026-02-19T20:56:40.016945231Z [err]      return _MapperConfig.setup_mapping(registry, cls, dict_, None, {})
+2026-02-19T20:56:40.016945440Z [err]  sqlalchemy.exc.InvalidRequestError: Attribute name 'metadata' is reserved when using the Declarative API.
+2026-02-19T20:56:40.016953152Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:40.016953698Z [err]  [2026-02-19 20:56:39 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:56:40.016962022Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 325, in setup_mapping
+2026-02-19T20:56:40.016963474Z [err]  [2026-02-19 20:56:39 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:56:40.016969181Z [err]      return _ClassScanMapperConfig(
+2026-02-19T20:56:40.016971687Z [err]  [2026-02-19 20:56:39 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:56:40.016979427Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:40.016979867Z [err]  [2026-02-19 20:56:39 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:56:40.016987066Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 572, in __init__
+2026-02-19T20:56:40.016992245Z [err]      self._extract_mappable_attributes()
+2026-02-19T20:56:41.031671812Z [err]  [2026-02-19 20:56:40 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:56:41.031677059Z [err]  [2026-02-19 20:56:40 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:56:41.031682266Z [err]  [2026-02-19 20:56:40 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:56:41.031688026Z [err]  [2026-02-19 20:56:40 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:56:41.559778872Z [err]  [2026-02-19 20:56:41 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:56:41.559791801Z [err]  Traceback (most recent call last):
+2026-02-19T20:56:41.559812956Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:56:41.559819975Z [err]      worker.init_process()
+2026-02-19T20:56:41.559826393Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:56:41.559832855Z [err]      super().init_process()
+2026-02-19T20:56:41.559840914Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:56:41.559847737Z [err]      self.load_wsgi()
+2026-02-19T20:56:41.559853926Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:56:41.559860682Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:56:41.559870385Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:56:41.559909006Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:56:41.559916195Z [err]      self.callable = self.load()
+2026-02-19T20:56:41.559923058Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:56:41.559930106Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:56:41.559936058Z [err]      return self.load_wsgiapp()
+2026-02-19T20:56:41.559943654Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:41.559950267Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:56:41.559969438Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:56:41.559977106Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:41.559984049Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:56:41.562061607Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:56:41.562068813Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:41.562072269Z [err]      from app.routers import auth, tokens, wallets, scoring, alerts
+2026-02-19T20:56:41.562079369Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:56:41.562084755Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:56:41.562085904Z [err]    File "/app/app/routers/auth.py", line 6, in <module>
+2026-02-19T20:56:41.562093590Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:41.562094449Z [err]      from app.services.auth_service import (
+2026-02-19T20:56:41.562098480Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:56:41.562103004Z [err]    File "/app/app/services/auth_service.py", line 9, in <module>
+2026-02-19T20:56:41.562103546Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:56:41.562108287Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:56:41.562112190Z [err]      from app.models.models import User
+2026-02-19T20:56:41.562114826Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:56:41.562120390Z [err]    File "/app/app/models/models.py", line 33, in <module>
+2026-02-19T20:56:41.562121502Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:56:41.562128414Z [err]      class Token(Base):
+2026-02-19T20:56:41.562129409Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:56:41.562136768Z [err]    File "/app/app/main.py", line 12, in <module>
+2026-02-19T20:56:41.562137130Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_api.py", line 836, in __init_subclass__
+2026-02-19T20:56:41.564336172Z [err]      _as_declarative(cls._sa_registry, cls, cls.__dict__)
+2026-02-19T20:56:41.564340120Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 244, in _as_declarative
+2026-02-19T20:56:41.564344297Z [err]      return _MapperConfig.setup_mapping(registry, cls, dict_, None, {})
+2026-02-19T20:56:41.564350060Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:41.564354763Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 325, in setup_mapping
+2026-02-19T20:56:41.564358789Z [err]      return _ClassScanMapperConfig(
+2026-02-19T20:56:41.564362561Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:41.564366773Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 572, in __init__
+2026-02-19T20:56:41.564370499Z [err]      self._extract_mappable_attributes()
+2026-02-19T20:56:41.564374326Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 1533, in _extract_mappable_attributes
+2026-02-19T20:56:41.564378476Z [err]      raise exc.InvalidRequestError(
+2026-02-19T20:56:41.564382041Z [err]  sqlalchemy.exc.InvalidRequestError: Attribute name 'metadata' is reserved when using the Declarative API.
+2026-02-19T20:56:41.564385881Z [err]  [2026-02-19 20:56:41 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:56:42.179038514Z [err]  [2026-02-19 20:56:41 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:56:42.179050783Z [err]  [2026-02-19 20:56:41 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:56:42.179053148Z [err]  [2026-02-19 20:56:41 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:56:43.003944680Z [err]  [2026-02-19 20:56:42 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:56:43.003952689Z [err]  [2026-02-19 20:56:42 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:56:43.003957613Z [err]  [2026-02-19 20:56:42 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:56:43.004056843Z [err]  [2026-02-19 20:56:42 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:56:44.005930416Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:56:44.005937752Z [err]  [2026-02-19 20:56:43 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:56:44.005940874Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:56:44.005944710Z [err]  Traceback (most recent call last):
+2026-02-19T20:56:44.005951036Z [err]      return self.load_wsgiapp()
+2026-02-19T20:56:44.005951144Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:56:44.005957371Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:44.005962675Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:56:44.005968307Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:56:44.005974707Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:44.005976457Z [err]      worker.init_process()
+2026-02-19T20:56:44.005981550Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:56:44.005983658Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:56:44.005988394Z [err]      super().init_process()
+2026-02-19T20:56:44.005992893Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:56:44.005997300Z [err]      self.load_wsgi()
+2026-02-19T20:56:44.006004782Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:56:44.006012829Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:56:44.006018935Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:56:44.006023294Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:56:44.006028191Z [err]      self.callable = self.load()
+2026-02-19T20:56:44.007687885Z [err]    File "/app/app/models/models.py", line 33, in <module>
+2026-02-19T20:56:44.007689829Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:56:44.007695896Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:44.007696335Z [err]      class Token(Base):
+2026-02-19T20:56:44.007701894Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:56:44.007702351Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_api.py", line 836, in __init_subclass__
+2026-02-19T20:56:44.007707484Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:56:44.007712457Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:44.007717687Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:56:44.007721998Z [err]    File "/app/app/main.py", line 12, in <module>
+2026-02-19T20:56:44.007722522Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:56:44.007727018Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:56:44.007733505Z [err]      from app.routers import auth, tokens, wallets, scoring, alerts
+2026-02-19T20:56:44.007733803Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:56:44.007742759Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:56:44.007742925Z [err]    File "/app/app/routers/auth.py", line 6, in <module>
+2026-02-19T20:56:44.007748031Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:56:44.007751861Z [err]      from app.services.auth_service import (
+2026-02-19T20:56:44.007763278Z [err]    File "/app/app/services/auth_service.py", line 9, in <module>
+2026-02-19T20:56:44.007772661Z [err]      from app.models.models import User
+2026-02-19T20:56:44.009540569Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 325, in setup_mapping
+2026-02-19T20:56:44.009549559Z [err]      return _ClassScanMapperConfig(
+2026-02-19T20:56:44.009555539Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:44.009560362Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 572, in __init__
+2026-02-19T20:56:44.009565029Z [err]      self._extract_mappable_attributes()
+2026-02-19T20:56:44.009570162Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 1533, in _extract_mappable_attributes
+2026-02-19T20:56:44.009577362Z [err]      raise exc.InvalidRequestError(
+2026-02-19T20:56:44.009582780Z [err]  sqlalchemy.exc.InvalidRequestError: Attribute name 'metadata' is reserved when using the Declarative API.
+2026-02-19T20:56:44.009587846Z [err]  [2026-02-19 20:56:43 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:56:44.009593418Z [err]  [2026-02-19 20:56:43 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:56:44.009598350Z [err]  [2026-02-19 20:56:43 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:56:44.009603131Z [err]  [2026-02-19 20:56:43 +0000] [1] [ERROR] Reason: Worker failed to boot.
+2026-02-19T20:56:44.009609355Z [err]      _as_declarative(cls._sa_registry, cls, cls.__dict__)
+2026-02-19T20:56:44.009615348Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 244, in _as_declarative
+2026-02-19T20:56:44.009620812Z [err]      return _MapperConfig.setup_mapping(registry, cls, dict_, None, {})
+2026-02-19T20:56:44.009647042Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:45.081770631Z [err]  [2026-02-19 20:56:45 +0000] [1] [INFO] Starting gunicorn 23.0.0
+2026-02-19T20:56:45.081779704Z [err]  [2026-02-19 20:56:45 +0000] [1] [INFO] Listening at: http://0.0.0.0:8000 (1)
+2026-02-19T20:56:45.081785465Z [err]  [2026-02-19 20:56:45 +0000] [1] [INFO] Using worker: uvicorn.workers.UvicornWorker
+2026-02-19T20:56:45.081791250Z [err]  [2026-02-19 20:56:45 +0000] [2] [INFO] Booting worker with pid: 2
+2026-02-19T20:56:46.133951975Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2026-02-19T20:56:46.134070668Z [err]  [2026-02-19 20:56:45 +0000] [2] [ERROR] Exception in worker process
+2026-02-19T20:56:46.134076254Z [err]  Traceback (most recent call last):
+2026-02-19T20:56:46.134081934Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2026-02-19T20:56:46.134087776Z [err]      worker.init_process()
+2026-02-19T20:56:46.134093178Z [err]    File "/usr/local/lib/python3.11/site-packages/uvicorn/workers.py", line 75, in init_process
+2026-02-19T20:56:46.134098540Z [err]      super().init_process()
+2026-02-19T20:56:46.134107557Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2026-02-19T20:56:46.134113596Z [err]      self.load_wsgi()
+2026-02-19T20:56:46.134119397Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2026-02-19T20:56:46.134125059Z [err]      self.wsgi = self.app.wsgi()
+2026-02-19T20:56:46.134131565Z [err]                  ^^^^^^^^^^^^^^^
+2026-02-19T20:56:46.134139603Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2026-02-19T20:56:46.134144259Z [err]      self.callable = self.load()
+2026-02-19T20:56:46.134148676Z [err]                      ^^^^^^^^^^^
+2026-02-19T20:56:46.134152898Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2026-02-19T20:56:46.134159007Z [err]      return self.load_wsgiapp()
+2026-02-19T20:56:46.134165620Z [err]             ^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:46.134172693Z [err]    File "/usr/local/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2026-02-19T20:56:46.134177974Z [err]      return util.import_app(self.app_uri)
+2026-02-19T20:56:46.134183857Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:46.135792364Z [err]      from app.models.models import User
+2026-02-19T20:56:46.135799674Z [err]    File "/app/app/models/models.py", line 33, in <module>
+2026-02-19T20:56:46.135804802Z [err]      class Token(Base):
+2026-02-19T20:56:46.135809682Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_api.py", line 836, in __init_subclass__
+2026-02-19T20:56:46.135857516Z [err]      mod = importlib.import_module(module)
+2026-02-19T20:56:46.135861981Z [err]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:46.135865993Z [err]    File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2026-02-19T20:56:46.135870376Z [err]      return _bootstrap._gcd_import(name[level:], package, level)
+2026-02-19T20:56:46.135879939Z [err]    File "/app/app/main.py", line 12, in <module>
+2026-02-19T20:56:46.135881439Z [err]    File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2026-02-19T20:56:46.135886627Z [err]      from app.routers import auth, tokens, wallets, scoring, alerts
+2026-02-19T20:56:46.135890721Z [err]    File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2026-02-19T20:56:46.135892291Z [err]    File "/app/app/routers/auth.py", line 6, in <module>
+2026-02-19T20:56:46.135897579Z [err]      from app.services.auth_service import (
+2026-02-19T20:56:46.135899866Z [err]    File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+2026-02-19T20:56:46.135903237Z [err]    File "/app/app/services/auth_service.py", line 9, in <module>
+2026-02-19T20:56:46.135907559Z [err]    File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2026-02-19T20:56:46.135925850Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:46.135934573Z [err]    File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2026-02-19T20:56:46.135942336Z [err]    File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2026-02-19T20:56:46.137210969Z [err]      _as_declarative(cls._sa_registry, cls, cls.__dict__)
+2026-02-19T20:56:46.137215474Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 244, in _as_declarative
+2026-02-19T20:56:46.137219075Z [err]      return _MapperConfig.setup_mapping(registry, cls, dict_, None, {})
+2026-02-19T20:56:46.137223626Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:46.137229435Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 325, in setup_mapping
+2026-02-19T20:56:46.137233920Z [err]      return _ClassScanMapperConfig(
+2026-02-19T20:56:46.137237767Z [err]             ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-19T20:56:46.137241561Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 572, in __init__
+2026-02-19T20:56:46.137245741Z [err]      self._extract_mappable_attributes()
+2026-02-19T20:56:46.137249572Z [err]    File "/usr/local/lib/python3.11/site-packages/sqlalchemy/orm/decl_base.py", line 1533, in _extract_mappable_attributes
+2026-02-19T20:56:46.137254030Z [err]      raise exc.InvalidRequestError(
+2026-02-19T20:56:46.137258030Z [err]  sqlalchemy.exc.InvalidRequestError: Attribute name 'metadata' is reserved when using the Declarative API.
+2026-02-19T20:56:46.137261839Z [err]  [2026-02-19 20:56:45 +0000] [2] [INFO] Worker exiting (pid: 2)
+2026-02-19T20:56:46.137265673Z [err]  [2026-02-19 20:56:46 +0000] [1] [ERROR] Worker (pid:2) exited with code 3
+2026-02-19T20:56:46.137270477Z [err]  [2026-02-19 20:56:46 +0000] [1] [ERROR] Shutting down: Master
+2026-02-19T20:56:46.137275892Z [err]  [2026-02-19 20:56:46 +0000] [1] [ERROR] Reason: Worker failed to boot.

@@ -49,7 +49,7 @@ class Token(Base):
     dex_id = Column(String(64), nullable=True)
     liquidity_created_at = Column(DateTime, nullable=True)
     total_supply = Column(String(64), nullable=True)
-    metadata = Column(JSON, nullable=True)
+    extra_data = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -76,7 +76,7 @@ class Developer(Base):
     dev_risk_index = Column(Float, default=50.0)
     known_aliases = Column(ARRAY(String), nullable=True)
     linked_wallets = Column(ARRAY(String), nullable=True)
-    metadata = Column(JSON, nullable=True)
+    extra_data = Column("metadata", JSON, nullable=True)
     first_seen_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -98,7 +98,7 @@ class Trader(Base):
     is_smart_wallet = Column(Boolean, default=False)
     total_volume_usd = Column(Float, default=0.0)
     pnl_usd = Column(Float, default=0.0)
-    metadata = Column(JSON, nullable=True)
+    extra_data = Column("metadata", JSON, nullable=True)
     first_seen_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -133,7 +133,7 @@ class RugHistory(Base):
     peak_market_cap_usd = Column(Float, default=0.0)
     holder_count_at_rug = Column(Integer, default=0)
     detected_at = Column(DateTime, default=datetime.utcnow, index=True)
-    metadata = Column(JSON, nullable=True)
+    extra_data = Column("metadata", JSON, nullable=True)
 
     developer = relationship("Developer", back_populates="rug_history")
 
@@ -155,7 +155,7 @@ class Alert(Base):
     is_read = Column(Boolean, default=False)
     is_sent_telegram = Column(Boolean, default=False)
     is_sent_websocket = Column(Boolean, default=False)
-    metadata = Column(JSON, nullable=True)
+    extra_data = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
     token = relationship("Token", back_populates="alerts")
@@ -195,7 +195,7 @@ class LiquidityEvent(Base):
     liquidity_change_pct = Column(Float, default=0.0)
     tx_hash = Column(String(128), nullable=True)
     block_number = Column(BigInteger, nullable=True)
-    metadata = Column(JSON, nullable=True)
+    extra_data = Column("metadata", JSON, nullable=True)
     detected_at = Column(DateTime, default=datetime.utcnow, index=True)
 
     token = relationship("Token", back_populates="liquidity_events")
