@@ -6,6 +6,7 @@ WORKDIR /app
 
 # Copy package manifests and install deps
 COPY package.json package-lock.json* ./
+RUN ls -la /app || true
 RUN apk add --no-cache python3 build-base git libc6-compat && \
 	npm config set python /usr/bin/python3 && \
 	npm config set unsafe-perm true && \
