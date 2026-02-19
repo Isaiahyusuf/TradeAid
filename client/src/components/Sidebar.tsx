@@ -1,4 +1,4 @@
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { 
   ShieldCheck, Eye, TrendingUp, LayoutDashboard, 
   LogOut, User, Radar, Bell
@@ -18,7 +18,7 @@ const NAV_ITEMS = [
 ];
 
 export function Sidebar() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const { user, logout } = useAuth();
 
   return (
@@ -35,20 +35,20 @@ export function Sidebar() {
           const isActive = location === item.href;
           
           return (
-            <Link key={item.href} href={item.href}>
-              <button
-                className={cn(
-                  "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-medium",
-                  isActive 
-                    ? "bg-primary/10 text-primary shadow-[0_0_15px_rgba(34,197,94,0.15)]" 
-                    : "text-muted-foreground hover:text-foreground hover:bg-white/5"
-                )}
-                data-testid={`nav-${item.label.toLowerCase()}`}
-              >
-                <Icon className={cn("w-5 h-5", isActive ? "text-primary" : "text-muted-foreground")} />
-                {item.label}
-              </button>
-            </Link>
+            <button
+              key={item.href}
+              onClick={() => setLocation(item.href)}
+              className={cn(
+                "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-medium",
+                isActive 
+                  ? "bg-primary/10 text-primary shadow-[0_0_15px_rgba(34,197,94,0.15)]" 
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+              )}
+              data-testid={`nav-${item.label.toLowerCase()}`}
+            >
+              <Icon className={cn("w-5 h-5", isActive ? "text-primary" : "text-muted-foreground")} />
+              {item.label}
+            </button>
           );
         })}
       </nav>
@@ -84,7 +84,7 @@ export function Sidebar() {
 }
 
 export function MobileNav() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   
   return (
     <nav className="fixed bottom-0 left-0 w-full bg-card/95 backdrop-blur-lg border-t border-border md:hidden z-50 px-2 py-2 safe-area-bottom">
@@ -94,20 +94,20 @@ export function MobileNav() {
           const isActive = location === item.href;
           
           return (
-            <Link key={item.href} href={item.href}>
-              <button 
-                className={cn(
-                  "flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors min-w-[56px]",
-                  isActive ? "text-primary bg-primary/10" : "text-muted-foreground"
-                )} 
-                data-testid={`mobile-nav-${item.label.toLowerCase()}`}
-              >
-                <Icon className="w-5 h-5" />
-                <span className="text-[10px] font-medium">
-                  {item.label}
-                </span>
-              </button>
-            </Link>
+            <button
+              key={item.href}
+              onClick={() => setLocation(item.href)}
+              className={cn(
+                "flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors min-w-[56px]",
+                isActive ? "text-primary bg-primary/10" : "text-muted-foreground"
+              )} 
+              data-testid={`mobile-nav-${item.label.toLowerCase()}`}
+            >
+              <Icon className="w-5 h-5" />
+              <span className="text-[10px] font-medium">
+                {item.label}
+              </span>
+            </button>
           );
         })}
       </div>
