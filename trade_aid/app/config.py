@@ -1,28 +1,14 @@
 import os
-import re
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
 
 def build_database_url(async_driver: bool = False) -> str:
-    host = os.environ.get("PGHOST", "localhost")
-    port = os.environ.get("PGPORT", "") or os.environ.get("RAILWAY_TCP_PROXY_PORT", "") or "5432"
-    user = os.environ.get("PGUSER", "postgres")
-    password = os.environ.get("POSTGRES_PASSWORD", "") or os.environ.get("PGPASSWORD", "postgres")
-    database = os.environ.get("PGDATABASE", "trade_aid")
-
-    raw_url = os.environ.get("DATABASE_URL", "")
-    if raw_url and not raw_url.startswith("postgresql"):
-        raw_url = ""
-
-    if raw_url:
-        raw_url = re.sub(r"^postgres(ql)?(\+\w+)?://", "postgresql://", raw_url)
-        raw_url = re.sub(r"@([^/:]+):(/)", rf"@\1:{port}\2", raw_url)
-        raw_url = re.sub(r"@([^/:]+)(/)", rf"@\1:{port}\2", raw_url)
-        if async_driver:
-            raw_url = raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        return raw_url
-
+    host = os.environ.get("PGHOST", "") or "localhost"
+    port = os.environ.get("PGPORT", "") or "5432"
+    user = os.environ.get("PGUSER", "") or "postgres"
+    password = os.environ.get("POSTGRES_PASSWORD", "") or os.environ.get("PGPASSWORD", "") or "postgres"
+    database = os.environ.get("PGDATABASE", "") or "trade_aid"
     prefix = "postgresql+asyncpg" if async_driver else "postgresql"
     return f"{prefix}://{user}:{password}@{host}:{port}/{database}"
 
