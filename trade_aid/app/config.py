@@ -4,13 +4,14 @@ from functools import lru_cache
 
 
 def build_database_url(async_driver: bool = False) -> str:
-    host = os.environ.get("PGHOST", "") or "localhost"
-    port = os.environ.get("PGPORT", "") or "5432"
-    user = os.environ.get("PGUSER", "") or "postgres"
-    password = os.environ.get("POSTGRES_PASSWORD", "") or os.environ.get("PGPASSWORD", "") or "postgres"
-    database = os.environ.get("PGDATABASE", "") or "trade_aid"
-    prefix = "postgresql+asyncpg" if async_driver else "postgresql"
-    return f"{prefix}://{user}:{password}@{host}:{port}/{database}"
+    url = os.environ.get("DATABASE_URL", "")
+    if not url:
+        url = "postgresql://postgres:postgres@localhost:5432/trade_aid"
+
+    if async_driver:
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+    return url
 
 
 class Settings(BaseSettings):
@@ -19,7 +20,6 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     DATABASE_URL: str = ""
-    DATABASE_URL_SYNC: str = ""
 
     REDIS_URL: str = "redis://localhost:6379/0"
 
