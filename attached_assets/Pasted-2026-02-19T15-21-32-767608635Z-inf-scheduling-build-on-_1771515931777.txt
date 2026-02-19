@@ -1,0 +1,42 @@
+2026-02-19T15:21:32.767608635Z [inf]  scheduling build on Metal builder "builder-ujioms"
+2026-02-19T15:21:33.219715330Z [inf]  [snapshot] received sha256:dc790fddc0c9a54a3f68dde3d4b202fe06e1b70c917eb85c7d3fdf2be60a389e md5:18ece6a76f63bd3479af5835ab1f171b
+2026-02-19T15:21:33.220316442Z [inf]  receiving snapshot
+2026-02-19T15:21:33.229621863Z [dbg]  found 'Dockerfile' at 'Dockerfile'
+2026-02-19T15:21:33.229624647Z [dbg]  found 'nixpacks.toml' at 'nixpacks.toml'
+2026-02-19T15:21:33.229625468Z [dbg]  found 'railway.json' at 'railway.json'
+2026-02-19T15:21:33.229627100Z [dbg]  skipping 'Dockerfile' at 'trade_aid/Dockerfile' as it is not rooted at a valid path (root_dir=, fileOpts={acceptChildOfRepoRoot:false})
+2026-02-19T15:21:33.229723225Z [inf]  analyzing snapshot
+2026-02-19T15:21:33.246258049Z [inf]  uploading snapshot
+2026-02-19T15:21:39.074635303Z [inf]  fetched snapshot sha256:dc790fddc0c9a54a3f68dde3d4b202fe06e1b70c917eb85c7d3fdf2be60a389e (227 kB bytes)
+2026-02-19T15:21:39.074723616Z [inf]  fetching snapshot
+2026-02-19T15:21:39.404040116Z [inf]  scheduling build on Metal builder "builder-ujioms"
+2026-02-19T15:21:39.694180615Z [inf]  unpacking archive
+2026-02-19T15:21:41.261343572Z [inf]  [internal] load build definition from trade_aid/Dockerfile
+2026-02-19T15:21:41.261531995Z [inf]  [internal] load build definition from trade_aid/Dockerfile
+2026-02-19T15:21:41.261698936Z [inf]  [internal] load build definition from trade_aid/Dockerfile
+2026-02-19T15:21:41.402980005Z [inf]  [internal] load build definition from trade_aid/Dockerfile
+2026-02-19T15:21:41.442216722Z [inf]  [internal] load metadata for docker.io/library/python:3.11-slim
+2026-02-19T15:21:41.772082840Z [inf]  [internal] load metadata for docker.io/library/python:3.11-slim
+2026-02-19T15:21:41.772884404Z [inf]  [internal] load .dockerignore
+2026-02-19T15:21:41.772977864Z [inf]  [internal] load .dockerignore
+2026-02-19T15:21:41.773125125Z [inf]  [internal] load .dockerignore
+2026-02-19T15:21:41.891204741Z [inf]  [internal] load .dockerignore
+2026-02-19T15:21:41.927790198Z [inf]  [6/6] COPY . .
+2026-02-19T15:21:41.927795196Z [inf]  [5/6] RUN pip install --no-cache-dir -r requirements.txt
+2026-02-19T15:21:41.927796127Z [inf]  [4/6] COPY requirements.txt .
+2026-02-19T15:21:41.927796648Z [inf]  [internal] load build context
+2026-02-19T15:21:41.927796858Z [inf]  [3/6] RUN apt-get update && apt-get install -y --no-install-recommends     gcc     libpq-dev     curl     && rm -rf /var/lib/apt/lists/*
+2026-02-19T15:21:41.927797229Z [inf]  [2/6] WORKDIR /app
+2026-02-19T15:21:41.927797429Z [inf]  [1/6] FROM docker.io/library/python:3.11-slim@sha256:0b23cfb7425d065008b778022a17b1551c82f8b4866ee5a7a200084b7e2eafbf
+2026-02-19T15:21:41.927971961Z [inf]  [1/6] FROM docker.io/library/python:3.11-slim@sha256:0b23cfb7425d065008b778022a17b1551c82f8b4866ee5a7a200084b7e2eafbf
+2026-02-19T15:21:41.927972692Z [inf]  [internal] load build context
+2026-02-19T15:21:41.928049628Z [inf]  [internal] load build context
+2026-02-19T15:21:41.942022546Z [inf]  [1/6] FROM docker.io/library/python:3.11-slim@sha256:0b23cfb7425d065008b778022a17b1551c82f8b4866ee5a7a200084b7e2eafbf
+2026-02-19T15:21:41.961253157Z [inf]  [2/6] WORKDIR /app
+2026-02-19T15:21:41.961263333Z [inf]  [2/6] WORKDIR /app
+2026-02-19T15:21:41.961653979Z [inf]  [3/6] RUN apt-get update && apt-get install -y --no-install-recommends     gcc     libpq-dev     curl     && rm -rf /var/lib/apt/lists/*
+2026-02-19T15:21:42.282332363Z [inf]  [internal] load build context
+2026-02-19T15:21:42.308476003Z [inf]  [3/6] RUN apt-get update && apt-get install -y --no-install-recommends     gcc     libpq-dev     curl     && rm -rf /var/lib/apt/lists/*
+2026-02-19T15:21:42.308482012Z [err]  [4/6] COPY requirements.txt .
+2026-02-19T15:21:45.589325118Z [err]  [3/6] RUN apt-get update && apt-get install -y --no-install-recommends     gcc     libpq-dev     curl     && rm -rf /var/lib/apt/lists/*
+2026-02-19T15:21:45.642388634Z [err]  Build Failed: build daemon returned an error < failed to solve: failed to compute cache key: failed to calculate checksum of ref osiwbjpqykp00st9w1zcp463e::lzlewri9x0gzouuh1flzbuitw: "/requirements.txt": not found >
