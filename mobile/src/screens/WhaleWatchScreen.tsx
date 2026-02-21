@@ -6,14 +6,9 @@ import { whaleService } from '../services/api';
 import type { TrackedWallet, WalletAlert } from '../types';
 
 export function WhaleWatchScreen() {
-  const { data: wallets, isLoading, refetch } = useQuery({
-    queryKey: ['whalewatch', 'wallets'],
-    queryFn: () => whaleService.getWallets().then(res => res.data),
-  });
-
-  const { data: alerts } = useQuery({
+  const { data: alerts, isLoading, refetch } = useQuery({
     queryKey: ['whalewatch', 'alerts'],
-    queryFn: () => whaleService.getAlerts().then(res => res.data),
+    queryFn: () => alertService.getAll({ alert_type: 'wallet_movement' }).then(res => res.data.alerts || []),
   });
 
   const [refreshing, setRefreshing] = React.useState(false);
@@ -27,42 +22,43 @@ export function WhaleWatchScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Text style={styles.title}>Whale Watch</Text>
-      <Text style={styles.subtitle}>Track top traders</Text>
+      <Text style={styles.subtitle}>Track wallet movements</Text>
 
       <FlatList
-        data={wallets}
-        keyExtractor={(item: TrackedWallet) => item.address}
+        data={alerts}
+        keyExtractor={(item: any) => item.id}
         renderItem={({ item }) => (
-          <View style={styles.walletCard}>
-            <View style={styles.walletHeader}>
-              <Text style={styles.walletLabel}>{item.label}</Text>
-              <Text style={styles.winRate}>{item.winRate}% Win</Text>
+          <View style={styles.alertCard}>
+            <View style={styles.alertHeader}>
+              <View style={[styles.alertBadge, { 
+                backgroundColor: item.severity === 'high' ? '#ef444420' : 
+                                 item.severity === 'medium' ? '#eab30820' : '#22c55e20' 
+              }]}>
+                <Text style={[styles.alertType, { 
+                  color: item.severity === 'high' ? '#ef4444' : 
+                         item.severity === 'medium' ? '#eab308' : '#22c55e' 
+                }]}>
+                  {item.alert_type.replace('_', ' ').toUpperCase()}
+                </Text>
+              </View>
+              <Text style={styles.alertChain}>{item.chain}</Text>
             </View>
-            <Text style={styles.walletAddress} numberOfLines={1}>{item.address}</Text>
-            <Text style={styles.profit}>{item.totalProfit}</Text>
+            <Text style={styles.alertTitle}>{item.title}</Text>
+            {item.message && <Text style={styles.alertMessage}>{item.message}</Text>}
+            <Text style={styles.alertTime}>
+              {new Date(item.created_at).toLocaleString()}
+            </Text>
           </View>
         )}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#22c55e" />
         }
         contentContainerStyle={styles.list}
-        ListHeaderComponent={
-          alerts && alerts.length > 0 ? (
-            <View style={styles.alertsSection}>
-              <Text style={styles.sectionTitle}>Recent Activity</Text>
-              {alerts.slice(0, 5).map((alert: WalletAlert) => (
-                <View key={alert.id} style={styles.alertItem}>
-                  <View style={[styles.alertBadge, { backgroundColor: alert.type === 'BUY' ? '#22c55e20' : '#ef444420' }]}>
-                    <Text style={[styles.alertType, { color: alert.type === 'BUY' ? '#22c55e' : '#ef4444' }]}>
-                      {alert.type}
-                    </Text>
-                  </View>
-                  <Text style={styles.alertSymbol}>{alert.tokenSymbol}</Text>
-                  <Text style={styles.alertAmount}>{alert.amount}</Text>
-                </View>
-              ))}
-            </View>
-          ) : null
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No whale alerts yet</Text>
+            <Text style={styles.emptySubtext}>Wallet movements will appear here</Text>
+          </View>
         }
       />
     </SafeAreaView>
@@ -91,22 +87,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 100,
   },
-  alertsSection: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#ffffff',
+  alertCard: {
+    backgroundColor: '#1a1f1a',
+    borderRadius: 12,
+    padding: 16,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#2a3f2a',
   },
-  alertItem: {
+  alertHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2a3f2a',
-    gap: 12,
+    marginBottom: 8,
   },
   alertBadge: {
     paddingHorizontal: 10,
@@ -117,37 +110,42 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  alertSymbol: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#ffffff',
+  alertChain: {
+    fontSize: 12,
+    color: '#6b7280',
+    textTransform: 'capitalize',
   },
-  alertAmount: {
-    fontSize: 14,
-    color: '#9ca3af',
-  },
-  walletCard: {
-    backgroundColor: '#1a1f1a',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#2a3f2a',
-  },
-  walletHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  walletLabel: {
+  alertTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#ffffff',
+    marginBottom: 4,
   },
-  winRate: {
+  alertMessage: {
     fontSize: 14,
+    color: '#9ca3af',
+    marginBottom: 8,
+  },
+  alertTime: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+});
     fontWeight: '600',
     color: '#22c55e',
   },

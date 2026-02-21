@@ -8,8 +8,9 @@ interface TokenCardProps {
 }
 
 export function TokenCard({ token, onPress }: TokenCardProps) {
-  const getRiskColor = (level: string) => {
-    switch (level) {
+  const getRiskColor = (level?: string) => {
+    if (!level) return '#6b7280';
+    switch (level.toLowerCase()) {
       case 'low': return '#22c55e';
       case 'medium': return '#eab308';
       case 'high': return '#ef4444';
@@ -17,20 +18,22 @@ export function TokenCard({ token, onPress }: TokenCardProps) {
     }
   };
 
-  const getSignalColor = (signal: string) => {
-    switch (signal) {
-      case 'buy': return '#22c55e';
-      case 'sell': return '#ef4444';
-      case 'hold': return '#eab308';
-      default: return '#6b7280';
-    }
-  };
-
-  const formatNumber = (num: number) => {
+  const formatNumber = (num?: number) => {
+    if (!num) return 'N/A';
     if (num >= 1000000) return `$${(num / 1000000).toFixed(2)}M`;
     if (num >= 1000) return `$${(num / 1000).toFixed(2)}K`;
     return `$${num.toFixed(2)}`;
   };
+
+  const getSafetyScore = () => {
+    if (token.safety_score) return token.safety_score;
+    // Calculate from liquidity if not available
+    if (token.liquidity_usd && token.liquidity_usd > 50000) return 75;
+    if (token.liquidity_usd && token.liquidity_usd > 10000) return 50;
+    return 25;
+  };
+
+  const safetyScore = getSafetyScore();
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
@@ -39,39 +42,46 @@ export function TokenCard({ token, onPress }: TokenCardProps) {
           <Text style={styles.symbol}>{token.symbol}</Text>
           <Text style={styles.name} numberOfLines={1}>{token.name}</Text>
         </View>
-        <View style={[styles.scoreBadge, { backgroundColor: getRiskColor(token.riskLevel) + '20' }]}>
-          <Text style={[styles.scoreText, { color: getRiskColor(token.riskLevel) }]}>
-            {token.safetyScore}
+        <View style={[styles.scoreBadge, { backgroundColor: getRiskColor(token.risk_level) + '20' }]}>
+          <Text style={[styles.scoreText, { color: getRiskColor(token.risk_level) }]}>
+            {safetyScore}
           </Text>
         </View>
       </View>
 
       <View style={styles.priceRow}>
-        <Text style={styles.price}>{token.priceUsd ? `$${parseFloat(token.priceUsd).toFixed(8)}` : 'N/A'}</Text>
-        <Text style={[styles.change, { color: token.priceChange24h >= 0 ? '#22c55e' : '#ef4444' }]}>
-          {token.priceChange24h >= 0 ? '+' : ''}{token.priceChange24h?.toFixed(2)}%
-        </Text>
+        <Text style={styles.price}>{token.price_usd ? `$${parseFloat(token.price_usd).toFixed(8)}` : 'N/A'}</Text>
+        {token.price_change_24h !== undefined && (
+          <Text style={[styles.change, { color: token.price_change_24h >= 0 ? '#22c55e' : '#ef4444' }]}>
+            {token.price_change_24h >= 0 ? '+' : ''}{token.price_change_24h.toFixed(2)}%
+          </Text>
+        )}
       </View>
 
       <View style={styles.statsRow}>
         <View style={styles.stat}>
           <Text style={styles.statLabel}>Liquidity</Text>
-          <Text style={styles.statValue}>{formatNumber(token.liquidity)}</Text>
+          <Text style={styles.statValue}>{formatNumber(token.liquidity_usd)}</Text>
         </View>
         <View style={styles.stat}>
-          <Text style={styles.statLabel}>Volume 24h</Text>
-          <Text style={styles.statValue}>{formatNumber(token.volume24h)}</Text>
+          <Text style={styles.statLabel}>Market Cap</Text>
+          <Text style={styles.statValue}>{formatNumber(token.market_cap_usd)}</Text>
         </View>
         <View style={styles.stat}>
-          <Text style={styles.statLabel}>Signal</Text>
-          <Text style={[styles.signal, { color: getSignalColor(token.aiSignal) }]}>
-            {token.aiSignal?.toUpperCase()}
-          </Text>
+          <Text style={styles.statLabel}>Holders</Text>
+          <Text style={styles.statValue}>{token.holder_count || 'N/A'}</Text>
         </View>
       </View>
 
-      <View style={styles.chainBadge}>
-        <Text style={styles.chainText}>{token.chain}</Text>
+      <View style={styles.footer}>
+        <View style={styles.chainBadge}>
+          <Text style={styles.chainText}>{token.chain}</Text>
+        </View>
+        {token.is_honeypot && (
+          <View style={styles.warningBadge}>
+            <Text style={styles.warningText}>⚠️ HONEYPOT</Text>
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -152,8 +162,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 2,
   },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   chainBadge: {
-    alignSelf: 'flex-start',
     backgroundColor: '#22c55e20',
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -163,5 +177,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#22c55e',
     textTransform: 'capitalize',
+  },
+  warningBadge: {
+    backgroundColor: '#ef444420',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  warningText: {
+    fontSize: 11,
+    color: '#ef4444',
+    fontWeight: '700',
   },
 });

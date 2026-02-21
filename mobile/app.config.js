@@ -1,7 +1,7 @@
 export default {
   expo: {
-    name: "MemeScannerAI",
-    slug: "memescannerai",
+    name: "TradeAid",
+    slug: "tradeaid",
     version: "1.0.0",
     orientation: "portrait",
     icon: "./assets/icon.png",
@@ -14,7 +14,7 @@ export default {
     assetBundlePatterns: ["**/*"],
     ios: {
       supportsTablet: true,
-      bundleIdentifier: "com.yourcompany.memescannerai",
+      bundleIdentifier: "com.tradeaid.app",
       buildNumber: "1"
     },
     android: {
@@ -22,14 +22,19 @@ export default {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#0a0f0a"
       },
-      package: "com.yourcompany.memescannerai",
+      package: "com.tradeaid.app",
       versionCode: 1
     },
     web: {
       favicon: "./assets/favicon.png"
     },
     extra: {
-      apiUrl: process.env.API_URL || "https://your-backend-url.com"
-    }
+      // API URL - defaults to localhost for development
+      // Set API_URL environment variable for production builds
+      apiUrl: process.env.API_URL || process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000"
+    },
+    plugins: [
+      "expo-secure-store"
+    ]
   }
 };

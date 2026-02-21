@@ -1,132 +1,153 @@
-# MemeScannerAI Mobile App
+# TradeAid Mobile App
 
-React Native mobile app for MemeScannerAI Solana token scanner.
+React Native mobile application for TradeAid - a blockchain intelligence platform for token scanning, risk assessment, and wallet intelligence.
+
+## Features
+
+✅ **Alpha Scanner** - Discover new tokens with safety scores  
+✅ **RugShield** - Scan any token for safety (honeypot detection, liquidity checks)  
+✅ **Whale Watch** - Monitor wallet movements and alerts  
+✅ **Meme Trends** - Track trending tokens and market data  
+✅ **Account Management** - User profiles and settings  
+✅ **Real-time Updates** - WebSocket integration for live data  
+✅ **Secure Authentication** - JWT-based auth with secure token storage
+
+## Tech Stack
+
+- **React Native 0.73** with Expo 50
+- **TypeScript** for type safety
+- **React Navigation** for routing
+- **TanStack Query** for data fetching and caching
+- **Axios** for HTTP requests
+- **Expo Secure Store** for secure token storage
+- **WebSocket** for real-time updates
+
+## Prerequisites
+
+- Node.js 18+ and npm/yarn
+- Expo CLI: `npm install -g expo-cli`
+- iOS Simulator (macOS) or Android Studio (for emulator)
+- Trade Aid backend running (see `/trade_aid/README.md`)
 
 ## Setup
 
-1. Install dependencies:
+### 1. Install Dependencies
+
 ```bash
 cd mobile
 npm install
 ```
 
-2. Configure API URL in `app.config.js`:
-```javascript
-extra: {
-  apiUrl: "https://your-backend-url.com"
-}
+### 2. Configure Environment
+
+Copy `.env.example` to `.env` and update the API URL:
+
+```bash
+cp .env.example .env
 ```
 
-3. Start development:
+Edit `.env`:
+```env
+# For local development with Trade Aid backend
+API_URL=http://localhost:8000
+
+# For production
+# API_URL=https://your-backend.railway.app
+```
+
+**Important**: For iOS simulator, use `http://localhost:8000`. For Android emulator, use `http://10.0.2.2:8000`.
+
+### 3. Start Development
+
 ```bash
+# Start Expo development server
 npm start
-```
 
-4. Run on device:
-- Press `i` for iOS Simulator
-- Press `a` for Android Emulator
-- Scan QR code with Expo Go app for physical device
-
-## Building and publishing (Expo EAS)
-
-1. Install EAS CLI and login:
-```bash
-npm install -g eas-cli
-eas login
-```
-
-2. Configure build (first time):
-```bash
-cd mobile
-eas build:configure
-```
-
-3. Build for Android (internal or store):
-```bash
-eas build --platform android --profile production
-```
-
-4. Build for iOS (archive for App Store):
-```bash
-eas build --platform ios --profile production
-```
-
-5. Submit to stores (optional):
-```bash
-eas submit --platform android
-eas submit --platform ios
-```
-
-Notes:
-- Set `API_URL` env var in Railway (or EAS secrets) to point to your deployed backend.
-- Recommended `expo` packages to install for polish: `expo-font`, `expo-splash-screen`, `expo-asset`.
-- For local development use `expo start` and Expo Go on device.
-
-## Building for App Stores
-
-### Setup Expo EAS:
-```bash
-npm install -g eas-cli
-eas login
-eas build:configure
-```
-
-### Build for iOS:
-```bash
-eas build --platform ios
-```
-
-### Build for Android:
-```bash
-eas build --platform android
-```
-
-### Submit to App Stores:
-```bash
-eas submit --platform ios
-eas submit --platform android
+# Or run directly on platform
+npm run ios     # iOS simulator
+npm run android # Android emulator
+npm run web     # Web browser
 ```
 
 ## Project Structure
 
 ```
 mobile/
-├── App.tsx                    # Main app entry
-├── app.config.js              # Expo configuration
-├── package.json               # Dependencies
 ├── src/
-│   ├── components/            # Reusable components
+│   ├── components/      # Reusable UI components
 │   │   └── TokenCard.tsx
-│   ├── hooks/                 # Custom hooks
+│   ├── hooks/          # Custom React hooks
 │   │   └── useAuth.ts
-│   ├── navigation/            # Navigation setup
+│   ├── navigation/     # Navigation configuration
 │   │   └── AppNavigator.tsx
-│   ├── screens/               # App screens
+│   ├── screens/        # App screens
+│   │   ├── LoginScreen.tsx
+│   │   ├── RegisterScreen.tsx
 │   │   ├── ScannerScreen.tsx
 │   │   ├── RugShieldScreen.tsx
 │   │   ├── WhaleWatchScreen.tsx
 │   │   ├── MemeTrendScreen.tsx
 │   │   └── AccountScreen.tsx
-│   ├── services/              # API services
-│   │   └── api.ts
-│   └── types/                 # TypeScript types
+│   ├── services/       # API and WebSocket services
+│   │   ├── api.ts
+│   │   └── websocket.ts
+│   └── types/          # TypeScript type definitions
 │       └── index.ts
-└── assets/                    # Images and icons
+├── App.tsx             # App entry point
+├── app.config.js       # Expo configuration
+└── package.json
 ```
 
-## Features
+## API Integration
 
-- Alpha Scanner for Solana tokens with safe picks and hot tokens
-- RugShield token safety analyzer focused on Solana token checks
-- WhaleWatch wallet tracker for Solana wallets
-- MemeTrend social sentiment
-- User account management
+The app integrates with the Trade Aid Python backend. See full API docs at `http://localhost:8000/docs`.
 
-## Requirements
+## Development Tips
 
-- Node.js 18+
-- Expo CLI
-- iOS: Xcode (Mac only)
-- Android: Android Studio
-- Apple Developer Account ($99/year) for iOS publishing
-- Google Play Developer Account ($25) for Android publishing
+### Running with Local Backend
+
+1. Start the Trade Aid backend:
+   ```bash
+   cd trade_aid
+   docker-compose up
+   ```
+
+2. Start the mobile app:
+   ```bash
+   cd mobile
+   npm start
+   ```
+
+### Building for Production
+
+1. Install EAS CLI:
+   ```bash
+   npm install -g eas-cli
+   ```
+
+2. Build:
+   ```bash
+   eas build --platform all
+   ```
+
+3. Submit to stores:
+   ```bash
+   eas submit --platform ios
+   eas submit --platform android
+   ```
+
+## Common Issues
+
+- **Network request failed**: Check API_URL in `.env` matches your backend
+- **401 Unauthorized**: Logout and login again
+- **WebSocket errors**: Ensure backend WebSocket endpoints are accessible
+
+## Support
+
+- Backend: See `/trade_aid/README.md`
+- API docs: Visit `http://localhost:8000/docs`
+- Expo docs: https://docs.expo.dev/
+
+---
+
+Built with ❤️ using React Native and Expo

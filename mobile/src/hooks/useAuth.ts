@@ -28,7 +28,7 @@ export function useAuthState() {
 
   const refreshUser = async () => {
     try {
-      const response = await profileService.get();
+      const response = await authService.getMe();
       setUser(response.data);
     } catch (error) {
       setUser(null);
@@ -41,11 +41,7 @@ export function useAuthState() {
   };
 
   const logout = async () => {
-    try {
-      await authService.logout();
-    } catch (error) {
-      console.log('Logout error:', error);
-    }
+    // Clear local token (Trade Aid backend doesn't require logout endpoint)
     await SecureStore.deleteItemAsync('authToken');
     setUser(null);
   };

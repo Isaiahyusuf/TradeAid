@@ -12,50 +12,35 @@ export function ScannerScreen({ navigation }: any) {
   const [activeTab, setActiveTab] = useState<TabType>('safePicks');
   const [refreshing, setRefreshing] = useState(false);
 
-  const { data: safePicks, isLoading: loadingSafe, refetch: refetchSafe } = useQuery({
-    queryKey: ['tokens', 'safe-picks'],
-    queryFn: () => tokenService.getSafePicks().then(res => res.data),
-  });
-
-  const { data: hotTokens, isLoading: loadingHot, refetch: refetchHot } = useQuery({
-    queryKey: ['tokens', 'hot'],
-    queryFn: () => tokenService.getHot().then(res => res.data),
+  const { data: tokensData, isLoading: loadingTokens, refetch: refetchTokens } = useQuery({
+    queryKey: ['tokens', activeTab],
+    queryFn: async () => {
+      const params = activeTab === 'safePicks' 
+        ? { limit: 50 }
+        : { sort_by: 'created_at', limit: 50 };
+      const response = await tokenService.getAll(params);
+      return response.data.tokens || [];
+    },
   });
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([refetchSafe(), refetchHot()]);
+    await refetchTokens();
     setRefreshing(false);
   };
 
-  const handleScanNow = async () => {
-    try {
-      await tokenService.scanNow();
-      onRefresh();
-    } catch (error) {
-      console.error('Scan failed:', error);
-    }
-  };
-
   const getCurrentData = (): Token[] => {
-    switch (activeTab) {
-      case 'safePicks':
-        return safePicks || [];
-      case 'newest':
-        return hotTokens || [];
-      default:
-        return [];
-    }
+    return tokensData || [];
   };
 
-  const isLoading = loadingSafe || loadingHot;
+  const isLoading = loadingTokens;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.title}>Alpha Scanner</Text>
-        <TouchableOpacity style={styles.scanButton} onPress={handleScanNow}>
-          <Text style={styles.scanButtonText}>Scan Now</Text>
+        <TouchableOpacity style={styles.scanButton} onPress={onRefresh}>
+          <Text style={styles.scanButtonText}>Refresh</Text>
         </TouchableOpacity>
       </View>
 
@@ -85,11 +70,14 @@ export function ScannerScreen({ navigation }: any) {
       ) : (
         <FlatList
           data={getCurrentData()}
-          keyExtractor={(item) => item.address}
+          keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <TokenCard
               token={item}
-              onPress={() => navigation.navigate('TokenDetail', { address: item.address })}
+              onPress={() => navigation.navigate('TokenDetail', { 
+                chain: item.chain, 
+                address: item.contract_address 
+              })}
             />
           )}
           contentContainerStyle={styles.list}

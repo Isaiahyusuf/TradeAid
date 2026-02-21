@@ -6,9 +6,9 @@ import { trendService } from '../services/api';
 import type { TrendingCoin } from '../types';
 
 export function MemeTrendScreen() {
-  const { data: trends, isLoading, refetch } = useQuery({
+  const { data: tokensData, isLoading, refetch } = useQuery({
     queryKey: ['memetrend'],
-    queryFn: () => trendService.getList().then(res => res.data),
+    queryFn: () => tokenService.getAll({ limit: 50 }).then(res => res.data.tokens || []),
   });
 
   const [refreshing, setRefreshing] = React.useState(false);
@@ -19,30 +19,21 @@ export function MemeTrendScreen() {
     setRefreshing(false);
   };
 
-  const getTrendIcon = (trend: string) => {
-    switch (trend) {
-      case 'UP': return '↗';
-      case 'DOWN': return '↘';
-      default: return '→';
-    }
-  };
-
-  const getTrendColor = (trend: string) => {
-    switch (trend) {
-      case 'UP': return '#22c55e';
-      case 'DOWN': return '#ef4444';
-      default: return '#eab308';
-    }
+  const formatNumber = (num?: number) => {
+    if (!num) return 'N/A';
+    if (num >= 1000000) return `$${(num / 1000000).toFixed(2)}M`;
+    if (num >= 1000) return `$${(num / 1000).toFixed(2)}K`;
+    return `$${num.toFixed(2)}`;
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <Text style={styles.title}>Meme Trends</Text>
-      <Text style={styles.subtitle}>Social sentiment analysis</Text>
+      <Text style={styles.title}>Token Trends</Text>
+      <Text style={styles.subtitle}>Discover trending tokens</Text>
 
       <FlatList
-        data={trends}
-        keyExtractor={(item: TrendingCoin) => item.id.toString()}
+        data={tokensData}
+        keyExtractor={(item: any) => item.id}
         renderItem={({ item }) => (
           <View style={styles.trendCard}>
             <View style={styles.trendHeader}>
@@ -50,26 +41,23 @@ export function MemeTrendScreen() {
                 <Text style={styles.symbol}>{item.symbol}</Text>
                 <Text style={styles.name}>{item.name}</Text>
               </View>
-              <View style={styles.hypeScore}>
-                <Text style={styles.hypeLabel}>Hype</Text>
-                <Text style={styles.hypeValue}>{item.hypeScore}</Text>
+              <View style={styles.chainBadge}>
+                <Text style={styles.chainText}>{item.chain}</Text>
               </View>
             </View>
             
             <View style={styles.trendStats}>
               <View style={styles.stat}>
                 <Text style={styles.statLabel}>Price</Text>
-                <Text style={styles.statValue}>${item.price}</Text>
+                <Text style={styles.statValue}>{item.price_usd ? `$${parseFloat(item.price_usd).toFixed(8)}` : 'N/A'}</Text>
               </View>
               <View style={styles.stat}>
-                <Text style={styles.statLabel}>Volume 24h</Text>
-                <Text style={styles.statValue}>{item.volume24h}</Text>
+                <Text style={styles.statLabel}>Market Cap</Text>
+                <Text style={styles.statValue}>{formatNumber(item.market_cap_usd)}</Text>
               </View>
               <View style={styles.stat}>
-                <Text style={styles.statLabel}>Trend</Text>
-                <Text style={[styles.trendValue, { color: getTrendColor(item.trend) }]}>
-                  {getTrendIcon(item.trend)} {item.trend}
-                </Text>
+                <Text style={styles.statLabel}>Liquidity</Text>
+                <Text style={styles.statValue}>{formatNumber(item.liquidity_usd)}</Text>
               </View>
             </View>
           </View>
@@ -78,6 +66,11 @@ export function MemeTrendScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#22c55e" />
         }
         contentContainerStyle={styles.list}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No tokens found</Text>
+          </View>
+        }
       />
     </SafeAreaView>
   );
@@ -128,21 +121,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6b7280',
   },
-  hypeScore: {
-    alignItems: 'center',
+  chainBadge: {
     backgroundColor: '#22c55e20',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
   },
-  hypeLabel: {
-    fontSize: 10,
+  chainText: {
+    fontSize: 12,
     color: '#22c55e',
-  },
-  hypeValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#22c55e',
+    textTransform: 'capitalize',
+    fontWeight: '600',
   },
   trendStats: {
     flexDirection: 'row',
@@ -161,7 +150,17 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     marginTop: 4,
   },
-  trendValue: {
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+});
     fontSize: 14,
     fontWeight: '700',
     marginTop: 4,

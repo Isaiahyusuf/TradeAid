@@ -14,7 +14,7 @@ export function AccountScreen() {
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['profile'],
-    queryFn: () => profileService.get().then(res => res.data),
+    queryFn: () => authService.getMe().then(res => res.data),
   });
 
   const updateProfile = useMutation({
@@ -66,7 +66,7 @@ export function AccountScreen() {
     );
   }
 
-  const displayName = profile?.username || profile?.firstName || profile?.email?.split('@')[0] || 'User';
+  const displayName = profile?.username || profile?.email?.split('@')[0] || 'User';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
