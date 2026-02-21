@@ -2,8 +2,8 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "Dockerfile",
-    "context": "trade_aid"
+    "dockerfilePath": "trade_aid/Dockerfile",
+    "context": "."
   },
   "deploy": {
     "numReplicas": 1,
