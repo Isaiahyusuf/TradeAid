@@ -10,6 +10,8 @@ from app.utils.redis_client import close_redis
 from app.utils.logging_config import logger
 from app.websocket.manager import ws_manager
 from app.routers import auth, tokens, wallets, scoring, alerts
+from app.scanners.dexscreener import dex_scanner
+from app.scanners.chain_scanner import chain_scanner_manager
 
 settings = get_settings()
 
@@ -19,6 +21,7 @@ async def lifespan(app: FastAPI):
     logger.info("Trade Aid API starting up...")
     await init_db()
     logger.info("Database initialized")
+    scanner_task = None
 
     try:
         await ws_manager.start_redis_subscriber()
@@ -26,9 +29,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Redis subscriber failed (Redis may not be running): {e}")
 
+    if settings.ENABLE_SCANNERS:
+        try:
+            scanner_task = asyncio.create_task(dex_scanner.start())
+            await chain_scanner_manager.start_all()
+            logger.info("Background scanners started")
+        except Exception as e:
+            logger.warning(f"Scanner startup failed: {e}")
+
     yield
 
     logger.info("Trade Aid API shutting down...")
+    if scanner_task:
+        await dex_scanner.stop()
+        scanner_task.cancel()
+    await chain_scanner_manager.stop_all()
     await ws_manager.stop()
     await close_redis()
     await close_db()

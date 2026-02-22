@@ -10,12 +10,6 @@ settings = get_settings()
 
 CHAIN_WS_URLS = {
     "solana": settings.SOLANA_WS_URL,
-    "ethereum": settings.ETHEREUM_WS_URL,
-    "bsc": settings.BSC_WS_URL,
-    "base": settings.BASE_WS_URL,
-    "arbitrum": settings.ARBITRUM_WS_URL,
-    "avalanche": settings.AVALANCHE_WS_URL,
-    "polygon": settings.POLYGON_WS_URL,
 }
 
 

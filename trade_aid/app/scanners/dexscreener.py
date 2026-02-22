@@ -9,17 +9,12 @@ from app.database import async_session_factory
 from app.models.models import Token, LiquidityEvent, Alert
 from app.utils.redis_client import cache_set, cache_get, publish_event
 from app.utils.logging_config import logger
+from app.scoring.scoring_service import scoring_service
 
 settings = get_settings()
 
 CHAIN_MAPPING = {
     "solana": "solana",
-    "ethereum": "ethereum",
-    "bsc": "bsc",
-    "base": "base",
-    "arbitrum": "arbitrum",
-    "avalanche": "avalanche",
-    "polygon": "polygon",
 }
 
 
@@ -57,6 +52,7 @@ class DexScreenerScanner:
     async def _scan_chain_new_pairs(self, chain: str):
         cache_key = f"dex:latest_pairs:{chain}"
         cached = await cache_get(cache_key)
+        new_contracts: list[str] = []
 
         try:
             url = f"{settings.DEXSCREENER_API_URL}/search?q={chain}"
@@ -150,6 +146,7 @@ class DexScreenerScanner:
                             liquidity_created_at=liq_created_at,
                         )
                         db.add(token)
+                        new_contracts.append(contract)
 
                         event = LiquidityEvent(
                             contract_address=contract,
@@ -170,11 +167,41 @@ class DexScreenerScanner:
 
                 await db.commit()
 
+            if new_contracts:
+                await self._auto_score_new_tokens(chain, new_contracts)
+
             new_pair_ids = [p.get("pairAddress") for p in pairs[:50] if p.get("pairAddress")]
             await cache_set(cache_key, new_pair_ids, ttl=30)
 
         except httpx.HTTPError as e:
             logger.warning(f"[DexScreener] HTTP error for {chain}: {e}")
+
+    async def _auto_score_new_tokens(self, chain: str, contracts: list[str]):
+        scored = 0
+        for contract in contracts[:10]:
+            try:
+                async with async_session_factory() as db:
+                    result = await asyncio.wait_for(
+                        scoring_service.score_token(db, contract, chain),
+                        timeout=8,
+                    )
+                    await db.commit()
+
+                    if result and not result.get("error"):
+                        scored += 1
+                        await publish_event("alerts", {
+                            "type": "score_ready",
+                            "chain": chain,
+                            "contract": contract,
+                            "confidence": result.get("scores", {}).get("trade_confidence_index"),
+                        })
+            except asyncio.TimeoutError:
+                logger.warning(f"[DexScreener] Auto-score timeout for {contract}")
+            except Exception as e:
+                logger.warning(f"[DexScreener] Auto-score failed for {contract}: {e}")
+
+        if scored:
+            logger.info(f"[DexScreener] Auto-scored {scored} newly discovered tokens on {chain}")
 
     async def get_token_profile(self, chain: str, contract_address: str) -> Optional[dict]:
         try:

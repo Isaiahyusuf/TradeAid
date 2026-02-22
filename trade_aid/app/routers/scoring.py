@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy import select
@@ -23,6 +23,9 @@ async def score_token(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    if req.chain.lower() != "solana":
+        raise HTTPException(status_code=400, detail="Only Solana integration is supported")
+
     result = await scoring_service.score_token(db, req.contract_address, req.chain)
     return result
 
@@ -32,6 +35,9 @@ async def score_token_async(
     req: ScoreRequest,
     user: User = Depends(get_current_user),
 ):
+    if req.chain.lower() != "solana":
+        raise HTTPException(status_code=400, detail="Only Solana integration is supported")
+
     task = score_token_task.delay(req.contract_address, req.chain)
     return {"task_id": task.id, "status": "queued"}
 
@@ -44,6 +50,9 @@ async def scoring_history(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    if chain.lower() != "solana":
+        raise HTTPException(status_code=400, detail="Only Solana integration is supported")
+
     result = await db.execute(
         select(ScoringHistory)
         .where(

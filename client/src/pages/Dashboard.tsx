@@ -14,6 +14,8 @@ import { Link } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 
 function ChainIcon({ chain }: { chain: string }) {
   const key = String(chain || "").toUpperCase();
@@ -40,8 +42,15 @@ function formatNumber(n: number) {
   return `$${n.toFixed(0)}`;
 }
 
+function normalizePct(value: number) {
+  return value > 1 ? value : value * 100;
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
+  const [selectedToken, setSelectedToken] = useState<any>(null);
+  const [selectedAlert, setSelectedAlert] = useState<any>(null);
+  const { toast } = useToast();
   const qc = useQueryClient();
   const { data: tokenData, isLoading: tokensLoading, error: tokensError } = useTokens();
   const { data: stats, isLoading: statsLoading, error: statsError } = useTokenStats();
@@ -158,6 +167,45 @@ export default function Dashboard() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {(selectedToken || selectedAlert) && (
+            <Card className="lg:col-span-2 p-4 bg-card/70 backdrop-blur">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Live Selection</p>
+                  {selectedToken && (
+                    <div>
+                      <p className="font-semibold">{selectedToken.symbol || selectedToken.name}</p>
+                      <p className="text-xs text-muted-foreground font-mono break-all">{selectedToken.contract_address}</p>
+                    </div>
+                  )}
+                  {!selectedToken && selectedAlert && (
+                    <div>
+                      <p className="font-semibold">{selectedAlert.title}</p>
+                      <p className="text-xs text-muted-foreground">{selectedAlert.message}</p>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {selectedToken?.contract_address && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        navigator.clipboard.writeText(selectedToken.contract_address);
+                        toast({ title: "Copied", description: "Contract address copied" });
+                      }}
+                    >
+                      Copy Address
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={() => { setSelectedToken(null); setSelectedAlert(null); }}>
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
+
           <Card className="bg-card/60 backdrop-blur overflow-hidden">
             <div className="p-4 border-b border-border flex items-center justify-between gap-2">
               <h3 className="font-semibold flex items-center gap-2">
@@ -179,7 +227,15 @@ export default function Dashboard() {
                 ))
               ) : (
                 tokenData?.tokens?.slice(0, 5).map((token) => (
-                  <div key={token.id} className="p-4 flex items-center gap-4 hover-elevate" data-testid={`token-row-${token.id}`}>
+                  <div
+                    key={token.id}
+                    className={cn("p-4 flex items-center gap-4 hover-elevate cursor-pointer", selectedToken?.id === token.id && "bg-muted/40")}
+                    data-testid={`token-row-${token.id}`}
+                    onClick={() => {
+                      setSelectedToken(token);
+                      setSelectedAlert(null);
+                    }}
+                  >
                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center font-bold">
                       <ChainIcon chain={token.chain} />
                     </div>
@@ -187,6 +243,11 @@ export default function Dashboard() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold">{token.symbol || token.name || "Unknown"}</span>
                         <Badge variant="outline" className="text-[10px]">{token.chain}</Badge>
+                        {token.latest_score && (
+                          <Badge variant="outline" className="text-[10px]">
+                            Score {normalizePct(token.latest_score.trade_confidence_index).toFixed(0)}
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-sm text-muted-foreground truncate">{token.contract_address.slice(0, 12)}...</p>
                     </div>
@@ -223,7 +284,15 @@ export default function Dashboard() {
                 ))
               ) : (
                 alertData?.alerts?.slice(0, 5).map((alert) => (
-                  <div key={alert.id} className="p-4 flex items-center gap-4 hover-elevate" data-testid={`alert-row-${alert.id}`}>
+                  <div
+                    key={alert.id}
+                    className={cn("p-4 flex items-center gap-4 hover-elevate cursor-pointer", selectedAlert?.id === alert.id && "bg-muted/40")}
+                    data-testid={`alert-row-${alert.id}`}
+                    onClick={() => {
+                      setSelectedAlert(alert);
+                      setSelectedToken(null);
+                    }}
+                  >
                     <div className={cn(
                       "w-10 h-10 rounded-lg flex items-center justify-center",
                       alert.severity === "high" ? "bg-red-500/10" : alert.severity === "medium" ? "bg-yellow-500/10" : "bg-blue-500/10"

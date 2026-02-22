@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.models import User
@@ -53,6 +53,9 @@ async def analyze_developer(
     chain: str = "solana",
     user: User = Depends(get_current_user),
 ):
+    if chain.lower() != "solana":
+        raise HTTPException(status_code=400, detail="Only Solana integration is supported")
+
     task = compute_dev_risk_task.delay(wallet_address, chain)
     return {"task_id": task.id, "status": "queued"}
 
@@ -63,5 +66,8 @@ async def analyze_trader(
     chain: str = "solana",
     user: User = Depends(get_current_user),
 ):
+    if chain.lower() != "solana":
+        raise HTTPException(status_code=400, detail="Only Solana integration is supported")
+
     task = compute_trader_risk_task.delay(wallet_address, chain)
     return {"task_id": task.id, "status": "queued"}

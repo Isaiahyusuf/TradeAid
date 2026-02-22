@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTokens, useTokenStats, type TokenItem } from "@/hooks/use-memetrend";
 import { useScanToken, type ScoreResult } from "@/hooks/use-rugcheck";
 import { 
@@ -40,13 +39,16 @@ function formatNumber(n: number) {
   return `$${n.toFixed(0)}`;
 }
 
+function normalizePct(value: number) {
+  return value > 1 ? value : value * 100;
+}
+
 export default function AlphaScanner() {
-  const [chain, setChain] = useState<string>("solana");
   const [searchQuery, setSearchQuery] = useState("");
   const [scanAddress, setScanAddress] = useState("");
   const { toast } = useToast();
 
-  const { data: tokenData, isLoading, refetch } = useTokens(chain);
+  const { data: tokenData, isLoading, refetch } = useTokens("solana");
   const { data: stats } = useTokenStats();
   const { mutate: scoreToken, isPending: isScoring, data: scoreResult } = useScanToken();
 
@@ -63,7 +65,18 @@ export default function AlphaScanner() {
   }, [tokens, searchQuery]);
 
   const handleQuickScore = (address: string) => {
-    scoreToken({ address, chain });
+    scoreToken(
+      { address, chain: "solana" },
+      {
+        onError: (error) => {
+          toast({
+            title: "Score failed",
+            description: error instanceof Error ? error.message : "Unable to score token",
+            variant: "destructive",
+          });
+        },
+      }
+    );
   };
 
   const handleScanAddress = () => {
@@ -71,7 +84,18 @@ export default function AlphaScanner() {
       toast({ title: "Error", description: "Enter a contract address", variant: "destructive" });
       return;
     }
-    scoreToken({ address: scanAddress, chain });
+    scoreToken(
+      { address: scanAddress, chain: "solana" },
+      {
+        onError: (error) => {
+          toast({
+            title: "Score failed",
+            description: error instanceof Error ? error.message : "Unable to score token",
+            variant: "destructive",
+          });
+        },
+      }
+    );
   };
 
   return (
@@ -123,6 +147,7 @@ export default function AlphaScanner() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">On {chain}</p>
+                <p className="text-sm text-muted-foreground">On Solana</p>
                 <p className="text-2xl font-bold">{tokens.length}</p>
               </div>
             </div>
@@ -144,18 +169,9 @@ export default function AlphaScanner() {
           <div className="flex flex-col gap-4">
             <p className="text-sm font-medium text-muted-foreground">Quick Score a Token</p>
             <div className="flex flex-col md:flex-row gap-4">
-              <Select value={chain} onValueChange={setChain}>
-                <SelectTrigger className="w-full md:w-40" data-testid="select-chain">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="solana">Solana</SelectItem>
-                  <SelectItem value="ethereum">Ethereum</SelectItem>
-                  <SelectItem value="bsc">BSC</SelectItem>
-                  <SelectItem value="base">Base</SelectItem>
-                  <SelectItem value="arbitrum">Arbitrum</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="w-full md:w-40 h-10 px-3 border border-input rounded-md bg-muted/40 text-sm flex items-center" data-testid="select-chain">
+                Solana
+              </div>
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <Input
@@ -246,7 +262,7 @@ export default function AlphaScanner() {
           ) : filteredTokens.length === 0 ? (
             <Card className="p-12 text-center">
               <Radar className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-30" />
-              <p className="text-lg text-muted-foreground">No tokens found on {chain}</p>
+              <p className="text-lg text-muted-foreground">No tokens found on Solana</p>
               <p className="text-sm text-muted-foreground">Try changing the chain or scanning a token address above.</p>
             </Card>
           ) : (
@@ -261,6 +277,11 @@ export default function AlphaScanner() {
                       <span className="font-bold">{token.symbol || "???"}</span>
                       <span className="text-sm text-muted-foreground hidden sm:inline">{token.name}</span>
                       <Badge variant="outline" className="text-[10px]">{token.chain}</Badge>
+                      {token.latest_score && (
+                        <Badge variant="outline" className="text-[10px]">
+                          Score {normalizePct(token.latest_score.trade_confidence_index).toFixed(0)}
+                        </Badge>
+                      )}
                       {token.is_ownership_renounced && (
                         <Badge variant="outline" className="text-[10px] text-green-400 border-green-400/30">
                           <ShieldCheck className="w-3 h-3 mr-1" /> Safe

@@ -10,6 +10,7 @@ import { Search, TrendingUp, Activity, Shield, ShieldCheck, AlertTriangle, Exter
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SiSolana, SiEthereum } from "react-icons/si";
+import { useToast } from "@/hooks/use-toast";
 
 function ChainIcon({ chain }: { chain: string }) {
   const key = String(chain || "").toLowerCase();
@@ -34,11 +35,16 @@ function formatNumber(n: number) {
   return `$${n.toFixed(0)}`;
 }
 
+function normalizePct(value: number) {
+  return value > 1 ? value : value * 100;
+}
+
 export default function MemeTrend() {
-  const [chain, setChain] = useState<string | undefined>(undefined);
+  const [selectedToken, setSelectedToken] = useState<TokenItem | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const { data: tokenData, isLoading } = useTokens(chain);
+  const { data: tokenData, isLoading } = useTokens("solana");
   const { data: stats } = useTokenStats();
+  const { toast } = useToast();
 
   const tokens = tokenData?.tokens || [];
   const filteredTokens = searchQuery
@@ -89,18 +95,9 @@ export default function MemeTrend() {
 
         <Card className="p-4">
           <div className="flex flex-col md:flex-row gap-4">
-            <Select value={chain || "all"} onValueChange={(v) => setChain(v === "all" ? undefined : v)}>
-              <SelectTrigger className="w-full md:w-40" data-testid="select-chain-filter">
-                <SelectValue placeholder="All Chains" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Chains</SelectItem>
-                <SelectItem value="solana">Solana</SelectItem>
-                <SelectItem value="ethereum">Ethereum</SelectItem>
-                <SelectItem value="bsc">BSC</SelectItem>
-                <SelectItem value="base">Base</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="w-full md:w-40 h-10 px-3 border border-input rounded-md bg-muted/40 text-sm flex items-center" data-testid="select-chain-filter">
+              Solana
+            </div>
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
               <Input
@@ -113,6 +110,32 @@ export default function MemeTrend() {
             </div>
           </div>
         </Card>
+
+        {selectedToken && (
+          <Card className="p-4">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Selected Token</p>
+                <h3 className="text-xl font-semibold">{selectedToken.symbol || selectedToken.name || "Unknown"}</h3>
+                <p className="text-xs text-muted-foreground font-mono break-all">{selectedToken.contract_address}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">{selectedToken.chain}</Badge>
+                <Badge variant="secondary">{formatNumber(selectedToken.market_cap_usd)} MCap</Badge>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(selectedToken.contract_address);
+                    toast({ title: "Copied", description: "Contract address copied" });
+                  }}
+                >
+                  Copy Address
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
 
         <div className="space-y-2">
           {isLoading ? (
@@ -135,7 +158,12 @@ export default function MemeTrend() {
             </Card>
           ) : (
             filteredTokens.map((token) => (
-              <Card key={token.id} className="p-4 hover-elevate" data-testid={`token-card-${token.id}`}>
+              <Card
+                key={token.id}
+                className={cn("p-4 hover-elevate cursor-pointer", selectedToken?.id === token.id && "border-primary/40")}
+                data-testid={`token-card-${token.id}`}
+                onClick={() => setSelectedToken(token)}
+              >
                 <div className="flex items-center gap-4">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
                     <ChainIcon chain={token.chain} />
@@ -145,6 +173,11 @@ export default function MemeTrend() {
                       <span className="font-bold">{token.symbol || "Unknown"}</span>
                       <span className="text-sm text-muted-foreground">{token.name}</span>
                       <Badge variant="outline" className="text-[10px]">{token.chain}</Badge>
+                      {token.latest_score && (
+                        <Badge variant="outline" className="text-[10px]">
+                          Score {normalizePct(token.latest_score.trade_confidence_index).toFixed(0)}
+                        </Badge>
+                      )}
                       {token.is_ownership_renounced && (
                         <Badge variant="outline" className="text-[10px] text-green-400 border-green-400/30">
                           <ShieldCheck className="w-3 h-3 mr-1" /> Renounced

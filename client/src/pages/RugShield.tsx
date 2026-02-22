@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Shield, AlertTriangle, CheckCircle2, Search, TrendingUp, Activity, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -32,7 +31,6 @@ function ScoreGauge({ value, label }: { value: number; label: string }) {
 
 export default function RugShield() {
   const [address, setAddress] = useState("");
-  const [chain, setChain] = useState("solana");
   const { mutate: scanToken, isPending, data: result } = useScanToken();
   const { toast } = useToast();
 
@@ -41,7 +39,18 @@ export default function RugShield() {
       toast({ title: "Error", description: "Please enter a contract address", variant: "destructive" });
       return;
     }
-    scanToken({ address, chain });
+    scanToken(
+      { address, chain: "solana" },
+      {
+        onError: (error) => {
+          toast({
+            title: "Scan failed",
+            description: error instanceof Error ? error.message : "Unable to score token",
+            variant: "destructive",
+          });
+        },
+      }
+    );
   };
 
   const getOverallScore = (r: ScoreResult) => {
@@ -64,19 +73,9 @@ export default function RugShield() {
 
         <Card className="p-6">
           <div className="flex flex-col md:flex-row gap-4">
-            <Select value={chain} onValueChange={setChain}>
-              <SelectTrigger className="w-full md:w-40" data-testid="select-chain">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="solana">Solana</SelectItem>
-                <SelectItem value="ethereum">Ethereum</SelectItem>
-                <SelectItem value="bsc">BSC</SelectItem>
-                <SelectItem value="base">Base</SelectItem>
-                <SelectItem value="arbitrum">Arbitrum</SelectItem>
-                <SelectItem value="polygon">Polygon</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="w-full md:w-40 h-10 px-3 border border-input rounded-md bg-muted/40 text-sm flex items-center" data-testid="select-chain">
+              Solana
+            </div>
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
               <Input

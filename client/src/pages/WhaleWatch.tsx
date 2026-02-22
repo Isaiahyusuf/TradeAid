@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search, Wallet, TrendingUp, AlertTriangle, CheckCircle2, Loader2, Activity, Shield } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -34,7 +33,6 @@ function RiskBar({ value, label, invert }: { value: number; label: string; inver
 
 export default function WhaleWatch() {
   const [walletAddress, setWalletAddress] = useState("");
-  const [chain, setChain] = useState("solana");
   const [analysisType, setAnalysisType] = useState<"developer" | "trader">("trader");
   const { toast } = useToast();
 
@@ -51,9 +49,31 @@ export default function WhaleWatch() {
       return;
     }
     if (analysisType === "developer") {
-      devMutation.mutate({ wallet_address: walletAddress, chain });
+      devMutation.mutate(
+        { wallet_address: walletAddress, chain: "solana" },
+        {
+          onError: (error) => {
+            toast({
+              title: "Analysis failed",
+              description: error instanceof Error ? error.message : "Unable to analyze wallet",
+              variant: "destructive",
+            });
+          },
+        }
+      );
     } else {
-      traderMutation.mutate({ wallet_address: walletAddress, chain });
+      traderMutation.mutate(
+        { wallet_address: walletAddress, chain: "solana" },
+        {
+          onError: (error) => {
+            toast({
+              title: "Analysis failed",
+              description: error instanceof Error ? error.message : "Unable to analyze wallet",
+              variant: "destructive",
+            });
+          },
+        }
+      );
     }
   };
 
@@ -68,17 +88,9 @@ export default function WhaleWatch() {
         <Card className="p-6">
           <div className="flex flex-col gap-4">
             <div className="flex flex-col md:flex-row gap-4">
-              <Select value={chain} onValueChange={setChain}>
-                <SelectTrigger className="w-full md:w-40" data-testid="select-chain">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="solana">Solana</SelectItem>
-                  <SelectItem value="ethereum">Ethereum</SelectItem>
-                  <SelectItem value="bsc">BSC</SelectItem>
-                  <SelectItem value="base">Base</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="w-full md:w-40 h-10 px-3 border border-input rounded-md bg-muted/40 text-sm flex items-center" data-testid="select-chain">
+                Solana
+              </div>
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <Input

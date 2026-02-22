@@ -30,20 +30,12 @@ class ScoringService:
             return {"error": "Token not found", "eligible": False}
 
         eligible, reason = eligibility_checker.check_eligibility(token)
-        if not eligible:
-            return {
-                "contract_address": contract_address,
-                "chain": chain,
-                "eligible": False,
-                "eligibility_reason": reason,
-            }
+        scores = await self._compute_scores(db, token)
 
         cache_key = f"score:{chain}:{contract_address}"
         cached = await cache_get(cache_key)
         if cached:
             return cached
-
-        scores = await self._compute_scores(db, token)
 
         history = ScoringHistory(
             token_id=token.id,
@@ -54,7 +46,8 @@ class ScoringService:
             holder_distribution=scores["holder_distribution"],
             smart_wallet_signal=scores["smart_wallet_signal"],
             trade_confidence_index=scores["trade_confidence_index"],
-            eligible=True,
+            eligible=eligible,
+            eligibility_reason=reason if not eligible else None,
             raw_data=scores.get("raw_data"),
         )
         db.add(history)
@@ -65,7 +58,8 @@ class ScoringService:
             "chain": chain,
             "symbol": token.symbol,
             "name": token.name,
-            "eligible": True,
+            "eligible": eligible,
+            "eligibility_reason": reason if not eligible else None,
             "scores": {
                 "rug_probability": scores["rug_probability"],
                 "liquidity_stability": scores["liquidity_stability"],

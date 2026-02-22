@@ -40,6 +40,7 @@ class Settings(BaseSettings):
 
     DEXSCREENER_API_URL: str = "https://api.dexscreener.com/latest/dex"
     SCAN_INTERVAL_SECONDS: int = 10
+    ENABLE_SCANNERS: bool = True
 
     SOLANA_RPC_URL: str = "https://api.mainnet-beta.solana.com"
     ETHEREUM_RPC_URL: str = ""

@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from typing import Optional
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.models.models import Token, LiquidityEvent, User
+from app.models.models import Token, LiquidityEvent, ScoringHistory, User
 from app.services.auth_service import get_current_user
 
 router = APIRouter(prefix="/api/tokens", tags=["Tokens"])
@@ -18,17 +18,46 @@ async def list_tokens(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    selected_chain = (chain or "solana").lower()
+    if selected_chain != "solana":
+        raise HTTPException(status_code=400, detail="Only Solana integration is supported")
+
     query = select(Token).order_by(Token.created_at.desc())
-    if chain:
-        query = query.where(Token.chain == chain)
+    query = query.where(Token.chain == "solana")
     query = query.limit(limit).offset(offset)
 
     result = await db.execute(query)
     tokens = result.scalars().all()
 
+    latest_scores: dict[str, ScoringHistory] = {}
+    token_ids = [t.id for t in tokens]
+    if token_ids:
+        scores_result = await db.execute(
+            select(ScoringHistory)
+            .where(ScoringHistory.token_id.in_(token_ids))
+            .order_by(ScoringHistory.token_id, ScoringHistory.scored_at.desc())
+        )
+        for row in scores_result.scalars().all():
+            token_id = str(row.token_id)
+            if token_id not in latest_scores:
+                latest_scores[token_id] = row
+
     return {
         "tokens": [
             {
+                "latest_score": (
+                    {
+                        "rug_probability": latest_scores[str(t.id)].rug_probability,
+                        "liquidity_stability": latest_scores[str(t.id)].liquidity_stability,
+                        "holder_distribution": latest_scores[str(t.id)].holder_distribution,
+                        "smart_wallet_signal": latest_scores[str(t.id)].smart_wallet_signal,
+                        "trade_confidence_index": latest_scores[str(t.id)].trade_confidence_index,
+                        "eligible": latest_scores[str(t.id)].eligible,
+                        "scored_at": str(latest_scores[str(t.id)].scored_at),
+                    }
+                    if str(t.id) in latest_scores
+                    else None
+                ),
                 "id": str(t.id),
                 "contract_address": t.contract_address,
                 "chain": t.chain,
@@ -48,6 +77,22 @@ async def list_tokens(
     }
 
 
+@router.get("/stats/overview")
+async def token_stats(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    total = await db.execute(select(func.count(Token.id)).where(Token.chain == "solana"))
+    by_chain = await db.execute(
+        select(Token.chain, func.count(Token.id)).where(Token.chain == "solana").group_by(Token.chain)
+    )
+
+    return {
+        "total_tokens": total.scalar() or 0,
+        "by_chain": {row[0]: row[1] for row in by_chain.all()},
+    }
+
+
 @router.get("/{chain}/{contract_address}")
 async def get_token(
     chain: str,
@@ -55,9 +100,12 @@ async def get_token(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    if chain.lower() != "solana":
+        raise HTTPException(status_code=400, detail="Only Solana integration is supported")
+
     result = await db.execute(
         select(Token).where(
-            Token.chain == chain,
+            Token.chain == "solana",
             Token.contract_address == contract_address,
         )
     )
@@ -100,20 +148,4 @@ async def get_token(
             }
             for e in events
         ],
-    }
-
-
-@router.get("/stats/overview")
-async def token_stats(
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    total = await db.execute(select(func.count(Token.id)))
-    by_chain = await db.execute(
-        select(Token.chain, func.count(Token.id)).group_by(Token.chain)
-    )
-
-    return {
-        "total_tokens": total.scalar() or 0,
-        "by_chain": {row[0]: row[1] for row in by_chain.all()},
     }

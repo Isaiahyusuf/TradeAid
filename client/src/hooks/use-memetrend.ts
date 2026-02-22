@@ -4,6 +4,15 @@ import { useAuth } from "@/hooks/use-auth";
 
 export type TokenItem = {
   id: string;
+  latest_score?: {
+    rug_probability: number;
+    liquidity_stability: number;
+    holder_distribution: number;
+    smart_wallet_signal: number;
+    trade_confidence_index: number;
+    eligible: boolean;
+    scored_at: string;
+  } | null;
   contract_address: string;
   chain: string;
   name: string;
