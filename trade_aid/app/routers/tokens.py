@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, Depends, Query, HTTPException
 from typing import Optional
 from sqlalchemy import select, func
@@ -5,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.models import Token, LiquidityEvent, ScoringHistory, User
 from app.services.auth_service import get_current_user
+from app.scoring.scoring_service import scoring_service
 
 router = APIRouter(prefix="/api/tokens", tags=["Tokens"])
 
@@ -29,6 +31,14 @@ async def list_tokens(
     result = await db.execute(query)
     tokens = result.scalars().all()
 
+    def build_latest_scores(score_rows: list[ScoringHistory]) -> dict[str, ScoringHistory]:
+        latest: dict[str, ScoringHistory] = {}
+        for row in score_rows:
+            token_id = str(row.token_id)
+            if token_id not in latest:
+                latest[token_id] = row
+        return latest
+
     latest_scores: dict[str, ScoringHistory] = {}
     token_ids = [t.id for t in tokens]
     if token_ids:
@@ -37,10 +47,26 @@ async def list_tokens(
             .where(ScoringHistory.token_id.in_(token_ids))
             .order_by(ScoringHistory.token_id, ScoringHistory.scored_at.desc())
         )
-        for row in scores_result.scalars().all():
-            token_id = str(row.token_id)
-            if token_id not in latest_scores:
-                latest_scores[token_id] = row
+        latest_scores = build_latest_scores(scores_result.scalars().all())
+
+        missing_tokens = [t for t in tokens if str(t.id) not in latest_scores]
+        if offset == 0 and missing_tokens:
+            for token in missing_tokens[:5]:
+                try:
+                    await asyncio.wait_for(
+                        scoring_service.score_token(db, token.contract_address, "solana"),
+                        timeout=6,
+                    )
+                except Exception:
+                    continue
+
+            await db.commit()
+            refreshed_scores_result = await db.execute(
+                select(ScoringHistory)
+                .where(ScoringHistory.token_id.in_(token_ids))
+                .order_by(ScoringHistory.token_id, ScoringHistory.scored_at.desc())
+            )
+            latest_scores = build_latest_scores(refreshed_scores_result.scalars().all())
 
     return {
         "tokens": [
