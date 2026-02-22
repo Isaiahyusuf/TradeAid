@@ -10,6 +10,7 @@ import AlphaScanner from "@/pages/AlphaScanner";
 import RugShield from "@/pages/RugShield";
 import WhaleWatch from "@/pages/WhaleWatch";
 import MemeTrend from "@/pages/MemeTrend";
+import SafeBuy from "@/pages/SafeBuy";
 import Account from "@/pages/Account";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,6 +24,7 @@ function AuthenticatedRouter() {
       <Route path="/rugshield" component={RugShield} />
       <Route path="/whalewatch" component={WhaleWatch} />
       <Route path="/memetrend" component={MemeTrend} />
+      <Route path="/safebuy" component={SafeBuy} />
       <Route path="/account" component={Account} />
       <Route component={NotFound} />
     </Switch>

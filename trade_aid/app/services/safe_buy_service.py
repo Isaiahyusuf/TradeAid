@@ -1,0 +1,251 @@
+from datetime import datetime, timedelta
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.models import LiquidityEvent, ScoringHistory, Token
+from app.services.ai_safety_engine import score_safe_buy_with_ai
+from app.utils.redis_client import cache_get, cache_set, publish_event
+
+
+class SafeBuyService:
+    def _estimate_top_holders_pct(self, token: Token, latest_score: ScoringHistory | None) -> float:
+        extra = token.extra_data or {}
+        explicit = extra.get("top_holders_pct")
+        if explicit is not None:
+            return float(explicit)
+        holder_distribution_score = float(latest_score.holder_distribution if latest_score else 45)
+        return max(18.0, min(58.0, 62.0 - (holder_distribution_score * 0.35)))
+
+    def _estimate_dev_wallet_pct(self, token: Token, latest_score: ScoringHistory | None) -> float:
+        extra = token.extra_data or {}
+        explicit = extra.get("dev_wallet_pct")
+        if explicit is not None:
+            return float(explicit)
+        if token.is_ownership_renounced:
+            return 3.8
+        rug = float(latest_score.rug_probability if latest_score else 55)
+        return max(2.0, min(12.0, 4.0 + (rug * 0.05)))
+
+    async def _has_recent_liquidity_removal(self, db: AsyncSession, token_id: Any, within_minutes: int = 30) -> bool:
+        cutoff = datetime.utcnow() - timedelta(minutes=within_minutes)
+        result = await db.execute(
+            select(LiquidityEvent)
+            .where(
+                LiquidityEvent.token_id == token_id,
+                LiquidityEvent.event_type == "liquidity_removal",
+                LiquidityEvent.detected_at >= cutoff,
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+
+    def _build_ai_payload(
+        self,
+        token: Token,
+        latest_score: ScoringHistory | None,
+        top_holders_pct: float,
+        dev_wallet_pct: float,
+    ) -> dict[str, Any]:
+        extra = token.extra_data or {}
+        volume_5m = float(extra.get("volume_5m", 0) or 0)
+        volume_1h = float(extra.get("volume_1h", 0) or 0)
+        buys_1h = int(extra.get("buys_1h", 0) or 0)
+        sells_1h = int(extra.get("sells_1h", 0) or 0)
+        new_wallets_count = int(extra.get("new_wallets_count", 0) or 0)
+
+        buy_sell_ratio = (buys_1h + 1) / (sells_1h + 1)
+        holder_distribution_score = float(latest_score.holder_distribution if latest_score else 45)
+        dev_history_score = max(0.0, min(100.0, 100.0 - float(latest_score.rug_probability if latest_score else 55)))
+        whale_activity = float(latest_score.smart_wallet_signal if latest_score else 30)
+
+        return {
+            "marketCap": float(token.market_cap_usd or 0),
+            "liquidity": float(token.liquidity_usd or 0),
+            "volume5m": volume_5m,
+            "volume1h": volume_1h,
+            "buySellRatio": round(buy_sell_ratio, 4),
+            "holderDistribution": round(holder_distribution_score, 2),
+            "devWalletPercent": round(dev_wallet_pct, 2),
+            "devHistoryScore": round(dev_history_score, 2),
+            "whaleActivity": round(whale_activity, 2),
+            "walletGrowthRate": float(new_wallets_count),
+            "topHoldersPct": round(top_holders_pct, 2),
+        }
+
+    async def list_safe_buy_tokens(self, db: AsyncSession, limit: int = 20) -> dict[str, list[dict[str, Any]]]:
+        now = datetime.utcnow()
+        launch_cutoff = now - timedelta(hours=24)
+
+        token_result = await db.execute(
+            select(Token)
+            .where(Token.chain == "solana", Token.created_at >= launch_cutoff)
+            .order_by(Token.created_at.desc())
+            .limit(250)
+        )
+        tokens = token_result.scalars().all()
+
+        token_ids = [t.id for t in tokens]
+        latest_scores: dict[str, ScoringHistory] = {}
+        if token_ids:
+            score_result = await db.execute(
+                select(ScoringHistory)
+                .where(ScoringHistory.token_id.in_(token_ids))
+                .order_by(ScoringHistory.token_id, ScoringHistory.scored_at.desc())
+            )
+            for row in score_result.scalars().all():
+                key = str(row.token_id)
+                if key not in latest_scores:
+                    latest_scores[key] = row
+
+        score_cache_key = "safe_buy:scores"
+        previous_scores = await cache_get(score_cache_key) or {}
+        current_scores: dict[str, float] = {}
+
+        safe_candidates: list[dict[str, Any]] = []
+        near_miss_candidates: list[dict[str, Any]] = []
+
+        for token in tokens:
+            latest_score = latest_scores.get(str(token.id))
+            extra = token.extra_data or {}
+
+            market_cap = float(token.market_cap_usd or 0)
+            liquidity = float(token.liquidity_usd or 0)
+            volume_5m = float(extra.get("volume_5m", 0) or 0)
+            volume_1h = float(extra.get("volume_1h", 0) or 0)
+            buys_5m = int(extra.get("buys_5m", 0) or 0)
+            sells_5m = int(extra.get("sells_5m", 0) or 0)
+            buys_1h = int(extra.get("buys_1h", 0) or 0)
+            sells_1h = int(extra.get("sells_1h", 0) or 0)
+            new_wallets_count = int(extra.get("new_wallets_count", 0) or 0)
+
+            if market_cap < 15000 or market_cap > 500000:
+                continue
+
+            liq_ratio = (liquidity / market_cap) if market_cap > 0 else 0
+            if liq_ratio < 0.2:
+                continue
+
+            if await self._has_recent_liquidity_removal(db, token.id, within_minutes=30):
+                continue
+
+            if volume_5m < 2000:
+                continue
+
+            if buys_1h <= sells_1h:
+                continue
+
+            vol_liq_ratio = ((volume_5m + volume_1h) / max(liquidity, 1))
+            if vol_liq_ratio > 2.8:
+                continue
+
+            top_holders_pct = self._estimate_top_holders_pct(token, latest_score)
+            largest_wallet_pct = top_holders_pct * 0.28
+            dev_wallet_pct = self._estimate_dev_wallet_pct(token, latest_score)
+            suspicious_cluster_flag = bool((latest_score and latest_score.smart_wallet_signal < 20) or (buys_5m > 120 and volume_5m < 800))
+
+            if top_holders_pct > 45:
+                continue
+            if largest_wallet_pct > 8:
+                continue
+            if dev_wallet_pct > 7:
+                continue
+            if suspicious_cluster_flag:
+                continue
+
+            dev_history_score = max(0.0, min(100.0, 100.0 - float(latest_score.rug_probability if latest_score else 55)))
+            if dev_history_score < 45:
+                continue
+            if sells_1h > (buys_1h * 1.3):
+                continue
+
+            unique_buyers = max(new_wallets_count, buys_5m)
+            if unique_buyers < 3:
+                continue
+            if buys_5m > 80 and volume_5m < 1000:
+                continue
+
+            ai_payload = self._build_ai_payload(token, latest_score, top_holders_pct, dev_wallet_pct)
+            ai_result = await score_safe_buy_with_ai(ai_payload)
+
+            safety_score = float(ai_result.get("safety_score", 0) or 0)
+            risk_level = str(ai_result.get("risk_level", "High") or "High").title()
+
+            if risk_level not in {"Low", "Medium"}:
+                continue
+
+            contract = token.contract_address
+            old_score = float(previous_scores.get(contract, 0) or 0)
+            trend = "up" if safety_score > old_score + 1 else "down" if safety_score < old_score - 1 else "flat"
+            current_scores[contract] = safety_score
+
+            recently_added = contract not in previous_scores
+
+            if recently_added:
+                try:
+                    await publish_event(
+                        "alerts",
+                        {
+                            "type": "safe_buy_update",
+                            "chain": "solana",
+                            "contract": contract,
+                            "symbol": token.symbol,
+                            "safety_score": safety_score,
+                        },
+                    )
+                except Exception:
+                    pass
+
+            token_payload = {
+                "id": str(token.id),
+                "contract_address": contract,
+                "chain": token.chain,
+                "name": token.name,
+                "symbol": token.symbol,
+                "market_cap_usd": market_cap,
+                "liquidity_usd": liquidity,
+                "volume_5m": volume_5m,
+                "volume_1h": volume_1h,
+                "holder_count": int(token.holder_count or 0),
+                "buy_sell_ratio": round((buys_1h + 1) / (sells_1h + 1), 4),
+                "top_holders_pct": round(top_holders_pct, 2),
+                "dev_wallet_pct": round(dev_wallet_pct, 2),
+                "wallet_growth_rate": float(new_wallets_count),
+                "logo_url": extra.get("logo_url"),
+                "safety_score": round(safety_score, 2),
+                "risk_level": risk_level,
+                "short_summary": str(ai_result.get("short_summary", "")),
+                "recommendation": str(ai_result.get("recommendation", "Monitor")),
+                "confidence_score": float(ai_result.get("confidence_score", 0) or 0),
+                "ai_source": ai_result.get("source", "fallback"),
+                "trend": trend,
+                "recently_added": recently_added,
+                "buy_links": {
+                    "raydium": f"https://raydium.io/swap/?inputMint=sol&outputMint={contract}",
+                    "jupiter": f"https://jup.ag/swap/SOL-{contract}",
+                    "dexscreener": f"https://dexscreener.com/solana/{contract}",
+                },
+                "created_at": str(token.created_at),
+            }
+
+            if safety_score >= 75:
+                safe_candidates.append(token_payload)
+            elif 65 <= safety_score < 75:
+                near_miss_candidates.append(token_payload)
+
+        safe_candidates.sort(key=lambda row: (row["safety_score"], row["confidence_score"]), reverse=True)
+        near_miss_candidates.sort(key=lambda row: (row["safety_score"], row["confidence_score"]), reverse=True)
+        trimmed = safe_candidates[:limit]
+        trimmed_near_miss = near_miss_candidates[:limit]
+
+        trimmed_scores = {row["contract_address"]: row["safety_score"] for row in trimmed}
+        await cache_set(score_cache_key, trimmed_scores, ttl=3600)
+
+        return {
+            "safe_tokens": [row for row in trimmed if row["safety_score"] >= 75],
+            "near_miss_tokens": trimmed_near_miss,
+        }
+
+
+safe_buy_service = SafeBuyService()

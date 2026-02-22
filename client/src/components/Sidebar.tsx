@@ -1,7 +1,7 @@
 import { useLocation } from "wouter";
 import { 
   ShieldCheck, Eye, TrendingUp, LayoutDashboard, 
-  LogOut, User, Radar, Bell
+  LogOut, User, Radar, Bell, Lock
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { label: "Scanner", href: "/scanner", icon: Radar },
   { label: "RugShield", href: "/rugshield", icon: ShieldCheck },
   { label: "WhaleWatch", href: "/whalewatch", icon: Eye },
+  { label: "Safe Buy", href: "/safebuy", icon: Lock },
   { label: "Tokens", href: "/memetrend", icon: TrendingUp },
   { label: "Account", href: "/account", icon: User },
 ];
@@ -88,8 +89,8 @@ export function MobileNav() {
   
   return (
     <nav className="fixed bottom-0 left-0 w-full bg-card/95 backdrop-blur-lg border-t border-border md:hidden z-50 px-2 py-2 safe-area-bottom">
-      <div className="flex justify-around items-center max-w-md mx-auto">
-        {NAV_ITEMS.slice(0, 5).map((item) => {
+      <div className="flex justify-around items-center max-w-xl mx-auto overflow-x-auto scrollbar-hide">
+        {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = location === item.href;
           

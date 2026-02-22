@@ -9,7 +9,7 @@ from app.utils.rate_limiter import RateLimitMiddleware
 from app.utils.redis_client import close_redis
 from app.utils.logging_config import logger
 from app.websocket.manager import ws_manager
-from app.routers import auth, tokens, wallets, scoring, alerts
+from app.routers import auth, tokens, wallets, scoring, alerts, safe_buy
 from app.scanners.dexscreener import dex_scanner
 from app.scanners.chain_scanner import chain_scanner_manager
 
@@ -72,6 +72,7 @@ app.include_router(tokens.router)
 app.include_router(wallets.router)
 app.include_router(scoring.router)
 app.include_router(alerts.router)
+app.include_router(safe_buy.router)
 
 
 @app.get("/")

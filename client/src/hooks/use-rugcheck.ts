@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiPost, apiGet } from "@/lib/api";
 
 export type ScoreResult = {
+  id?: string;
   rug_probability: number;
   liquidity_stability: number;
   holder_distribution: number;
@@ -9,6 +10,7 @@ export type ScoreResult = {
   trade_confidence_index: number;
   eligible: boolean;
   eligibility_reason?: string;
+  scored_at?: string;
 };
 
 export function useScanToken() {

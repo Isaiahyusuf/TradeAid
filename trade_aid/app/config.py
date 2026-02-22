@@ -34,9 +34,26 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
 
     AI_SERVICE_URL: str = "http://ai_service:8001"
+    OPENAI_API_KEY: str = ""
+    AI_INTEGRATIONS_OPENAI_API_KEY: str = ""
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+    OPENAI_MODEL: str = "gpt-4o-mini"
+
+    RESEND_API_KEY: str = ""
+    RESEND_BASE_URL: str = "https://api.resend.com"
+    RESEND_FROM_EMAIL: str = ""
 
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
+
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_USE_TLS: bool = True
+    SMTP_USE_SSL: bool = False
+    SMTP_FROM_EMAIL: str = "noreply@tradeaid.app"
+    SMTP_FROM_NAME: str = "TradeAid"
 
     DEXSCREENER_API_URL: str = "https://api.dexscreener.com/latest/dex"
     SCAN_INTERVAL_SECONDS: int = 10

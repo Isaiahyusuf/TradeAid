@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, createContext, useContext } from "react";
-import { apiGet, apiPost, setToken, clearToken } from "@/lib/api";
+import { apiGet, apiPost, apiPatch, setToken, clearToken } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 
 export type User = {
@@ -8,6 +8,9 @@ export type User = {
   email: string;
   is_admin: boolean;
   totp_enabled: boolean;
+  email_verified?: boolean;
+  display_name?: string;
+  avatar_url?: string;
 };
 
 type AuthContextType = {
@@ -17,6 +20,11 @@ type AuthContextType = {
   hasToken: boolean;
   login: (username: string, password: string, totp_code?: string) => Promise<any>;
   register: (username: string, email: string, password: string) => Promise<any>;
+  verifyEmail: (email: string, code: string) => Promise<any>;
+  resendVerification: (email: string) => Promise<any>;
+  requestPasswordResetCode: (email: string) => Promise<any>;
+  confirmPasswordReset: (email: string, code: string, newPassword: string) => Promise<any>;
+  updateProfile: (payload: { username?: string; display_name?: string; avatar_url?: string }) => Promise<User>;
   logout: () => void;
 };
 
@@ -68,12 +76,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   };
 
   const register = async (username: string, email: string, password: string) => {
-    const data = await apiPost<{ user_id: string; username: string }>("/api/auth/register", {
+    const data = await apiPost<{ user_id: string; username: string; email: string; requires_email_verification: boolean; verification_email_sent?: boolean; retry_after_seconds?: number }>("/api/auth/register", {
       username,
       email,
       password,
     });
     return data;
+  };
+
+  const verifyEmail = async (email: string, code: string) => {
+    return apiPost<{ verified: boolean }>("/api/auth/verify-email", { email, code });
+  };
+
+  const resendVerification = async (email: string) => {
+    return apiPost<{ sent: boolean; retry_after_seconds?: number }>("/api/auth/resend-verification", { email });
+  };
+
+  const requestPasswordResetCode = async (email: string) => {
+    return apiPost<{ sent: boolean }>("/api/auth/forgot-password/request-code", { email });
+  };
+
+  const confirmPasswordReset = async (email: string, code: string, newPassword: string) => {
+    return apiPost<{ reset: boolean }>("/api/auth/forgot-password/confirm", {
+      email,
+      code,
+      new_password: newPassword,
+    });
+  };
+
+  const updateProfile = async (payload: { username?: string; display_name?: string; avatar_url?: string }) => {
+    const updated = await apiPatch<User>("/api/auth/profile", payload);
+    setUser(updated);
+    queryClient.invalidateQueries();
+    return updated;
   };
 
   const logout = () => {
@@ -91,6 +126,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       hasToken: tokenState,
       login,
       register,
+      verifyEmail,
+      resendVerification,
+      requestPasswordResetCode,
+      confirmPasswordReset,
+      updateProfile,
       logout,
     }}>
       {children}

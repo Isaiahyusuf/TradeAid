@@ -17,6 +17,16 @@ CHAIN_MAPPING = {
     "solana": "solana",
 }
 
+SOLANA_SEARCH_TERMS = [
+    "solana",
+    "pump",
+    "pump.fun",
+    "raydium",
+    "meme",
+    "bonk",
+    "wif",
+]
+
 
 class DexScreenerScanner:
     def __init__(self):
@@ -55,18 +65,12 @@ class DexScreenerScanner:
         new_contracts: list[str] = []
 
         try:
-            url = f"{settings.DEXSCREENER_API_URL}/search?q={chain}"
-            response = await self.client.get(url)
-            if response.status_code != 200:
-                return
-
-            data = response.json()
-            pairs = data.get("pairs", [])
+            pairs = await self._fetch_chain_pairs(chain)
             if not pairs:
                 return
 
             async with async_session_factory() as db:
-                for pair in pairs[:50]:
+                for pair in pairs[:200]:
                     pair_chain = pair.get("chainId", "").lower()
                     if pair_chain != chain:
                         continue
@@ -85,11 +89,55 @@ class DexScreenerScanner:
 
                     liquidity_usd = float(pair.get("liquidity", {}).get("usd", 0) or 0)
                     market_cap = float(pair.get("marketCap", 0) or 0)
+                    volume = pair.get("volume", {}) or {}
+                    txns = pair.get("txns", {}) or {}
+                    price_change = pair.get("priceChange", {}) or {}
+                    info = pair.get("info", {}) or {}
+                    websites = info.get("websites", []) or []
+                    socials = info.get("socials", []) or []
+                    pair_url = str(pair.get("url", "") or "")
+                    logo_url = (
+                        info.get("imageUrl")
+                        or info.get("openGraph")
+                        or (pair.get("baseToken", {}) or {}).get("logoURI")
+                        or (pair.get("baseToken", {}) or {}).get("logoUrl")
+                    )
+                    source_hint = " ".join([
+                        pair_url,
+                        str(pair.get("dexId", "") or ""),
+                        " ".join(str(site.get("url", "") or "") for site in websites),
+                        " ".join(str(social.get("url", "") or "") for social in socials),
+                    ]).lower()
+                    is_pump_fun = "pump.fun" in source_hint
+                    metadata = {
+                        "price_usd": float(pair.get("priceUsd", 0) or 0),
+                        "volume_5m": float(volume.get("m5", 0) or 0),
+                        "volume_1h": float(volume.get("h1", 0) or 0),
+                        "volume_6h": float(volume.get("h6", 0) or 0),
+                        "volume_24h": float(volume.get("h24", 0) or 0),
+                        "price_change_5m": float(price_change.get("m5", 0) or 0),
+                        "price_change_1h": float(price_change.get("h1", 0) or 0),
+                        "price_change_6h": float(price_change.get("h6", 0) or 0),
+                        "buys_5m": int((txns.get("m5", {}) or {}).get("buys", 0) or 0),
+                        "sells_5m": int((txns.get("m5", {}) or {}).get("sells", 0) or 0),
+                        "buys_1h": int((txns.get("h1", {}) or {}).get("buys", 0) or 0),
+                        "sells_1h": int((txns.get("h1", {}) or {}).get("sells", 0) or 0),
+                        "new_wallets_count": int((txns.get("m5", {}) or {}).get("buys", 0) or 0),
+                        "logo_url": logo_url,
+                        "is_pump_fun": is_pump_fun,
+                        "source_platform": "pump.fun" if is_pump_fun else (pair.get("dexId") or "dexscreener"),
+                        "buy_urls": {
+                            "pump_fun": f"https://pump.fun/coin/{contract}",
+                            "axiom": f"https://axiom.trade/t/{contract}",
+                            "gmgn": f"https://gmgn.ai/sol/token/{contract}",
+                        },
+                    }
 
                     if token:
                         old_liquidity = token.liquidity_usd or 0
                         token.liquidity_usd = liquidity_usd
                         token.market_cap_usd = market_cap
+                        token.extra_data = metadata
                         token.updated_at = datetime.utcnow()
 
                         if old_liquidity > 0 and liquidity_usd < old_liquidity * 0.5:
@@ -144,6 +192,7 @@ class DexScreenerScanner:
                             pair_address=pair.get("pairAddress"),
                             dex_id=pair.get("dexId"),
                             liquidity_created_at=liq_created_at,
+                            extra_data=metadata,
                         )
                         db.add(token)
                         new_contracts.append(contract)
@@ -170,11 +219,52 @@ class DexScreenerScanner:
             if new_contracts:
                 await self._auto_score_new_tokens(chain, new_contracts)
 
-            new_pair_ids = [p.get("pairAddress") for p in pairs[:50] if p.get("pairAddress")]
+            new_pair_ids = [p.get("pairAddress") for p in pairs[:200] if p.get("pairAddress")]
             await cache_set(cache_key, new_pair_ids, ttl=30)
 
         except httpx.HTTPError as e:
             logger.warning(f"[DexScreener] HTTP error for {chain}: {e}")
+
+    async def _fetch_chain_pairs(self, chain: str) -> list[dict]:
+        if chain != "solana":
+            url = f"{settings.DEXSCREENER_API_URL}/search?q={chain}"
+            response = await self.client.get(url)
+            if response.status_code != 200:
+                return []
+            data = response.json()
+            return data.get("pairs", []) or []
+
+        unique_pairs: dict[str, dict] = {}
+        for term in SOLANA_SEARCH_TERMS:
+            try:
+                url = f"{settings.DEXSCREENER_API_URL}/search?q={term}"
+                response = await self.client.get(url)
+                if response.status_code != 200:
+                    continue
+
+                data = response.json()
+                pairs = data.get("pairs", []) or []
+                for pair in pairs:
+                    if pair.get("chainId", "").lower() != "solana":
+                        continue
+
+                    contract = (pair.get("baseToken", {}) or {}).get("address")
+                    pair_address = pair.get("pairAddress")
+                    unique_key = contract or pair_address
+                    if not unique_key:
+                        continue
+
+                    if unique_key not in unique_pairs:
+                        unique_pairs[unique_key] = pair
+            except Exception as e:
+                logger.warning(f"[DexScreener] Pair fetch failed for term '{term}': {e}")
+
+        pairs = list(unique_pairs.values())
+        pairs.sort(
+            key=lambda pair: float((pair.get("volume", {}) or {}).get("h1", 0) or 0),
+            reverse=True,
+        )
+        return pairs
 
     async def _auto_score_new_tokens(self, chain: str, contracts: list[str]):
         scored = 0

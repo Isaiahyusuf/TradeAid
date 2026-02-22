@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.models import Token, ScoringHistory, Developer, Trader
 from app.scoring.eligibility import eligibility_checker
 from app.utils.redis_client import cache_get, cache_set
+from app.utils.redis_client import publish_event
 from app.utils.logging_config import logger
 from app.config import get_settings
 import httpx
@@ -76,6 +77,15 @@ class ScoringService:
         }
 
         await cache_set(cache_key, response, ttl=120)
+        await publish_event("scores", {
+            "type": "score_update",
+            "chain": chain,
+            "contract": contract_address,
+            "symbol": token.symbol,
+            "rug_probability": scores["rug_probability"],
+            "trade_confidence_index": scores["trade_confidence_index"],
+            "eligible": eligible,
+        })
         return response
 
     async def _compute_scores(self, db: AsyncSession, token: Token) -> dict:

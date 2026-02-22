@@ -4,10 +4,11 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.models.models import ScoringHistory, User
+from app.models.models import ScoringHistory, Token, User
 from app.services.auth_service import get_current_user
 from app.scoring.scoring_service import scoring_service
 from app.workers.tasks import score_token_task
+from app.services.ai_insight_service import generate_ai_insight
 
 router = APIRouter(prefix="/api/scoring", tags=["Scoring"])
 
@@ -78,4 +79,67 @@ async def scoring_history(
             }
             for h in history
         ],
+    }
+
+
+@router.get("/insight/{chain}/{contract_address}")
+async def scoring_insight(
+    chain: str,
+    contract_address: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if chain.lower() != "solana":
+        raise HTTPException(status_code=400, detail="Only Solana integration is supported")
+
+    token_result = await db.execute(
+        select(Token).where(Token.chain == "solana", Token.contract_address == contract_address)
+    )
+    token = token_result.scalar_one_or_none()
+    if not token:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    score_result = await db.execute(
+        select(ScoringHistory)
+        .where(ScoringHistory.token_id == token.id)
+        .order_by(ScoringHistory.scored_at.desc())
+        .limit(1)
+    )
+    latest_score = score_result.scalar_one_or_none()
+
+    payload = {
+        "contract_address": token.contract_address,
+        "symbol": token.symbol,
+        "name": token.name,
+        "chain": token.chain,
+        "current_price_usd": float((token.extra_data or {}).get("price_usd", 0) or 0),
+        "liquidity_usd": float(token.liquidity_usd or 0),
+        "market_cap_usd": float(token.market_cap_usd or 0),
+        "volume_5m": float((token.extra_data or {}).get("volume_5m", 0) or 0),
+        "volume_1h": float((token.extra_data or {}).get("volume_1h", 0) or 0),
+        "volume_6h": float((token.extra_data or {}).get("volume_6h", 0) or 0),
+        "price_change_1h": float((token.extra_data or {}).get("price_change_1h", 0) or 0),
+        "holder_count": int(token.holder_count or 0),
+        "top_holders_pct": None,
+        "dev_wallet_pct": None,
+        "new_wallets_count": int((token.extra_data or {}).get("new_wallets_count", 0) or 0),
+        "buys_1h": int((token.extra_data or {}).get("buys_1h", 0) or 0),
+        "sells_1h": int((token.extra_data or {}).get("sells_1h", 0) or 0),
+        "is_mintable": bool(token.is_mintable),
+        "is_ownership_renounced": bool(token.is_ownership_renounced),
+        "rug_probability": float(latest_score.rug_probability if latest_score else 0),
+        "trade_confidence_index": float(latest_score.trade_confidence_index if latest_score else 0),
+        "liquidity_stability": float(latest_score.liquidity_stability if latest_score else 0),
+        "holder_distribution": float(latest_score.holder_distribution if latest_score else 0),
+        "smart_wallet_signal": float(latest_score.smart_wallet_signal if latest_score else 0),
+    }
+
+    insight = await generate_ai_insight(payload)
+    return {
+        "token": {
+            "contract_address": token.contract_address,
+            "symbol": token.symbol,
+            "chain": token.chain,
+        },
+        "insight": insight,
     }
