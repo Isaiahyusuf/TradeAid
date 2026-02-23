@@ -68,7 +68,7 @@ export default function SafeBuy() {
           <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="outline" className="solana-badge">Auto Refresh 30s</Badge>
             <Badge variant="outline" className="uppercase">{chainFilter === "all" || chainFilter === "custom" ? chainFilter : chain}</Badge>
-            <Badge variant="outline" className="border-accent/30 text-accent">Min Safety 65</Badge>
+            <Badge variant="outline" className="border-accent/30 text-accent">Min Safety 50</Badge>
             <Badge variant="outline">Risk Low/Medium</Badge>
           </div>
         </div>
@@ -158,7 +158,7 @@ export default function SafeBuy() {
             {nearMissTokens.length > 0 && (
               <div className="space-y-3 pt-2">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-semibold">Near Miss (50-64)</h2>
+                  <h2 className="text-xl font-semibold">Near Miss (40-49)</h2>
                   <Badge variant="outline">Monitor Zone</Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">

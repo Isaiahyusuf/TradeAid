@@ -127,6 +127,7 @@ async def list_tokens(
     return {
         "tokens": [
             {
+                **({"project": (t.extra_data or {}).get("project")} if (t.extra_data or {}).get("project") is not None else {}),
                 "latest_score": (
                     {
                         "rug_probability": latest_scores[str(t.id)].rug_probability,
@@ -159,9 +160,18 @@ async def list_tokens(
                 "new_wallets_count": int((t.extra_data or {}).get("new_wallets_count", 0) or 0),
                 "top_holders_pct": None,
                 "dev_wallet_pct": None,
-                "logo_url": (t.extra_data or {}).get("logo_url"),
+                "logo_url": (
+                    (t.extra_data or {}).get("logo_url")
+                    or (t.extra_data or {}).get("image_url")
+                    or (t.extra_data or {}).get("logo")
+                    or (t.extra_data or {}).get("image")
+                ),
                 "is_pump_fun": bool((t.extra_data or {}).get("is_pump_fun", False)),
                 "source_platform": (t.extra_data or {}).get("source_platform") or t.dex_id,
+                "website_url": (t.extra_data or {}).get("website_url") or (t.extra_data or {}).get("website"),
+                "twitter_url": (t.extra_data or {}).get("twitter_url") or (t.extra_data or {}).get("twitter"),
+                "telegram_url": (t.extra_data or {}).get("telegram_url") or (t.extra_data or {}).get("telegram"),
+                "description": (t.extra_data or {}).get("description") or (t.extra_data or {}).get("project_description"),
                 "buy_urls": (t.extra_data or {}).get("buy_urls") or {
                     "pump_fun": f"https://pump.fun/coin/{t.contract_address}",
                     "axiom": f"https://axiom.trade/t/{t.contract_address}",
@@ -171,6 +181,9 @@ async def list_tokens(
                 "is_mintable": t.is_mintable,
                 "is_ownership_renounced": t.is_ownership_renounced,
                 "dex_id": t.dex_id,
+                "pair_address": t.pair_address,
+                "deployer_wallet": t.deployer_wallet,
+                "total_supply": t.total_supply,
                 "created_at": str(t.liquidity_created_at or t.created_at),
             }
             for t in tokens

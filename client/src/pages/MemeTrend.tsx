@@ -45,8 +45,7 @@ export default function MemeTrend() {
   const [selectedToken, setSelectedToken] = useState<TokenItem | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const { data: tokenData, isLoading } = useTokens(chain, {
-    newOnly: true,
-    maxAgeHours: 24,
+    newOnly: false,
     prioritizePumpFun: true,
     limit: 150,
   });
@@ -64,6 +63,23 @@ export default function MemeTrend() {
         );
       })
     : tokens;
+
+  const renderLogo = (token: TokenItem) => {
+    if (token.logo_url) {
+      return (
+        <img
+          src={token.logo_url}
+          alt={`${token.symbol || token.name || "token"} logo`}
+          className="w-10 h-10 rounded-full object-cover border border-border/50"
+          onError={(event) => {
+            const target = event.currentTarget;
+            target.style.display = "none";
+          }}
+        />
+      );
+    }
+    return null;
+  };
 
   return (
     <Layout>
@@ -126,10 +142,15 @@ export default function MemeTrend() {
         {selectedToken && (
           <Card className="p-4 solana-card bg-card/70 backdrop-blur-sm border-border/60">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div>
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0">
+                  {renderLogo(selectedToken) || <ChainIcon chain={selectedToken.chain} />}
+                </div>
+                <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Selected Token</p>
                 <h3 className="text-xl font-semibold">{selectedToken.symbol || selectedToken.name || "Unknown"}</h3>
                 <p className="text-xs text-muted-foreground font-mono break-all">{selectedToken.contract_address}</p>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="outline">{selectedToken.chain}</Badge>
@@ -146,6 +167,56 @@ export default function MemeTrend() {
                 </Button>
               </div>
             </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4 text-xs">
+              <div className="rounded-md border border-border/60 p-2">Price: ${Number(selectedToken.current_price_usd || 0).toLocaleString()}</div>
+              <div className="rounded-md border border-border/60 p-2">Liq: {formatNumber(selectedToken.liquidity_usd)}</div>
+              <div className="rounded-md border border-border/60 p-2">Vol 1h: {formatNumber(selectedToken.volume_1h)}</div>
+              <div className="rounded-md border border-border/60 p-2">Vol 6h: {formatNumber(selectedToken.volume_6h)}</div>
+              <div className="rounded-md border border-border/60 p-2">1h: {normalizePct(selectedToken.price_change_1h).toFixed(2)}%</div>
+              <div className="rounded-md border border-border/60 p-2">6h: {normalizePct(selectedToken.price_change_6h).toFixed(2)}%</div>
+              <div className="rounded-md border border-border/60 p-2">Buys 1h: {selectedToken.buys_1h}</div>
+              <div className="rounded-md border border-border/60 p-2">Sells 1h: {selectedToken.sells_1h}</div>
+              <div className="rounded-md border border-border/60 p-2">Holders: {selectedToken.holder_count.toLocaleString()}</div>
+              <div className="rounded-md border border-border/60 p-2">DEX: {selectedToken.dex_id || "-"}</div>
+              <div className="rounded-md border border-border/60 p-2">Source: {selectedToken.source_platform || "-"}</div>
+              <div className="rounded-md border border-border/60 p-2">Supply: {selectedToken.total_supply || "-"}</div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2 text-xs">
+              <div className="rounded-md border border-border/60 p-2">
+                <p className="text-muted-foreground mb-1">Deployer</p>
+                <p className="font-mono break-all">{selectedToken.deployer_wallet || "-"}</p>
+              </div>
+              <div className="rounded-md border border-border/60 p-2">
+                <p className="text-muted-foreground mb-1">Pair</p>
+                <p className="font-mono break-all">{selectedToken.pair_address || "-"}</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mt-2">
+              {selectedToken.website_url && (
+                <a href={selectedToken.website_url} target="_blank" rel="noreferrer">
+                  <Button size="sm" variant="outline"><ExternalLink className="w-3 h-3 mr-1" /> Website</Button>
+                </a>
+              )}
+              {selectedToken.twitter_url && (
+                <a href={selectedToken.twitter_url} target="_blank" rel="noreferrer">
+                  <Button size="sm" variant="outline"><ExternalLink className="w-3 h-3 mr-1" /> X/Twitter</Button>
+                </a>
+              )}
+              {selectedToken.telegram_url && (
+                <a href={selectedToken.telegram_url} target="_blank" rel="noreferrer">
+                  <Button size="sm" variant="outline"><ExternalLink className="w-3 h-3 mr-1" /> Telegram</Button>
+                </a>
+              )}
+            </div>
+
+            {selectedToken.description && (
+              <div className="mt-2 rounded-md border border-border/60 p-2 text-xs text-muted-foreground">
+                {selectedToken.description}
+              </div>
+            )}
           </Card>
         )}
 
@@ -177,8 +248,8 @@ export default function MemeTrend() {
                 onClick={() => setSelectedToken(token)}
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-                    <ChainIcon chain={token.chain} />
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0 overflow-hidden">
+                    {renderLogo(token) || <ChainIcon chain={token.chain} />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -202,16 +273,25 @@ export default function MemeTrend() {
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground font-mono truncate">{token.contract_address}</p>
+                    {token.source_platform && (
+                      <p className="text-[11px] text-muted-foreground truncate">Source: {token.source_platform}</p>
+                    )}
+                    <div className="mt-1 grid grid-cols-2 sm:grid-cols-4 gap-1 text-[11px] text-muted-foreground">
+                      <span>Price ${Number(token.current_price_usd || 0).toLocaleString()}</span>
+                      <span>1h {normalizePct(token.price_change_1h).toFixed(2)}%</span>
+                      <span>Buys {token.buys_1h}</span>
+                      <span>Sells {token.sells_1h}</span>
+                    </div>
                   </div>
-                  <div className="hidden md:block text-right shrink-0">
+                  <div className="text-right shrink-0">
                     <p className="font-mono text-sm">{formatNumber(token.market_cap_usd)}</p>
                     <p className="text-xs text-muted-foreground">MCap</p>
                   </div>
-                  <div className="hidden md:block text-right shrink-0">
+                  <div className="text-right shrink-0">
                     <p className="font-mono text-sm">{formatNumber(token.liquidity_usd)}</p>
                     <p className="text-xs text-muted-foreground">Liquidity</p>
                   </div>
-                  <div className="hidden lg:block text-right shrink-0">
+                  <div className="text-right shrink-0">
                     <p className="font-mono text-sm">{token.holder_count.toLocaleString()}</p>
                     <p className="text-xs text-muted-foreground">Holders</p>
                   </div>

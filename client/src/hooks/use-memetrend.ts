@@ -32,6 +32,10 @@ export type TokenItem = {
   top_holders_pct: number | null;
   dev_wallet_pct: number | null;
   logo_url?: string | null;
+  website_url?: string | null;
+  twitter_url?: string | null;
+  telegram_url?: string | null;
+  description?: string | null;
   is_pump_fun?: boolean;
   source_platform?: string | null;
   buy_urls?: {
@@ -43,6 +47,9 @@ export type TokenItem = {
   is_mintable: boolean;
   is_ownership_renounced: boolean;
   dex_id: string;
+  pair_address?: string | null;
+  deployer_wallet?: string | null;
+  total_supply?: string | null;
   created_at: string;
 };
 
@@ -59,7 +66,7 @@ export function useTokens(
 ) {
   const { hasToken } = useAuth();
   const queryString = new URLSearchParams();
-  if (chain) queryString.set("chain", chain);
+  if (chain && chain !== "all") queryString.set("chain", chain);
   if (options?.newOnly) queryString.set("new_only", "true");
   if (options?.maxAgeHours) queryString.set("max_age_hours", String(options.maxAgeHours));
   if (options?.prioritizePumpFun) queryString.set("prioritize_pump_fun", "true");

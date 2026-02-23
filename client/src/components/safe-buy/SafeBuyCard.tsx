@@ -87,6 +87,12 @@ export function SafeBuyCard({ item }: { item: SafeBuyItem }) {
           <div><p className="text-muted-foreground">Volume 5m</p><p className="font-medium">{formatNumber(item.volume_5m)}</p></div>
           <div><p className="text-muted-foreground">Volume 1h</p><p className="font-medium">{formatNumber(item.volume_1h)}</p></div>
           <div><p className="text-muted-foreground">Holders</p><p className="font-medium">{item.holder_count.toLocaleString()}</p></div>
+          <div><p className="text-muted-foreground">Buy/Sell</p><p className="font-medium">{item.buy_sell_ratio.toFixed(2)}</p></div>
+          <div><p className="text-muted-foreground">Top Holders</p><p className="font-medium">{item.top_holders_pct.toFixed(2)}%</p></div>
+          <div><p className="text-muted-foreground">Dev Wallet</p><p className="font-medium">{item.dev_wallet_pct.toFixed(2)}%</p></div>
+          <div><p className="text-muted-foreground">Wallet Growth</p><p className="font-medium">{item.wallet_growth_rate.toFixed(0)}</p></div>
+          <div><p className="text-muted-foreground">Source</p><p className="font-medium capitalize">{item.source_platform || "-"}</p></div>
+          <div><p className="text-muted-foreground">Chain</p><p className="font-medium uppercase">{item.chain}</p></div>
           <div>
             <p className="text-muted-foreground">Safety Trend</p>
             <p className="font-medium flex items-center gap-1">
@@ -94,6 +100,11 @@ export function SafeBuyCard({ item }: { item: SafeBuyItem }) {
               {item.trend === "up" ? "Improving" : item.trend === "down" ? "Declining" : "Stable"}
             </p>
           </div>
+        </div>
+
+        <div className="rounded-md border border-border/60 bg-muted/20 p-2">
+          <p className="text-[11px] text-muted-foreground">Contract</p>
+          <p className="text-xs font-mono break-all">{item.contract_address}</p>
         </div>
 
         <div className="space-y-2">
