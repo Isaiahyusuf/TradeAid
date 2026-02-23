@@ -262,7 +262,7 @@ export default function AuthPage() {
 
           <div className="rounded-xl border border-primary/25 bg-gradient-to-r from-accent/10 to-primary/10 px-3 py-2 flex items-center justify-between gap-3">
             <div className="text-left">
-              <p className="text-sm doctorstrange-font text-gradient">DoctorStrange is available</p>
+              <p className="text-sm doctorstrange-font text-gradient">DoctorTrade is available</p>
               <p className="text-[11px] text-muted-foreground">Sign in to unlock AI trading intelligence.</p>
             </div>
             <Bot className="w-5 h-5 text-primary doctorstrange-sigil" />

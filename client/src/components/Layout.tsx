@@ -1,5 +1,5 @@
 import { Sidebar, MobileNav } from "./Sidebar";
-import { ReactNode, useMemo, useState, type CSSProperties } from "react";
+import { ReactNode, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useChain, SUPPORTED_CHAINS, type AppChain } from "@/hooks/use-chain";
 import { useLocation } from "wouter";
@@ -14,13 +14,38 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Bot, LogOut, User } from "lucide-react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useMotionValue } from "framer-motion";
+
+const DOCTORTRADE_POSITION_KEY = "doctortrade-launcher-position-v1";
 
 export function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const { chain, setChain } = useChain();
   const [location, setLocation] = useLocation();
   const [parallax, setParallax] = useState({ x: 50, y: 50 });
+  const launcherX = useMotionValue(0);
+  const launcherY = useMotionValue(0);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(DOCTORTRADE_POSITION_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { x?: number; y?: number };
+      launcherX.set(Number(parsed.x || 0));
+      launcherY.set(Number(parsed.y || 0));
+    } catch {
+    }
+  }, [launcherX, launcherY]);
+
+  const persistLauncherPosition = () => {
+    try {
+      window.localStorage.setItem(
+        DOCTORTRADE_POSITION_KEY,
+        JSON.stringify({ x: launcherX.get(), y: launcherY.get() })
+      );
+    } catch {
+    }
+  };
 
   const parallaxStyle = useMemo(
     () => ({
@@ -37,7 +62,7 @@ export function Layout({ children }: { children: ReactNode }) {
     setParallax({ x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) });
   };
 
-  const onDoctorStrangePage = location === "/assistant" || location === "/doctorstrange";
+  const onDoctorTradePage = location === "/assistant" || location === "/doctorstrange" || location === "/doctortrade";
 
   return (
     <div className="min-h-screen bg-background text-foreground flex solana-shell">
@@ -56,17 +81,6 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="absolute inset-x-0 top-24 h-40 bg-gradient-to-b from-white/[0.04] to-transparent pointer-events-none" />
         <div className="absolute top-0 left-0 right-0 md:left-auto md:right-0 p-4 md:p-6 z-20">
           <div className="flex items-center justify-center md:justify-end gap-2">
-            <Button
-              variant="outline"
-              className="gap-2 bg-card/70 backdrop-blur-md border-primary/20 hover:border-primary/40 doctorstrange-font"
-              onClick={() => setLocation("/assistant")}
-              data-testid="button-open-doctorstrange"
-            >
-              <Bot className="h-4 w-4" />
-              <span className="hidden sm:inline">DoctorStrange</span>
-              <span className="sm:hidden">Doctor</span>
-            </Button>
-
             <Select value={chain} onValueChange={(value) => setChain(value as AppChain)}>
               <SelectTrigger className="w-[150px] bg-card/70 backdrop-blur-md border-primary/20 hover:border-primary/40" data-testid="select-global-chain">
                 <SelectValue placeholder="Select chain" />
@@ -115,20 +129,6 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
         </div>
 
-        <div className="sticky top-[72px] md:top-[82px] z-40 px-4 md:px-8 pointer-events-none">
-          <div className="max-w-7xl mx-auto flex justify-end">
-            <Button
-              type="button"
-              onClick={() => setLocation("/assistant")}
-              className="pointer-events-auto h-9 gap-2 doctorstrange-font bg-gradient-to-r from-accent/85 to-primary/85 text-white border border-primary/40 shadow-[0_0_18px_rgba(153,69,255,0.25)] hover:from-accent hover:to-primary"
-              data-testid="button-sticky-doctorstrange"
-            >
-              <Bot className="h-4 w-4 doctorstrange-sigil" />
-              <span>{onDoctorStrangePage ? "DoctorStrange Active" : "Open DoctorStrange"}</span>
-            </Button>
-          </div>
-        </div>
-
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={location}
@@ -142,15 +142,24 @@ export function Layout({ children }: { children: ReactNode }) {
           </motion.div>
         </AnimatePresence>
 
-        <Button
-          type="button"
-          onClick={() => setLocation("/assistant")}
-          className="fixed right-4 md:right-6 bottom-28 md:bottom-6 z-[60] gap-2 doctorstrange-font bg-gradient-to-r from-accent/90 to-primary/90 text-white border border-primary/40 shadow-[0_0_24px_rgba(153,69,255,0.35)] hover:from-accent hover:to-primary"
-          data-testid="button-floating-doctorstrange"
+        <motion.div
+          drag
+          dragMomentum={false}
+          whileTap={{ scale: 1.03 }}
+          style={{ x: launcherX, y: launcherY }}
+          onDragEnd={persistLauncherPosition}
+          className="fixed right-4 md:right-6 bottom-28 md:bottom-6 z-[70] cursor-grab active:cursor-grabbing"
         >
-          <Bot className="h-4 w-4 doctorstrange-sigil" />
-          <span>Open DoctorStrange</span>
-        </Button>
+          <Button
+            type="button"
+            onClick={() => setLocation("/assistant")}
+            className="gap-2 doctorstrange-font bg-gradient-to-r from-accent/90 to-primary/90 text-white border border-primary/40 shadow-[0_0_24px_rgba(153,69,255,0.35)] hover:from-accent hover:to-primary"
+            data-testid="button-floating-doctorstrange"
+          >
+            <Bot className="h-4 w-4 doctorstrange-sigil" />
+            <span>{onDoctorTradePage ? "DoctorTrade Active" : "Open DoctorTrade"}</span>
+          </Button>
+        </motion.div>
       </main>
       <MobileNav />
     </div>

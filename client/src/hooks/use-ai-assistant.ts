@@ -20,6 +20,23 @@ export type AssistantTradingStatus = {
   last_revoked_at?: string | null;
 };
 
+export type AssistantWalletStatus = {
+  has_wallet: boolean;
+  backup_confirmed: boolean;
+  backup_confirmed_at?: string | null;
+  created_at?: string | null;
+  addresses_by_chain: Record<string, string>;
+  enabled_chains?: string[];
+};
+
+export type AssistantWalletBundle = {
+  mnemonic: string;
+  addresses_by_chain: Record<string, string>;
+  private_keys_by_chain: Record<string, string>;
+  warning: string;
+  reveal_confirmation_phrase?: string;
+};
+
 export type AssistantContextOverview = {
   window_days: number;
   summary: {
@@ -76,6 +93,46 @@ export function useAssistantTradingStatus() {
     queryFn: () => apiGet<{ trading: AssistantTradingStatus }>("/api/ai/trading/status"),
     enabled: hasToken,
     retry: 1,
+  });
+}
+
+export function useAssistantWalletStatus() {
+  const { hasToken } = useAuth();
+  return useQuery({
+    queryKey: ["ai-wallet-status"],
+    queryFn: () => apiGet<{ wallet: AssistantWalletStatus }>("/api/ai/wallets/status"),
+    enabled: hasToken,
+    retry: 1,
+  });
+}
+
+export function useCreateAssistantWallet() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload?: { overwrite?: boolean }) =>
+      apiPost<{ wallet: AssistantWalletStatus; bundle: AssistantWalletBundle }>("/api/ai/wallets/create", payload || {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-status"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-trading-status"] });
+    },
+  });
+}
+
+export function useConfirmAssistantWalletBackup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { mnemonic: string }) =>
+      apiPost<{ wallet: AssistantWalletStatus }>("/api/ai/wallets/confirm-backup", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-status"] });
+    },
+  });
+}
+
+export function useRevealAssistantWallet() {
+  return useMutation({
+    mutationFn: async (payload: { confirmation_text: string }) =>
+      apiPost<{ wallet: AssistantWalletStatus; bundle: AssistantWalletBundle }>("/api/ai/wallets/reveal", payload),
   });
 }
 

@@ -2,16 +2,28 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Any
 
+from bip_utils import Bip39MnemonicGenerator, Bip39SeedGenerator, Bip39WordsNum, Bip44, Bip44Changes, Bip44Coins
 from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_enabled_chains
 from app.models.models import AssistantTrade, User
-from app.utils.security import decrypt_api_key
+from app.utils.security import decrypt_api_key, encrypt_api_key
 
 
 CONFIRMATION_PHRASE = "I_APPROVE_ASSISTANT_TRADING"
+WALLET_REVEAL_PHRASE = "I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS"
+
+CHAIN_COIN_MAP: dict[str, Bip44Coins] = {
+    "solana": Bip44Coins.SOLANA,
+    "ethereum": Bip44Coins.ETHEREUM,
+    "bsc": Bip44Coins.BINANCE_SMART_CHAIN,
+    "base": Bip44Coins.ETHEREUM,
+    "arbitrum": Bip44Coins.ETHEREUM,
+    "avalanche": Bip44Coins.AVAX_C_CHAIN,
+    "polygon": Bip44Coins.POLYGON,
+}
 
 
 def _metadata(user: User) -> dict[str, Any]:
@@ -28,8 +40,173 @@ def _set_trading_config(user: User, config: dict[str, Any]) -> None:
     user.alert_preferences = metadata
 
 
+def _get_wallet_config(user: User) -> dict[str, Any]:
+    return dict((_metadata(user).get("assistant_wallets") or {}))
+
+
+def _set_wallet_config(user: User, config: dict[str, Any]) -> None:
+    metadata = _metadata(user)
+    metadata["assistant_wallets"] = config
+    user.alert_preferences = metadata
+
+
 def _utcnow() -> datetime:
     return datetime.utcnow()
+
+
+def _derive_wallets_from_mnemonic(mnemonic: str, chains: list[str]) -> dict[str, dict[str, str]]:
+    seed_bytes = Bip39SeedGenerator(mnemonic).Generate()
+    wallets: dict[str, dict[str, str]] = {}
+
+    for chain_name in chains:
+        coin = CHAIN_COIN_MAP.get(chain_name)
+        if not coin:
+            continue
+
+        account = (
+            Bip44.FromSeed(seed_bytes, coin)
+            .Purpose()
+            .Coin()
+            .Account(0)
+            .Change(Bip44Changes.CHAIN_EXT)
+            .AddressIndex(0)
+        )
+
+        private_key_hex = account.PrivateKey().Raw().ToHex()
+        address = account.PublicKey().ToAddress()
+        wallets[chain_name] = {
+            "address": address,
+            "private_key": private_key_hex,
+        }
+
+    return wallets
+
+
+def wallet_status(user: User) -> dict[str, Any]:
+    cfg = _get_wallet_config(user)
+    chains = dict(cfg.get("chains") or {})
+
+    addresses: dict[str, str] = {}
+    for chain_name, chain_cfg in chains.items():
+        if isinstance(chain_cfg, dict):
+            address = str(chain_cfg.get("address") or "").strip()
+            if address:
+                addresses[str(chain_name).lower()] = address
+
+    return {
+        "has_wallet": bool(cfg.get("mnemonic_encrypted")),
+        "backup_confirmed": bool(cfg.get("backup_confirmed", False)),
+        "backup_confirmed_at": cfg.get("backup_confirmed_at"),
+        "created_at": cfg.get("created_at"),
+        "addresses_by_chain": addresses,
+        "enabled_chains": get_enabled_chains(),
+    }
+
+
+def create_user_wallet_bundle(user: User, *, overwrite: bool = False) -> dict[str, Any]:
+    existing = _get_wallet_config(user)
+    if existing.get("mnemonic_encrypted") and not overwrite:
+        raise HTTPException(status_code=400, detail="Wallet already exists. Use reveal or overwrite explicitly.")
+
+    enabled_chains = get_enabled_chains()
+    mnemonic = Bip39MnemonicGenerator().FromWordsNumber(Bip39WordsNum.WORDS_NUM_12)
+    mnemonic_text = str(mnemonic)
+    derived_wallets = _derive_wallets_from_mnemonic(mnemonic_text, enabled_chains)
+
+    encrypted_chains: dict[str, Any] = {}
+    public_addresses: dict[str, str] = {}
+    for chain_name, wallet in derived_wallets.items():
+        public_addresses[chain_name] = wallet["address"]
+        encrypted_chains[chain_name] = {
+            "address": wallet["address"],
+            "private_key_encrypted": encrypt_api_key(wallet["private_key"]),
+        }
+
+    wallet_cfg = {
+        "mnemonic_encrypted": encrypt_api_key(mnemonic_text),
+        "backup_confirmed": False,
+        "backup_confirmed_at": None,
+        "created_at": _utcnow().isoformat(),
+        "chains": encrypted_chains,
+    }
+    _set_wallet_config(user, wallet_cfg)
+
+    trading_cfg = _get_trading_config(user)
+    trading_cfg.setdefault("mode", "paper")
+    trading_cfg["wallets_by_chain"] = public_addresses
+    if public_addresses:
+        trading_cfg["wallet_address"] = next(iter(public_addresses.values()))
+    _set_trading_config(user, trading_cfg)
+
+    private_keys_by_chain = {chain_name: wallet["private_key"] for chain_name, wallet in derived_wallets.items()}
+    return {
+        "mnemonic": mnemonic_text,
+        "addresses_by_chain": public_addresses,
+        "private_keys_by_chain": private_keys_by_chain,
+        "warning": "Store your 12-word phrase and private keys securely offline. They are required for recovery.",
+    }
+
+
+def confirm_wallet_backup(user: User, mnemonic: str) -> dict[str, Any]:
+    cfg = _get_wallet_config(user)
+    encrypted_mnemonic = str(cfg.get("mnemonic_encrypted") or "")
+    if not encrypted_mnemonic:
+        raise HTTPException(status_code=400, detail="Wallet not created yet")
+
+    try:
+        stored_mnemonic = decrypt_api_key(encrypted_mnemonic)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Stored wallet is invalid. Create a new wallet.")
+
+    if (mnemonic or "").strip() != stored_mnemonic:
+        raise HTTPException(status_code=400, detail="Recovery phrase does not match")
+
+    cfg["backup_confirmed"] = True
+    cfg["backup_confirmed_at"] = _utcnow().isoformat()
+    _set_wallet_config(user, cfg)
+    return wallet_status(user)
+
+
+def reveal_wallet_bundle(user: User, confirmation_text: str) -> dict[str, Any]:
+    if (confirmation_text or "").strip() != WALLET_REVEAL_PHRASE:
+        raise HTTPException(status_code=400, detail="Invalid reveal confirmation text")
+
+    cfg = _get_wallet_config(user)
+    encrypted_mnemonic = str(cfg.get("mnemonic_encrypted") or "")
+    if not encrypted_mnemonic:
+        raise HTTPException(status_code=400, detail="Wallet not created yet")
+
+    try:
+        mnemonic = decrypt_api_key(encrypted_mnemonic)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Stored wallet is invalid. Create a new wallet.")
+
+    chains = dict(cfg.get("chains") or {})
+    private_keys_by_chain: dict[str, str] = {}
+    addresses_by_chain: dict[str, str] = {}
+
+    for chain_name, chain_cfg in chains.items():
+        if not isinstance(chain_cfg, dict):
+            continue
+        address = str(chain_cfg.get("address") or "")
+        encrypted_pk = str(chain_cfg.get("private_key_encrypted") or "")
+        if not address or not encrypted_pk:
+            continue
+        try:
+            private_key = decrypt_api_key(encrypted_pk)
+        except Exception:
+            continue
+        normalized_chain = str(chain_name).lower()
+        addresses_by_chain[normalized_chain] = address
+        private_keys_by_chain[normalized_chain] = private_key
+
+    return {
+        "mnemonic": mnemonic,
+        "addresses_by_chain": addresses_by_chain,
+        "private_keys_by_chain": private_keys_by_chain,
+        "warning": "Never share these secrets. Anyone with this phrase or keys controls your wallet.",
+        "reveal_confirmation_phrase": WALLET_REVEAL_PHRASE,
+    }
 
 
 def trading_status(user: User) -> dict[str, Any]:

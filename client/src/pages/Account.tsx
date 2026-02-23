@@ -20,41 +20,16 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { User, Shield, LogOut, Activity, TrendingUp, Camera, Save } from "lucide-react";
-import { useChain, SUPPORTED_CHAINS } from "@/hooks/use-chain";
-import {
-  useApproveAssistantConsent,
-  useAssistantTradingStatus,
-  useExecuteAssistantTrade,
-  useRequestAssistantConsent,
-  useRevokeAssistantConsent,
-} from "@/hooks/use-ai-assistant";
 
 export default function Account() {
   const { user, logout, updateProfile } = useAuth();
-  const { chain } = useChain();
   const { toast } = useToast();
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [telemetryOptIn, setTelemetryOptIn] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [assistantMode, setAssistantMode] = useState<"paper" | "live">("paper");
-  const [walletsByChain, setWalletsByChain] = useState<Record<string, string>>({});
-  const [confirmationText, setConfirmationText] = useState("I_APPROVE_ASSISTANT_TRADING");
-  const [tradeChain, setTradeChain] = useState("solana");
-  const [tradeContract, setTradeContract] = useState("");
-  const [tradeSide, setTradeSide] = useState<"buy" | "sell">("buy");
-  const [tradeNotional, setTradeNotional] = useState("25");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const enabledChains = SUPPORTED_CHAINS.filter((item) => item !== "all");
-
-  const tradingStatusQuery = useAssistantTradingStatus();
-  const requestConsent = useRequestAssistantConsent();
-  const approveConsent = useApproveAssistantConsent();
-  const revokeConsent = useRevokeAssistantConsent();
-  const executeTrade = useExecuteAssistantTrade();
-
-  const trading = tradingStatusQuery.data?.trading;
 
   const compressImageToDataUrl = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -107,18 +82,6 @@ export default function Account() {
     setAvatarUrl(user?.avatar_url || "");
     setTelemetryOptIn(Boolean(user?.telemetry_opt_in));
   }, [user]);
-
-  useEffect(() => {
-    const incoming = trading?.wallets_by_chain || {};
-    const next: Record<string, string> = {};
-    for (const chainName of enabledChains) {
-      next[chainName] = String(incoming[chainName] || walletsByChain[chainName] || "");
-    }
-    setWalletsByChain(next);
-    if (trading?.mode === "paper" || trading?.mode === "live") {
-      setAssistantMode(trading.mode);
-    }
-  }, [trading?.wallets_by_chain, trading?.mode]);
 
   const activeName = displayName || username || "User";
   const initials = activeName.slice(0, 2).toUpperCase();
@@ -192,64 +155,6 @@ export default function Account() {
     }
   };
 
-  const handleRequestAssistantConsent = async () => {
-    try {
-      await requestConsent.mutateAsync({
-        mode: assistantMode,
-        wallets_by_chain: walletsByChain,
-      });
-      toast({ title: "Consent requested", description: "Approve consent to enable assistant trading." });
-    } catch (error) {
-      toast({ title: "Consent request failed", description: error instanceof Error ? error.message : "Request failed", variant: "destructive" });
-    }
-  };
-
-  const handleApproveAssistantConsent = async () => {
-    const consentId = String(trading?.consent_id || "");
-    if (!consentId) {
-      toast({ title: "Missing consent", description: "Request consent first.", variant: "destructive" });
-      return;
-    }
-    try {
-      await approveConsent.mutateAsync({
-        consent_id: consentId,
-        confirmation_text: confirmationText,
-      });
-      toast({ title: "Assistant trading enabled", description: "Permission is active. You can revoke anytime." });
-    } catch (error) {
-      toast({ title: "Approve failed", description: error instanceof Error ? error.message : "Approval failed", variant: "destructive" });
-    }
-  };
-
-  const handleRevokeAssistantConsent = async () => {
-    try {
-      await revokeConsent.mutateAsync();
-      toast({ title: "Assistant trading revoked", description: "Assistant no longer has trading permission." });
-    } catch (error) {
-      toast({ title: "Revoke failed", description: error instanceof Error ? error.message : "Revoke failed", variant: "destructive" });
-    }
-  };
-
-  const handleExecuteAssistantTrade = async () => {
-    const notionalValue = Number(tradeNotional);
-    if (!tradeContract.trim() || !Number.isFinite(notionalValue) || notionalValue <= 0) {
-      toast({ title: "Invalid trade", description: "Set contract and a valid notional amount.", variant: "destructive" });
-      return;
-    }
-    try {
-      await executeTrade.mutateAsync({
-        chain: tradeChain,
-        contract_address: tradeContract.trim(),
-        side: tradeSide,
-        notional_usd: notionalValue,
-        mode: assistantMode,
-      });
-      toast({ title: "Trade submitted", description: `Assistant ${tradeSide.toUpperCase()} processed for ${tradeChain}.` });
-      setTradeContract("");
-    } catch (error) {
-      toast({ title: "Trade blocked", description: error instanceof Error ? error.message : "Execution failed", variant: "destructive" });
-    }
-  };
 
   return (
     <Layout>
@@ -403,104 +308,6 @@ export default function Account() {
                 Token Risk Scanner
               </Button>
             </a>
-          </CardContent>
-        </Card>
-
-        <Card className="solana-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Assistant Trading Control</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="text-sm text-muted-foreground">
-              Assistant can only trade after explicit consent approval. Configure wallet per chain and revoke anytime.
-            </div>
-            <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
-              <span className="text-sm">Status</span>
-              <Badge variant={trading?.enabled ? "default" : "outline"}>{trading?.enabled ? "Enabled" : trading?.pending_approval ? "Pending Approval" : "Disabled"}</Badge>
-            </div>
-            <div className="space-y-2">
-              <Label>Mode</Label>
-              <select
-                value={assistantMode}
-                onChange={(e) => setAssistantMode(e.target.value as "paper" | "live")}
-                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="paper">Paper</option>
-                <option value="live">Live</option>
-              </select>
-            </div>
-            <div className="space-y-3">
-              <Label>Wallets By Chain</Label>
-              {enabledChains.map((chainName) => (
-                <div key={chainName} className="space-y-1">
-                  <Label htmlFor={`wallet-${chainName}`} className="text-xs uppercase text-muted-foreground">{chainName}</Label>
-                  <Input
-                    id={`wallet-${chainName}`}
-                    placeholder={`Wallet for ${chainName}`}
-                    value={walletsByChain[chainName] || ""}
-                    onChange={(e) => setWalletsByChain((prev) => ({ ...prev, [chainName]: e.target.value }))}
-                  />
-                </div>
-              ))}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="assistant-confirmation">Approval Phrase</Label>
-              <Input
-                id="assistant-confirmation"
-                value={confirmationText}
-                onChange={(e) => setConfirmationText(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={handleRequestAssistantConsent} disabled={requestConsent.isPending}>
-                {requestConsent.isPending ? "Requesting..." : "Request Consent"}
-              </Button>
-              <Button variant="outline" onClick={handleApproveAssistantConsent} disabled={approveConsent.isPending || !trading?.pending_approval}>
-                {approveConsent.isPending ? "Approving..." : "Approve Consent"}
-              </Button>
-              <Button variant="outline" onClick={handleRevokeAssistantConsent} disabled={revokeConsent.isPending}>
-                {revokeConsent.isPending ? "Revoking..." : "Revoke"}
-              </Button>
-            </div>
-            <div className="rounded-lg border border-border/60 p-3 space-y-3">
-              <p className="text-sm font-medium">Execute Assistant Trade</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <select
-                  value={tradeChain}
-                  onChange={(e) => setTradeChain(e.target.value)}
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  {enabledChains.map((chainName) => (
-                    <option key={chainName} value={chainName}>{chainName}</option>
-                  ))}
-                </select>
-                <select
-                  value={tradeSide}
-                  onChange={(e) => setTradeSide(e.target.value as "buy" | "sell")}
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="buy">BUY</option>
-                  <option value="sell">SELL</option>
-                </select>
-              </div>
-              <Input
-                placeholder="Contract address"
-                value={tradeContract}
-                onChange={(e) => setTradeContract(e.target.value)}
-              />
-              <Input
-                type="number"
-                min={1}
-                step="0.01"
-                placeholder="Notional USD"
-                value={tradeNotional}
-                onChange={(e) => setTradeNotional(e.target.value)}
-              />
-              <Button onClick={handleExecuteAssistantTrade} disabled={executeTrade.isPending || !trading?.enabled}>
-                {executeTrade.isPending ? "Executing..." : `Execute ${tradeSide.toUpperCase()}`}
-              </Button>
-              <p className="text-xs text-muted-foreground">Current global chain context: {chain}</p>
-            </div>
           </CardContent>
         </Card>
 

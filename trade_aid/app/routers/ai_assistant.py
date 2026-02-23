@@ -11,10 +11,14 @@ from app.services.auth_service import get_current_user
 from app.services.assistant_context_service import build_user_trading_context
 from app.services.assistant_trading_service import (
     approve_consent,
+    confirm_wallet_backup,
+    create_user_wallet_bundle,
     execute_assistant_trade,
     request_consent,
+    reveal_wallet_bundle,
     revoke_consent,
     trading_status,
+    wallet_status,
 )
 from app.services.openai_assistant_service import answer_user_question, generate_trade_assist
 
@@ -63,6 +67,18 @@ class ExecuteTradeRequest(BaseModel):
     notional_usd: float
     mode: str | None = None
     decision_context: dict[str, Any] | None = None
+
+
+class WalletCreateRequest(BaseModel):
+    overwrite: bool = False
+
+
+class WalletBackupConfirmRequest(BaseModel):
+    mnemonic: str
+
+
+class WalletRevealRequest(BaseModel):
+    confirmation_text: str
 
 
 @router.post("/assist")
@@ -206,6 +222,50 @@ async def assist_for_token(
 @router.get("/trading/status")
 async def get_trading_status(user: User = Depends(get_current_user)):
     return {"trading": trading_status(user)}
+
+
+@router.get("/wallets/status")
+async def get_wallet_status(user: User = Depends(get_current_user)):
+    return {"wallet": wallet_status(user)}
+
+
+@router.post("/wallets/create")
+async def create_wallet_bundle(
+    req: WalletCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    bundle = create_user_wallet_bundle(user, overwrite=bool(req.overwrite))
+    await db.flush()
+    return {
+        "wallet": wallet_status(user),
+        "bundle": bundle,
+    }
+
+
+@router.post("/wallets/confirm-backup")
+async def confirm_wallet_phrase_backup(
+    req: WalletBackupConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    status_payload = confirm_wallet_backup(user, req.mnemonic)
+    await db.flush()
+    return {
+        "wallet": status_payload,
+    }
+
+
+@router.post("/wallets/reveal")
+async def reveal_wallet_secrets(
+    req: WalletRevealRequest,
+    user: User = Depends(get_current_user),
+):
+    bundle = reveal_wallet_bundle(user, req.confirmation_text)
+    return {
+        "bundle": bundle,
+        "wallet": wallet_status(user),
+    }
 
 
 @router.post("/trading/consent/request")

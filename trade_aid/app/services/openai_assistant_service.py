@@ -8,12 +8,98 @@ from app.config import get_settings
 
 settings = get_settings()
 
-DOCTOR_STRANGE_SYSTEM_PROMPT = (
-    "You are DoctorStrange, TradeAid's elite multi-chain trading intelligence engine. "
+ASSISTANT_NAME = "DoctorTrade"
+
+DOCTOR_TRADE_SYSTEM_PROMPT = (
+    f"You are {ASSISTANT_NAME}, TradeAid's elite multi-chain trading intelligence engine. "
     "You operate with strict risk discipline, probabilistic reasoning, and transparent uncertainty. "
     "Never guarantee outcomes. Prefer capital preservation when signals conflict. "
     "Output valid JSON only."
 )
+
+COINGECKO_ID_MAP: dict[str, str] = {
+    "solana": "solana",
+    "sol": "solana",
+    "bitcoin": "bitcoin",
+    "btc": "bitcoin",
+    "ethereum": "ethereum",
+    "eth": "ethereum",
+    "bnb": "binancecoin",
+    "binance": "binancecoin",
+    "xrp": "ripple",
+    "ripple": "ripple",
+    "doge": "dogecoin",
+    "dogecoin": "dogecoin",
+    "matic": "matic-network",
+    "polygon": "matic-network",
+    "avax": "avalanche-2",
+    "avalanche": "avalanche-2",
+}
+
+
+def _safe_json_loads(content: str) -> dict[str, Any]:
+    text = str(content or "").strip()
+    if text.startswith("```"):
+        text = text.strip("`").strip()
+        if text.startswith("json"):
+            text = text[4:].strip()
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                parsed = json.loads(text[start : end + 1])
+                return parsed if isinstance(parsed, dict) else {}
+            except Exception:
+                return {}
+        return {}
+
+
+async def _fetch_market_snapshot(question: str) -> dict[str, Any]:
+    lower_question = (question or "").lower()
+    coin_ids: list[str] = []
+    for token, coin_id in COINGECKO_ID_MAP.items():
+        if token in lower_question and coin_id not in coin_ids:
+            coin_ids.append(coin_id)
+
+    if not coin_ids:
+        return {}
+
+    ids_param = ",".join(coin_ids[:4])
+    url = "https://api.coingecko.com/api/v3/simple/price"
+    params = {
+        "ids": ids_param,
+        "vs_currencies": "usd",
+        "include_24hr_change": "true",
+        "include_last_updated_at": "true",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+            payload = response.json() or {}
+    except Exception:
+        return {}
+
+    snapshot: dict[str, Any] = {}
+    for coin_id in coin_ids:
+        row = payload.get(coin_id) or {}
+        usd = row.get("usd")
+        change = row.get("usd_24h_change")
+        updated_at = row.get("last_updated_at")
+        if usd is None:
+            continue
+        snapshot[coin_id] = {
+            "price_usd": float(usd),
+            "change_24h_pct": float(change or 0.0),
+            "last_updated_at": updated_at,
+        }
+
+    return snapshot
 
 
 def _clamp(value: float, min_value: float, max_value: float) -> float:
@@ -80,7 +166,7 @@ def _fallback_assist(payload: dict[str, Any]) -> dict[str, Any]:
         risk_notes.append("Use small position sizing and confirm slippage/liquidity constraints.")
     if abs(confidence_bias) >= 2:
         direction = "upward" if confidence_bias > 0 else "downward"
-        reasons.append(f"DoctorStrange applied {direction} confidence calibration ({confidence_bias:+.2f}) from recent outcomes.")
+        reasons.append(f"{ASSISTANT_NAME} applied {direction} confidence calibration ({confidence_bias:+.2f}) from recent outcomes.")
 
     summary = (
         f"Fallback assistant: confidence {confidence:.1f}/100, rug risk {rug_probability:.1f}/100, "
@@ -96,7 +182,7 @@ def _fallback_assist(payload: dict[str, Any]) -> dict[str, Any]:
         "take_profit_pct": round(take_profit_pct, 2),
         "stop_loss_pct": round(stop_loss_pct, 2),
         "requires_risk_approval": True,
-        "assistant_name": "DoctorStrange",
+        "assistant_name": ASSISTANT_NAME,
         "source": "fallback",
         "generated_at": datetime.utcnow().isoformat(),
     }
@@ -107,12 +193,23 @@ def _fallback_answer(question: str, context: dict[str, Any] | None = None) -> di
     market = context.get("market", {}) or {}
     chain = str(market.get("chain", "unknown")).lower()
     symbol = str(market.get("symbol", "token"))
+    market_snapshot = context.get("market_snapshot", {}) or {}
+
+    pricing_lines: list[str] = []
+    for coin_id, row in (market_snapshot.items() if isinstance(market_snapshot, dict) else []):
+        if not isinstance(row, dict):
+            continue
+        price = float(row.get("price_usd", 0) or 0)
+        change = float(row.get("change_24h_pct", 0) or 0)
+        pricing_lines.append(f"{coin_id}: ${price:,.4f} ({change:+.2f}% 24h)")
 
     response = (
         f"Fallback assistant response for {symbol} on {chain}: "
         "Use risk-first validation, verify liquidity depth, avoid oversized positions, "
         "and run in paper mode before enabling autonomous execution."
     )
+    if pricing_lines:
+        response = f"{response} Live market snapshot: {'; '.join(pricing_lines)}."
 
     return {
         "question": question,
@@ -122,7 +219,7 @@ def _fallback_answer(question: str, context: dict[str, Any] | None = None) -> di
             "Confirm stop-loss and max daily loss limits before execution.",
             "Start in paper mode and validate against recent market regime.",
         ],
-        "assistant_name": "DoctorStrange",
+        "assistant_name": ASSISTANT_NAME,
         "source": "fallback",
         "generated_at": datetime.utcnow().isoformat(),
     }
@@ -135,7 +232,7 @@ async def generate_trade_assist(payload: dict[str, Any]) -> dict[str, Any]:
 
     prompt = {
         "task": "Provide multi-factor, cross-chain, risk-aware trading decision support.",
-        "assistant_name": "DoctorStrange",
+        "assistant_name": ASSISTANT_NAME,
         "input": payload,
         "output_schema": {
             "summary": "2-4 concise sentences",
@@ -181,14 +278,16 @@ async def generate_trade_assist(payload: dict[str, Any]) -> dict[str, Any]:
                     "model": settings.OPENAI_MODEL,
                     "temperature": 0.15,
                     "messages": [
-                        {"role": "system", "content": DOCTOR_STRANGE_SYSTEM_PROMPT},
+                        {"role": "system", "content": DOCTOR_TRADE_SYSTEM_PROMPT},
                         {"role": "user", "content": json.dumps(prompt)},
                     ],
                 },
             )
             response.raise_for_status()
             content = response.json()["choices"][0]["message"]["content"]
-            parsed = json.loads(content)
+            parsed = _safe_json_loads(content)
+            if not parsed:
+                return _fallback_assist(payload)
 
             parsed["confidence"] = float(parsed.get("confidence", 0) or 0)
             parsed["take_profit_pct"] = float(parsed.get("take_profit_pct", 0) or 0)
@@ -198,7 +297,7 @@ async def generate_trade_assist(payload: dict[str, Any]) -> dict[str, Any]:
             parsed["market_regime"] = str(parsed.get("market_regime", "unknown"))
             parsed["requires_risk_approval"] = True
             parsed["source"] = "openai"
-            parsed["assistant_name"] = "DoctorStrange"
+            parsed["assistant_name"] = ASSISTANT_NAME
             parsed["generated_at"] = datetime.utcnow().isoformat()
             return parsed
     except Exception:
@@ -206,15 +305,19 @@ async def generate_trade_assist(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 async def answer_user_question(question: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
+    merged_context = dict(context or {})
+    if "market_snapshot" not in merged_context:
+        merged_context["market_snapshot"] = await _fetch_market_snapshot(question)
+
     api_key = settings.AI_INTEGRATIONS_OPENAI_API_KEY or settings.OPENAI_API_KEY
     if not api_key:
-        return _fallback_answer(question, context)
+        return _fallback_answer(question, merged_context)
 
     prompt = {
         "task": "Answer the user's trading intelligence question using provided context with practical, risk-aware guidance.",
-        "assistant_name": "DoctorStrange",
+        "assistant_name": ASSISTANT_NAME,
         "question": question,
-        "context": context or {},
+        "context": merged_context,
         "output_schema": {
             "answer": "concise paragraph",
             "key_points": ["short point", "short point", "short point"],
@@ -241,23 +344,26 @@ async def answer_user_question(question: str, context: dict[str, Any] | None = N
                     "model": settings.OPENAI_MODEL,
                     "temperature": 0.25,
                     "messages": [
-                        {"role": "system", "content": DOCTOR_STRANGE_SYSTEM_PROMPT},
+                        {"role": "system", "content": DOCTOR_TRADE_SYSTEM_PROMPT},
                         {"role": "user", "content": json.dumps(prompt)},
                     ],
                 },
             )
             response.raise_for_status()
             content = response.json()["choices"][0]["message"]["content"]
-            parsed = json.loads(content)
+            parsed = _safe_json_loads(content)
+            if not parsed:
+                return _fallback_answer(question, merged_context)
             return {
                 "question": question,
                 "answer": str(parsed.get("answer", "")).strip(),
                 "key_points": [str(item) for item in (parsed.get("key_points") or [])][:5],
                 "confidence": float(parsed.get("confidence", 0) or 0),
                 "risk_level": str(parsed.get("risk_level", "unknown")),
-                "assistant_name": "DoctorStrange",
+                "assistant_name": ASSISTANT_NAME,
+                "market_snapshot": merged_context.get("market_snapshot", {}),
                 "source": "openai",
                 "generated_at": datetime.utcnow().isoformat(),
             }
     except Exception:
-        return _fallback_answer(question, context)
+        return _fallback_answer(question, merged_context)

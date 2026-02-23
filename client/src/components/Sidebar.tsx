@@ -16,7 +16,7 @@ const NAV_ITEMS = [
   { label: "WhaleWatch", href: "/whalewatch", icon: Eye },
   { label: "Safe Buy", href: "/safebuy", icon: Lock },
   { label: "Tokens", href: "/memetrend", icon: TrendingUp },
-  { label: "DoctorStrange", href: "/assistant", icon: Bot },
+  { label: "DoctorTrade", href: "/assistant", icon: Bot },
   { label: "Subscription", href: "/subscription", icon: Bell },
   { label: "Account", href: "/account", icon: User },
 ];

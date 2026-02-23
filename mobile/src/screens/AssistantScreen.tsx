@@ -7,7 +7,7 @@ export function AssistantScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.heroCard}>
-          <Text style={styles.heroTitle}>DoctorStrange</Text>
+          <Text style={styles.heroTitle}>DoctorTrade</Text>
           <Text style={styles.heroSubtitle}>Cross-chain AI trading intelligence</Text>
         </View>
 

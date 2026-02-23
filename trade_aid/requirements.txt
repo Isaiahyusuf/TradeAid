@@ -21,3 +21,4 @@ pydantic-settings==2.7.0
 email-validator==2.2.0
 python-multipart==0.0.20
 numpy==2.2.1
+bip-utils==2.9.3
