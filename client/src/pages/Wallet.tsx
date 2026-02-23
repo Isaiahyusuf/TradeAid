@@ -86,7 +86,15 @@ export default function WalletPage() {
       setBackupPhraseInput("");
       toast({ title: "Wallet created", description: "Store your 12-word phrase and private keys before proceeding." });
     } catch (error) {
-      toast({ title: "Wallet creation failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+      const message = error instanceof Error ? error.message : "Failed";
+      if (message.toLowerCase().includes("wallet already exists")) {
+        toast({
+          title: "Wallet already exists",
+          description: "Use Reveal Secrets to view your phrase/keys or Overwrite Wallet to generate a new one.",
+        });
+        return;
+      }
+      toast({ title: "Wallet creation failed", description: message, variant: "destructive" });
     }
   };
 
