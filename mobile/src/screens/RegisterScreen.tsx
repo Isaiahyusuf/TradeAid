@@ -10,6 +10,8 @@ export function RegisterScreen({ navigation }: any) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
 
@@ -88,29 +90,39 @@ export function RegisterScreen({ navigation }: any) {
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Create a password"
-              placeholderTextColor="#6b7280"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoCapitalize="none"
-            />
+            <View style={styles.inputRow}>
+              <TextInput
+                style={[styles.input, styles.inputFlex]}
+                placeholder="Create a password"
+                placeholderTextColor="#6b7280"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+              />
+              <TouchableOpacity style={styles.visibilityButton} onPress={() => setShowPassword((value) => !value)}>
+                <Text style={styles.visibilityButtonText}>{showPassword ? 'Hide' : 'Show'}</Text>
+              </TouchableOpacity>
+            </View>
             <Text style={styles.hint}>Minimum 8 characters</Text>
           </View>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Confirm Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Confirm your password"
-              placeholderTextColor="#6b7280"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-              autoCapitalize="none"
-            />
+            <View style={styles.inputRow}>
+              <TextInput
+                style={[styles.input, styles.inputFlex]}
+                placeholder="Confirm your password"
+                placeholderTextColor="#6b7280"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry={!showConfirmPassword}
+                autoCapitalize="none"
+              />
+              <TouchableOpacity style={styles.visibilityButton} onPress={() => setShowConfirmPassword((value) => !value)}>
+                <Text style={styles.visibilityButtonText}>{showConfirmPassword ? 'Hide' : 'Show'}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           <TouchableOpacity
@@ -180,6 +192,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2a3f2a',
     fontSize: 16,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  inputFlex: {
+    flex: 1,
+  },
+  visibilityButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#2a3f2a',
+    backgroundColor: '#121712',
+  },
+  visibilityButtonText: {
+    color: '#22c55e',
+    fontSize: 12,
+    fontWeight: '700',
   },
   hint: {
     fontSize: 12,

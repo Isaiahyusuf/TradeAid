@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
-export const SUPPORTED_CHAINS = ["all", "solana", "ethereum", "bsc", "base"] as const;
+export const SUPPORTED_CHAINS = ["all", "solana", "ethereum", "bsc", "base", "arbitrum", "avalanche", "polygon"] as const;
 export type AppChain = (typeof SUPPORTED_CHAINS)[number];
 
 const CHAIN_LABELS: Record<AppChain, string> = {
@@ -9,6 +9,9 @@ const CHAIN_LABELS: Record<AppChain, string> = {
   ethereum: "Ethereum",
   bsc: "BNB Chain",
   base: "Base",
+  arbitrum: "Arbitrum",
+  avalanche: "Avalanche",
+  polygon: "Polygon",
 };
 
 type ChainContextValue = {

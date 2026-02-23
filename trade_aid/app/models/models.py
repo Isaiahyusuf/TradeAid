@@ -218,3 +218,28 @@ class User(Base):
     telegram_chat_id = Column(String(64), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AssistantTrade(Base):
+    __tablename__ = "assistant_trades"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    chain = Column(String(20), nullable=False, index=True)
+    contract_address = Column(String(128), nullable=False, index=True)
+    side = Column(String(8), nullable=False)
+    mode = Column(String(16), nullable=False, default="paper")
+    status = Column(String(24), nullable=False, default="filled")
+    notional_usd = Column(Float, nullable=False, default=0.0)
+    quantity = Column(Float, nullable=True)
+    price_usd = Column(Float, nullable=True)
+    fees_usd = Column(Float, nullable=False, default=0.0)
+    pnl_usd = Column(Float, nullable=False, default=0.0)
+    external_order_id = Column(String(128), nullable=True)
+    decision_context = Column(JSON, nullable=True)
+    risk_snapshot = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_assistant_trades_user_created", "user_id", "created_at"),
+    )

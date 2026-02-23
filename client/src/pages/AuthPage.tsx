@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { TradeAidLogo } from "@/components/brand/TradeAidLogo";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { Shield, Loader2, ArrowRight, Chrome, Apple } from "lucide-react";
+import { Shield, Loader2, ArrowRight, Chrome, Apple, Bot, Eye, EyeOff } from "lucide-react";
 import { motion } from "framer-motion";
 
 const EMAIL_PATTERN = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
@@ -28,8 +28,14 @@ export default function AuthPage() {
   const [accessCode, setAccessCode] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [registerConfirmPassword, setRegisterConfirmPassword] = useState("");
   const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [resetConfirmPassword, setResetConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showRegisterConfirmPassword, setShowRegisterConfirmPassword] = useState(false);
+  const [showResetConfirmPassword, setShowResetConfirmPassword] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "valid" | "invalid" | "taken">("idle");
@@ -38,16 +44,18 @@ export default function AuthPage() {
   const { toast } = useToast();
   const registerPasswordErrors = getPasswordErrors(password);
   const resetPasswordErrors = getPasswordErrors(newPassword);
+  const registerPasswordsMismatch = mode === "register" && !!registerConfirmPassword && password !== registerConfirmPassword;
+  const resetPasswordsMismatch = mode === "reset" && !!resetConfirmPassword && newPassword !== resetConfirmPassword;
   const emailInvalid = !!email && !EMAIL_PATTERN.test(email);
   const usernameInvalid = mode === "register" && !!username && !USERNAME_PATTERN.test(username.trim());
 
   const isSubmitDisabled =
     isSubmitting ||
     (mode === "login" && (!username.trim() || !password || !accessCode.trim())) ||
-    (mode === "register" && (!username.trim() || !accessCode.trim() || usernameInvalid || usernameStatus === "checking" || usernameStatus === "taken" || registerPasswordErrors.length > 0)) ||
+    (mode === "register" && (!username.trim() || !accessCode.trim() || usernameInvalid || usernameStatus === "checking" || usernameStatus === "taken" || registerPasswordErrors.length > 0 || !registerConfirmPassword || registerPasswordsMismatch)) ||
     (mode === "verify" && (emailInvalid || code.trim().length < 6)) ||
     (mode === "forgot" && emailInvalid) ||
-    (mode === "reset" && (emailInvalid || code.trim().length < 6 || resetPasswordErrors.length > 0));
+    (mode === "reset" && (emailInvalid || code.trim().length < 6 || resetPasswordErrors.length > 0 || !resetConfirmPassword || resetPasswordsMismatch));
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -163,8 +171,16 @@ export default function AuthPage() {
         throw new Error("Your password must include an uppercase letter, a number, a special character, and be at least 6 characters.");
       }
 
+      if (mode === "register" && password !== registerConfirmPassword) {
+        throw new Error("Password and confirm password must match.");
+      }
+
       if (mode === "reset" && resetPasswordErrors.length > 0) {
         throw new Error("Your new password must include an uppercase letter, a number, a special character, and be at least 6 characters.");
+      }
+
+      if (mode === "reset" && newPassword !== resetConfirmPassword) {
+        throw new Error("New password and confirm password must match.");
       }
 
       if (mode === "login") {
@@ -243,6 +259,14 @@ export default function AuthPage() {
             {mode === "forgot" && "Request a secure password reset code"}
             {mode === "reset" && "Set a new password to secure your account"}
           </p>
+
+          <div className="rounded-xl border border-primary/25 bg-gradient-to-r from-accent/10 to-primary/10 px-3 py-2 flex items-center justify-between gap-3">
+            <div className="text-left">
+              <p className="text-sm doctorstrange-font text-gradient">DoctorStrange is available</p>
+              <p className="text-[11px] text-muted-foreground">Sign in to unlock AI trading intelligence.</p>
+            </div>
+            <Bot className="w-5 h-5 text-primary doctorstrange-sigil" />
+          </div>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -295,18 +319,55 @@ export default function AuthPage() {
             {(mode === "login" || mode === "register") && (
               <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                data-testid="input-password"
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  data-testid="input-password"
+                />
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  onClick={() => setShowPassword((value) => !value)}
+                  data-testid="button-toggle-password-visibility"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
               {mode === "register" && registerPasswordErrors.length > 0 && (
                 <p className="text-xs text-destructive">Password rules: {registerPasswordErrors.join(", ")}</p>
               )}
+              </div>
+            )}
+            {mode === "register" && (
+              <div className="space-y-2">
+                <Label htmlFor="register-confirm-password">Confirm Password</Label>
+                <div className="relative">
+                  <Input
+                    id="register-confirm-password"
+                    type={showRegisterConfirmPassword ? "text" : "password"}
+                    placeholder="Confirm your password"
+                    value={registerConfirmPassword}
+                    onChange={(e) => setRegisterConfirmPassword(e.target.value)}
+                    required
+                    data-testid="input-register-confirm-password"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                    onClick={() => setShowRegisterConfirmPassword((value) => !value)}
+                    data-testid="button-toggle-register-confirm-password-visibility"
+                  >
+                    {showRegisterConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {registerPasswordsMismatch && (
+                  <p className="text-xs text-destructive">Confirm password must match your password.</p>
+                )}
               </div>
             )}
             {(mode === "verify" || mode === "reset") && (
@@ -325,17 +386,54 @@ export default function AuthPage() {
             {mode === "reset" && (
               <div className="space-y-2">
                 <Label htmlFor="new-password">New Password</Label>
-                <Input
-                  id="new-password"
-                  type="password"
-                  placeholder="Enter new password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  required
-                  data-testid="input-new-password"
-                />
+                <div className="relative">
+                  <Input
+                    id="new-password"
+                    type={showNewPassword ? "text" : "password"}
+                    placeholder="Enter new password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    data-testid="input-new-password"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                    onClick={() => setShowNewPassword((value) => !value)}
+                    data-testid="button-toggle-new-password-visibility"
+                  >
+                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
                 {resetPasswordErrors.length > 0 && (
                   <p className="text-xs text-destructive">Password rules: {resetPasswordErrors.join(", ")}</p>
+                )}
+              </div>
+            )}
+            {mode === "reset" && (
+              <div className="space-y-2">
+                <Label htmlFor="reset-confirm-password">Confirm Password</Label>
+                <div className="relative">
+                  <Input
+                    id="reset-confirm-password"
+                    type={showResetConfirmPassword ? "text" : "password"}
+                    placeholder="Confirm new password"
+                    value={resetConfirmPassword}
+                    onChange={(e) => setResetConfirmPassword(e.target.value)}
+                    required
+                    data-testid="input-reset-confirm-password"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                    onClick={() => setShowResetConfirmPassword((value) => !value)}
+                    data-testid="button-toggle-reset-confirm-password-visibility"
+                  >
+                    {showResetConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {resetPasswordsMismatch && (
+                  <p className="text-xs text-destructive">Confirm password must match your new password.</p>
                 )}
               </div>
             )}

@@ -9,6 +9,7 @@ import { RugShieldScreen } from '../screens/RugShieldScreen';
 import { WhaleWatchScreen } from '../screens/WhaleWatchScreen';
 import { MemeTrendScreen } from '../screens/MemeTrendScreen';
 import { AccountScreen } from '../screens/AccountScreen';
+import { AssistantScreen } from '../screens/AssistantScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { RegisterScreen } from '../screens/RegisterScreen';
 import { useAuth } from '../hooks/useAuth';
@@ -23,6 +24,7 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
       case 'RugShield': return focused ? '🛡' : '○';
       case 'WhaleWatch': return focused ? '🐋' : '○';
       case 'MemeTrend': return focused ? '📈' : '○';
+      case 'Assistant': return focused ? '✨' : '○';
       case 'Account': return focused ? '👤' : '○';
       default: return '○';
     }
@@ -55,6 +57,7 @@ function MainTabs() {
       <Tab.Screen name="RugShield" component={RugShieldScreen} />
       <Tab.Screen name="WhaleWatch" component={WhaleWatchScreen} />
       <Tab.Screen name="MemeTrend" component={MemeTrendScreen} />
+      <Tab.Screen name="Assistant" component={AssistantScreen} />
       <Tab.Screen name="Account" component={AccountScreen} />
     </Tab.Navigator>
   );
@@ -104,7 +107,7 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
   },
   tabLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
   },
   tabIconContainer: {

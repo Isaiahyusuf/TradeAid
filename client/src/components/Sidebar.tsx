@@ -1,7 +1,7 @@
 import { useLocation } from "wouter";
 import { 
   ShieldCheck, Eye, TrendingUp, LayoutDashboard, 
-  LogOut, User, Radar, Bell, Lock
+  LogOut, User, Radar, Bell, Lock, Bot
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
@@ -16,9 +16,13 @@ const NAV_ITEMS = [
   { label: "WhaleWatch", href: "/whalewatch", icon: Eye },
   { label: "Safe Buy", href: "/safebuy", icon: Lock },
   { label: "Tokens", href: "/memetrend", icon: TrendingUp },
+  { label: "DoctorStrange", href: "/assistant", icon: Bot },
   { label: "Subscription", href: "/subscription", icon: Bell },
   { label: "Account", href: "/account", icon: User },
 ];
+
+const getNavTestId = (label: string) => `nav-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+const getMobileNavTestId = (label: string) => `mobile-nav-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
 export function Sidebar() {
   const [location, setLocation] = useLocation();
@@ -30,10 +34,11 @@ export function Sidebar() {
         <TradeAidLogo />
       </div>
 
-      <nav className="flex-1 p-4 space-y-2">
+      <nav className="flex-1 min-h-0 overflow-y-auto p-4 pr-2 space-y-2 app-scroll">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = location === item.href;
+          const isDoctorStrange = item.href === "/assistant";
           
           return (
             <button
@@ -43,9 +48,10 @@ export function Sidebar() {
                 "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-medium border border-transparent",
                 isActive 
                   ? "bg-gradient-to-r from-primary/15 via-accent/10 to-background text-primary border-primary/30 shadow-[0_0_15px_rgba(34,197,94,0.15)]" 
-                  : "text-muted-foreground hover:text-foreground hover:bg-white/5 hover:border-primary/20"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/5 hover:border-primary/20",
+                isDoctorStrange && "doctorstrange-font"
               )}
-              data-testid={`nav-${item.label.toLowerCase()}`}
+              data-testid={getNavTestId(item.label)}
             >
               <Icon className={cn("w-5 h-5", isActive ? "text-primary" : "text-muted-foreground")} />
               {item.label}
@@ -93,6 +99,8 @@ export function MobileNav() {
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = location === item.href;
+          const isDoctorStrange = item.href === "/assistant";
+          const mobileLabel = isDoctorStrange ? "Doctor" : item.label;
           
           return (
             <button
@@ -100,13 +108,14 @@ export function MobileNav() {
               onClick={() => setLocation(item.href)}
               className={cn(
                 "flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors min-w-[56px] border border-transparent",
-                isActive ? "text-primary bg-primary/10 border-primary/25" : "text-muted-foreground"
+                isActive ? "text-primary bg-primary/10 border-primary/25" : "text-muted-foreground",
+                isDoctorStrange && "doctorstrange-font"
               )} 
-              data-testid={`mobile-nav-${item.label.toLowerCase()}`}
+              data-testid={getMobileNavTestId(item.label)}
             >
               <Icon className="w-5 h-5" />
               <span className="text-[10px] font-medium">
-                {item.label}
+                {mobileLabel}
               </span>
             </button>
           );

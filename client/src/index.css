@@ -59,6 +59,23 @@
 }
 
 @layer utilities {
+  .app-scroll {
+    scrollbar-gutter: stable;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+  }
+
+  .doctorstrange-font {
+    font-family: 'Playfair Display', 'Space Grotesk', serif;
+    letter-spacing: 0.01em;
+    font-weight: 700;
+  }
+
+  .doctorstrange-sigil {
+    animation: doctorstrange-sigil-pulse 2.4s ease-in-out infinite;
+  }
+
   .wow-shell {
     isolation: isolate;
   }
@@ -217,6 +234,12 @@
   }
 }
 
+@media (orientation: landscape) and (max-height: 900px) {
+  .safe-area-bottom {
+    padding-bottom: max(env(safe-area-inset-bottom), 0.75rem);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .wow-grid,
   .wow-orb,
@@ -300,6 +323,18 @@
   }
   to {
     background-position: -200% 0;
+  }
+}
+
+@keyframes doctorstrange-sigil-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 0.86;
   }
 }
 

@@ -1,0 +1,164 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiGet, apiPost } from "@/lib/api";
+import { useAuth } from "@/hooks/use-auth";
+
+export type AssistantTradingStatus = {
+  enabled: boolean;
+  pending_approval: boolean;
+  consent_id?: string | null;
+  consent_expires_at?: string | null;
+  approved_at?: string | null;
+  mode: "paper" | "live";
+  wallet_address?: string | null;
+  wallets_by_chain?: Record<string, string>;
+  enabled_chains?: string[];
+  risk_limits?: {
+    max_notional_usd_per_trade: number;
+    max_trades_per_day: number;
+    max_daily_loss_usd: number;
+  };
+  last_revoked_at?: string | null;
+};
+
+export type AssistantContextOverview = {
+  window_days: number;
+  summary: {
+    total_trades: number;
+    total_notional_usd: number;
+    total_pnl_usd: number;
+    chain_count: number;
+  };
+  chain_stats: Record<string, { trades: number; notional_usd: number; pnl_usd: number }>;
+  recent_trades: Array<{
+    id: string;
+    chain: string;
+    contract_address: string;
+    side: string;
+    mode: string;
+    status: string;
+    notional_usd: number;
+    price_usd: number | null;
+    fees_usd: number;
+    pnl_usd: number;
+    created_at: string | null;
+  }>;
+  market_scores: {
+    by_chain: Record<string, { count: number; avg_confidence: number; avg_rug_probability: number }>;
+    samples: number;
+  };
+  confidence_calibration: {
+    mode?: string;
+    half_life_days?: number;
+    global_bias: number;
+    lookback_trades: number;
+    generated_at?: string;
+    by_chain: Record<string, {
+      trades: number;
+      wins: number;
+      losses: number;
+      win_rate: number;
+      pnl_usd: number;
+      weighted_pnl_usd?: number;
+      pnl_per_trade_usd: number;
+      pnl_yield: number;
+      sample_weight: number;
+      weighted_trade_mass?: number;
+      confidence_bias: number;
+      status: "outperforming" | "underperforming" | "neutral";
+    }>;
+  };
+};
+
+export function useAssistantTradingStatus() {
+  const { hasToken } = useAuth();
+  return useQuery({
+    queryKey: ["ai-trading-status"],
+    queryFn: () => apiGet<{ trading: AssistantTradingStatus }>("/api/ai/trading/status"),
+    enabled: hasToken,
+    retry: 1,
+  });
+}
+
+export function useRequestAssistantConsent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      wallet_address?: string;
+      wallets_by_chain?: Record<string, string>;
+      mode: "paper" | "live";
+      risk_limits?: {
+        max_notional_usd_per_trade?: number;
+        max_trades_per_day?: number;
+        max_daily_loss_usd?: number;
+      };
+    }) => apiPost("/api/ai/trading/consent/request", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-trading-status"] });
+    },
+  });
+}
+
+export function useApproveAssistantConsent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { consent_id: string; confirmation_text: string }) =>
+      apiPost("/api/ai/trading/consent/approve", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-trading-status"] });
+    },
+  });
+}
+
+export function useRevokeAssistantConsent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => apiPost("/api/ai/trading/consent/revoke"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-trading-status"] });
+    },
+  });
+}
+
+export function useExecuteAssistantTrade() {
+  return useMutation({
+    mutationFn: async (payload: {
+      chain: string;
+      contract_address: string;
+      side: "buy" | "sell";
+      notional_usd: number;
+      mode?: "paper" | "live";
+      decision_context?: Record<string, unknown>;
+    }) => apiPost("/api/ai/trading/execute", payload),
+  });
+}
+
+export function useAssistantContextOverview(days: number = 30) {
+  const { hasToken } = useAuth();
+  return useQuery({
+    queryKey: ["ai-context-overview", days],
+    queryFn: () => apiGet<{ context: AssistantContextOverview; user_id: string }>(`/api/ai/context/overview?days=${days}`),
+    enabled: hasToken,
+    retry: 1,
+  });
+}
+
+export function useAskAssistant() {
+  return useMutation({
+    mutationFn: async (payload: { question: string; context?: Record<string, unknown> }) =>
+      apiPost<{ assistant: { answer: string; key_points: string[]; source: string } }>("/api/ai/ask", payload),
+  });
+}
+
+export function useAssistDecision() {
+  return useMutation({
+    mutationFn: async (payload: {
+      market: Record<string, unknown>;
+      risk?: {
+        max_risk_per_trade_pct?: number;
+        max_daily_loss_pct?: number;
+        max_trades_per_day?: number;
+      };
+      mode?: "paper" | "live";
+    }) => apiPost<{ assistant: Record<string, unknown> }>("/api/ai/assist", payload),
+  });
+}

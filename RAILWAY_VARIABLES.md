@@ -204,7 +204,7 @@ PORT
 # You must set:
 NODE_ENV=production
 SESSION_SECRET=<random-64-chars>
-=https://your-python-backend-url.railway.app
+VITE_API_URL=https://your-python-backend-url.railway.app
 ```
 
 ---

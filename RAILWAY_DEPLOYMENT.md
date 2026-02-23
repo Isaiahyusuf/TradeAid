@@ -96,7 +96,10 @@ Railway will use the `railway.json` in root (already configured for Python backe
 ```bash
 railway variables set DATABASE_URL="postgresql://..." \
   REDIS_URL="redis://..." \
-  JWT_SECRET="your-secret-key-here" \
+  JWT_SECRET_KEY="your-secret-key-here" \
+  MASTER_ACCESS_KEY="your-master-access-key-here" \
+  ENCRYPTION_KEY="your-32-plus-char-encryption-key" \
+  ENABLED_CHAINS="solana,ethereum,bsc,base,arbitrum,avalanche,polygon" \
   CORS_ORIGINS="https://your-frontend.railway.app,https://tradeaid.app"
 ```
 
@@ -109,8 +112,9 @@ DATABASE_URL=postgresql://user:pass@host:port/dbname
 REDIS_URL=redis://default:pass@host:port
 
 # Security
-JWT_SECRET=your-super-secret-jwt-key-change-this
-SECRET_KEY=your-secret-key-for-sessions
+JWT_SECRET_KEY=your-super-secret-jwt-key-change-this
+MASTER_ACCESS_KEY=your-master-access-key-change-this
+ENCRYPTION_KEY=your-32-plus-char-encryption-key
 
 # API Keys (optional but recommended)
 DEXSCREENER_API_KEY=your-key
@@ -121,9 +125,11 @@ HELIUS_API_KEY=your-key
 CORS_ORIGINS=https://your-frontend.railway.app,https://tradeaid.app
 
 # App Config
-APP_NAME=TradeAid
+APP_NAME=Trade Aid
 APP_VERSION=1.0.0
-ENVIRONMENT=production
+DEBUG=false
+LOG_LEVEL=INFO
+ENABLED_CHAINS=solana,ethereum,bsc,base,arbitrum,avalanche,polygon
 ```
 
 ### 4.4 Deploy
@@ -303,11 +309,14 @@ railway run --service web-frontend npm run db:push
 ```env
 DATABASE_URL=<from Railway PostgreSQL>
 REDIS_URL=<from Railway Redis>
-JWT_SECRET=<generate strong secret>
-SECRET_KEY=<generate strong secret>
+JWT_SECRET_KEY=<generate strong secret>
+MASTER_ACCESS_KEY=<generate strong secret>
+ENCRYPTION_KEY=<32+ char secret>
 CORS_ORIGINS=<your-frontend-url>
-APP_NAME=TradeAid
-ENVIRONMENT=production
+APP_NAME=Trade Aid
+DEBUG=false
+LOG_LEVEL=INFO
+ENABLED_CHAINS=solana,ethereum,bsc,base,arbitrum,avalanche,polygon
 PORT=8000
 ```
 
@@ -524,7 +533,7 @@ railway run --service trade-aid-backend -- psql $DATABASE_URL < backup.sql
 
 1. **Generate Strong Secrets:**
    ```bash
-   openssl rand -hex 32  # For JWT_SECRET, SESSION_SECRET
+  openssl rand -hex 32  # For JWT_SECRET_KEY, MASTER_ACCESS_KEY, SESSION_SECRET
    ```
 
 2. **Enable HTTPS Only** (Railway provides SSL automatically)

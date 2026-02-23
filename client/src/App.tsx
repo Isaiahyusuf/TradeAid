@@ -12,10 +12,31 @@ import RugShield from "@/pages/RugShield";
 import WhaleWatch from "@/pages/WhaleWatch";
 import MemeTrend from "@/pages/MemeTrend";
 import SafeBuy from "@/pages/SafeBuy";
+import AssistantPage from "@/pages/Assistant";
 import Account from "@/pages/Account";
 import Subscription from "@/pages/Subscription";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Bot } from "lucide-react";
+import { useLocation } from "wouter";
+
+function GlobalAssistantLauncher() {
+  const [location, setLocation] = useLocation();
+  const isAssistantPage = location === "/assistant" || location === "/doctorstrange";
+
+  return (
+    <Button
+      type="button"
+      onClick={() => setLocation("/assistant")}
+      className="fixed left-4 md:left-6 bottom-6 z-[100] gap-2 doctorstrange-font bg-gradient-to-r from-accent/90 to-primary/90 text-white border border-primary/40 shadow-[0_0_24px_rgba(153,69,255,0.35)] hover:from-accent hover:to-primary"
+      data-testid="button-global-doctorstrange"
+    >
+      <Bot className="h-4 w-4 doctorstrange-sigil" />
+      <span>{isAssistantPage ? "DoctorStrange Active" : "Open DoctorStrange"}</span>
+    </Button>
+  );
+}
 
 function AuthenticatedRouter() {
   return (
@@ -27,6 +48,8 @@ function AuthenticatedRouter() {
       <Route path="/whalewatch" component={WhaleWatch} />
       <Route path="/memetrend" component={MemeTrend} />
       <Route path="/safebuy" component={SafeBuy} />
+      <Route path="/assistant" component={AssistantPage} />
+      <Route path="/doctorstrange" component={AssistantPage} />
       <Route path="/account" component={Account} />
       <Route path="/subscription" component={Subscription} />
       <Route component={NotFound} />
@@ -58,7 +81,16 @@ function AppContent() {
     );
   }
 
-  return isAuthenticated ? <AuthenticatedRouter /> : <UnauthenticatedRouter />;
+  if (!isAuthenticated) {
+    return <UnauthenticatedRouter />;
+  }
+
+  return (
+    <>
+      <AuthenticatedRouter />
+      <GlobalAssistantLauncher />
+    </>
+  );
 }
 
 function App() {
