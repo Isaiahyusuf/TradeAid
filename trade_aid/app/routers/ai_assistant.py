@@ -14,6 +14,7 @@ from app.services.assistant_trading_service import (
     confirm_wallet_backup,
     create_user_wallet_bundle,
     execute_assistant_trade,
+    import_user_wallet_bundle,
     request_consent,
     reveal_wallet_bundle,
     revoke_consent,
@@ -79,6 +80,11 @@ class WalletBackupConfirmRequest(BaseModel):
 
 class WalletRevealRequest(BaseModel):
     confirmation_text: str
+
+
+class WalletImportRequest(BaseModel):
+    mnemonic: str
+    overwrite: bool = False
 
 
 @router.post("/assist")
@@ -253,6 +259,20 @@ async def confirm_wallet_phrase_backup(
     await db.flush()
     return {
         "wallet": status_payload,
+    }
+
+
+@router.post("/wallets/import")
+async def import_wallet_bundle(
+    req: WalletImportRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    bundle = import_user_wallet_bundle(user, mnemonic=req.mnemonic, overwrite=bool(req.overwrite))
+    await db.flush()
+    return {
+        "wallet": wallet_status(user),
+        "bundle": bundle,
     }
 
 

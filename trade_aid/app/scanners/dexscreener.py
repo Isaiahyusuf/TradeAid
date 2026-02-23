@@ -25,6 +25,45 @@ SOLANA_SEARCH_TERMS = [
     "wif",
 ]
 
+CHAIN_SEARCH_TERMS = {
+    "solana": SOLANA_SEARCH_TERMS,
+    "ethereum": [
+        "ethereum",
+        "eth",
+        "uniswap",
+        "new pair",
+        "meme",
+    ],
+    "base": [
+        "base",
+        "base chain",
+        "aerodrome",
+        "new pair",
+        "meme",
+    ],
+    "bsc": [
+        "bsc",
+        "bnb",
+        "pancakeswap",
+        "new pair",
+    ],
+    "arbitrum": [
+        "arbitrum",
+        "camelot",
+        "new pair",
+    ],
+    "avalanche": [
+        "avalanche",
+        "trader joe",
+        "new pair",
+    ],
+    "polygon": [
+        "polygon",
+        "quickswap",
+        "new pair",
+    ],
+}
+
 
 class DexScreenerScanner:
     def __init__(self):
@@ -69,7 +108,8 @@ class DexScreenerScanner:
                 return
 
             async with async_session_factory() as db:
-                for pair in pairs[:200]:
+                scan_limit = 500 if chain in {"ethereum", "base"} else 300
+                for pair in pairs[:scan_limit]:
                     pair_chain = pair.get("chainId", "").lower()
                     if pair_chain != chain:
                         continue
@@ -237,23 +277,16 @@ class DexScreenerScanner:
             if new_contracts:
                 await self._auto_score_new_tokens(chain, new_contracts)
 
-            new_pair_ids = [p.get("pairAddress") for p in pairs[:200] if p.get("pairAddress")]
+            new_pair_ids = [p.get("pairAddress") for p in pairs[:scan_limit] if p.get("pairAddress")]
             await cache_set(cache_key, new_pair_ids, ttl=30)
 
         except httpx.HTTPError as e:
             logger.warning(f"[DexScreener] HTTP error for {chain}: {e}")
 
     async def _fetch_chain_pairs(self, chain: str) -> list[dict]:
-        if chain != "solana":
-            url = f"{settings.DEXSCREENER_API_URL}/search?q={chain}"
-            response = await self.client.get(url)
-            if response.status_code != 200:
-                return []
-            data = response.json()
-            return data.get("pairs", []) or []
-
+        search_terms = CHAIN_SEARCH_TERMS.get(chain, [chain, "new pair"])
         unique_pairs: dict[str, dict] = {}
-        for term in SOLANA_SEARCH_TERMS:
+        for term in search_terms:
             try:
                 url = f"{settings.DEXSCREENER_API_URL}/search?q={term}"
                 response = await self.client.get(url)
@@ -263,7 +296,7 @@ class DexScreenerScanner:
                 data = response.json()
                 pairs = data.get("pairs", []) or []
                 for pair in pairs:
-                    if pair.get("chainId", "").lower() != "solana":
+                    if pair.get("chainId", "").lower() != chain:
                         continue
 
                     contract = (pair.get("baseToken", {}) or {}).get("address")

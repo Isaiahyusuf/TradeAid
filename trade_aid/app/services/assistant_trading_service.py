@@ -2,7 +2,7 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Any
 
-from bip_utils import Bip39MnemonicGenerator, Bip39SeedGenerator, Bip39WordsNum, Bip44, Bip44Changes, Bip44Coins
+from bip_utils import Bip39MnemonicGenerator, Bip39MnemonicValidator, Bip39SeedGenerator, Bip39WordsNum, Bip44, Bip44Changes, Bip44Coins
 from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -144,6 +144,54 @@ def create_user_wallet_bundle(user: User, *, overwrite: bool = False) -> dict[st
         "addresses_by_chain": public_addresses,
         "private_keys_by_chain": private_keys_by_chain,
         "warning": "Store your 12-word phrase and private keys securely offline. They are required for recovery.",
+    }
+
+
+def import_user_wallet_bundle(user: User, *, mnemonic: str, overwrite: bool = False) -> dict[str, Any]:
+    existing = _get_wallet_config(user)
+    if existing.get("mnemonic_encrypted") and not overwrite:
+        raise HTTPException(status_code=400, detail="Wallet already exists. Use overwrite explicitly.")
+
+    mnemonic_text = " ".join((mnemonic or "").strip().split()).lower()
+    if not mnemonic_text:
+        raise HTTPException(status_code=400, detail="mnemonic is required")
+
+    try:
+        Bip39MnemonicValidator(mnemonic_text).Validate()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid mnemonic phrase")
+
+    enabled_chains = get_enabled_chains()
+    derived_wallets = _derive_wallets_from_mnemonic(mnemonic_text, enabled_chains)
+
+    encrypted_chains: dict[str, Any] = {}
+    public_addresses: dict[str, str] = {}
+    for chain_name, wallet in derived_wallets.items():
+        public_addresses[chain_name] = wallet["address"]
+        encrypted_chains[chain_name] = {
+            "address": wallet["address"],
+            "private_key_encrypted": encrypt_api_key(wallet["private_key"]),
+        }
+
+    wallet_cfg = {
+        "mnemonic_encrypted": encrypt_api_key(mnemonic_text),
+        "backup_confirmed": False,
+        "backup_confirmed_at": None,
+        "created_at": _utcnow().isoformat(),
+        "chains": encrypted_chains,
+    }
+    _set_wallet_config(user, wallet_cfg)
+
+    trading_cfg = _get_trading_config(user)
+    trading_cfg.setdefault("mode", "paper")
+    trading_cfg["wallets_by_chain"] = public_addresses
+    if public_addresses:
+        trading_cfg["wallet_address"] = next(iter(public_addresses.values()))
+    _set_trading_config(user, trading_cfg)
+
+    return {
+        "addresses_by_chain": public_addresses,
+        "warning": "Wallet imported. Confirm backup phrase before enabling live usage.",
     }
 
 

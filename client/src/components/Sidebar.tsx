@@ -1,7 +1,7 @@
 import { useLocation } from "wouter";
 import { 
   ShieldCheck, Eye, TrendingUp, LayoutDashboard, 
-  LogOut, User, Radar, Bell, Lock, Bot
+  LogOut, User, Radar, Bell, Lock, Bot, Wallet
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { label: "Safe Buy", href: "/safebuy", icon: Lock },
   { label: "Tokens", href: "/memetrend", icon: TrendingUp },
   { label: "DoctorTrade", href: "/assistant", icon: Bot },
+  { label: "Wallet", href: "/wallet", icon: Wallet },
   { label: "Subscription", href: "/subscription", icon: Bell },
   { label: "Account", href: "/account", icon: User },
 ];

@@ -10,6 +10,8 @@ from app.utils.redis_client import cache_get, cache_set, publish_event
 
 
 class SafeBuyService:
+    SAFE_BUY_MIN_SCORE = 50.0
+    NEAR_MISS_MIN_SCORE = 40.0
     def _estimate_top_holders_pct(self, token: Token, latest_score: ScoringHistory | None) -> float:
         extra = token.extra_data or {}
         explicit = extra.get("top_holders_pct")
@@ -239,9 +241,9 @@ class SafeBuyService:
                 "created_at": str(token.created_at),
             }
 
-            if safety_score >= 65:
+            if safety_score >= self.SAFE_BUY_MIN_SCORE:
                 safe_candidates.append(token_payload)
-            elif 50 <= safety_score < 65:
+            elif self.NEAR_MISS_MIN_SCORE <= safety_score < self.SAFE_BUY_MIN_SCORE:
                 near_miss_candidates.append(token_payload)
 
         safe_candidates.sort(

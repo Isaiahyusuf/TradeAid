@@ -30,9 +30,9 @@ export type AssistantWalletStatus = {
 };
 
 export type AssistantWalletBundle = {
-  mnemonic: string;
+  mnemonic?: string;
   addresses_by_chain: Record<string, string>;
-  private_keys_by_chain: Record<string, string>;
+  private_keys_by_chain?: Record<string, string>;
   warning: string;
   reveal_confirmation_phrase?: string;
 };
@@ -133,6 +133,18 @@ export function useRevealAssistantWallet() {
   return useMutation({
     mutationFn: async (payload: { confirmation_text: string }) =>
       apiPost<{ wallet: AssistantWalletStatus; bundle: AssistantWalletBundle }>("/api/ai/wallets/reveal", payload),
+  });
+}
+
+export function useImportAssistantWallet() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { mnemonic: string; overwrite?: boolean }) =>
+      apiPost<{ wallet: AssistantWalletStatus; bundle: AssistantWalletBundle }>("/api/ai/wallets/import", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-status"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-trading-status"] });
+    },
   });
 }
 
