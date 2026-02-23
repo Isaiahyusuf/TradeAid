@@ -15,15 +15,16 @@ from app.utils.security import decrypt_api_key, encrypt_api_key
 CONFIRMATION_PHRASE = "I_APPROVE_ASSISTANT_TRADING"
 WALLET_REVEAL_PHRASE = "I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS"
 
-CHAIN_COIN_MAP: dict[str, Bip44Coins] = {
-    "solana": Bip44Coins.SOLANA,
-    "ethereum": Bip44Coins.ETHEREUM,
-    "bsc": Bip44Coins.BINANCE_SMART_CHAIN,
-    "base": Bip44Coins.ETHEREUM,
-    "arbitrum": Bip44Coins.ETHEREUM,
-    "avalanche": Bip44Coins.AVAX_C_CHAIN,
-    "polygon": Bip44Coins.POLYGON,
+CHAIN_COIN_NAME_CANDIDATES: dict[str, list[str]] = {
+    "solana": ["SOLANA"],
+    "ethereum": ["ETHEREUM"],
+    "bsc": ["BINANCE_SMART_CHAIN", "BSC", "BINANCECHAIN", "ETHEREUM"],
+    "base": ["ETHEREUM"],
+    "arbitrum": ["ETHEREUM"],
+    "avalanche": ["AVAX_C_CHAIN", "AVALANCHE_C_CHAIN", "AVALANCHE", "ETHEREUM"],
+    "polygon": ["POLYGON", "ETHEREUM"],
 }
+EVM_CHAINS = {"ethereum", "bsc", "base", "arbitrum", "avalanche", "polygon"}
 
 
 def _metadata(user: User) -> dict[str, Any]:
@@ -54,30 +55,68 @@ def _utcnow() -> datetime:
     return datetime.utcnow()
 
 
+def _resolve_coin(chain_name: str):
+    candidates = CHAIN_COIN_NAME_CANDIDATES.get(chain_name, [])
+    for candidate in candidates:
+        coin = getattr(Bip44Coins, candidate, None)
+        if coin is not None:
+            return coin
+    return None
+
+
+def _derive_single_wallet(seed_bytes: bytes, coin) -> dict[str, str]:
+    account = (
+        Bip44.FromSeed(seed_bytes, coin)
+        .Purpose()
+        .Coin()
+        .Account(0)
+        .Change(Bip44Changes.CHAIN_EXT)
+        .AddressIndex(0)
+    )
+
+    private_key_hex = account.PrivateKey().Raw().ToHex()
+    address = account.PublicKey().ToAddress()
+    return {
+        "address": address,
+        "private_key": private_key_hex,
+    }
+
+
 def _derive_wallets_from_mnemonic(mnemonic: str, chains: list[str]) -> dict[str, dict[str, str]]:
     seed_bytes = Bip39SeedGenerator(mnemonic).Generate()
     wallets: dict[str, dict[str, str]] = {}
+    failed_chains: set[str] = set()
+
+    eth_wallet: dict[str, str] | None = None
+    ethereum_coin = _resolve_coin("ethereum")
+    if ethereum_coin is not None:
+        try:
+            eth_wallet = _derive_single_wallet(seed_bytes, ethereum_coin)
+        except Exception:
+            eth_wallet = None
 
     for chain_name in chains:
-        coin = CHAIN_COIN_MAP.get(chain_name)
-        if not coin:
+        normalized_chain = str(chain_name or "").strip().lower()
+        if not normalized_chain:
             continue
 
-        account = (
-            Bip44.FromSeed(seed_bytes, coin)
-            .Purpose()
-            .Coin()
-            .Account(0)
-            .Change(Bip44Changes.CHAIN_EXT)
-            .AddressIndex(0)
-        )
+        if normalized_chain in EVM_CHAINS and eth_wallet is not None:
+            wallets[normalized_chain] = dict(eth_wallet)
+            continue
 
-        private_key_hex = account.PrivateKey().Raw().ToHex()
-        address = account.PublicKey().ToAddress()
-        wallets[chain_name] = {
-            "address": address,
-            "private_key": private_key_hex,
-        }
+        coin = _resolve_coin(normalized_chain)
+        if coin is None:
+            failed_chains.add(normalized_chain)
+            continue
+
+        try:
+            wallets[normalized_chain] = _derive_single_wallet(seed_bytes, coin)
+        except Exception:
+            failed_chains.add(normalized_chain)
+
+    if not wallets:
+        failed = ", ".join(sorted(failed_chains)) or "enabled chains"
+        raise HTTPException(status_code=500, detail=f"Unable to derive wallet addresses for configured chains ({failed}).")
 
     return wallets
 

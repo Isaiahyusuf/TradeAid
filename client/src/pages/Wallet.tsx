@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { KeyRound, Wallet as WalletIcon } from "lucide-react";
+import { useMemo, useState } from "react";
+import { CheckCircle2, Copy, KeyRound, Shield, Wallet as WalletIcon } from "lucide-react";
 
 import { Layout } from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,10 +41,9 @@ export default function WalletPage() {
   const trading = tradingStatusQuery.data?.trading;
   const wallet = walletStatusQuery.data?.wallet;
 
-  const [assistantMode, setAssistantMode] = useState<"paper" | "live">("paper");
-  const [walletsByChain, setWalletsByChain] = useState<Record<string, string>>({});
+  const [assistantMode, setAssistantMode] = useState<"paper" | "live">(trading?.mode === "live" ? "live" : "paper");
   const [confirmationText, setConfirmationText] = useState("I_APPROVE_ASSISTANT_TRADING");
-  const [tradeChain, setTradeChain] = useState("solana");
+  const [tradeChain, setTradeChain] = useState(enabledChains[0] || "solana");
   const [tradeContract, setTradeContract] = useState("");
   const [tradeSide, setTradeSide] = useState<"buy" | "sell">("buy");
   const [tradeNotional, setTradeNotional] = useState("25");
@@ -54,17 +53,31 @@ export default function WalletPage() {
   const [revealPhrase, setRevealPhrase] = useState("I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS");
   const [latestBundle, setLatestBundle] = useState<{ mnemonic?: string; addresses_by_chain: Record<string, string>; private_keys_by_chain?: Record<string, string>; warning: string; } | null>(null);
 
-  useEffect(() => {
+  const addressesByChain = useMemo(() => {
     const incoming = trading?.wallets_by_chain || wallet?.addresses_by_chain || {};
-    const next: Record<string, string> = {};
+    const normalized: Record<string, string> = {};
     for (const chainName of enabledChains) {
-      next[chainName] = String(incoming[chainName] || walletsByChain[chainName] || "");
+      normalized[chainName] = String(incoming[chainName] || "");
     }
-    setWalletsByChain(next);
-    if (trading?.mode === "paper" || trading?.mode === "live") {
-      setAssistantMode(trading.mode);
+    return normalized;
+  }, [enabledChains, trading?.wallets_by_chain, wallet?.addresses_by_chain]);
+
+  const activeChainsCount = Object.values(addressesByChain).filter(Boolean).length;
+
+  const shortAddress = (address?: string) => {
+    if (!address) return "Not generated";
+    if (address.length <= 14) return address;
+    return `${address.slice(0, 6)}...${address.slice(-6)}`;
+  };
+
+  const copyText = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast({ title: "Copied", description: "Address copied to clipboard." });
+    } catch {
+      toast({ title: "Copy failed", description: "Could not copy to clipboard.", variant: "destructive" });
     }
-  }, [trading?.wallets_by_chain, trading?.mode, wallet?.addresses_by_chain]);
+  };
 
   const handleCreateWallet = async (overwrite: boolean) => {
     try {
@@ -112,10 +125,20 @@ export default function WalletPage() {
   };
 
   const handleRequestAssistantConsent = async () => {
+    if (!wallet?.has_wallet) {
+      toast({ title: "Create wallet first", description: "Generate or import your wallet before enabling assistant trading.", variant: "destructive" });
+      return;
+    }
+
+    if (!wallet?.backup_confirmed) {
+      toast({ title: "Backup required", description: "Confirm your recovery phrase before enabling trading.", variant: "destructive" });
+      return;
+    }
+
     try {
       await requestConsent.mutateAsync({
         mode: assistantMode,
-        wallets_by_chain: walletsByChain,
+        wallets_by_chain: addressesByChain,
       });
       toast({ title: "Consent requested", description: "Approve consent to enable assistant trading." });
     } catch (error) {
@@ -178,31 +201,62 @@ export default function WalletPage() {
             <WalletIcon className="w-8 h-8 text-primary" />
             <span className="doctorstrange-font text-gradient">Wallet</span>
           </h1>
-          <p className="text-muted-foreground">Create or import wallet (Trust-wallet style), manage recovery phrase, and control trading permission.</p>
+          <p className="text-muted-foreground">One secure wallet, multi-chain addresses, and assistant permissions in one place.</p>
           <div className="flex items-center gap-2 flex-wrap">
-            <Badge variant="outline" className="solana-badge">12-word Recovery Phrase</Badge>
-            <Badge variant="outline">Private Keys per Chain</Badge>
+            <Badge variant="outline" className="solana-badge">Master Recovery Phrase</Badge>
+            <Badge variant="outline">Multi-chain Accounts</Badge>
             <Badge variant="outline">Encrypted Storage</Badge>
           </div>
         </div>
 
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card className="solana-card p-4">
+            <p className="text-xs text-muted-foreground">Wallet Status</p>
+            <p className="text-xl font-semibold mt-1">{wallet?.has_wallet ? "Active" : "Not Created"}</p>
+          </Card>
+          <Card className="solana-card p-4">
+            <p className="text-xs text-muted-foreground">Protected Backup</p>
+            <p className="text-xl font-semibold mt-1">{wallet?.backup_confirmed ? "Confirmed" : "Pending"}</p>
+          </Card>
+          <Card className="solana-card p-4">
+            <p className="text-xs text-muted-foreground">Enabled Chains</p>
+            <p className="text-xl font-semibold mt-1">{activeChainsCount}/{enabledChains.length}</p>
+          </Card>
+        </div>
+
         <Card className="solana-card">
           <CardHeader>
-            <CardTitle className="text-base">Wallet Vault</CardTitle>
+            <CardTitle className="text-base flex items-center gap-2"><WalletIcon className="w-4 h-4" />Multi-Chain Accounts</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {enabledChains.map((chainName) => {
+              const address = addressesByChain[chainName] || "";
+              return (
+                <div key={chainName} className="rounded-lg border border-border/60 p-3 bg-muted/20">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs uppercase text-muted-foreground">{chainName}</p>
+                    {address ? <CheckCircle2 className="w-4 h-4 text-green-400" /> : <Shield className="w-4 h-4 text-muted-foreground" />}
+                  </div>
+                  <p className="text-sm mt-1">{shortAddress(address)}</p>
+                  <div className="mt-2">
+                    <Button size="sm" variant="outline" disabled={!address} onClick={() => copyText(address)}>
+                      <Copy className="w-3.5 h-3.5 mr-1" /> Copy
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+
+        <Card className="solana-card">
+          <CardHeader>
+            <CardTitle className="text-base">Setup & Recovery</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
-              <span className="text-sm">Wallet</span>
-              <Badge variant={wallet?.has_wallet ? "default" : "outline"}>{wallet?.has_wallet ? "Created" : "Not Created"}</Badge>
-            </div>
-            <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
-              <span className="text-sm">Backup</span>
-              <Badge variant={wallet?.backup_confirmed ? "default" : "outline"}>{wallet?.backup_confirmed ? "Confirmed" : "Pending"}</Badge>
-            </div>
-
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => handleCreateWallet(false)} disabled={createWallet.isPending}>
-                {createWallet.isPending ? "Creating..." : "Create New Wallet"}
+                {createWallet.isPending ? "Creating..." : "Create Wallet"}
               </Button>
               <Button variant="outline" onClick={() => handleCreateWallet(true)} disabled={createWallet.isPending}>
                 Overwrite Wallet
@@ -216,7 +270,7 @@ export default function WalletPage() {
                 value={importMnemonic}
                 onChange={(e) => setImportMnemonic(e.target.value)}
                 className="min-h-[90px]"
-                placeholder="enter twelve word phrase"
+                placeholder="Enter your 12-word recovery phrase"
               />
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => handleImportWallet(false)} disabled={importWallet.isPending}>
@@ -232,7 +286,7 @@ export default function WalletPage() {
               <Label htmlFor="wallet-backup-phrase">Confirm phrase backup</Label>
               <Textarea
                 id="wallet-backup-phrase"
-                placeholder="Paste your 12-word phrase exactly"
+                placeholder="Paste your phrase exactly to confirm backup"
                 value={backupPhraseInput}
                 onChange={(e) => setBackupPhraseInput(e.target.value)}
                 className="min-h-[80px]"
@@ -285,7 +339,7 @@ export default function WalletPage() {
 
         <Card className="solana-card">
           <CardHeader>
-            <CardTitle className="text-base">Trading Permission & Execution</CardTitle>
+            <CardTitle className="text-base">Assistant Permission & Execution</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
@@ -304,15 +358,14 @@ export default function WalletPage() {
               </select>
             </div>
             <div className="space-y-3">
-              <Label>Wallets By Chain</Label>
+              <Label>Wallet Accounts</Label>
               {enabledChains.map((chainName) => (
                 <div key={chainName} className="space-y-1">
                   <Label htmlFor={`wallet-${chainName}`} className="text-xs uppercase text-muted-foreground">{chainName}</Label>
                   <Input
                     id={`wallet-${chainName}`}
-                    placeholder={`Wallet for ${chainName}`}
-                    value={walletsByChain[chainName] || ""}
-                    onChange={(e) => setWalletsByChain((prev) => ({ ...prev, [chainName]: e.target.value }))}
+                    value={addressesByChain[chainName] || ""}
+                    readOnly
                   />
                 </div>
               ))}
