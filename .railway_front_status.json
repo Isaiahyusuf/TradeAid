@@ -1,0 +1,192 @@
+﻿{
+  "id": "d56b44c6-e65c-4f04-bcfa-e7263a9c6a4c",
+  "name": "trade aid front end",
+  "deletedAt": null,
+  "workspace": {
+    "name": "isaiahyusuf's Projects"
+  },
+  "environments": {
+    "edges": [
+      {
+        "node": {
+          "id": "4d696ce4-fa22-407f-bd5f-208339fee759",
+          "name": "production",
+          "canAccess": true,
+          "deletedAt": null,
+          "serviceInstances": {
+            "edges": [
+              {
+                "node": {
+                  "id": "ed1a3ada-e7b8-40d1-b0db-7e0bbd9e4496",
+                  "serviceId": "cef99892-4c98-4871-917b-c499947e5b4b",
+                  "serviceName": "web",
+                  "environmentId": "4d696ce4-fa22-407f-bd5f-208339fee759",
+                  "latestDeployment": {
+                    "canRedeploy": true,
+                    "id": "20e9df2b-9dda-4659-b12a-db22ddd83e66",
+                    "meta": {
+                      "buildOnly": false,
+                      "configFile": null,
+                      "fileServiceManifest": {},
+                      "imageDigest": "sha256:1acbe36ae6406911a1653a8f4db67646bf19fd25961e743c57c7828c7a80e23a",
+                      "logsV2": true,
+                      "nixpacksProviders": [
+                        "node"
+                      ],
+                      "propertyFileMapping": {},
+                      "reason": "deploy",
+                      "rootDirectory": "/client",
+                      "runtime": "V2",
+                      "serviceManifest": {
+                        "build": {
+                          "buildCommand": "",
+                          "buildEnvironment": null,
+                          "builder": "NIXPACKS",
+                          "dockerfilePath": null,
+                          "nixpacksConfigPath": "client/nixpacks.toml",
+                          "nixpacksPlan": null,
+                          "watchPatterns": []
+                        },
+                        "deploy": {
+                          "cronSchedule": null,
+                          "drainingSeconds": null,
+                          "healthcheckPath": null,
+                          "healthcheckTimeout": null,
+                          "ipv6EgressEnabled": false,
+                          "limitOverride": {
+                            "containers": {
+                              "memoryBytes": 5000000000
+                            }
+                          },
+                          "multiRegionConfig": {
+                            "europe-west4-drams3a": {
+                              "numReplicas": 1
+                            }
+                          },
+                          "numReplicas": 1,
+                          "overlapSeconds": null,
+                          "preDeployCommand": null,
+                          "region": null,
+                          "registryCredentials": null,
+                          "requiredMountPath": null,
+                          "restartPolicyMaxRetries": 10,
+                          "restartPolicyType": "ON_FAILURE",
+                          "runtime": "V2",
+                          "sleepApplication": false,
+                          "startCommand": null,
+                          "useLegacyStacker": false
+                        }
+                      },
+                      "volumeMounts": []
+                    },
+                    "status": "SUCCESS",
+                    "createdAt": "2026-02-23T16:52:05.480Z",
+                    "deploymentStopped": false
+                  },
+                  "activeDeployments": [
+                    {
+                      "id": "20e9df2b-9dda-4659-b12a-db22ddd83e66",
+                      "status": "SUCCESS",
+                      "createdAt": "2026-02-23T16:52:05.480Z",
+                      "meta": {
+                        "buildOnly": false,
+                        "configFile": null,
+                        "fileServiceManifest": {},
+                        "imageDigest": "sha256:1acbe36ae6406911a1653a8f4db67646bf19fd25961e743c57c7828c7a80e23a",
+                        "logsV2": true,
+                        "nixpacksProviders": [
+                          "node"
+                        ],
+                        "propertyFileMapping": {},
+                        "reason": "deploy",
+                        "rootDirectory": "/client",
+                        "runtime": "V2",
+                        "serviceManifest": {
+                          "build": {
+                            "buildCommand": "",
+                            "buildEnvironment": null,
+                            "builder": "NIXPACKS",
+                            "dockerfilePath": null,
+                            "nixpacksConfigPath": "client/nixpacks.toml",
+                            "nixpacksPlan": null,
+                            "watchPatterns": []
+                          },
+                          "deploy": {
+                            "cronSchedule": null,
+                            "drainingSeconds": null,
+                            "healthcheckPath": null,
+                            "healthcheckTimeout": null,
+                            "ipv6EgressEnabled": false,
+                            "limitOverride": {
+                              "containers": {
+                                "memoryBytes": 5000000000
+                              }
+                            },
+                            "multiRegionConfig": {
+                              "europe-west4-drams3a": {
+                                "numReplicas": 1
+                              }
+                            },
+                            "numReplicas": 1,
+                            "overlapSeconds": null,
+                            "preDeployCommand": null,
+                            "region": null,
+                            "registryCredentials": null,
+                            "requiredMountPath": null,
+                            "restartPolicyMaxRetries": 10,
+                            "restartPolicyType": "ON_FAILURE",
+                            "runtime": "V2",
+                            "sleepApplication": false,
+                            "startCommand": null,
+                            "useLegacyStacker": false
+                          }
+                        },
+                        "volumeMounts": []
+                      }
+                    }
+                  ],
+                  "source": {
+                    "repo": "Isaiahyusuf/TradeAid",
+                    "image": null
+                  },
+                  "domains": {
+                    "serviceDomains": [
+                      {
+                        "id": "36358c53-5064-4a56-b6b3-25bc759b49f4",
+                        "domain": "frontendtradeaid-040a3.up.railway.app",
+                        "targetPort": null
+                      }
+                    ],
+                    "customDomains": [
+                      {
+                        "id": "05022008-3e04-4709-a6ce-8bfea803dce5",
+                        "domain": "tradeaid.ink",
+                        "targetPort": 8080
+                      }
+                    ]
+                  },
+                  "cronSchedule": null,
+                  "nextCronRunAt": null,
+                  "startCommand": null
+                }
+              }
+            ]
+          },
+          "volumeInstances": {
+            "edges": []
+          }
+        }
+      }
+    ]
+  },
+  "services": {
+    "edges": [
+      {
+        "node": {
+          "id": "cef99892-4c98-4871-917b-c499947e5b4b",
+          "name": "web"
+        }
+      }
+    ]
+  }
+}

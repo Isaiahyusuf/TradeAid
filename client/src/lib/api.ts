@@ -1,20 +1,82 @@
 const API_URL = import.meta.env.VITE_API_URL || "";
+const ACCESS_TOKEN_KEY = "trade_aid_token";
+const REFRESH_TOKEN_KEY = "trade_aid_refresh_token";
+
+let refreshInFlight: Promise<string | null> | null = null;
 
 function getToken(): string | null {
-  return localStorage.getItem("trade_aid_token");
+  return localStorage.getItem(ACCESS_TOKEN_KEY);
+}
+
+function getRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
 }
 
 export function setToken(token: string) {
-  localStorage.setItem("trade_aid_token", token);
+  localStorage.setItem(ACCESS_TOKEN_KEY, token);
+}
+
+export function setAuthTokens(accessToken: string, refreshToken?: string | null) {
+  setToken(accessToken);
+  if (refreshToken) {
+    localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+  }
 }
 
 export function clearToken() {
-  localStorage.removeItem("trade_aid_token");
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) {
+    clearToken();
+    return null;
+  }
+
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      let response: Response;
+      try {
+        response = await fetch(`${API_URL}/api/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+      } catch {
+        clearToken();
+        return null;
+      }
+
+      if (!response.ok) {
+        clearToken();
+        return null;
+      }
+
+      const data = await response.json();
+      const nextAccessToken = typeof data?.access_token === "string" ? data.access_token : null;
+      const nextRefreshToken = typeof data?.refresh_token === "string" ? data.refresh_token : null;
+
+      if (!nextAccessToken) {
+        clearToken();
+        return null;
+      }
+
+      setAuthTokens(nextAccessToken, nextRefreshToken);
+      return nextAccessToken;
+    })().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+
+  return refreshInFlight;
 }
 
 export async function apiFetch<T = any>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  shouldRetry: boolean = true,
 ): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
@@ -25,10 +87,22 @@ export async function apiFetch<T = any>(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers,
+    });
+  } catch {
+    throw new Error("Network error. Please try again.");
+  }
+
+  if ((res.status === 401 || res.status === 403) && shouldRetry && path !== "/api/auth/refresh") {
+    const refreshedToken = await refreshAccessToken();
+    if (refreshedToken) {
+      return apiFetch<T>(path, options, false);
+    }
+  }
 
   if (!res.ok) {
     let message = res.statusText || "Request failed";
@@ -46,7 +120,7 @@ export async function apiFetch<T = any>(
       }
     }
 
-    if ((res.status === 401 || res.status === 403) && path.includes("/api/auth/me")) {
+    if (res.status === 401 || res.status === 403) {
       clearToken();
     }
 

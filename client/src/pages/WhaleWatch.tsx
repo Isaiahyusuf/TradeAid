@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search, Wallet, TrendingUp, AlertTriangle, CheckCircle2, Loader2, Activity, Shield } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useChain } from "@/hooks/use-chain";
 
 function RiskBar({ value, label, invert }: { value: number; label: string; invert?: boolean }) {
   const pct = Math.min(value * 100, 100);
@@ -32,6 +33,7 @@ function RiskBar({ value, label, invert }: { value: number; label: string; inver
 }
 
 export default function WhaleWatch() {
+  const { chain, chainLabel } = useChain();
   const [walletAddress, setWalletAddress] = useState("");
   const [analysisType, setAnalysisType] = useState<"developer" | "trader">("trader");
   const { toast } = useToast();
@@ -50,7 +52,7 @@ export default function WhaleWatch() {
     }
     if (analysisType === "developer") {
       devMutation.mutate(
-        { wallet_address: walletAddress, chain: "solana" },
+        { wallet_address: walletAddress, chain },
         {
           onError: (error) => {
             toast({
@@ -63,7 +65,7 @@ export default function WhaleWatch() {
       );
     } else {
       traderMutation.mutate(
-        { wallet_address: walletAddress, chain: "solana" },
+        { wallet_address: walletAddress, chain },
         {
           onError: (error) => {
             toast({
@@ -79,21 +81,22 @@ export default function WhaleWatch() {
 
   return (
     <Layout>
-      <div className="space-y-8">
-        <div>
+      <div className="space-y-6">
+        <div className="space-y-1.5">
           <h1 className="text-3xl md:text-4xl font-bold" data-testid="text-page-title">Wallet Intelligence</h1>
-          <p className="text-muted-foreground">Analyze any wallet for developer history, trading performance, and risk signals.</p>
-          <div className="flex items-center gap-2 mt-2">
+          <p className="text-muted-foreground">Analyze {chainLabel} wallets for developer history, trading performance, and risk signals.</p>
+          <div className="flex items-center gap-2 mt-3 flex-wrap">
             <Badge variant="outline" className="solana-badge">Whale Signals</Badge>
+            <Badge variant="outline">{chainLabel}</Badge>
             <Badge variant="outline" className="border-accent/30 text-accent">Behavior Tracking</Badge>
           </div>
         </div>
 
-        <Card className="p-6 solana-card">
+        <Card className="p-6 solana-card bg-card/70 backdrop-blur-sm border-border/60">
           <div className="flex flex-col gap-4">
             <div className="flex flex-col md:flex-row gap-4">
               <div className="w-full md:w-40 h-10 px-3 border border-input rounded-md bg-muted/40 text-sm flex items-center" data-testid="select-chain">
-                Solana
+                  {chainLabel}
               </div>
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />

@@ -2,14 +2,25 @@ import asyncio
 import json
 from typing import Optional
 import websockets
-from app.config import get_settings
+from app.config import get_settings, get_enabled_chains
 from app.utils.logging_config import logger
 from app.utils.redis_client import publish_event
 
 settings = get_settings()
 
-CHAIN_WS_URLS = {
+ALL_CHAIN_WS_URLS = {
     "solana": settings.SOLANA_WS_URL,
+    "ethereum": settings.ETHEREUM_WS_URL,
+    "bsc": settings.BSC_WS_URL,
+    "base": settings.BASE_WS_URL,
+    "arbitrum": settings.ARBITRUM_WS_URL,
+    "avalanche": settings.AVALANCHE_WS_URL,
+    "polygon": settings.POLYGON_WS_URL,
+}
+
+CHAIN_WS_URLS = {
+    chain: ALL_CHAIN_WS_URLS.get(chain, "")
+    for chain in get_enabled_chains()
 }
 
 

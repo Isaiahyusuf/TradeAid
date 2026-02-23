@@ -16,7 +16,7 @@ import { Link } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 function ChainIcon({ chain }: { chain: string }) {
@@ -72,14 +72,14 @@ export default function Dashboard() {
   ];
 
   const selectedAgeTab = ageTabs.find((tab) => tab.key === tokenTab);
-  const { data: tokenData, isLoading: tokensLoading, error: tokensError } = useTokens("solana", {
+  const { data: tokenData, isLoading: tokensLoading, error: tokensError } = useTokens(undefined, {
     newOnly: true,
     maxAgeHours: 24,
     prioritizePumpFun: true,
     limit: 100,
   });
   const { data: ageWindowData, isLoading: ageWindowLoading } = useTokens(
-    "solana",
+    undefined,
     selectedAgeTab
       ? {
           newOnly: true,
@@ -163,17 +163,39 @@ export default function Dashboard() {
     qc.refetchQueries({ queryKey: ["safe-buy"] });
   };
 
+  const handleTiltMove = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    const rect = element.getBoundingClientRect();
+    const pointerX = (event.clientX - rect.left) / rect.width;
+    const pointerY = (event.clientY - rect.top) / rect.height;
+    const rotateY = (pointerX - 0.5) * 10;
+    const rotateX = (0.5 - pointerY) * 10;
+
+    element.style.setProperty("--card-rotate-x", `${rotateX.toFixed(2)}deg`);
+    element.style.setProperty("--card-rotate-y", `${rotateY.toFixed(2)}deg`);
+    element.style.setProperty("--card-glow-x", `${(pointerX * 100).toFixed(2)}%`);
+    element.style.setProperty("--card-glow-y", `${(pointerY * 100).toFixed(2)}%`);
+  };
+
+  const handleTiltLeave = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    element.style.setProperty("--card-rotate-x", "0deg");
+    element.style.setProperty("--card-rotate-y", "0deg");
+    element.style.setProperty("--card-glow-x", "50%");
+    element.style.setProperty("--card-glow-y", "50%");
+  };
+
   return (
     <Layout>
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
+          <div className="space-y-1.5">
             <h1 className="text-3xl font-bold tracking-tight" data-testid="text-welcome">
               Welcome back{user?.username ? `, ${user.username}` : ""}
             </h1>
             <p className="text-muted-foreground">Your trading command center</p>
-            <div className="flex items-center gap-2 mt-2">
-              <Badge variant="outline" className="solana-badge">Solana Pulse</Badge>
+            <div className="flex items-center gap-2 mt-3 flex-wrap">
+              <Badge variant="outline" className="solana-badge">All Chains Pulse</Badge>
               <Badge variant="outline" className="border-accent/30 text-accent">Live Intelligence</Badge>
             </div>
           </div>
@@ -202,7 +224,7 @@ export default function Dashboard() {
         )}
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="p-4 solana-card animate-fade-in-up">
+          <Card className="p-4 solana-card wow-tilt-card animate-fade-in-up bg-card/70 backdrop-blur-sm border-border/60" onMouseMove={handleTiltMove} onMouseLeave={handleTiltLeave}>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
                 <ShieldCheck className="w-5 h-5 text-green-500" />
@@ -215,7 +237,7 @@ export default function Dashboard() {
               </div>
             </div>
           </Card>
-          <Card className="p-4 solana-card animate-fade-in-up">
+          <Card className="p-4 solana-card wow-tilt-card animate-fade-in-up bg-card/70 backdrop-blur-sm border-border/60" onMouseMove={handleTiltMove} onMouseLeave={handleTiltLeave}>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
                 <Eye className="w-5 h-5 text-blue-500" />
@@ -228,7 +250,7 @@ export default function Dashboard() {
               </div>
             </div>
           </Card>
-          <Card className="p-4 solana-card animate-fade-in-up">
+          <Card className="p-4 solana-card wow-tilt-card animate-fade-in-up bg-card/70 backdrop-blur-sm border-border/60" onMouseMove={handleTiltMove} onMouseLeave={handleTiltLeave}>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
                 <Bell className="w-5 h-5 text-purple-500" />
@@ -241,7 +263,7 @@ export default function Dashboard() {
               </div>
             </div>
           </Card>
-          <Card className="p-4 solana-card animate-fade-in-up">
+          <Card className="p-4 solana-card wow-tilt-card animate-fade-in-up bg-card/70 backdrop-blur-sm border-border/60" onMouseMove={handleTiltMove} onMouseLeave={handleTiltLeave}>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
                 <Lock className="w-5 h-5 text-green-500" />
@@ -256,7 +278,7 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        <Card className="solana-card p-4 border-primary/20 animate-soft-pulse">
+        <Card className="solana-card wow-tilt-card p-4 border-primary/20 animate-soft-pulse" onMouseMove={handleTiltMove} onMouseLeave={handleTiltLeave}>
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
               <h3 className="font-semibold flex items-center gap-2">
@@ -280,14 +302,14 @@ export default function Dashboard() {
         </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Card className="p-4 solana-card">
+          <Card className="p-4 solana-card wow-tilt-card" onMouseMove={handleTiltMove} onMouseLeave={handleTiltLeave}>
             <p className="text-sm text-muted-foreground">Setup Win Rate (Est.)</p>
             <p className="text-2xl font-bold">{intelligenceMetrics.setupWinRate.toFixed(0)}%</p>
             <p className="text-xs text-muted-foreground mt-1">
               Based on confidence, rug-risk, and short-term momentum across scored tokens.
             </p>
           </Card>
-          <Card className="p-4 solana-card">
+          <Card className="p-4 solana-card wow-tilt-card" onMouseMove={handleTiltMove} onMouseLeave={handleTiltLeave}>
             <p className="text-sm text-muted-foreground">Risk Distribution</p>
             <div className="flex items-center gap-2 mt-2 flex-wrap">
               <Badge variant="outline" className="text-green-400 border-green-400/30">Low {intelligenceMetrics.lowRisk}</Badge>
@@ -296,7 +318,7 @@ export default function Dashboard() {
             </div>
             <p className="text-xs text-muted-foreground mt-2">Scored Universe: {intelligenceMetrics.scoredCount}</p>
           </Card>
-          <Card className="p-4 solana-card">
+          <Card className="p-4 solana-card wow-tilt-card" onMouseMove={handleTiltMove} onMouseLeave={handleTiltLeave}>
             <p className="text-sm text-muted-foreground">Best Time Window</p>
             <p className="text-2xl font-bold">{intelligenceMetrics.bestWindow.label}</p>
             <p className="text-xs text-muted-foreground mt-1">

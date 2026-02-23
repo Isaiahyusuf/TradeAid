@@ -28,6 +28,7 @@ APP_NAME=Trade Aid
 APP_VERSION=1.0.0
 DEBUG=false
 LOG_LEVEL=INFO
+ENABLED_CHAINS=solana,ethereum,bsc,base,arbitrum,avalanche,polygon
 ```
 
 ### **Optional - Celery Background Tasks**
@@ -56,6 +57,12 @@ BASE_RPC_URL=https://mainnet.base.org
 POLYGON_RPC_URL=https://polygon-rpc.com/
 ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc
 AVALANCHE_RPC_URL=https://api.avax.network/ext/bc/C/rpc
+```
+
+### **Required for Multi-Chain Token Feed**
+```bash
+# Controls which chains are scanned and returned by /api/tokens and dashboard feeds
+ENABLED_CHAINS=solana,ethereum,bsc,base,arbitrum,avalanche,polygon
 ```
 
 ### **Optional - Notifications**
@@ -197,7 +204,7 @@ PORT
 # You must set:
 NODE_ENV=production
 SESSION_SECRET=<random-64-chars>
-VITE_API_URL=https://your-python-backend-url.railway.app
+=https://your-python-backend-url.railway.app
 ```
 
 ---

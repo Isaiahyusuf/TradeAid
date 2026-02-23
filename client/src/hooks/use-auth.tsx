@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, createContext, useContext } from "react";
-import { apiGet, apiPost, apiPatch, setToken, clearToken } from "@/lib/api";
+import { apiGet, apiPost, apiPatch, setAuthTokens, clearToken } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 
 export type User = {
@@ -65,13 +65,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   }, [checkAuth]);
 
   const login = async (username: string, password: string, accessCode?: string, totp_code?: string) => {
-    const data = await apiPost<{ access_token: string; token_type: string }>("/api/auth/login", {
+    const data = await apiPost<{ access_token: string; refresh_token?: string; token_type: string }>("/api/auth/login", {
       username,
       password,
       access_code: accessCode,
       totp_code,
     });
-    setToken(data.access_token);
+    setAuthTokens(data.access_token, data.refresh_token);
     setTokenState(true);
     const me = await apiGet<User>("/api/auth/me");
     setUser(me);
@@ -79,8 +79,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     return data;
   };
 
-  const consumeOAuthTokens = async (accessToken: string, _refreshToken?: string) => {
-    setToken(accessToken);
+  const consumeOAuthTokens = async (accessToken: string, refreshToken?: string) => {
+    setAuthTokens(accessToken, refreshToken);
     setTokenState(true);
     const me = await apiGet<User>("/api/auth/me");
     setUser(me);

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta
 from statistics import median
 from typing import Any
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +14,155 @@ from app.utils.launch_identity import build_launch_fingerprint
 
 
 class DevBehaviorService:
+    @staticmethod
+    def _normalize_url(value: str) -> str | None:
+        if not value:
+            return None
+        raw = str(value).strip()
+        if not raw:
+            return None
+
+        lowered = raw.lower()
+        if lowered.startswith("@"):
+            return f"https://x.com/{raw[1:]}"
+        if lowered.startswith("http://") or lowered.startswith("https://"):
+            return raw
+        if lowered.startswith("www."):
+            return f"https://{raw}"
+        if "." in lowered and " " not in lowered:
+            return f"https://{raw}"
+        return None
+
+    @staticmethod
+    def _extract_project_links(extra: dict[str, Any]) -> dict[str, Any]:
+        websites_raw = extra.get("websites") or []
+        socials_raw = extra.get("socials") or []
+
+        websites: list[str] = []
+        if isinstance(websites_raw, list):
+            for item in websites_raw:
+                if isinstance(item, str):
+                    normalized = DevBehaviorService._normalize_url(item)
+                    if normalized:
+                        websites.append(normalized)
+
+        socials: list[str] = []
+        if isinstance(socials_raw, list):
+            for item in socials_raw:
+                if isinstance(item, str):
+                    normalized = DevBehaviorService._normalize_url(item)
+                    if normalized:
+                        socials.append(normalized)
+
+        x_link = None
+        telegram_link = None
+        discord_link = None
+        for link in socials + websites:
+            lowered = link.lower()
+            if not x_link and ("x.com/" in lowered or "twitter.com/" in lowered):
+                x_link = link
+            elif not telegram_link and ("t.me/" in lowered or "telegram.me/" in lowered or "telegram.org/" in lowered):
+                telegram_link = link
+            elif not discord_link and ("discord.gg/" in lowered or "discord.com/" in lowered):
+                discord_link = link
+
+        dedup_websites = []
+        seen = set()
+        for url in websites + socials:
+            lowered = url.lower()
+            if any(domain in lowered for domain in ["x.com/", "twitter.com/", "t.me/", "telegram.me/", "discord.gg/", "discord.com/"]):
+                continue
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            dedup_websites.append(url)
+
+        return {
+            "x": x_link,
+            "telegram": telegram_link,
+            "discord": discord_link,
+            "websites": dedup_websites[:5],
+        }
+
+    @staticmethod
+    async def _check_url_status(client: httpx.AsyncClient, url: str | None) -> dict[str, Any]:
+        if not url:
+            return {"available": False, "reachable": False, "status_code": None, "error": None}
+        try:
+            response = await client.get(url)
+            return {
+                "available": True,
+                "reachable": response.status_code < 400,
+                "status_code": response.status_code,
+                "error": None,
+            }
+        except Exception as exc:
+            return {
+                "available": True,
+                "reachable": False,
+                "status_code": None,
+                "error": str(exc),
+            }
+
+    @staticmethod
+    def _estimate_community_activity(extra: dict[str, Any], link_count: int) -> tuple[float, str, dict[str, float]]:
+        volume_1h = float(extra.get("volume_1h", 0) or 0)
+        buys_5m = float(extra.get("buys_5m", 0) or 0)
+        sells_5m = float(extra.get("sells_5m", 0) or 0)
+        buys_1h = float(extra.get("buys_1h", 0) or 0)
+        sells_1h = float(extra.get("sells_1h", 0) or 0)
+        price_change_1h = float(extra.get("price_change_1h", 0) or 0)
+
+        trades_5m = buys_5m + sells_5m
+        trades_1h = buys_1h + sells_1h
+
+        score = 0.0
+        if volume_1h >= 10000:
+            score += 35
+        elif volume_1h >= 3000:
+            score += 20
+        elif volume_1h > 0:
+            score += 8
+
+        if trades_5m >= 15:
+            score += 30
+        elif trades_5m >= 5:
+            score += 18
+        elif trades_5m > 0:
+            score += 8
+
+        if trades_1h >= 100:
+            score += 20
+        elif trades_1h >= 30:
+            score += 12
+        elif trades_1h > 0:
+            score += 5
+
+        if abs(price_change_1h) >= 8:
+            score += 15
+        elif abs(price_change_1h) >= 3:
+            score += 8
+
+        if link_count >= 2:
+            score += 10
+        elif link_count == 1:
+            score += 5
+
+        score = max(0.0, min(100.0, score))
+        if score >= 65:
+            status = "active"
+        elif score >= 40:
+            status = "moderate"
+        else:
+            status = "low"
+
+        return score, status, {
+            "volume_1h": volume_1h,
+            "trades_5m": trades_5m,
+            "trades_1h": trades_1h,
+            "price_change_1h": price_change_1h,
+        }
+
     async def get_dev_token_intel(self, db: AsyncSession, contract_address: str, chain: str = "solana") -> dict[str, Any] | None:
         token_result = await db.execute(
             select(Token).where(Token.chain == chain, Token.contract_address == contract_address)
@@ -99,6 +250,53 @@ class DevBehaviorService:
         rug_ratio = (rug_count / max(launch_count, 1)) * 100
         rug_dev_flag = rug_count >= 2 and rug_ratio >= 25
 
+        links = self._extract_project_links(extra)
+        social_link_count = sum(1 for value in [links["x"], links["telegram"], links["discord"]] if value)
+        activity_score, overall_status, activity_signals = self._estimate_community_activity(extra, social_link_count)
+
+        async with httpx.AsyncClient(timeout=4.5, follow_redirects=True, headers={"User-Agent": "TradeAid/1.0 community-checker"}) as client:
+            x_status, telegram_status, discord_status = await asyncio.gather(
+                self._check_url_status(client, links["x"]),
+                self._check_url_status(client, links["telegram"]),
+                self._check_url_status(client, links["discord"]),
+            )
+
+        def make_platform(platform: str, url: str | None, status: dict[str, Any]) -> dict[str, Any]:
+            available = bool(url)
+            reachable = bool(status.get("reachable")) if available else False
+            is_active = available and reachable and activity_score >= 45
+            state = "unavailable"
+            if available and not reachable:
+                state = "unreachable"
+            elif is_active:
+                state = "active"
+            elif available:
+                state = "inactive"
+            return {
+                "platform": platform,
+                "url": url,
+                "available": available,
+                "reachable": reachable,
+                "is_active": is_active,
+                "status": state,
+                "status_code": status.get("status_code"),
+            }
+
+        platform_checks = [
+            make_platform("x", links["x"], x_status),
+            make_platform("telegram", links["telegram"], telegram_status),
+            make_platform("discord", links["discord"], discord_status),
+        ]
+        active_platforms = sum(1 for item in platform_checks if item["is_active"])
+        available_platforms = sum(1 for item in platform_checks if item["available"])
+
+        community_summary = (
+            f"{active_platforms}/{available_platforms} active social channels detected. "
+            f"Community activity signal: {overall_status.upper()} ({activity_score:.0f}/100)."
+            if available_platforms > 0
+            else "No official X, Telegram, or Discord links found for this project."
+        )
+
         past_launches = [
             {
                 "contract_address": row.contract_address,
@@ -137,6 +335,23 @@ class DevBehaviorService:
                 "avg_jeet_score": round(avg_jeet_score, 2),
                 "high_jeet_ratio_pct": round(high_jeet_ratio * 100, 2),
                 "too_many_jeets": high_jeet_ratio >= 0.35,
+            },
+            "project_info": {
+                "social_links": {
+                    "x": links["x"],
+                    "telegram": links["telegram"],
+                    "discord": links["discord"],
+                },
+                "websites": links["websites"],
+                "community_checker": {
+                    "activity_score": round(activity_score, 2),
+                    "overall_status": overall_status,
+                    "active_platforms": active_platforms,
+                    "available_platforms": available_platforms,
+                    "platforms": platform_checks,
+                    "signals": activity_signals,
+                    "summary": community_summary,
+                },
             },
             "past_launches": past_launches,
             "updated_at": datetime.utcnow().isoformat(),

@@ -5,9 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Shield, AlertTriangle, CheckCircle2, Search, TrendingUp, Activity, Loader2 } from "lucide-react";
+import { Shield, AlertTriangle, CheckCircle2, Search, TrendingUp, Activity, Loader2, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useChain, SUPPORTED_CHAINS, type AppChain } from "@/hooks/use-chain";
 
 function ScoreGauge({ value, label }: { value: number; label: string }) {
   const getColor = () => {
@@ -30,18 +31,24 @@ function ScoreGauge({ value, label }: { value: number; label: string }) {
 }
 
 export default function RugShield() {
+  const { chain, chainLabel, setChain } = useChain();
   const [address, setAddress] = useState("");
   const [scannedAddress, setScannedAddress] = useState("");
   const didAutoScan = useRef(false);
   const { mutate: scanToken, isPending, data: result } = useScanToken();
-  const { data: devIntel } = useDevIntel(scannedAddress || undefined, "solana");
+  const { data: devIntel } = useDevIntel(scannedAddress || undefined, chain);
   const { toast } = useToast();
 
   useEffect(() => {
     if (didAutoScan.current) return;
     const params = new URLSearchParams(window.location.search);
     const prefilledAddress = String(params.get("address") || "").trim();
+    const prefilledChain = String(params.get("chain") || "").trim().toLowerCase();
     const auto = params.get("auto") === "1";
+
+    if ((SUPPORTED_CHAINS as readonly string[]).includes(prefilledChain)) {
+      setChain(prefilledChain as AppChain);
+    }
 
     if (!prefilledAddress) {
       didAutoScan.current = true;
@@ -52,7 +59,7 @@ export default function RugShield() {
     if (auto) {
       setScannedAddress(prefilledAddress);
       scanToken(
-        { address: prefilledAddress, chain: "solana" },
+        { address: prefilledAddress, chain: ((SUPPORTED_CHAINS as readonly string[]).includes(prefilledChain) ? prefilledChain : chain) },
         {
           onError: (error) => {
             toast({
@@ -66,7 +73,7 @@ export default function RugShield() {
     }
 
     didAutoScan.current = true;
-  }, [scanToken, toast]);
+  }, [chain, scanToken, setChain, toast]);
 
   const handleScan = () => {
     if (!address) {
@@ -75,7 +82,7 @@ export default function RugShield() {
     }
     setScannedAddress(address.trim());
     scanToken(
-      { address, chain: "solana" },
+      { address, chain },
       {
         onError: (error) => {
           toast({
@@ -98,22 +105,29 @@ export default function RugShield() {
     return "text-red-500 border-red-500";
   };
 
+  const getCommunityStatusClasses = (status?: string) => {
+    if (status === "active") return "bg-green-500/20 text-green-400";
+    if (status === "moderate") return "bg-yellow-500/20 text-yellow-400";
+    return "bg-red-500/20 text-red-400";
+  };
+
   return (
     <Layout>
-      <div className="space-y-8">
-        <div className="flex flex-col gap-2">
+      <div className="space-y-6">
+        <div className="flex flex-col gap-1.5">
           <h1 className="text-3xl md:text-4xl font-bold" data-testid="text-page-title">Token Risk Scanner</h1>
-          <p className="text-muted-foreground">Score any token for rug risk, liquidity stability, and trade confidence.</p>
-          <div className="flex items-center gap-2">
+          <p className="text-muted-foreground">Score any {chainLabel} token for rug risk, liquidity stability, and trade confidence.</p>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
             <Badge variant="outline" className="solana-badge">Risk Matrix</Badge>
+            <Badge variant="outline">{chainLabel}</Badge>
             <Badge variant="outline" className="border-accent/30 text-accent">Safety Focused</Badge>
           </div>
         </div>
 
-        <Card className="p-6 solana-card">
+        <Card className="p-6 solana-card bg-card/70 backdrop-blur-sm border-border/60">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="w-full md:w-40 h-10 px-3 border border-input rounded-md bg-muted/40 text-sm flex items-center" data-testid="select-chain">
-              Solana
+              {chainLabel}
             </div>
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -253,6 +267,83 @@ export default function RugShield() {
                       <p className="text-sm">High-jeet ratio: {devIntel.jeet_checker.high_jeet_ratio_pct.toFixed(1)}%</p>
                     </div>
                   </div>
+
+                  {devIntel.project_info && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <p className="text-xs text-muted-foreground">Project Info</p>
+                        {devIntel.project_info.community_checker && (
+                          <Badge className={cn(getCommunityStatusClasses(devIntel.project_info.community_checker.overall_status))}>
+                            Community {devIntel.project_info.community_checker.overall_status.toUpperCase()} · {devIntel.project_info.community_checker.activity_score.toFixed(0)}/100
+                          </Badge>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                        <div className="p-3 rounded-lg bg-muted/40 space-y-2">
+                          <p className="text-xs text-muted-foreground">Social Links</p>
+                          <div className="flex flex-wrap gap-2">
+                            {devIntel.project_info.social_links?.x && (
+                              <a href={devIntel.project_info.social_links.x} target="_blank" rel="noreferrer" className="inline-flex">
+                                <Badge variant="outline" className="hover:border-primary/50">X <ExternalLink className="w-3 h-3 ml-1" /></Badge>
+                              </a>
+                            )}
+                            {devIntel.project_info.social_links?.telegram && (
+                              <a href={devIntel.project_info.social_links.telegram} target="_blank" rel="noreferrer" className="inline-flex">
+                                <Badge variant="outline" className="hover:border-primary/50">Telegram <ExternalLink className="w-3 h-3 ml-1" /></Badge>
+                              </a>
+                            )}
+                            {devIntel.project_info.social_links?.discord && (
+                              <a href={devIntel.project_info.social_links.discord} target="_blank" rel="noreferrer" className="inline-flex">
+                                <Badge variant="outline" className="hover:border-primary/50">Discord <ExternalLink className="w-3 h-3 ml-1" /></Badge>
+                              </a>
+                            )}
+                            {(!devIntel.project_info.social_links?.x && !devIntel.project_info.social_links?.telegram && !devIntel.project_info.social_links?.discord) && (
+                              <p className="text-xs text-muted-foreground">No X, Telegram, or Discord links detected.</p>
+                            )}
+                          </div>
+
+                          {devIntel.project_info.websites && devIntel.project_info.websites.length > 0 && (
+                            <div className="pt-1">
+                              <p className="text-xs text-muted-foreground mb-1">Websites</p>
+                              <div className="flex flex-wrap gap-2">
+                                {devIntel.project_info.websites.slice(0, 3).map((url) => (
+                                  <a key={url} href={url} target="_blank" rel="noreferrer" className="inline-flex">
+                                    <Badge variant="outline" className="hover:border-primary/50">Website <ExternalLink className="w-3 h-3 ml-1" /></Badge>
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {devIntel.project_info.community_checker && (
+                          <div className="p-3 rounded-lg bg-muted/40 space-y-2">
+                            <p className="text-xs text-muted-foreground">Community Checker</p>
+                            <p className="text-sm">{devIntel.project_info.community_checker.summary}</p>
+                            <div className="flex flex-wrap gap-2">
+                              {devIntel.project_info.community_checker.platforms.map((platform) => (
+                                <Badge
+                                  key={platform.platform}
+                                  variant="outline"
+                                  className={cn(
+                                    platform.is_active && "border-green-500/40 text-green-400",
+                                    !platform.available && "border-border/40 text-muted-foreground",
+                                    platform.available && !platform.is_active && "border-yellow-500/40 text-yellow-400"
+                                  )}
+                                >
+                                  {platform.platform.toUpperCase()} · {platform.status}
+                                </Badge>
+                              ))}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              1h Volume ${devIntel.project_info.community_checker.signals.volume_1h.toLocaleString()} · Trades 5m {devIntel.project_info.community_checker.signals.trades_5m.toFixed(0)} · Trades 1h {devIntel.project_info.community_checker.signals.trades_1h.toFixed(0)}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <p className="text-xs text-muted-foreground mb-2">Past linked launches</p>

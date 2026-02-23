@@ -1,0 +1,224 @@
+﻿{
+  "id": "2a91928e-16cb-4006-9409-4c40ff9d3ba8",
+  "name": "trade aid backend",
+  "deletedAt": null,
+  "workspace": {
+    "name": "isaiahyusuf's Projects"
+  },
+  "environments": {
+    "edges": [
+      {
+        "node": {
+          "id": "d22b2c83-ac57-47eb-9bfd-354ff18b1e0b",
+          "name": "production",
+          "canAccess": true,
+          "deletedAt": null,
+          "serviceInstances": {
+            "edges": [
+              {
+                "node": {
+                  "id": "93c39b15-8c0d-422a-b1fd-28d75cb3ce8a",
+                  "serviceId": "117a5d3b-cc09-41ca-8e83-dacb735118b5",
+                  "serviceName": "web",
+                  "environmentId": "d22b2c83-ac57-47eb-9bfd-354ff18b1e0b",
+                  "latestDeployment": {
+                    "canRedeploy": true,
+                    "id": "1953726a-cd2b-4233-97f5-bc6f062235bc",
+                    "meta": {
+                      "buildOnly": false,
+                      "configFile": "railway.json",
+                      "fileServiceManifest": {
+                        "build": {
+                          "builder": "DOCKERFILE",
+                          "dockerfilePath": "trade_aid/Dockerfile"
+                        },
+                        "deploy": {
+                          "healthcheckPath": "/health",
+                          "healthcheckTimeout": 300,
+                          "numReplicas": 1,
+                          "restartPolicyMaxRetries": 10,
+                          "restartPolicyType": "ON_FAILURE",
+                          "sleepApplication": false
+                        }
+                      },
+                      "imageDigest": "sha256:3fc20f2cb4d70d35a8c9e50eafa992c3edfd5c8a500feefed8c70af38979ac73",
+                      "logsV2": true,
+                      "nixpacksProviders": [
+                        "node"
+                      ],
+                      "propertyFileMapping": {
+                        "build.builder": "$.build.builder",
+                        "build.context": "$.build.context",
+                        "build.dockerfilePath": "$.build.dockerfilePath",
+                        "deploy.healthcheckPath": "$.deploy.healthcheckPath",
+                        "deploy.healthcheckTimeout": "$.deploy.healthcheckTimeout",
+                        "deploy.numReplicas": "$.deploy.numReplicas",
+                        "deploy.restartPolicyMaxRetries": "$.deploy.restartPolicyMaxRetries",
+                        "deploy.restartPolicyType": "$.deploy.restartPolicyType",
+                        "deploy.sleepApplication": "$.deploy.sleepApplication"
+                      },
+                      "reason": "deploy",
+                      "rootDirectory": ".",
+                      "runtime": "V2",
+                      "serviceManifest": {
+                        "build": {
+                          "buildCommand": null,
+                          "buildEnvironment": "V3",
+                          "builder": "DOCKERFILE",
+                          "dockerfilePath": "trade_aid/Dockerfile",
+                          "nixpacksConfigPath": null,
+                          "nixpacksPlan": null,
+                          "watchPatterns": []
+                        },
+                        "deploy": {
+                          "cronSchedule": null,
+                          "drainingSeconds": null,
+                          "healthcheckPath": "/health",
+                          "healthcheckTimeout": 300,
+                          "ipv6EgressEnabled": false,
+                          "limitOverride": null,
+                          "multiRegionConfig": {
+                            "europe-west4-drams3a": {
+                              "numReplicas": 1
+                            }
+                          },
+                          "numReplicas": 1,
+                          "overlapSeconds": null,
+                          "preDeployCommand": null,
+                          "region": null,
+                          "registryCredentials": null,
+                          "requiredMountPath": null,
+                          "restartPolicyMaxRetries": 10,
+                          "restartPolicyType": "ON_FAILURE",
+                          "runtime": "V2",
+                          "sleepApplication": false,
+                          "startCommand": null,
+                          "useLegacyStacker": false
+                        }
+                      },
+                      "volumeMounts": []
+                    },
+                    "status": "SUCCESS",
+                    "createdAt": "2026-02-23T16:06:01.453Z",
+                    "deploymentStopped": false
+                  },
+                  "activeDeployments": [
+                    {
+                      "id": "1953726a-cd2b-4233-97f5-bc6f062235bc",
+                      "status": "SUCCESS",
+                      "createdAt": "2026-02-23T16:06:01.453Z",
+                      "meta": {
+                        "buildOnly": false,
+                        "configFile": "railway.json",
+                        "fileServiceManifest": {
+                          "build": {
+                            "builder": "DOCKERFILE",
+                            "dockerfilePath": "trade_aid/Dockerfile"
+                          },
+                          "deploy": {
+                            "healthcheckPath": "/health",
+                            "healthcheckTimeout": 300,
+                            "numReplicas": 1,
+                            "restartPolicyMaxRetries": 10,
+                            "restartPolicyType": "ON_FAILURE",
+                            "sleepApplication": false
+                          }
+                        },
+                        "imageDigest": "sha256:3fc20f2cb4d70d35a8c9e50eafa992c3edfd5c8a500feefed8c70af38979ac73",
+                        "logsV2": true,
+                        "nixpacksProviders": [
+                          "node"
+                        ],
+                        "propertyFileMapping": {
+                          "build.builder": "$.build.builder",
+                          "build.context": "$.build.context",
+                          "build.dockerfilePath": "$.build.dockerfilePath",
+                          "deploy.healthcheckPath": "$.deploy.healthcheckPath",
+                          "deploy.healthcheckTimeout": "$.deploy.healthcheckTimeout",
+                          "deploy.numReplicas": "$.deploy.numReplicas",
+                          "deploy.restartPolicyMaxRetries": "$.deploy.restartPolicyMaxRetries",
+                          "deploy.restartPolicyType": "$.deploy.restartPolicyType",
+                          "deploy.sleepApplication": "$.deploy.sleepApplication"
+                        },
+                        "reason": "deploy",
+                        "rootDirectory": ".",
+                        "runtime": "V2",
+                        "serviceManifest": {
+                          "build": {
+                            "buildCommand": null,
+                            "buildEnvironment": "V3",
+                            "builder": "DOCKERFILE",
+                            "dockerfilePath": "trade_aid/Dockerfile",
+                            "nixpacksConfigPath": null,
+                            "nixpacksPlan": null,
+                            "watchPatterns": []
+                          },
+                          "deploy": {
+                            "cronSchedule": null,
+                            "drainingSeconds": null,
+                            "healthcheckPath": "/health",
+                            "healthcheckTimeout": 300,
+                            "ipv6EgressEnabled": false,
+                            "limitOverride": null,
+                            "multiRegionConfig": {
+                              "europe-west4-drams3a": {
+                                "numReplicas": 1
+                              }
+                            },
+                            "numReplicas": 1,
+                            "overlapSeconds": null,
+                            "preDeployCommand": null,
+                            "region": null,
+                            "registryCredentials": null,
+                            "requiredMountPath": null,
+                            "restartPolicyMaxRetries": 10,
+                            "restartPolicyType": "ON_FAILURE",
+                            "runtime": "V2",
+                            "sleepApplication": false,
+                            "startCommand": null,
+                            "useLegacyStacker": false
+                          }
+                        },
+                        "volumeMounts": []
+                      }
+                    }
+                  ],
+                  "source": {
+                    "repo": "Isaiahyusuf/TradeAid",
+                    "image": null
+                  },
+                  "domains": {
+                    "serviceDomains": [
+                      {
+                        "id": "17bc40c0-a78b-4eaf-b528-22b75440ea79",
+                        "domain": "tradeaid-4e908.up.railway.app",
+                        "targetPort": 8000
+                      }
+                    ],
+                    "customDomains": []
+                  },
+                  "cronSchedule": null,
+                  "nextCronRunAt": null,
+                  "startCommand": null
+                }
+              }
+            ]
+          },
+          "volumeInstances": {
+            "edges": []
+          }
+        }
+      }
+    ]
+  },
+  "services": {
+    "edges": [
+      {
+        "node": {
+          "id": "117a5d3b-cc09-41ca-8e83-dacb735118b5",
+          "name": "web"
+        }
+      }
+    ]
+  }
+}

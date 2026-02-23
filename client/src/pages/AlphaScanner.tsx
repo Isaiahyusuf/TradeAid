@@ -23,6 +23,7 @@ import { AIScoreHistoryChart } from "@/components/scanner/AIScoreHistoryChart";
 import { MetricLabel } from "@/components/scanner/MetricLabel";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { useChain } from "@/hooks/use-chain";
 
 function formatNumber(n: number) {
   if (n >= 1000000) return `$${(n / 1000000).toFixed(2)}M`;
@@ -61,6 +62,10 @@ function buildAiInsightFallback(token: TokenItem | null) {
 }
 
 export default function AlphaScanner() {
+  const { chain, chainLabel } = useChain();
+  const chainParam = chain === "all" ? undefined : chain;
+  const chainDisplay = chain === "all" ? "All Chains" : chainLabel;
+  const routingChain = chain === "all" ? "solana" : chain;
   const [searchQuery, setSearchQuery] = useState("");
   const [riskFilter, setRiskFilter] = useState("all");
   const [sortBy, setSortBy] = useState("ai");
@@ -89,7 +94,7 @@ export default function AlphaScanner() {
     { key: "24h", label: "24h", minAgeMinutes: 720, maxAgeMinutes: 1440 },
   ];
 
-  const { data: tokenData, isLoading, refetch } = useTokens("solana", {
+  const { data: tokenData, isLoading, refetch } = useTokens(chainParam, {
     newOnly: true,
     maxAgeHours: 24,
     prioritizePumpFun: true,
@@ -101,7 +106,7 @@ export default function AlphaScanner() {
     isLoading: isAgeWindowLoading,
     refetch: refetchAgeWindow,
   } = useTokens(
-    "solana",
+    chainParam,
     selectedAgeTab
       ? {
           newOnly: true,
@@ -111,7 +116,7 @@ export default function AlphaScanner() {
         }
       : undefined
   );
-  const { data: liveAlerts } = useAlerts({ chain: "solana" });
+  const { data: liveAlerts } = useAlerts({ chain: chainParam });
 
   const allTokens = tokenData?.tokens || [];
   const ageWindowTokens = ageWindowData?.tokens || [];
@@ -157,13 +162,13 @@ export default function AlphaScanner() {
   const aiInsight = aiInsightQuery.data?.insight || buildAiInsightFallback(selectedToken);
 
   const onStreamEvent = useCallback((event: ScannerStreamEvent) => {
-    if (event.chain && String(event.chain).toLowerCase() !== "solana") return;
+    if (chain !== "all" && event.chain && String(event.chain).toLowerCase() !== chain) return;
 
     if (event.type === "new_pair" || event.type === "score_ready" || event.type === "score_update") {
       queryClient.invalidateQueries({ queryKey: ["tokens"] });
       queryClient.invalidateQueries({ queryKey: ["alerts"] });
       if (selectedToken?.contract_address) {
-        queryClient.invalidateQueries({ queryKey: ["ai-insight", "solana", selectedToken.contract_address] });
+        queryClient.invalidateQueries({ queryKey: ["ai-insight", selectedToken.chain, selectedToken.contract_address] });
       }
     }
 
@@ -174,14 +179,15 @@ export default function AlphaScanner() {
         variant: "destructive",
       });
     }
-  }, [queryClient, selectedToken?.contract_address, toast]);
+  }, [chain, queryClient, selectedToken?.contract_address, toast]);
 
   const { connected: streamConnected } = useScannerStream(onStreamEvent);
 
-  const handleQuickScore = (address: string) => {
+  const handleQuickScore = (address: string, tokenChain?: string) => {
     const target = String(address || "").trim();
     if (!target) return;
-    setLocation(`/rugshield?address=${encodeURIComponent(target)}&auto=1`);
+    const targetChain = String(tokenChain || routingChain).toLowerCase();
+    setLocation(`/rugshield?address=${encodeURIComponent(target)}&chain=${targetChain}&auto=1`);
   };
 
   const handleScanAddress = () => {
@@ -189,7 +195,7 @@ export default function AlphaScanner() {
       toast({ title: "Error", description: "Enter a contract address", variant: "destructive" });
       return;
     }
-    setLocation(`/rugshield?address=${encodeURIComponent(scanAddress.trim())}&auto=1`);
+    setLocation(`/rugshield?address=${encodeURIComponent(scanAddress.trim())}&chain=${routingChain}&auto=1`);
   };
 
   const handleRefresh = async () => {
@@ -200,10 +206,10 @@ export default function AlphaScanner() {
         queryClient.refetchQueries({ queryKey: ["tokens"], type: "all" }),
         queryClient.refetchQueries({ queryKey: ["alerts"], type: "all" }),
         selectedToken?.contract_address
-          ? queryClient.refetchQueries({ queryKey: ["ai-insight", "solana", selectedToken.contract_address], type: "all" })
+          ? queryClient.refetchQueries({ queryKey: ["ai-insight", selectedToken.chain, selectedToken.contract_address], type: "all" })
           : Promise.resolve(),
         selectedToken?.contract_address
-          ? queryClient.refetchQueries({ queryKey: ["scoring-history", "solana", selectedToken.contract_address], type: "all" })
+          ? queryClient.refetchQueries({ queryKey: ["scoring-history", selectedToken.chain, selectedToken.contract_address], type: "all" })
           : Promise.resolve(),
         refetch(),
         refetchAgeWindow(),
@@ -221,15 +227,15 @@ export default function AlphaScanner() {
     <Layout>
       <div className="space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
+          <div className="space-y-1.5">
             <h1 className="text-3xl font-bold flex items-center gap-3" data-testid="text-page-title">
               <Radar className="w-8 h-8 text-primary" />
               Alpha Scanner
             </h1>
-            <p className="text-muted-foreground mt-1">
-              Smart Solana scanner with live risk and AI intelligence
+            <p className="text-muted-foreground">
+              Smart {chainDisplay} scanner with live risk and AI intelligence
             </p>
-            <div className="flex items-center gap-2 mt-2">
+            <div className="flex items-center gap-2 mt-3 flex-wrap">
               <Badge variant="outline" className="solana-badge">Signal Engine</Badge>
               <Badge variant="outline" className="border-accent/30 text-accent">Fast Rotation</Badge>
             </div>
@@ -237,8 +243,8 @@ export default function AlphaScanner() {
               {lastRefreshedAt ? `Last refreshed ${lastRefreshedAt.toLocaleTimeString()}` : "Auto-refresh every 5s is active"}
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">Solana Only</Badge>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant="outline">{chainDisplay}</Badge>
             <Badge variant="outline" className={cn("transition-all", streamConnected && "animate-pulse")}>Stream {streamConnected ? "Live" : "Offline"}</Badge>
             <Button variant="outline" onClick={handleRefresh} disabled={isRefreshing} data-testid="button-refresh">
               <RefreshCw className={cn("w-4 h-4 mr-2", isRefreshing && "animate-spin")} />
@@ -248,15 +254,15 @@ export default function AlphaScanner() {
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="p-4 solana-card animate-fade-in-up bg-gradient-to-r from-primary/10 to-background">
+          <Card className="p-4 solana-card animate-fade-in-up bg-card/70 backdrop-blur-sm border-border/60">
             <div className="flex items-center gap-3">
               <div>
-                <p className="text-sm"><MetricLabel label="Total Tokens" tooltip="Number of tokens currently loaded into the Solana scanner feed." /></p>
+                <p className="text-sm"><MetricLabel label="Total Tokens" tooltip={`Number of tokens currently loaded into the ${chainDisplay} scanner feed.`} /></p>
                 <p className="text-2xl font-bold">{allTokens.length}</p>
               </div>
             </div>
           </Card>
-          <Card className="p-4 solana-card animate-fade-in-up bg-gradient-to-r from-accent/10 to-background">
+          <Card className="p-4 solana-card animate-fade-in-up bg-card/70 backdrop-blur-sm border-border/60">
             <div className="flex items-center gap-3">
               <div>
                 <p className="text-sm"><MetricLabel label="Live Trades" tooltip="Count of recent scanner alerts and trade events detected in real-time." /></p>
@@ -264,7 +270,7 @@ export default function AlphaScanner() {
               </div>
             </div>
           </Card>
-          <Card className="p-4 solana-card animate-fade-in-up bg-gradient-to-r from-primary/10 to-background">
+          <Card className="p-4 solana-card animate-fade-in-up bg-card/70 backdrop-blur-sm border-border/60">
             <div className="flex items-center gap-3">
               <div>
                 <p className="text-sm"><MetricLabel label="Selected Token" tooltip="The token currently focused in detail panels and AI sections." /></p>
@@ -272,7 +278,7 @@ export default function AlphaScanner() {
               </div>
             </div>
           </Card>
-          <Card className="p-4 solana-card animate-fade-in-up bg-gradient-to-r from-accent/10 to-background">
+          <Card className="p-4 solana-card animate-fade-in-up bg-card/70 backdrop-blur-sm border-border/60">
             <div className="flex items-center gap-3">
               <div>
                 <p className="text-sm"><MetricLabel label="Filtered" tooltip="Number of tokens remaining after search, risk, liquidity, and sort filters." /></p>
@@ -282,7 +288,7 @@ export default function AlphaScanner() {
           </Card>
         </div>
 
-        <Card className="p-4 solana-card">
+        <Card className="p-4 solana-card bg-card/70 backdrop-blur-sm border-border/60">
           <div className="flex flex-col gap-4">
             <p className="text-sm font-medium text-muted-foreground">Quick Score + Filters</p>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
@@ -328,7 +334,7 @@ export default function AlphaScanner() {
           </div>
         </Card>
 
-        <Card className="p-4 solana-card">
+        <Card className="p-4 solana-card bg-card/70 backdrop-blur-sm border-border/60">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <Input
@@ -384,7 +390,7 @@ export default function AlphaScanner() {
           ) : filteredTokens.length === 0 ? (
             <Card className="p-12 text-center solana-card">
               <Radar className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-30" />
-              <p className="text-lg text-muted-foreground">No {tokenTab === "all" ? "matching" : "projects"} found on Solana</p>
+              <p className="text-lg text-muted-foreground">No {tokenTab === "all" ? "matching" : "projects"} found on {chainDisplay}</p>
               <p className="text-sm text-muted-foreground">
                 {tokenTab === "all"
                   ? "Try changing filters or scanning a token address above."
@@ -450,7 +456,7 @@ export default function AlphaScanner() {
                     variant="outline"
                     onClick={(event) => {
                       event.stopPropagation();
-                      handleQuickScore(token.contract_address);
+                      handleQuickScore(token.contract_address, token.chain);
                     }}
                     data-testid={`button-score-${token.id}`}
                   >

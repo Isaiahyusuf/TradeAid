@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SiSolana, SiEthereum } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
+import { useChain } from "@/hooks/use-chain";
 
 function ChainIcon({ chain }: { chain: string }) {
   const key = String(chain || "").toLowerCase();
@@ -40,9 +41,10 @@ function normalizePct(value: number) {
 }
 
 export default function MemeTrend() {
+  const { chain, chainLabel } = useChain();
   const [selectedToken, setSelectedToken] = useState<TokenItem | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const { data: tokenData, isLoading } = useTokens("solana", {
+  const { data: tokenData, isLoading } = useTokens(chain, {
     newOnly: true,
     maxAgeHours: 24,
     prioritizePumpFun: true,
@@ -66,17 +68,18 @@ export default function MemeTrend() {
   return (
     <Layout>
       <div className="space-y-6">
-        <div>
+        <div className="space-y-1.5">
           <h1 className="text-3xl md:text-4xl font-bold" data-testid="text-page-title">Token Explorer</h1>
-          <p className="text-muted-foreground">Browse and search tokens across all supported chains.</p>
-          <div className="flex items-center gap-2 mt-2">
+          <p className="text-muted-foreground">Browse and search tokens on {chainLabel}.</p>
+          <div className="flex items-center gap-2 mt-3 flex-wrap">
             <Badge variant="outline" className="solana-badge">Market Map</Badge>
+            <Badge variant="outline">{chainLabel}</Badge>
             <Badge variant="outline" className="border-accent/30 text-accent">Discovery Mode</Badge>
           </div>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="p-4 solana-card animate-fade-in-up">
+          <Card className="p-4 solana-card animate-fade-in-up bg-card/70 backdrop-blur-sm border-border/60">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                 <TrendingUp className="w-5 h-5 text-primary" />
@@ -88,7 +91,7 @@ export default function MemeTrend() {
             </div>
           </Card>
           {stats?.by_chain && Object.entries(stats.by_chain).slice(0, 3).map(([ch, count]) => (
-            <Card key={ch} className="p-4 solana-card animate-fade-in-up">
+            <Card key={ch} className="p-4 solana-card animate-fade-in-up bg-card/70 backdrop-blur-sm border-border/60">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
                   <ChainIcon chain={ch} />
@@ -102,10 +105,10 @@ export default function MemeTrend() {
           ))}
         </div>
 
-        <Card className="p-4 solana-card">
+        <Card className="p-4 solana-card bg-card/70 backdrop-blur-sm border-border/60">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="w-full md:w-40 h-10 px-3 border border-input rounded-md bg-muted/40 text-sm flex items-center" data-testid="select-chain-filter">
-              Solana
+              {chainLabel}
             </div>
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -121,7 +124,7 @@ export default function MemeTrend() {
         </Card>
 
         {selectedToken && (
-          <Card className="p-4 solana-card">
+          <Card className="p-4 solana-card bg-card/70 backdrop-blur-sm border-border/60">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">Selected Token</p>

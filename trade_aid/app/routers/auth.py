@@ -44,6 +44,10 @@ class LoginRequest(BaseModel):
     access_code: Optional[str] = None
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
 class Enable2FARequest(BaseModel):
     code: str
 
@@ -367,6 +371,49 @@ async def forgot_password_confirm(req: ConfirmPasswordResetRequest, db: AsyncSes
 @router.post("/login")
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     return await login_user(db, req.username, req.password, req.totp_code, req.device_id, req.access_code)
+
+
+@router.post("/refresh")
+async def refresh_access_token(req: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
+    refresh_token = (req.refresh_token or "").strip()
+    if not refresh_token:
+        raise HTTPException(status_code=400, detail="refresh_token is required")
+
+    try:
+        payload = jwt.decode(
+            refresh_token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+        )
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+    if payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    token_data = {
+        "sub": str(user.id),
+        "username": user.username,
+        "is_admin": user.is_admin,
+    }
+    access_token = create_access_token(token_data)
+    rotated_refresh_token = create_refresh_token(token_data)
+
+    return {
+        "access_token": access_token,
+        "refresh_token": rotated_refresh_token,
+        "token_type": "bearer",
+        "user_id": str(user.id),
+    }
 
 
 @router.get("/me")

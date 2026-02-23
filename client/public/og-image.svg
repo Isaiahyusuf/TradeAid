@@ -1,0 +1,63 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Trade Aid preview image">
+  <defs>
+    <linearGradient id="bg" x1="80" y1="40" x2="1080" y2="590" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1110"/>
+      <stop offset="1" stop-color="#141B1A"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="280" y1="120" x2="920" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22C55E"/>
+      <stop offset="0.55" stop-color="#14B8A6"/>
+      <stop offset="1" stop-color="#9945FF"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(300 120) rotate(40) scale(420 280)">
+      <stop stop-color="#22C55E" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#22C55E" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(980 540) rotate(-30) scale(420 280)">
+      <stop stop-color="#9945FF" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#9945FF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glowA)"/>
+  <rect width="1200" height="630" fill="url(#glowB)"/>
+
+  <g opacity="0.16">
+    <path d="M0 90H1200" stroke="white"/>
+    <path d="M0 180H1200" stroke="white"/>
+    <path d="M0 270H1200" stroke="white"/>
+    <path d="M0 360H1200" stroke="white"/>
+    <path d="M0 450H1200" stroke="white"/>
+    <path d="M0 540H1200" stroke="white"/>
+    <path d="M171 0V630" stroke="white"/>
+    <path d="M342 0V630" stroke="white"/>
+    <path d="M513 0V630" stroke="white"/>
+    <path d="M684 0V630" stroke="white"/>
+    <path d="M855 0V630" stroke="white"/>
+    <path d="M1026 0V630" stroke="white"/>
+  </g>
+
+  <rect x="118" y="116" width="124" height="124" rx="28" fill="#0B1110" stroke="url(#accent)" stroke-width="5"/>
+  <path d="M145 197L168 174L188 190L218 149" stroke="url(#accent)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="145" cy="197" r="5" fill="#22C55E"/>
+  <circle cx="168" cy="174" r="5" fill="#14B8A6"/>
+  <circle cx="188" cy="190" r="5" fill="#22C55E"/>
+  <circle cx="218" cy="149" r="5" fill="#9945FF"/>
+
+  <text x="280" y="176" fill="white" font-size="78" font-family="Space Grotesk, Inter, Arial, sans-serif" font-weight="700">Trade Aid</text>
+  <text x="280" y="252" fill="#A1A1AA" font-size="34" font-family="Space Grotesk, Inter, Arial, sans-serif" font-weight="500">Crypto Trading Intelligence Platform</text>
+
+  <g>
+    <rect x="280" y="318" width="270" height="62" rx="31" fill="#121917" stroke="#2A3A35"/>
+    <text x="322" y="358" fill="#E4E4E7" font-size="28" font-family="Space Grotesk, Inter, Arial, sans-serif" font-weight="600">Rug Detection</text>
+
+    <rect x="568" y="318" width="260" height="62" rx="31" fill="#121917" stroke="#2A3A35"/>
+    <text x="610" y="358" fill="#E4E4E7" font-size="28" font-family="Space Grotesk, Inter, Arial, sans-serif" font-weight="600">Whale Signals</text>
+
+    <rect x="846" y="318" width="240" height="62" rx="31" fill="#121917" stroke="#2A3A35"/>
+    <text x="888" y="358" fill="#E4E4E7" font-size="28" font-family="Space Grotesk, Inter, Arial, sans-serif" font-weight="600">AI Scoring</text>
+  </g>
+
+  <text x="120" y="584" fill="#7F8A87" font-size="24" font-family="Space Grotesk, Inter, Arial, sans-serif" font-weight="500">tradeaid.app</text>
+</svg>

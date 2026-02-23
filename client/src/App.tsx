@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth, AuthProvider } from "@/hooks/use-auth";
+import { ChainProvider } from "@/hooks/use-chain";
 import AuthPage from "@/pages/AuthPage";
 import Dashboard from "@/pages/Dashboard";
 import AlphaScanner from "@/pages/AlphaScanner";
@@ -65,8 +66,10 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
-          <Toaster />
-          <AppContent />
+          <ChainProvider>
+            <Toaster />
+            <AppContent />
+          </ChainProvider>
         </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>

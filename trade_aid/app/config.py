@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     DEXSCREENER_API_URL: str = "https://api.dexscreener.com/latest/dex"
     SCAN_INTERVAL_SECONDS: int = 10
     ENABLE_SCANNERS: bool = True
+    ENABLED_CHAINS: str = "solana,ethereum,bsc,base,arbitrum,avalanche,polygon"
 
     SOLANA_RPC_URL: str = "https://api.mainnet-beta.solana.com"
     ETHEREUM_RPC_URL: str = ""
@@ -105,3 +106,11 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
+
+
+def get_enabled_chains() -> list[str]:
+    settings = get_settings()
+    chains = [value.strip().lower() for value in settings.ENABLED_CHAINS.split(",") if value.strip()]
+    if not chains:
+        return ["solana"]
+    return list(dict.fromkeys(chains))

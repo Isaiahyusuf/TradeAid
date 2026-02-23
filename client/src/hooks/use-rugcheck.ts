@@ -32,6 +32,36 @@ export type DevIntelResult = {
     high_jeet_ratio_pct: number;
     too_many_jeets: boolean;
   };
+  project_info?: {
+    social_links: {
+      x?: string | null;
+      telegram?: string | null;
+      discord?: string | null;
+    };
+    websites?: string[];
+    community_checker?: {
+      activity_score: number;
+      overall_status: "active" | "moderate" | "low";
+      active_platforms: number;
+      available_platforms: number;
+      summary: string;
+      signals: {
+        volume_1h: number;
+        trades_5m: number;
+        trades_1h: number;
+        price_change_1h: number;
+      };
+      platforms: Array<{
+        platform: "x" | "telegram" | "discord";
+        url?: string | null;
+        available: boolean;
+        reachable: boolean;
+        is_active: boolean;
+        status: "active" | "inactive" | "unavailable" | "unreachable";
+        status_code?: number | null;
+      }>;
+    };
+  };
   past_launches: Array<{
     contract_address: string;
     symbol?: string;

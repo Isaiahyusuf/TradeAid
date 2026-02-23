@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ShieldCheck, Sparkles } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useSafeBuy } from "@/hooks/use-safe-buy";
 import { useScannerStream } from "@/hooks/use-scanner-stream";
+import { useChain, SUPPORTED_CHAINS, type AppChain } from "@/hooks/use-chain";
 
 function formatNumber(n: number) {
   if (n >= 1000000) return `$${(n / 1000000).toFixed(2)}M`;
@@ -19,8 +20,9 @@ function formatNumber(n: number) {
 }
 
 export default function SafeBuy() {
+  const { chain, setChain } = useChain();
   const queryClient = useQueryClient();
-  const [chainFilter, setChainFilter] = useState("all");
+  const [chainFilter, setChainFilter] = useState<string>(chain);
   const [customChains, setCustomChains] = useState("solana,ethereum");
   const parsedCustomChains = customChains
     .split(",")
@@ -46,29 +48,42 @@ export default function SafeBuy() {
     return safeTokens.reduce((sum, token) => sum + token.safety_score, 0) / safeTokens.length;
   }, [safeTokens]);
 
+  useEffect(() => {
+    setChainFilter(chain);
+  }, [chain]);
+
   return (
     <Layout>
       <div className="space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
+          <div className="space-y-1.5">
             <h1 className="text-3xl font-bold flex items-center gap-3" data-testid="text-safe-buy-title">
               <ShieldCheck className="w-8 h-8 text-primary" />
               🔒 Safe Buy
             </h1>
-            <p className="text-muted-foreground mt-1">
+            <p className="text-muted-foreground">
               AI-filtered multi-chain early tokens with strict safety logic and 30s live refresh.
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="outline" className="solana-badge">Auto Refresh 30s</Badge>
+            <Badge variant="outline" className="uppercase">{chainFilter === "all" || chainFilter === "custom" ? chainFilter : chain}</Badge>
             <Badge variant="outline" className="border-accent/30 text-accent">Min Safety 65</Badge>
             <Badge variant="outline">Risk Low/Medium</Badge>
           </div>
         </div>
 
-        <Card className="p-4 solana-card">
+        <Card className="p-4 solana-card bg-card/70 backdrop-blur-sm border-border/60">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <Select value={chainFilter} onValueChange={setChainFilter}>
+            <Select
+              value={chainFilter}
+              onValueChange={(value) => {
+                setChainFilter(value);
+                if ((SUPPORTED_CHAINS as readonly string[]).includes(value)) {
+                  setChain(value as AppChain);
+                }
+              }}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Select chain scope" />
               </SelectTrigger>
@@ -94,19 +109,19 @@ export default function SafeBuy() {
         </Card>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="p-4 solana-card animate-fade-in-up">
+          <Card className="p-4 solana-card animate-fade-in-up bg-card/70 backdrop-blur-sm border-border/60">
             <p className="text-sm text-muted-foreground">Safe Tokens</p>
             <p className="text-2xl font-bold">{safeTokens.length}</p>
           </Card>
-          <Card className="p-4 solana-card animate-fade-in-up">
+          <Card className="p-4 solana-card animate-fade-in-up bg-card/70 backdrop-blur-sm border-border/60">
             <p className="text-sm text-muted-foreground">Average Safety</p>
             <p className="text-2xl font-bold">{avgSafety.toFixed(0)}</p>
           </Card>
-          <Card className="p-4 solana-card animate-fade-in-up">
+          <Card className="p-4 solana-card animate-fade-in-up bg-card/70 backdrop-blur-sm border-border/60">
             <p className="text-sm text-muted-foreground">Highest Safety</p>
             <p className="text-2xl font-bold">{safeTokens.length ? Math.max(...safeTokens.map((token) => token.safety_score)).toFixed(0) : "0"}</p>
           </Card>
-          <Card className="p-4 solana-card animate-fade-in-up">
+          <Card className="p-4 solana-card animate-fade-in-up bg-card/70 backdrop-blur-sm border-border/60">
             <p className="text-sm text-muted-foreground">Total 1h Volume</p>
             <p className="text-2xl font-bold">{formatNumber(safeTokens.reduce((sum, token) => sum + token.volume_1h, 0))}</p>
           </Card>

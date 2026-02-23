@@ -59,6 +59,97 @@
 }
 
 @layer utilities {
+  .wow-shell {
+    isolation: isolate;
+  }
+
+  .wow-grid {
+    opacity: 0.12;
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,0.07) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.07) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(circle at 50% 20%, rgba(0,0,0,0.85), transparent 72%);
+    animation: wow-grid-drift 16s linear infinite;
+  }
+
+  .wow-spotlight {
+    background: radial-gradient(
+      520px circle at var(--mx, 50%) var(--my, 50%),
+      rgba(153,69,255,0.16),
+      rgba(34,197,94,0.08) 36%,
+      transparent 72%
+    );
+    transition: background-position 120ms ease;
+  }
+
+  .wow-orb {
+    animation: wow-orbital 10s ease-in-out infinite;
+  }
+
+  .wow-orb-delay {
+    animation-delay: -3s;
+  }
+
+  .animate-orbital {
+    animation: wow-orbital 8s ease-in-out infinite;
+  }
+
+  .fx-3d-surface {
+    transform-style: preserve-3d;
+    transition: transform 260ms ease, box-shadow 260ms ease, border-color 260ms ease;
+    will-change: transform;
+  }
+
+  .fx-3d-surface:hover {
+    transform: perspective(1200px) rotateX(1.5deg) rotateY(-1.5deg) translateY(-3px);
+  }
+
+  .fx-3d-press {
+    transition: transform 180ms ease;
+    will-change: transform;
+  }
+
+  .fx-3d-press:hover {
+    transform: translateY(-1px);
+  }
+
+  .fx-3d-press:active {
+    transform: translateY(0);
+  }
+
+  .wow-tilt-card {
+    --card-rotate-x: 0deg;
+    --card-rotate-y: 0deg;
+    --card-glow-x: 50%;
+    --card-glow-y: 50%;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .wow-tilt-card::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    pointer-events: none;
+    background: radial-gradient(
+      280px circle at var(--card-glow-x) var(--card-glow-y),
+      rgba(153, 69, 255, 0.22),
+      rgba(34, 197, 94, 0.14) 32%,
+      transparent 65%
+    );
+    opacity: 0;
+    transition: opacity 220ms ease;
+  }
+
+  .fx-3d-surface.wow-tilt-card:hover {
+    transform: perspective(1200px) rotateX(var(--card-rotate-x)) rotateY(var(--card-rotate-y)) translateY(-4px);
+  }
+
+  .wow-tilt-card:hover::before {
+    opacity: 1;
+  }
+
   .solana-shell {
     @apply relative;
     background-image:
@@ -123,6 +214,54 @@
 
   .safe-area-bottom {
     padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wow-grid,
+  .wow-orb,
+  .animate-orbital,
+  .animate-float,
+  .animate-soft-pulse,
+  .wow-tilt-card::before {
+    animation: none;
+  }
+
+  .wow-spotlight {
+    background: none;
+  }
+
+  .fx-3d-surface,
+  .fx-3d-press {
+    transition: none;
+  }
+
+  .fx-3d-surface:hover,
+  .fx-3d-press:hover,
+  .fx-3d-press:active,
+  .fx-3d-surface.wow-tilt-card:hover {
+    transform: none;
+  }
+}
+
+@keyframes wow-grid-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(22px, 22px, 0);
+  }
+}
+
+@keyframes wow-orbital {
+  0% {
+    transform: translate3d(0px, 0px, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(14px, -12px, 0) scale(1.05);
+  }
+  100% {
+    transform: translate3d(0px, 0px, 0) scale(1);
   }
 }
 

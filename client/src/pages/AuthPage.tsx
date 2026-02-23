@@ -7,6 +7,7 @@ import { TradeAidLogo } from "@/components/brand/TradeAidLogo";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Shield, Loader2, ArrowRight, Chrome, Apple } from "lucide-react";
+import { motion } from "framer-motion";
 
 const EMAIL_PATTERN = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 const SPECIAL_PATTERN = /[^A-Za-z0-9]/;
@@ -43,7 +44,7 @@ export default function AuthPage() {
   const isSubmitDisabled =
     isSubmitting ||
     (mode === "login" && (!username.trim() || !password || !accessCode.trim())) ||
-    (mode === "register" && (!username.trim() || !accessCode.trim() || usernameInvalid || usernameStatus !== "valid" || registerPasswordErrors.length > 0)) ||
+    (mode === "register" && (!username.trim() || !accessCode.trim() || usernameInvalid || usernameStatus === "checking" || usernameStatus === "taken" || registerPasswordErrors.length > 0)) ||
     (mode === "verify" && (emailInvalid || code.trim().length < 6)) ||
     (mode === "forgot" && emailInvalid) ||
     (mode === "reset" && (emailInvalid || code.trim().length < 6 || resetPasswordErrors.length > 0));
@@ -77,7 +78,7 @@ export default function AuthPage() {
     }
 
     setUsernameStatus("checking");
-    setUsernameMessage("Checking username availability...");
+    setUsernameMessage("");
     const timer = setTimeout(async () => {
       try {
         const result = await checkUsername(value);
@@ -92,7 +93,7 @@ export default function AuthPage() {
           return;
         }
         setUsernameStatus("valid");
-        setUsernameMessage(result.message);
+        setUsernameMessage("");
       } catch {
         setUsernameStatus("idle");
         setUsernameMessage("");
@@ -120,19 +121,19 @@ export default function AuthPage() {
     };
 
     if (oauthError) {
-      toast({ title: "OAuth error", description: oauthError, variant: "destructive" });
+      toast({ title: "Authentication issue", description: oauthError, variant: "destructive" });
       clearParams();
       return;
     }
 
     consumeOAuthTokens(oauthAccessToken, oauthRefreshToken)
       .then(() => {
-        toast({ title: "Welcome", description: "Signed in successfully." });
+        toast({ title: "Signed in", description: "You're securely signed in." });
       })
       .catch((error) => {
         toast({
-          title: "OAuth sign-in failed",
-          description: error instanceof Error ? error.message : "Could not complete OAuth sign-in.",
+          title: "Sign-in unsuccessful",
+          description: error instanceof Error ? error.message : "We couldn't complete your OAuth sign-in.",
           variant: "destructive",
         });
       })
@@ -142,7 +143,7 @@ export default function AuthPage() {
   const startOAuthSignIn = (provider: "google" | "apple") => {
     const apiBase = (import.meta.env.VITE_API_URL || "").trim();
     if (!apiBase) {
-      toast({ title: "OAuth not configured", description: "Missing VITE_API_URL for OAuth redirect.", variant: "destructive" });
+      toast({ title: "Configuration required", description: "OAuth sign-in is unavailable. Missing VITE_API_URL.", variant: "destructive" });
       return;
     }
     const frontendRedirect = `${window.location.origin}/`;
@@ -155,52 +156,59 @@ export default function AuthPage() {
     setIsSubmitting(true);
     try {
       if ((mode === "verify" || mode === "forgot" || mode === "reset") && !EMAIL_PATTERN.test(email)) {
-        throw new Error("Enter a valid email address");
+        throw new Error("Please enter a valid email address.");
       }
 
       if (mode === "register" && registerPasswordErrors.length > 0) {
-        throw new Error("Password must include uppercase, number, special character, and be at least 6 characters");
+        throw new Error("Your password must include an uppercase letter, a number, a special character, and be at least 6 characters.");
       }
 
       if (mode === "reset" && resetPasswordErrors.length > 0) {
-        throw new Error("New password must include uppercase, number, special character, and be at least 6 characters");
+        throw new Error("Your new password must include an uppercase letter, a number, a special character, and be at least 6 characters.");
       }
 
       if (mode === "login") {
         await login(username, password, accessCode);
-        toast({ title: "Welcome back!", description: "You are now logged in." });
+        toast({ title: "Welcome back", description: "You're signed in and ready to trade." });
       } else if (mode === "register") {
         const result = await register(username, undefined, password, accessCode);
         if (result?.verification_email_sent) {
-          toast({ title: "Account created", description: "Verification code sent to your email." });
+          toast({ title: "Account created", description: "Your account is ready. A verification code has been sent to your email." });
         } else {
           toast({
             title: "Account created",
-            description: "Your account is ready. You can sign in now.",
+            description: "Your account is active. Please sign in to continue.",
           });
         }
         setResendCooldown(result?.retry_after_seconds || 60);
         setMode("login");
       } else if (mode === "verify") {
         await verifyEmail(email, code);
-        toast({ title: "Email verified", description: "You can now sign in." });
+        toast({ title: "Email verified", description: "Verification completed. You can now sign in." });
         setMode("login");
       } else if (mode === "forgot") {
         await requestPasswordResetCode(email);
-        toast({ title: "Reset code sent", description: "Check your email for the password reset code." });
+        toast({ title: "Reset code sent", description: "A password reset code has been sent to your email." });
         setMode("reset");
       } else if (mode === "reset") {
         await confirmPasswordReset(email, code, newPassword);
-        toast({ title: "Password updated", description: "You can now login with your new password." });
+        toast({ title: "Password updated", description: "Your password has been updated. Sign in with your new credentials." });
         setMode("login");
         setPassword("");
         setNewPassword("");
         setCode("");
       }
     } catch (err: any) {
+      const rawMessage = String(err?.message || "").trim();
+      const normalized = rawMessage.toLowerCase();
+      const friendlyMessage =
+        mode === "register" && (normalized.includes("network") || normalized.includes("load failed") || normalized.includes("failed to fetch"))
+          ? "We couldn't create your account right now. Please check your connection and try again."
+          : rawMessage || "We couldn't complete your request. Please try again.";
+
       toast({
-        title: "Error",
-        description: err.message || "Something went wrong",
+        title: "Request failed",
+        description: friendlyMessage,
         variant: "destructive",
       });
     } finally {
@@ -213,7 +221,14 @@ export default function AuthPage() {
       <div className="absolute -top-20 -left-10 w-80 h-80 rounded-full bg-primary/20 blur-3xl animate-pulse pointer-events-none" />
       <div className="absolute -bottom-24 -right-12 w-80 h-80 rounded-full bg-accent/20 blur-3xl animate-pulse pointer-events-none" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(153,69,255,0.15),transparent_45%)] pointer-events-none" />
-      <Card className="w-full max-w-md relative z-10 border-primary/20 shadow-2xl backdrop-blur-xl bg-card/85">
+      <motion.div
+        className="w-full max-w-md relative z-10 [perspective:1400px]"
+        initial={{ opacity: 0, y: 16, rotateX: 5 }}
+        animate={{ opacity: 1, y: 0, rotateX: 0 }}
+        transition={{ duration: 0.45, ease: "easeOut" }}
+        whileHover={{ rotateX: -2, rotateY: 2, y: -2, scale: 1.005 }}
+      >
+      <Card className="w-full border-primary/20 shadow-2xl backdrop-blur-xl bg-card/85 will-change-transform">
         <CardHeader className="text-center space-y-2">
           <div className="mx-auto w-14 h-14 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mb-2 animate-pulse">
             <Shield className="w-7 h-7 text-primary" />
@@ -222,11 +237,11 @@ export default function AuthPage() {
             <TradeAidLogo withText className="scale-95" />
           </CardTitle>
           <p className="text-muted-foreground text-sm">
-            {mode === "login" && "Sign in to your trading dashboard"}
-            {mode === "register" && "Create your account and verify email"}
+            {mode === "login" && "Sign in to access your trading workspace"}
+            {mode === "register" && "Create your account to unlock TradeAid"}
             {mode === "verify" && "Enter the verification code sent to your email"}
-            {mode === "forgot" && "Request a password reset code"}
-            {mode === "reset" && "Enter code and set a new password"}
+            {mode === "forgot" && "Request a secure password reset code"}
+            {mode === "reset" && "Set a new password to secure your account"}
           </p>
         </CardHeader>
         <CardContent>
@@ -242,8 +257,8 @@ export default function AuthPage() {
                   required
                   data-testid="input-username"
                 />
-                {mode === "register" && usernameMessage && (
-                  <p className={`text-xs ${usernameStatus === "valid" ? "text-green-600" : usernameStatus === "checking" ? "text-muted-foreground" : "text-destructive"}`}>
+                {mode === "register" && usernameMessage && (usernameStatus === "invalid" || usernameStatus === "taken") && (
+                  <p className="text-xs text-destructive">
                     {usernameMessage}
                   </p>
                 )}
@@ -381,10 +396,10 @@ export default function AuthPage() {
                 onClick={async () => {
                   const response = await resendVerification(email);
                   if (response?.sent) {
-                    toast({ title: "Code resent", description: "A new verification code was sent." });
+                    toast({ title: "Verification code sent", description: "A new verification code has been delivered to your email." });
                   } else {
                     toast({
-                      title: "Please wait",
+                      title: "Request limit reached",
                       description: `You can request a new code in ${response?.retry_after_seconds || 60}s.`,
                       variant: "destructive",
                     });
@@ -444,6 +459,7 @@ export default function AuthPage() {
           </div>
         </CardContent>
       </Card>
+      </motion.div>
     </div>
   );
 }

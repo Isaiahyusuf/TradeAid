@@ -5,6 +5,7 @@ from typing import Optional
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
+from app.config import get_enabled_chains
 from app.models.models import Token, LiquidityEvent, ScoringHistory, User
 from app.services.auth_service import get_current_user
 from app.scoring.scoring_service import scoring_service
@@ -26,12 +27,19 @@ async def list_tokens(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    selected_chain = (chain or "solana").lower()
-    if selected_chain != "solana":
-        raise HTTPException(status_code=400, detail="Only Solana integration is supported")
+    enabled_chains = get_enabled_chains()
+    selected_chain = (chain or "").lower().strip()
+    if selected_chain and selected_chain not in enabled_chains:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported chain '{selected_chain}'. Enabled chains: {', '.join(enabled_chains)}",
+        )
 
     query = select(Token)
-    query = query.where(Token.chain == "solana")
+    if selected_chain:
+        query = query.where(Token.chain == selected_chain)
+    else:
+        query = query.where(Token.chain.in_(enabled_chains))
 
     if min_age_minutes is not None and max_age_minutes is not None and min_age_minutes >= max_age_minutes:
         raise HTTPException(status_code=400, detail="min_age_minutes must be less than max_age_minutes")
@@ -102,7 +110,7 @@ async def list_tokens(
             for token in missing_tokens[:5]:
                 try:
                     await asyncio.wait_for(
-                        scoring_service.score_token(db, token.contract_address, "solana"),
+                        scoring_service.score_token(db, token.contract_address, token.chain),
                         timeout=6,
                     )
                 except Exception:
@@ -176,9 +184,10 @@ async def token_stats(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    total = await db.execute(select(func.count(Token.id)).where(Token.chain == "solana"))
+    enabled_chains = get_enabled_chains()
+    total = await db.execute(select(func.count(Token.id)).where(Token.chain.in_(enabled_chains)))
     by_chain = await db.execute(
-        select(Token.chain, func.count(Token.id)).where(Token.chain == "solana").group_by(Token.chain)
+        select(Token.chain, func.count(Token.id)).where(Token.chain.in_(enabled_chains)).group_by(Token.chain)
     )
 
     return {
@@ -194,12 +203,17 @@ async def get_token(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if chain.lower() != "solana":
-        raise HTTPException(status_code=400, detail="Only Solana integration is supported")
+    normalized_chain = chain.lower().strip()
+    enabled_chains = get_enabled_chains()
+    if normalized_chain not in enabled_chains:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported chain '{normalized_chain}'. Enabled chains: {', '.join(enabled_chains)}",
+        )
 
     result = await db.execute(
         select(Token).where(
-            Token.chain == "solana",
+            Token.chain == normalized_chain,
             Token.contract_address == contract_address,
         )
     )

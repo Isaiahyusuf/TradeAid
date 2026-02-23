@@ -4,7 +4,7 @@ from typing import Optional
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.config import get_settings
+from app.config import get_settings, get_enabled_chains
 from app.database import async_session_factory
 from app.models.models import Token, LiquidityEvent, Alert
 from app.utils.redis_client import cache_set, cache_get, publish_event
@@ -13,10 +13,7 @@ from app.utils.launch_identity import build_launch_fingerprint
 from app.scoring.scoring_service import scoring_service
 
 settings = get_settings()
-
-CHAIN_MAPPING = {
-    "solana": "solana",
-}
+ENABLED_CHAINS = get_enabled_chains()
 
 SOLANA_SEARCH_TERMS = [
     "solana",
@@ -34,6 +31,7 @@ class DexScreenerScanner:
         self.client = httpx.AsyncClient(timeout=15.0)
         self.running = False
         self.scan_count = 0
+        self.chains = ENABLED_CHAINS
 
     async def start(self):
         self.running = True
@@ -54,7 +52,7 @@ class DexScreenerScanner:
         logger.info("[DexScreener] Scanner stopped")
 
     async def _scan_cycle(self):
-        for chain in CHAIN_MAPPING.keys():
+        for chain in self.chains:
             try:
                 await self._scan_chain_new_pairs(chain)
             except Exception as e:
