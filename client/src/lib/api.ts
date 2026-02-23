@@ -30,16 +30,27 @@ export async function apiFetch<T = any>(
     headers,
   });
 
-  if (res.status === 401) {
-    if (path.includes("/api/auth/me")) {
+  if (!res.ok) {
+    let message = res.statusText || "Request failed";
+    try {
+      const data = await res.json();
+      if (typeof data?.detail === "string" && data.detail.trim()) {
+        message = data.detail;
+      } else if (typeof data?.message === "string" && data.message.trim()) {
+        message = data.message;
+      }
+    } catch {
+      const text = await res.text();
+      if (text?.trim()) {
+        message = text;
+      }
+    }
+
+    if ((res.status === 401 || res.status === 403) && path.includes("/api/auth/me")) {
       clearToken();
     }
-    throw new Error("Unauthorized");
-  }
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || res.statusText);
+    throw new Error(message);
   }
 
   return res.json();

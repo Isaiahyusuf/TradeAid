@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { authService } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
+import { TradeAidLogo } from '../components/brand/TradeAidLogo';
 
 export function RegisterScreen({ navigation }: any) {
   const [username, setUsername] = useState('');
@@ -52,6 +53,7 @@ export function RegisterScreen({ navigation }: any) {
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
+          <TradeAidLogo withText />
           <Text style={styles.title}>Create Account</Text>
           <Text style={styles.subtitle}>Sign up to get started</Text>
         </View>
@@ -147,6 +149,7 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 40,
+    gap: 10,
   },
   title: {
     fontSize: 32,

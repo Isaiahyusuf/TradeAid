@@ -9,6 +9,7 @@ from app.database import async_session_factory
 from app.models.models import Token, LiquidityEvent, Alert
 from app.utils.redis_client import cache_set, cache_get, publish_event
 from app.utils.logging_config import logger
+from app.utils.launch_identity import build_launch_fingerprint
 from app.scoring.scoring_service import scoring_service
 
 settings = get_settings()
@@ -79,6 +80,14 @@ class DexScreenerScanner:
                     if not contract:
                         continue
 
+                    pair_created = pair.get("pairCreatedAt")
+                    launch_time = None
+                    if pair_created:
+                        try:
+                            launch_time = datetime.fromtimestamp(pair_created / 1000)
+                        except (ValueError, TypeError, OSError):
+                            launch_time = None
+
                     existing = await db.execute(
                         select(Token).where(
                             Token.chain == chain,
@@ -108,7 +117,19 @@ class DexScreenerScanner:
                         " ".join(str(site.get("url", "") or "") for site in websites),
                         " ".join(str(social.get("url", "") or "") for social in socials),
                     ]).lower()
-                    is_pump_fun = "pump.fun" in source_hint
+                    existing_extra = (token.extra_data or {}) if token else {}
+                    is_pump_fun = "pump.fun" in source_hint or bool(existing_extra.get("is_pump_fun", False))
+                    website_urls = [str(site.get("url", "") or "") for site in websites if site.get("url")]
+                    social_urls = [str(social.get("url", "") or "") for social in socials if social.get("url")]
+                    launch_fingerprint = build_launch_fingerprint(
+                        deployer_wallet=(pair.get("baseToken", {}) or {}).get("address"),
+                        token_name=pair.get("baseToken", {}).get("name"),
+                        token_symbol=pair.get("baseToken", {}).get("symbol"),
+                        dex_id=pair.get("dexId"),
+                        websites=website_urls,
+                        socials=social_urls,
+                        logo_url=logo_url,
+                    )
                     metadata = {
                         "price_usd": float(pair.get("priceUsd", 0) or 0),
                         "volume_5m": float(volume.get("m5", 0) or 0),
@@ -123,9 +144,13 @@ class DexScreenerScanner:
                         "buys_1h": int((txns.get("h1", {}) or {}).get("buys", 0) or 0),
                         "sells_1h": int((txns.get("h1", {}) or {}).get("sells", 0) or 0),
                         "new_wallets_count": int((txns.get("m5", {}) or {}).get("buys", 0) or 0),
-                        "logo_url": logo_url,
+                        "logo_url": logo_url or existing_extra.get("logo_url"),
+                        "websites": website_urls or existing_extra.get("websites") or [],
+                        "socials": social_urls or existing_extra.get("socials") or [],
+                        "source_url": pair_url or existing_extra.get("source_url"),
+                        "launch_fingerprint": launch_fingerprint or existing_extra.get("launch_fingerprint"),
                         "is_pump_fun": is_pump_fun,
-                        "source_platform": "pump.fun" if is_pump_fun else (pair.get("dexId") or "dexscreener"),
+                        "source_platform": "pump.fun" if is_pump_fun else (pair.get("dexId") or existing_extra.get("source_platform") or "dexscreener"),
                         "buy_urls": {
                             "pump_fun": f"https://pump.fun/coin/{contract}",
                             "axiom": f"https://axiom.trade/t/{contract}",
@@ -137,7 +162,9 @@ class DexScreenerScanner:
                         old_liquidity = token.liquidity_usd or 0
                         token.liquidity_usd = liquidity_usd
                         token.market_cap_usd = market_cap
-                        token.extra_data = metadata
+                        token.extra_data = {**existing_extra, **metadata}
+                        if launch_time and not token.liquidity_created_at:
+                            token.liquidity_created_at = launch_time
                         token.updated_at = datetime.utcnow()
 
                         if old_liquidity > 0 and liquidity_usd < old_liquidity * 0.5:
@@ -174,14 +201,6 @@ class DexScreenerScanner:
                                 "change_pct": change_pct,
                             })
                     else:
-                        pair_created = pair.get("pairCreatedAt")
-                        liq_created_at = None
-                        if pair_created:
-                            try:
-                                liq_created_at = datetime.fromtimestamp(pair_created / 1000)
-                            except (ValueError, TypeError, OSError):
-                                pass
-
                         token = Token(
                             contract_address=contract,
                             chain=chain,
@@ -191,7 +210,8 @@ class DexScreenerScanner:
                             liquidity_usd=liquidity_usd,
                             pair_address=pair.get("pairAddress"),
                             dex_id=pair.get("dexId"),
-                            liquidity_created_at=liq_created_at,
+                            liquidity_created_at=launch_time,
+                            created_at=launch_time or datetime.utcnow(),
                             extra_data=metadata,
                         )
                         db.add(token)
@@ -261,7 +281,10 @@ class DexScreenerScanner:
 
         pairs = list(unique_pairs.values())
         pairs.sort(
-            key=lambda pair: float((pair.get("volume", {}) or {}).get("h1", 0) or 0),
+            key=lambda pair: (
+                int(pair.get("pairCreatedAt") or 0),
+                float((pair.get("volume", {}) or {}).get("h1", 0) or 0),
+            ),
             reverse=True,
         )
         return pairs

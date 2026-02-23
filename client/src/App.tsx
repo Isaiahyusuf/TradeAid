@@ -12,6 +12,7 @@ import WhaleWatch from "@/pages/WhaleWatch";
 import MemeTrend from "@/pages/MemeTrend";
 import SafeBuy from "@/pages/SafeBuy";
 import Account from "@/pages/Account";
+import Subscription from "@/pages/Subscription";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -26,6 +27,7 @@ function AuthenticatedRouter() {
       <Route path="/memetrend" component={MemeTrend} />
       <Route path="/safebuy" component={SafeBuy} />
       <Route path="/account" component={Account} />
+      <Route path="/subscription" component={Subscription} />
       <Route component={NotFound} />
     </Switch>
   );

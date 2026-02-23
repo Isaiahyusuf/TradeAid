@@ -51,6 +51,7 @@ export function useTokens(
   options?: {
     newOnly?: boolean;
     maxAgeHours?: number;
+    prioritizePumpFun?: boolean;
     minAgeMinutes?: number;
     maxAgeMinutes?: number;
     limit?: number;
@@ -61,6 +62,7 @@ export function useTokens(
   if (chain) queryString.set("chain", chain);
   if (options?.newOnly) queryString.set("new_only", "true");
   if (options?.maxAgeHours) queryString.set("max_age_hours", String(options.maxAgeHours));
+  if (options?.prioritizePumpFun) queryString.set("prioritize_pump_fun", "true");
   if (typeof options?.minAgeMinutes === "number") queryString.set("min_age_minutes", String(options.minAgeMinutes));
   if (typeof options?.maxAgeMinutes === "number") queryString.set("max_age_minutes", String(options.maxAgeMinutes));
   if (typeof options?.limit === "number") queryString.set("limit", String(options.limit));
@@ -72,6 +74,7 @@ export function useTokens(
       chain,
       options?.newOnly,
       options?.maxAgeHours,
+      options?.prioritizePumpFun,
       options?.minAgeMinutes,
       options?.maxAgeMinutes,
       options?.limit,

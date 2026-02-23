@@ -72,7 +72,12 @@ export default function Dashboard() {
   ];
 
   const selectedAgeTab = ageTabs.find((tab) => tab.key === tokenTab);
-  const { data: tokenData, isLoading: tokensLoading, error: tokensError } = useTokens("solana");
+  const { data: tokenData, isLoading: tokensLoading, error: tokensError } = useTokens("solana", {
+    newOnly: true,
+    maxAgeHours: 24,
+    prioritizePumpFun: true,
+    limit: 100,
+  });
   const { data: ageWindowData, isLoading: ageWindowLoading } = useTokens(
     "solana",
     selectedAgeTab
@@ -167,6 +172,10 @@ export default function Dashboard() {
               Welcome back{user?.username ? `, ${user.username}` : ""}
             </h1>
             <p className="text-muted-foreground">Your trading command center</p>
+            <div className="flex items-center gap-2 mt-2">
+              <Badge variant="outline" className="solana-badge">Solana Pulse</Badge>
+              <Badge variant="outline" className="border-accent/30 text-accent">Live Intelligence</Badge>
+            </div>
           </div>
           <Button variant="outline" size="sm" onClick={retryAll} data-testid="button-refresh-dashboard">
             <RefreshCw className="w-4 h-4 mr-2" />
@@ -193,7 +202,7 @@ export default function Dashboard() {
         )}
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="p-4 bg-card/60 backdrop-blur">
+          <Card className="p-4 solana-card animate-fade-in-up">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
                 <ShieldCheck className="w-5 h-5 text-green-500" />
@@ -206,7 +215,7 @@ export default function Dashboard() {
               </div>
             </div>
           </Card>
-          <Card className="p-4 bg-card/60 backdrop-blur">
+          <Card className="p-4 solana-card animate-fade-in-up">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
                 <Eye className="w-5 h-5 text-blue-500" />
@@ -219,7 +228,7 @@ export default function Dashboard() {
               </div>
             </div>
           </Card>
-          <Card className="p-4 bg-card/60 backdrop-blur">
+          <Card className="p-4 solana-card animate-fade-in-up">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
                 <Bell className="w-5 h-5 text-purple-500" />
@@ -232,7 +241,7 @@ export default function Dashboard() {
               </div>
             </div>
           </Card>
-          <Card className="p-4 bg-card/60 backdrop-blur">
+          <Card className="p-4 solana-card animate-fade-in-up">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
                 <Lock className="w-5 h-5 text-green-500" />
@@ -247,7 +256,7 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        <Card className="bg-card/60 backdrop-blur p-4 border-primary/20">
+        <Card className="solana-card p-4 border-primary/20 animate-soft-pulse">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
               <h3 className="font-semibold flex items-center gap-2">
@@ -271,14 +280,14 @@ export default function Dashboard() {
         </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Card className="p-4 bg-card/60 backdrop-blur">
+          <Card className="p-4 solana-card">
             <p className="text-sm text-muted-foreground">Setup Win Rate (Est.)</p>
             <p className="text-2xl font-bold">{intelligenceMetrics.setupWinRate.toFixed(0)}%</p>
             <p className="text-xs text-muted-foreground mt-1">
               Based on confidence, rug-risk, and short-term momentum across scored tokens.
             </p>
           </Card>
-          <Card className="p-4 bg-card/60 backdrop-blur">
+          <Card className="p-4 solana-card">
             <p className="text-sm text-muted-foreground">Risk Distribution</p>
             <div className="flex items-center gap-2 mt-2 flex-wrap">
               <Badge variant="outline" className="text-green-400 border-green-400/30">Low {intelligenceMetrics.lowRisk}</Badge>
@@ -287,7 +296,7 @@ export default function Dashboard() {
             </div>
             <p className="text-xs text-muted-foreground mt-2">Scored Universe: {intelligenceMetrics.scoredCount}</p>
           </Card>
-          <Card className="p-4 bg-card/60 backdrop-blur">
+          <Card className="p-4 solana-card">
             <p className="text-sm text-muted-foreground">Best Time Window</p>
             <p className="text-2xl font-bold">{intelligenceMetrics.bestWindow.label}</p>
             <p className="text-xs text-muted-foreground mt-1">
@@ -297,7 +306,7 @@ export default function Dashboard() {
         </div>
 
         {stats?.by_chain && Object.keys(stats.by_chain).length > 0 && (
-          <Card className="bg-card/60 backdrop-blur p-4">
+          <Card className="solana-card p-4">
             <h3 className="font-semibold mb-3 flex items-center gap-2">
               <Activity className="w-4 h-4 text-primary" />
               Tokens by Chain
@@ -316,7 +325,7 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {selectedAlert && (
-            <Card className="lg:col-span-2 p-4 bg-card/70 backdrop-blur">
+            <Card className="lg:col-span-2 p-4 solana-card">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Live Selection</p>
@@ -334,7 +343,7 @@ export default function Dashboard() {
             </Card>
           )}
 
-          <Card className="bg-card/60 backdrop-blur overflow-hidden border-primary/20">
+          <Card className="solana-card overflow-hidden border-primary/20">
             <div className="p-4 border-b border-border flex items-center justify-between gap-2">
               <h3 className="font-semibold flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-green-500" />
@@ -347,14 +356,14 @@ export default function Dashboard() {
             <div className="px-4 py-3 border-b border-border">
               <Tabs value={tokenTab} onValueChange={(value) => setTokenTab(value as "all" | "5m" | "20m" | "40m" | "1h" | "5h" | "12h" | "24h") }>
                 <TabsList className="w-full overflow-x-auto justify-start">
-                  <TabsTrigger value="all">All Tokens</TabsTrigger>
-                  <TabsTrigger value="5m">5m</TabsTrigger>
-                  <TabsTrigger value="20m">20m</TabsTrigger>
-                  <TabsTrigger value="40m">40m</TabsTrigger>
-                  <TabsTrigger value="1h">1h</TabsTrigger>
-                  <TabsTrigger value="5h">5h</TabsTrigger>
-                  <TabsTrigger value="12h">12h</TabsTrigger>
-                  <TabsTrigger value="24h">24h</TabsTrigger>
+                  <TabsTrigger className="solana-tab-trigger" value="all">All Tokens</TabsTrigger>
+                  <TabsTrigger className="solana-tab-trigger" value="5m">5m</TabsTrigger>
+                  <TabsTrigger className="solana-tab-trigger" value="20m">20m</TabsTrigger>
+                  <TabsTrigger className="solana-tab-trigger" value="40m">40m</TabsTrigger>
+                  <TabsTrigger className="solana-tab-trigger" value="1h">1h</TabsTrigger>
+                  <TabsTrigger className="solana-tab-trigger" value="5h">5h</TabsTrigger>
+                  <TabsTrigger className="solana-tab-trigger" value="12h">12h</TabsTrigger>
+                  <TabsTrigger className="solana-tab-trigger" value="24h">24h</TabsTrigger>
                 </TabsList>
               </Tabs>
             </div>

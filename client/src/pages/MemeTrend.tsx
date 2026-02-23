@@ -42,7 +42,12 @@ function normalizePct(value: number) {
 export default function MemeTrend() {
   const [selectedToken, setSelectedToken] = useState<TokenItem | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const { data: tokenData, isLoading } = useTokens("solana");
+  const { data: tokenData, isLoading } = useTokens("solana", {
+    newOnly: true,
+    maxAgeHours: 24,
+    prioritizePumpFun: true,
+    limit: 150,
+  });
   const { data: stats } = useTokenStats();
   const { toast } = useToast();
 
@@ -64,10 +69,14 @@ export default function MemeTrend() {
         <div>
           <h1 className="text-3xl md:text-4xl font-bold" data-testid="text-page-title">Token Explorer</h1>
           <p className="text-muted-foreground">Browse and search tokens across all supported chains.</p>
+          <div className="flex items-center gap-2 mt-2">
+            <Badge variant="outline" className="solana-badge">Market Map</Badge>
+            <Badge variant="outline" className="border-accent/30 text-accent">Discovery Mode</Badge>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="p-4">
+          <Card className="p-4 solana-card animate-fade-in-up">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                 <TrendingUp className="w-5 h-5 text-primary" />
@@ -79,7 +88,7 @@ export default function MemeTrend() {
             </div>
           </Card>
           {stats?.by_chain && Object.entries(stats.by_chain).slice(0, 3).map(([ch, count]) => (
-            <Card key={ch} className="p-4">
+            <Card key={ch} className="p-4 solana-card animate-fade-in-up">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
                   <ChainIcon chain={ch} />
@@ -93,7 +102,7 @@ export default function MemeTrend() {
           ))}
         </div>
 
-        <Card className="p-4">
+        <Card className="p-4 solana-card">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="w-full md:w-40 h-10 px-3 border border-input rounded-md bg-muted/40 text-sm flex items-center" data-testid="select-chain-filter">
               Solana
@@ -112,7 +121,7 @@ export default function MemeTrend() {
         </Card>
 
         {selectedToken && (
-          <Card className="p-4">
+          <Card className="p-4 solana-card">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">Selected Token</p>
@@ -140,7 +149,7 @@ export default function MemeTrend() {
         <div className="space-y-2">
           {isLoading ? (
             Array(8).fill(0).map((_, i) => (
-              <Card key={i} className="p-4">
+              <Card key={i} className="p-4 solana-card">
                 <div className="flex items-center gap-4">
                   <Skeleton className="w-10 h-10 rounded-full" />
                   <div className="flex-1 space-y-2">
@@ -152,7 +161,7 @@ export default function MemeTrend() {
               </Card>
             ))
           ) : filteredTokens.length === 0 ? (
-            <Card className="p-12 text-center">
+            <Card className="p-12 text-center solana-card">
               <Search className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-30" />
               <p className="text-muted-foreground">No tokens found.</p>
             </Card>
@@ -160,7 +169,7 @@ export default function MemeTrend() {
             filteredTokens.map((token) => (
               <Card
                 key={token.id}
-                className={cn("p-4 hover-elevate cursor-pointer", selectedToken?.id === token.id && "border-primary/40")}
+                className={cn("p-4 hover-elevate cursor-pointer solana-card", selectedToken?.id === token.id && "border-primary/40")}
                 data-testid={`token-card-${token.id}`}
                 onClick={() => setSelectedToken(token)}
               >

@@ -3,11 +3,13 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.config import get_settings
 from app.database import init_db, close_db
 from app.utils.rate_limiter import RateLimitMiddleware
 from app.utils.redis_client import close_redis
 from app.utils.logging_config import logger
+from app.utils.request_logging import RequestLoggingMiddleware
 from app.websocket.manager import ws_manager
 from app.routers import auth, tokens, wallets, scoring, alerts, safe_buy
 from app.scanners.dexscreener import dex_scanner
@@ -57,14 +59,31 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+
+cors_origins = []
+if settings.FRONTEND_URL.strip():
+    cors_origins.append(settings.FRONTEND_URL.strip())
+
+for origin in settings.CORS_ORIGINS.split(","):
+    value = origin.strip()
+    if not value:
+        continue
+    if value not in cors_origins:
+        cors_origins.append(value)
+
+if not cors_origins:
+    cors_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS.split(","),
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
+app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RateLimitMiddleware)
 
 app.include_router(auth.router)

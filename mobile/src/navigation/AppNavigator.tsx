@@ -71,18 +71,7 @@ function AuthStack() {
 
 export function AppNavigator() {
   const { isAuthenticated, isLoading } = useAuth();
-loadingContainer: {
-    flex: 1,
-    backgroundColor: '#0a0f0a',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 16,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: '#6b7280',
-  },
-  
+
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -128,5 +117,16 @@ const styles = StyleSheet.create({
   },
   tabIconFocused: {
     color: '#22c55e',
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: '#0a0f0a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#6b7280',
   },
 });

@@ -6,9 +6,9 @@ export default function Subscription() {
   return (
     <Layout>
       <div className="max-w-lg mx-auto">
-        <Card>
+        <Card className="solana-card animate-fade-in-up">
           <CardContent className="pt-6 text-center">
-            <Shield className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+            <Shield className="h-12 w-12 mx-auto mb-4 text-primary animate-soft-pulse" />
             <h2 className="text-lg font-semibold mb-2">Subscription Management</h2>
             <p className="text-sm text-muted-foreground">
               Subscription features coming soon.

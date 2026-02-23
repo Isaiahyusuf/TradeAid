@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Layout } from "@/components/Layout";
-import { useScanToken, type ScoreResult } from "@/hooks/use-rugcheck";
+import { useDevIntel, useScanToken, type ScoreResult } from "@/hooks/use-rugcheck";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,14 +31,49 @@ function ScoreGauge({ value, label }: { value: number; label: string }) {
 
 export default function RugShield() {
   const [address, setAddress] = useState("");
+  const [scannedAddress, setScannedAddress] = useState("");
+  const didAutoScan = useRef(false);
   const { mutate: scanToken, isPending, data: result } = useScanToken();
+  const { data: devIntel } = useDevIntel(scannedAddress || undefined, "solana");
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (didAutoScan.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const prefilledAddress = String(params.get("address") || "").trim();
+    const auto = params.get("auto") === "1";
+
+    if (!prefilledAddress) {
+      didAutoScan.current = true;
+      return;
+    }
+
+    setAddress(prefilledAddress);
+    if (auto) {
+      setScannedAddress(prefilledAddress);
+      scanToken(
+        { address: prefilledAddress, chain: "solana" },
+        {
+          onError: (error) => {
+            toast({
+              title: "Scan failed",
+              description: error instanceof Error ? error.message : "Unable to score token",
+              variant: "destructive",
+            });
+          },
+        }
+      );
+    }
+
+    didAutoScan.current = true;
+  }, [scanToken, toast]);
 
   const handleScan = () => {
     if (!address) {
       toast({ title: "Error", description: "Please enter a contract address", variant: "destructive" });
       return;
     }
+    setScannedAddress(address.trim());
     scanToken(
       { address, chain: "solana" },
       {
@@ -69,9 +104,13 @@ export default function RugShield() {
         <div className="flex flex-col gap-2">
           <h1 className="text-3xl md:text-4xl font-bold" data-testid="text-page-title">Token Risk Scanner</h1>
           <p className="text-muted-foreground">Score any token for rug risk, liquidity stability, and trade confidence.</p>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="solana-badge">Risk Matrix</Badge>
+            <Badge variant="outline" className="border-accent/30 text-accent">Safety Focused</Badge>
+          </div>
         </div>
 
-        <Card className="p-6">
+        <Card className="p-6 solana-card">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="w-full md:w-40 h-10 px-3 border border-input rounded-md bg-muted/40 text-sm flex items-center" data-testid="select-chain">
               Solana
@@ -99,7 +138,7 @@ export default function RugShield() {
 
         {result && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card className="bg-card/60 backdrop-blur">
+            <Card className="solana-card animate-fade-in-up">
               <CardHeader>
                 <CardTitle className="text-center text-muted-foreground text-sm uppercase tracking-wider">Trade Confidence</CardTitle>
               </CardHeader>
@@ -125,7 +164,7 @@ export default function RugShield() {
               </CardContent>
             </Card>
 
-            <Card className="bg-card/60 backdrop-blur md:col-span-2">
+            <Card className="solana-card md:col-span-2 animate-fade-in-up">
               <CardHeader>
                 <CardTitle>Risk Breakdown</CardTitle>
               </CardHeader>
@@ -176,11 +215,67 @@ export default function RugShield() {
                 </div>
               </CardContent>
             </Card>
+
+            {devIntel && !('error' in (devIntel as any)) && (
+              <Card className="solana-card md:col-span-3 animate-fade-in-up">
+                <CardHeader>
+                  <CardTitle>Developer Rug + Jeet Intelligence</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <p className="text-xs text-muted-foreground">Rug Dev Flag</p>
+                      <p className={cn("text-sm font-semibold", devIntel.rug_profile.is_rug_dev ? "text-red-400" : "text-green-400")}>{devIntel.rug_profile.is_rug_dev ? "Likely Rug Operator" : "No Strong Rug Pattern"}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <p className="text-xs text-muted-foreground">Linked Launches</p>
+                      <p className="text-sm font-semibold">{devIntel.rug_profile.linked_launches}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <p className="text-xs text-muted-foreground">Typical Rug MC</p>
+                      <p className="text-sm font-semibold">${devIntel.rug_profile.typical_rug_mcap_usd.toLocaleString()}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <p className="text-xs text-muted-foreground">Jeet Pressure</p>
+                      <p className={cn("text-sm font-semibold", devIntel.jeet_checker.too_many_jeets ? "text-red-400" : "text-green-400")}>{devIntel.jeet_checker.too_many_jeets ? "Too Many Jeets" : "Normal"}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="p-3 rounded-lg bg-muted/40">
+                      <p className="text-xs text-muted-foreground">Link Method</p>
+                      <p className="text-sm">{devIntel.identity.link_method}</p>
+                      <p className="text-xs text-muted-foreground mt-1">Linked wallets: {devIntel.identity.linked_wallet_count}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-muted/40">
+                      <p className="text-xs text-muted-foreground">Rug Ratio + Jeet Ratio</p>
+                      <p className="text-sm">Rug ratio: {devIntel.rug_profile.rug_ratio_pct.toFixed(1)}%</p>
+                      <p className="text-sm">High-jeet ratio: {devIntel.jeet_checker.high_jeet_ratio_pct.toFixed(1)}%</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-2">Past linked launches</p>
+                    <div className="space-y-2 max-h-56 overflow-auto pr-1">
+                      {devIntel.past_launches.slice(0, 8).map((launch) => (
+                        <div key={launch.contract_address} className="p-2 rounded border border-border/60 bg-card/40">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-medium truncate">{launch.symbol || launch.name || launch.contract_address}</p>
+                            <p className="text-xs text-muted-foreground">${Number(launch.market_cap_usd || 0).toLocaleString()}</p>
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate">{launch.contract_address}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
 
         {!result && !isPending && (
-          <Card className="bg-card/60 backdrop-blur p-12 text-center">
+          <Card className="solana-card p-12 text-center">
             <Shield className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-30" />
             <h3 className="text-xl font-semibold text-muted-foreground mb-2">Enter a contract address to score</h3>
             <p className="text-sm text-muted-foreground max-w-md mx-auto">

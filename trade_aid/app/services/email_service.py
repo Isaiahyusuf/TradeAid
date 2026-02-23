@@ -2,11 +2,65 @@ import smtplib
 import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from typing import List, Tuple
 import httpx
 from app.config import get_settings
 from app.utils.logging_config import logger
 
 settings = get_settings()
+
+
+def _smtp_candidates() -> List[Tuple[str, int, bool, bool]]:
+    host = (settings.SMTP_HOST or "").strip()
+    base_port = int(settings.SMTP_PORT)
+    candidates: List[Tuple[str, int, bool, bool]] = [(host, base_port, bool(settings.SMTP_USE_SSL), bool(settings.SMTP_USE_TLS))]
+
+    if host.endswith("gmail.com"):
+      gmail_fallbacks: List[Tuple[str, int, bool, bool]] = [
+        (host, 465, True, False),
+        (host, 587, False, True),
+      ]
+      for item in gmail_fallbacks:
+        if item not in candidates:
+          candidates.append(item)
+
+    return candidates
+
+
+def _send_via_smtp(to_email: str, subject: str, html: str, purpose: str) -> bool:
+    if not settings.SMTP_FROM_EMAIL:
+      logger.error("[Email] SMTP_FROM_EMAIL must be set")
+      return False
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
+    msg["To"] = to_email
+    msg.attach(MIMEText(html, "html"))
+
+    context = ssl.create_default_context()
+    for host, port, use_ssl, use_tls in _smtp_candidates():
+      mode = "SSL" if use_ssl else "STARTTLS" if use_tls else "PLAINTEXT"
+      try:
+        if use_ssl:
+          server = smtplib.SMTP_SSL(host, port, timeout=8, context=context)
+        else:
+          server = smtplib.SMTP(host, port, timeout=8)
+
+        with server:
+          server.ehlo()
+          if use_tls and not use_ssl:
+            server.starttls(context=context)
+            server.ehlo()
+          server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+          server.sendmail(settings.SMTP_FROM_EMAIL, [to_email], msg.as_string())
+
+        logger.info(f"[Email] Sent '{purpose}' code to {to_email} via SMTP {host}:{port} ({mode})")
+        return True
+      except Exception as error:
+        logger.error(f"[Email] SMTP failed for {to_email} via {host}:{port} ({mode}): {error}")
+
+    return False
 
 
 def _send_via_resend(to_email: str, subject: str, html: str) -> bool:
@@ -31,7 +85,7 @@ def _send_via_resend(to_email: str, subject: str, html: str) -> bool:
           "subject": subject,
           "html": html,
         },
-        timeout=20.0,
+        timeout=10.0,
       )
       if 200 <= response.status_code < 300:
         logger.info(f"[Email] Sent via Resend to {to_email}")
@@ -55,37 +109,29 @@ def send_email_code(to_email: str, subject: str, code: str, purpose: str) -> boo
     </div>
     """
 
-    sent_via_resend = _send_via_resend(to_email, subject, html)
-    if sent_via_resend:
-      return True
+    smtp_ready = bool(settings.SMTP_HOST and settings.SMTP_USERNAME and settings.SMTP_PASSWORD and settings.SMTP_FROM_EMAIL)
+    resend_ready = bool(settings.RESEND_API_KEY)
 
-    if not settings.SMTP_HOST or not settings.SMTP_USERNAME or not settings.SMTP_PASSWORD:
+    if resend_ready:
+      sent_via_resend = _send_via_resend(to_email, subject, html)
+      if sent_via_resend:
+        return True
+
+    if not smtp_ready:
+      if resend_ready:
+        logger.warning(f"[Email] Resend configured but delivery failed for {to_email}")
+        return False
       logger.warning(f"[Email] No provider configured. Code for {to_email} ({purpose}): {code}")
       return False
 
-    try:
-      msg = MIMEMultipart("alternative")
-      msg["Subject"] = subject
-      msg["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
-      msg["To"] = to_email
-      msg.attach(MIMEText(html, "html"))
-
-      context = ssl.create_default_context()
-      if settings.SMTP_USE_SSL:
-        server = smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=20, context=context)
-      else:
-        server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=20)
-
-      with server:
-        server.ehlo()
-        if settings.SMTP_USE_TLS and not settings.SMTP_USE_SSL:
-          server.starttls(context=context)
-          server.ehlo()
-        server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
-        server.sendmail(settings.SMTP_FROM_EMAIL, [to_email], msg.as_string())
-
-      logger.info(f"[Email] Sent '{purpose}' code to {to_email}")
+    sent_via_smtp = _send_via_smtp(to_email, subject, html, purpose)
+    if sent_via_smtp:
       return True
-    except Exception as error:
-      logger.error(f"[Email] Failed to send code to {to_email}: {error}")
-      return False
+
+    if resend_ready:
+      sent_via_resend = _send_via_resend(to_email, subject, html)
+      if sent_via_resend:
+        return True
+
+    logger.warning(f"[Email] SMTP and Resend unavailable. Code for {to_email} ({purpose}): {code}")
+    return False

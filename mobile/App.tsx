@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { AuthContext, useAuthState } from './src/hooks/useAuth';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { addNotificationListeners, initializeNotifications } from './src/services/notifications';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -62,6 +63,7 @@ export default function App() {
     let mounted = true;
     (async () => {
       try {
+        await initializeNotifications();
         // placeholder for font loading / bootstrap
         await Promise.resolve();
         if (mounted) onReady();
@@ -69,8 +71,15 @@ export default function App() {
         if (mounted) setError(e as Error);
       }
     })();
+
+    const cleanupListeners = addNotificationListeners(
+      () => {},
+      () => {}
+    );
+
     return () => {
       mounted = false;
+      cleanupListeners();
     };
   }, [onReady]);
 

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Switch, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { profileService } from '../services/api';
+import { authService, profileService } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import type { UserProfile } from '../types';
 
@@ -14,7 +14,10 @@ export function AccountScreen() {
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['profile'],
-    queryFn: () => authService.getMe().then(res => res.data),
+    queryFn: async (): Promise<UserProfile> => {
+      const response = await authService.getMe();
+      return response.data as UserProfile;
+    },
   });
 
   const updateProfile = useMutation({
@@ -168,6 +171,19 @@ export function AccountScreen() {
               trackColor={{ false: '#3a3a3a', true: '#22c55e' }}
             />
           </View>
+          <TouchableOpacity
+            style={styles.testNotificationButton}
+            onPress={async () => {
+              try {
+                await authService.sendPushTest();
+                Alert.alert('Notification Sent', 'Backend push test sent. Check your phone sound and notification tray.');
+              } catch {
+                Alert.alert('Notification Error', 'Unable to send test notification on this device.');
+              }
+            }}
+          >
+            <Text style={styles.testNotificationButtonText}>Test Notification Sound</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.section}>
@@ -342,5 +358,19 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '600',
     fontSize: 16,
+  },
+  testNotificationButton: {
+    marginTop: 14,
+    backgroundColor: '#16331e',
+    borderColor: '#22c55e',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  testNotificationButtonText: {
+    color: '#22c55e',
+    fontWeight: '700',
+    fontSize: 13,
   },
 });

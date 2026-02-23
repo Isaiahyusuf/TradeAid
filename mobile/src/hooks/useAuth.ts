@@ -1,6 +1,7 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { authService, profileService } from '../services/api';
+import { initializeNotifications } from '../services/notifications';
 import type { UserProfile } from '../types';
 
 interface AuthContextType {
@@ -30,6 +31,14 @@ export function useAuthState() {
     try {
       const response = await authService.getMe();
       setUser(response.data);
+
+      const pushToken = await initializeNotifications();
+      if (pushToken) {
+        try {
+          await authService.registerPushToken(pushToken);
+        } catch {
+        }
+      }
     } catch (error) {
       setUser(null);
     }

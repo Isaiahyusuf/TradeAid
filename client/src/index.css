@@ -59,6 +59,48 @@
 }
 
 @layer utilities {
+  .solana-shell {
+    @apply relative;
+    background-image:
+      radial-gradient(circle at 14% 18%, rgba(34,197,94,0.14), transparent 34%),
+      radial-gradient(circle at 88% 12%, rgba(168,85,247,0.18), transparent 32%),
+      radial-gradient(circle at 52% 86%, rgba(14,165,233,0.12), transparent 36%);
+  }
+
+  .solana-card {
+    @apply bg-card/70 backdrop-blur-xl border border-primary/15 shadow-[0_8px_35px_rgba(0,0,0,0.22)] transition-all duration-300;
+  }
+
+  .solana-card:hover {
+    @apply border-primary/30 -translate-y-0.5;
+  }
+
+  .solana-badge {
+    @apply border-primary/30 bg-primary/10 text-primary;
+  }
+
+  .solana-tab-trigger[data-state='active'] {
+    @apply bg-gradient-to-r from-primary/15 via-accent/10 to-background text-foreground border border-primary/30;
+  }
+
+  .animate-fade-in-up {
+    animation: solana-fade-up 0.45s ease-out both;
+  }
+
+  .animate-soft-pulse {
+    animation: solana-soft-pulse 2.2s ease-in-out infinite;
+  }
+
+  .animate-float {
+    animation: solana-float 4.5s ease-in-out infinite;
+  }
+
+  .animate-shimmer {
+    background-image: linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.08) 45%, transparent 100%);
+    background-size: 200% 100%;
+    animation: solana-shimmer 2.8s linear infinite;
+  }
+
   .glass-card {
     @apply bg-card/60 backdrop-blur-xl border border-white/5 shadow-xl;
   }
@@ -81,6 +123,44 @@
 
   .safe-area-bottom {
     padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+@keyframes solana-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes solana-soft-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(34, 197, 94, 0.0);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(34, 197, 94, 0.18);
+  }
+}
+
+@keyframes solana-float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes solana-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
   }
 }
 

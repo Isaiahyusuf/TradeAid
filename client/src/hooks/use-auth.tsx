@@ -11,6 +11,7 @@ export type User = {
   email_verified?: boolean;
   display_name?: string;
   avatar_url?: string;
+  telemetry_opt_in?: boolean;
 };
 
 type AuthContextType = {
@@ -18,13 +19,15 @@ type AuthContextType = {
   isLoading: boolean;
   isAuthenticated: boolean;
   hasToken: boolean;
-  login: (username: string, password: string, totp_code?: string) => Promise<any>;
-  register: (username: string, email: string, password: string) => Promise<any>;
+  login: (username: string, password: string, accessCode?: string, totp_code?: string) => Promise<any>;
+  consumeOAuthTokens: (accessToken: string, refreshToken?: string) => Promise<void>;
+  register: (username: string, email: string | undefined, password: string, accessCode?: string) => Promise<any>;
+  checkUsername: (username: string) => Promise<{ username: string; available: boolean; valid: boolean; message: string }>;
   verifyEmail: (email: string, code: string) => Promise<any>;
   resendVerification: (email: string) => Promise<any>;
   requestPasswordResetCode: (email: string) => Promise<any>;
   confirmPasswordReset: (email: string, code: string, newPassword: string) => Promise<any>;
-  updateProfile: (payload: { username?: string; display_name?: string; avatar_url?: string }) => Promise<User>;
+  updateProfile: (payload: { username?: string; display_name?: string; avatar_url?: string; telemetry_opt_in?: boolean }) => Promise<User>;
   logout: () => void;
 };
 
@@ -61,10 +64,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     checkAuth();
   }, [checkAuth]);
 
-  const login = async (username: string, password: string, totp_code?: string) => {
+  const login = async (username: string, password: string, accessCode?: string, totp_code?: string) => {
     const data = await apiPost<{ access_token: string; token_type: string }>("/api/auth/login", {
       username,
       password,
+      access_code: accessCode,
       totp_code,
     });
     setToken(data.access_token);
@@ -75,17 +79,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     return data;
   };
 
-  const register = async (username: string, email: string, password: string) => {
+  const consumeOAuthTokens = async (accessToken: string, _refreshToken?: string) => {
+    setToken(accessToken);
+    setTokenState(true);
+    const me = await apiGet<User>("/api/auth/me");
+    setUser(me);
+    queryClient.invalidateQueries();
+  };
+
+  const register = async (username: string, email: string | undefined, password: string, accessCode?: string) => {
     const data = await apiPost<{ user_id: string; username: string; email: string; requires_email_verification: boolean; verification_email_sent?: boolean; retry_after_seconds?: number }>("/api/auth/register", {
       username,
       email,
       password,
+      access_code: accessCode,
     });
     return data;
   };
 
   const verifyEmail = async (email: string, code: string) => {
     return apiPost<{ verified: boolean }>("/api/auth/verify-email", { email, code });
+  };
+
+  const checkUsername = async (username: string) => {
+    return apiGet<{ username: string; available: boolean; valid: boolean; message: string }>(`/api/auth/check-username?username=${encodeURIComponent(username)}`);
   };
 
   const resendVerification = async (email: string) => {
@@ -104,8 +121,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     });
   };
 
-  const updateProfile = async (payload: { username?: string; display_name?: string; avatar_url?: string }) => {
-    const updated = await apiPatch<User>("/api/auth/profile", payload);
+  const updateProfile = async (payload: { username?: string; display_name?: string; avatar_url?: string; telemetry_opt_in?: boolean }) => {
+    await apiPatch<User>("/api/auth/profile", payload);
+    const updated = await apiGet<User>("/api/auth/me");
     setUser(updated);
     queryClient.invalidateQueries();
     return updated;
@@ -125,7 +143,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       isAuthenticated: !!user,
       hasToken: tokenState,
       login,
+      consumeOAuthTokens,
       register,
+      checkUsername,
       verifyEmail,
       resendVerification,
       requestPasswordResetCode,

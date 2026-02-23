@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
 from app.config import get_settings
 from app.models.models import Alert, Token
+from app.services.push_notification_service import push_notification_service
 from app.utils.redis_client import publish_event
 from app.utils.logging_config import logger
 
@@ -64,6 +65,21 @@ class AlertService:
             sent = await self.send_telegram_alert(alert)
             if sent:
                 alert.is_sent_telegram = True
+
+            push_sent_count = await push_notification_service.send_alert_push(
+                db,
+                title=f"TradeAid {severity.title()} Alert",
+                body=title if not message else f"{title}: {message[:120]}",
+                data={
+                    "alert_id": str(alert.id),
+                    "alert_type": alert_type,
+                    "chain": chain,
+                    "contract_address": contract_address,
+                    "severity": severity,
+                },
+            )
+            if push_sent_count:
+                logger.info(f"[Push] Sent alert push notifications: {push_sent_count}")
 
         await db.flush()
         logger.info(f"[Alert] {severity.upper()}: {title}")

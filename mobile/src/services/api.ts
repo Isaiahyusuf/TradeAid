@@ -1,6 +1,9 @@
-import axios from 'axios';
+import axiosBrowser from 'axios/dist/browser/axios.cjs';
+import type { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
+
+const axios = axiosBrowser as typeof import('axios').default;
 
 // Default to local development or use environment variable
 const API_URL = Constants.expoConfig?.extra?.apiUrl || 'http://localhost:8000';
@@ -14,7 +17,7 @@ const api = axios.create({
 });
 
 // Request interceptor to add auth token
-api.interceptors.request.use(async (config) => {
+api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   const token = await SecureStore.getItemAsync('authToken');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -24,8 +27,8 @@ api.interceptors.request.use(async (config) => {
 
 // Response interceptor for error handling
 api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
+  (response: AxiosResponse) => response,
+  async (error: AxiosError) => {
     if (error.response?.status === 401) {
       // Token expired, clear and redirect to login
       await SecureStore.deleteItemAsync('authToken');
@@ -52,7 +55,7 @@ export const tokenService = {
   
   // Scan a token address
   scan: (chain: string, address: string) => 
-    api.post('/api/tokens/scan', { chain, contract_address: address }),
+    api.post('/api/scoring/score-token', { chain, contract_address: address }),
   
   // Get token stats
   getStats: () => api.get('/api/tokens/stats/overview'),
@@ -123,6 +126,13 @@ export const authService = {
   
   // Get current user
   getMe: () => api.get('/api/auth/me'),
+
+  // Register Expo push token
+  registerPushToken: (expoPushToken: string) =>
+    api.post('/api/auth/push-token', { expo_push_token: expoPushToken }),
+
+  // Trigger backend push test
+  sendPushTest: () => api.post('/api/auth/push-token/test'),
   
   // Setup 2FA
   setup2FA: () => api.post('/api/auth/2fa/setup'),

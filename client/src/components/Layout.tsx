@@ -18,17 +18,18 @@ export function Layout({ children }: { children: ReactNode }) {
   const [, setLocation] = useLocation();
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex">
+    <div className="min-h-screen bg-background text-foreground flex solana-shell">
       <Sidebar />
       <main className="flex-1 md:ml-64 pb-20 md:pb-0 relative overflow-x-hidden">
         {/* Decorative background gradients */}
-        <div className="absolute top-0 left-0 w-full h-[500px] bg-gradient-to-b from-primary/5 to-transparent pointer-events-none" />
+        <div className="absolute top-0 left-0 w-full h-[500px] bg-gradient-to-b from-primary/10 to-transparent pointer-events-none animate-float" />
+        <div className="absolute -top-16 right-10 w-72 h-72 rounded-full bg-accent/10 blur-3xl pointer-events-none animate-soft-pulse" />
         <div className="absolute top-0 right-0 p-4 md:p-6 z-20">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="outline"
-                className="gap-2 bg-card/70 backdrop-blur-md border-primary/20 hover:border-primary/40"
+                className="gap-2 bg-card/70 backdrop-blur-md border-primary/20 hover:border-primary/40 solana-card"
                 data-testid="button-open-profile-menu"
               >
                 <Avatar className="h-6 w-6">
@@ -57,7 +58,7 @@ export function Layout({ children }: { children: ReactNode }) {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <div className="relative z-10 p-4 md:p-8 pt-16 md:pt-20 pr-20 md:pr-28 max-w-7xl mx-auto">
+        <div className="relative z-10 p-4 md:p-8 pt-16 md:pt-20 pr-20 md:pr-28 max-w-7xl mx-auto animate-fade-in-up">
           {children}
         </div>
       </main>

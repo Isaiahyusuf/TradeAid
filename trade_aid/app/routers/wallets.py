@@ -6,6 +6,7 @@ from app.services.auth_service import get_current_user
 from app.intelligence.developer_intel import developer_intelligence
 from app.intelligence.trader_intel import trader_intelligence
 from app.intelligence.wallet_clustering import wallet_cluster_engine
+from app.services.dev_behavior_service import dev_behavior_service
 from app.workers.tasks import compute_dev_risk_task, compute_trader_risk_task
 
 router = APIRouter(prefix="/api/wallets", tags=["Wallets"])
@@ -71,3 +72,19 @@ async def analyze_trader(
 
     task = compute_trader_risk_task.delay(wallet_address, chain)
     return {"task_id": task.id, "status": "queued"}
+
+
+@router.get("/dev-intel/{contract_address}")
+async def get_dev_intel_by_contract(
+    contract_address: str,
+    chain: str = "solana",
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if chain.lower() != "solana":
+        raise HTTPException(status_code=400, detail="Only Solana integration is supported")
+
+    intel = await dev_behavior_service.get_dev_token_intel(db, contract_address=contract_address, chain="solana")
+    if not intel:
+        return {"error": "Token not found"}
+    return intel

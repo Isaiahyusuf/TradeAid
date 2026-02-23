@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy import select
@@ -9,6 +9,7 @@ from app.services.auth_service import get_current_user
 from app.scoring.scoring_service import scoring_service
 from app.workers.tasks import score_token_task
 from app.services.ai_insight_service import generate_ai_insight
+from app.utils.telemetry import build_telemetry_fingerprint, get_client_ip
 
 router = APIRouter(prefix="/api/scoring", tags=["Scoring"])
 
@@ -21,6 +22,7 @@ class ScoreRequest(BaseModel):
 @router.post("/score-token")
 async def score_token(
     req: ScoreRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -28,6 +30,30 @@ async def score_token(
         raise HTTPException(status_code=400, detail="Only Solana integration is supported")
 
     result = await scoring_service.score_token(db, req.contract_address, req.chain)
+
+    metadata = user.alert_preferences or {}
+    privacy = metadata.get("privacy", {})
+    telemetry_opt_in = bool(privacy.get("telemetry_opt_in", False))
+    if telemetry_opt_in:
+        token_result = await db.execute(
+            select(Token).where(Token.chain == "solana", Token.contract_address == req.contract_address)
+        )
+        token = token_result.scalar_one_or_none()
+        if token:
+            token_meta = dict(token.extra_data or {})
+            observer_fingerprints = list(token_meta.get("observer_fingerprints") or [])
+
+            fingerprint = build_telemetry_fingerprint(
+                ip=get_client_ip(request),
+                user_agent=request.headers.get("user-agent", ""),
+                device_id=(user.device_id or request.headers.get("x-device-id", "")),
+            )
+            if fingerprint and fingerprint not in observer_fingerprints:
+                observer_fingerprints.insert(0, fingerprint)
+                token_meta["observer_fingerprints"] = observer_fingerprints[:20]
+                token.extra_data = token_meta
+                await db.flush()
+
     return result
 
 

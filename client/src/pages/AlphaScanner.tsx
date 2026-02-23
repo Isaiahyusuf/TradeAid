@@ -7,13 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTokens, type TokenItem } from "@/hooks/use-memetrend";
-import { useScanHistory, useScanToken } from "@/hooks/use-rugcheck";
+import { useScanHistory } from "@/hooks/use-rugcheck";
 import { useAlerts } from "@/hooks/use-alerts";
 import { useAIInsight } from "@/hooks/use-ai-insight";
 import { useScannerStream, type ScannerStreamEvent } from "@/hooks/use-scanner-stream";
 import { 
   Search, Shield, RefreshCw,
-  Loader2, Radar, ExternalLink
+  Radar, ExternalLink
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
@@ -22,6 +22,7 @@ import { AIScoreBadgePanel } from "@/components/scanner/AIScoreBadgePanel";
 import { AIScoreHistoryChart } from "@/components/scanner/AIScoreHistoryChart";
 import { MetricLabel } from "@/components/scanner/MetricLabel";
 import { useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 
 function formatNumber(n: number) {
   if (n >= 1000000) return `$${(n / 1000000).toFixed(2)}M`;
@@ -71,6 +72,7 @@ export default function AlphaScanner() {
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   const ageTabs: Array<{
     key: "5m" | "20m" | "40m" | "1h" | "5h" | "12h" | "24h";
@@ -87,7 +89,12 @@ export default function AlphaScanner() {
     { key: "24h", label: "24h", minAgeMinutes: 720, maxAgeMinutes: 1440 },
   ];
 
-  const { data: tokenData, isLoading, refetch } = useTokens("solana");
+  const { data: tokenData, isLoading, refetch } = useTokens("solana", {
+    newOnly: true,
+    maxAgeHours: 24,
+    prioritizePumpFun: true,
+    limit: 120,
+  });
   const selectedAgeTab = ageTabs.find((tab) => tab.key === tokenTab);
   const {
     data: ageWindowData,
@@ -105,7 +112,6 @@ export default function AlphaScanner() {
       : undefined
   );
   const { data: liveAlerts } = useAlerts({ chain: "solana" });
-  const { mutate: scoreToken, isPending: isScoring, data: scoreResult } = useScanToken();
 
   const allTokens = tokenData?.tokens || [];
   const ageWindowTokens = ageWindowData?.tokens || [];
@@ -173,18 +179,9 @@ export default function AlphaScanner() {
   const { connected: streamConnected } = useScannerStream(onStreamEvent);
 
   const handleQuickScore = (address: string) => {
-    scoreToken(
-      { address, chain: "solana" },
-      {
-        onError: (error) => {
-          toast({
-            title: "Score failed",
-            description: error instanceof Error ? error.message : "Unable to score token",
-            variant: "destructive",
-          });
-        },
-      }
-    );
+    const target = String(address || "").trim();
+    if (!target) return;
+    setLocation(`/rugshield?address=${encodeURIComponent(target)}&auto=1`);
   };
 
   const handleScanAddress = () => {
@@ -192,18 +189,7 @@ export default function AlphaScanner() {
       toast({ title: "Error", description: "Enter a contract address", variant: "destructive" });
       return;
     }
-    scoreToken(
-      { address: scanAddress, chain: "solana" },
-      {
-        onError: (error) => {
-          toast({
-            title: "Score failed",
-            description: error instanceof Error ? error.message : "Unable to score token",
-            variant: "destructive",
-          });
-        },
-      }
-    );
+    setLocation(`/rugshield?address=${encodeURIComponent(scanAddress.trim())}&auto=1`);
   };
 
   const handleRefresh = async () => {
@@ -243,6 +229,10 @@ export default function AlphaScanner() {
             <p className="text-muted-foreground mt-1">
               Smart Solana scanner with live risk and AI intelligence
             </p>
+            <div className="flex items-center gap-2 mt-2">
+              <Badge variant="outline" className="solana-badge">Signal Engine</Badge>
+              <Badge variant="outline" className="border-accent/30 text-accent">Fast Rotation</Badge>
+            </div>
             <p className="text-xs text-muted-foreground mt-2">
               {lastRefreshedAt ? `Last refreshed ${lastRefreshedAt.toLocaleTimeString()}` : "Auto-refresh every 5s is active"}
             </p>
@@ -258,7 +248,7 @@ export default function AlphaScanner() {
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="p-4 transition-all duration-300 hover:-translate-y-0.5 bg-gradient-to-r from-primary/10 to-background">
+          <Card className="p-4 solana-card animate-fade-in-up bg-gradient-to-r from-primary/10 to-background">
             <div className="flex items-center gap-3">
               <div>
                 <p className="text-sm"><MetricLabel label="Total Tokens" tooltip="Number of tokens currently loaded into the Solana scanner feed." /></p>
@@ -266,7 +256,7 @@ export default function AlphaScanner() {
               </div>
             </div>
           </Card>
-          <Card className="p-4 transition-all duration-300 hover:-translate-y-0.5 bg-gradient-to-r from-accent/10 to-background">
+          <Card className="p-4 solana-card animate-fade-in-up bg-gradient-to-r from-accent/10 to-background">
             <div className="flex items-center gap-3">
               <div>
                 <p className="text-sm"><MetricLabel label="Live Trades" tooltip="Count of recent scanner alerts and trade events detected in real-time." /></p>
@@ -274,7 +264,7 @@ export default function AlphaScanner() {
               </div>
             </div>
           </Card>
-          <Card className="p-4 transition-all duration-300 hover:-translate-y-0.5 bg-gradient-to-r from-primary/10 to-background">
+          <Card className="p-4 solana-card animate-fade-in-up bg-gradient-to-r from-primary/10 to-background">
             <div className="flex items-center gap-3">
               <div>
                 <p className="text-sm"><MetricLabel label="Selected Token" tooltip="The token currently focused in detail panels and AI sections." /></p>
@@ -282,7 +272,7 @@ export default function AlphaScanner() {
               </div>
             </div>
           </Card>
-          <Card className="p-4 transition-all duration-300 hover:-translate-y-0.5 bg-gradient-to-r from-accent/10 to-background">
+          <Card className="p-4 solana-card animate-fade-in-up bg-gradient-to-r from-accent/10 to-background">
             <div className="flex items-center gap-3">
               <div>
                 <p className="text-sm"><MetricLabel label="Filtered" tooltip="Number of tokens remaining after search, risk, liquidity, and sort filters." /></p>
@@ -292,7 +282,7 @@ export default function AlphaScanner() {
           </Card>
         </div>
 
-        <Card className="p-4">
+        <Card className="p-4 solana-card">
           <div className="flex flex-col gap-4">
             <p className="text-sm font-medium text-muted-foreground">Quick Score + Filters</p>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
@@ -330,17 +320,15 @@ export default function AlphaScanner() {
                   <SelectItem value="price">Sort by momentum</SelectItem>
                 </SelectContent>
               </Select>
-              <Button onClick={handleScanAddress} disabled={isScoring} data-testid="button-score-token">
-                {isScoring ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Shield className="w-4 h-4 mr-2" />}
-                {isScoring ? "Scoring..." : "Score"}
+              <Button onClick={handleScanAddress} data-testid="button-score-token">
+                <Shield className="w-4 h-4 mr-2" />
+                Analyze in RugShield
               </Button>
             </div>
           </div>
         </Card>
 
-        {scoreResult && <Card className="p-4 border-primary/30 text-sm">Latest manual scan complete.</Card>}
-
-        <Card className="p-4">
+        <Card className="p-4 solana-card">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <Input
@@ -354,23 +342,23 @@ export default function AlphaScanner() {
         </Card>
 
         <div className="space-y-2">
-          <Card className="p-3">
+          <Card className="p-3 solana-card">
             <Tabs value={tokenTab} onValueChange={(value) => setTokenTab(value as "all" | "5m" | "20m" | "40m" | "1h" | "5h" | "12h" | "24h") }>
               <TabsList className="w-full overflow-x-auto justify-start">
-                <TabsTrigger value="all" data-testid="tab-all-tokens">All Tokens</TabsTrigger>
-                <TabsTrigger value="5m" data-testid="tab-5m-tokens">5m</TabsTrigger>
-                <TabsTrigger value="20m" data-testid="tab-20m-tokens">20m</TabsTrigger>
-                <TabsTrigger value="40m" data-testid="tab-40m-tokens">40m</TabsTrigger>
-                <TabsTrigger value="1h" data-testid="tab-1h-tokens">1h</TabsTrigger>
-                <TabsTrigger value="5h" data-testid="tab-5h-tokens">5h</TabsTrigger>
-                <TabsTrigger value="12h" data-testid="tab-12h-tokens">12h</TabsTrigger>
-                <TabsTrigger value="24h" data-testid="tab-24h-tokens">24h</TabsTrigger>
+                <TabsTrigger className="solana-tab-trigger" value="all" data-testid="tab-all-tokens">All Tokens</TabsTrigger>
+                <TabsTrigger className="solana-tab-trigger" value="5m" data-testid="tab-5m-tokens">5m</TabsTrigger>
+                <TabsTrigger className="solana-tab-trigger" value="20m" data-testid="tab-20m-tokens">20m</TabsTrigger>
+                <TabsTrigger className="solana-tab-trigger" value="40m" data-testid="tab-40m-tokens">40m</TabsTrigger>
+                <TabsTrigger className="solana-tab-trigger" value="1h" data-testid="tab-1h-tokens">1h</TabsTrigger>
+                <TabsTrigger className="solana-tab-trigger" value="5h" data-testid="tab-5h-tokens">5h</TabsTrigger>
+                <TabsTrigger className="solana-tab-trigger" value="12h" data-testid="tab-12h-tokens">12h</TabsTrigger>
+                <TabsTrigger className="solana-tab-trigger" value="24h" data-testid="tab-24h-tokens">24h</TabsTrigger>
               </TabsList>
             </Tabs>
           </Card>
           {isLoading ? (
             Array(6).fill(0).map((_, i) => (
-              <Card key={i} className="p-4">
+              <Card key={i} className="p-4 solana-card">
                 <div className="flex items-center gap-4">
                   <Skeleton className="w-10 h-10 rounded-full" />
                   <div className="flex-1 space-y-2">
@@ -383,7 +371,7 @@ export default function AlphaScanner() {
             ))
           ) : tokenTab !== "all" && isAgeWindowLoading ? (
             Array(4).fill(0).map((_, i) => (
-              <Card key={`new-${i}`} className="p-4">
+              <Card key={`new-${i}`} className="p-4 solana-card">
                 <div className="flex items-center gap-4">
                   <Skeleton className="w-10 h-10 rounded-full" />
                   <div className="flex-1 space-y-2">
@@ -394,7 +382,7 @@ export default function AlphaScanner() {
               </Card>
             ))
           ) : filteredTokens.length === 0 ? (
-            <Card className="p-12 text-center">
+            <Card className="p-12 text-center solana-card">
               <Radar className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-30" />
               <p className="text-lg text-muted-foreground">No {tokenTab === "all" ? "matching" : "projects"} found on Solana</p>
               <p className="text-sm text-muted-foreground">
@@ -464,7 +452,6 @@ export default function AlphaScanner() {
                       event.stopPropagation();
                       handleQuickScore(token.contract_address);
                     }}
-                    disabled={isScoring}
                     data-testid={`button-score-${token.id}`}
                   >
                     <Shield className="w-4 h-4" />

@@ -12,10 +12,20 @@ router = APIRouter(prefix="/api/safe-buy", tags=["Safe Buy"])
 @router.get("")
 async def list_safe_buy(
     limit: int = Query(default=20, ge=1, le=50),
+    chain: str = Query(default="all"),
+    chains: str | None = Query(default=None, description="Comma-separated chains for custom mode"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    result = await safe_buy_service.list_safe_buy_tokens(db, limit=limit)
+    chain_value = (chain or "all").strip().lower()
+    selected_chains: list[str] | None = None
+
+    if chain_value == "custom":
+        selected_chains = [item.strip().lower() for item in (chains or "").split(",") if item.strip()]
+    elif chain_value != "all":
+        selected_chains = [chain_value]
+
+    result = await safe_buy_service.list_safe_buy_tokens(db, limit=limit, chains=selected_chains)
     tokens = result.get("safe_tokens", [])
     near_miss_tokens = result.get("near_miss_tokens", [])
     return {

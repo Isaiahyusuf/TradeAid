@@ -83,9 +83,13 @@ export default function WhaleWatch() {
         <div>
           <h1 className="text-3xl md:text-4xl font-bold" data-testid="text-page-title">Wallet Intelligence</h1>
           <p className="text-muted-foreground">Analyze any wallet for developer history, trading performance, and risk signals.</p>
+          <div className="flex items-center gap-2 mt-2">
+            <Badge variant="outline" className="solana-badge">Whale Signals</Badge>
+            <Badge variant="outline" className="border-accent/30 text-accent">Behavior Tracking</Badge>
+          </div>
         </div>
 
-        <Card className="p-6">
+        <Card className="p-6 solana-card">
           <div className="flex flex-col gap-4">
             <div className="flex flex-col md:flex-row gap-4">
               <div className="w-full md:w-40 h-10 px-3 border border-input rounded-md bg-muted/40 text-sm flex items-center" data-testid="select-chain">
@@ -105,10 +109,10 @@ export default function WhaleWatch() {
             <div className="flex flex-col sm:flex-row gap-4">
               <Tabs value={analysisType} onValueChange={(v) => setAnalysisType(v as "developer" | "trader")} className="flex-1">
                 <TabsList className="w-full">
-                  <TabsTrigger value="trader" className="flex-1" data-testid="tab-trader">
+                  <TabsTrigger value="trader" className="flex-1 solana-tab-trigger" data-testid="tab-trader">
                     <TrendingUp className="w-4 h-4 mr-2" /> Trader Profile
                   </TabsTrigger>
-                  <TabsTrigger value="developer" className="flex-1" data-testid="tab-developer">
+                  <TabsTrigger value="developer" className="flex-1 solana-tab-trigger" data-testid="tab-developer">
                     <Shield className="w-4 h-4 mr-2" /> Developer Profile
                   </TabsTrigger>
                 </TabsList>
@@ -123,7 +127,7 @@ export default function WhaleWatch() {
 
         {traderResult && analysisType === "trader" && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card className="bg-card/60 backdrop-blur">
+            <Card className="solana-card animate-fade-in-up">
               <CardHeader>
                 <CardTitle className="text-sm uppercase text-muted-foreground tracking-wider">Trader Overview</CardTitle>
               </CardHeader>
@@ -156,7 +160,7 @@ export default function WhaleWatch() {
               </CardContent>
             </Card>
 
-            <Card className="bg-card/60 backdrop-blur md:col-span-2">
+            <Card className="solana-card md:col-span-2 animate-fade-in-up">
               <CardHeader>
                 <CardTitle>Risk Analysis</CardTitle>
               </CardHeader>
@@ -189,7 +193,7 @@ export default function WhaleWatch() {
 
         {devResult && analysisType === "developer" && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card className="bg-card/60 backdrop-blur">
+            <Card className="solana-card animate-fade-in-up">
               <CardHeader>
                 <CardTitle className="text-sm uppercase text-muted-foreground tracking-wider">Developer Overview</CardTitle>
               </CardHeader>
@@ -216,7 +220,7 @@ export default function WhaleWatch() {
               </CardContent>
             </Card>
 
-            <Card className="bg-card/60 backdrop-blur md:col-span-2">
+            <Card className="solana-card md:col-span-2 animate-fade-in-up">
               <CardHeader>
                 <CardTitle>Risk Breakdown</CardTitle>
               </CardHeader>
@@ -253,7 +257,7 @@ export default function WhaleWatch() {
         )}
 
         {!devResult && !traderResult && !isPending && (
-          <Card className="bg-card/60 backdrop-blur p-12 text-center">
+          <Card className="solana-card p-12 text-center">
             <Wallet className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-30" />
             <h3 className="text-xl font-semibold text-muted-foreground mb-2">Enter a wallet to analyze</h3>
             <p className="text-sm text-muted-foreground max-w-md mx-auto">

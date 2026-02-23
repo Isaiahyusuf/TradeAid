@@ -74,16 +74,25 @@ class SafeBuyService:
             "topHoldersPct": round(top_holders_pct, 2),
         }
 
-    async def list_safe_buy_tokens(self, db: AsyncSession, limit: int = 20) -> dict[str, list[dict[str, Any]]]:
+    async def list_safe_buy_tokens(
+        self,
+        db: AsyncSession,
+        limit: int = 20,
+        chains: list[str] | None = None,
+    ) -> dict[str, list[dict[str, Any]]]:
         now = datetime.utcnow()
         launch_cutoff = now - timedelta(hours=24)
 
-        token_result = await db.execute(
+        query = (
             select(Token)
-            .where(Token.chain == "solana", Token.created_at >= launch_cutoff)
+            .where(Token.created_at >= launch_cutoff)
             .order_by(Token.created_at.desc())
-            .limit(250)
+            .limit(450)
         )
+        if chains:
+            query = query.where(Token.chain.in_(chains))
+
+        token_result = await db.execute(query)
         tokens = token_result.scalars().all()
 
         token_ids = [t.id for t in tokens]
@@ -120,50 +129,48 @@ class SafeBuyService:
             sells_1h = int(extra.get("sells_1h", 0) or 0)
             new_wallets_count = int(extra.get("new_wallets_count", 0) or 0)
 
-            if market_cap < 15000 or market_cap > 500000:
+            if market_cap < 10000 or market_cap > 750000:
                 continue
 
             liq_ratio = (liquidity / market_cap) if market_cap > 0 else 0
-            if liq_ratio < 0.2:
+            if liq_ratio < 0.12:
                 continue
 
             if await self._has_recent_liquidity_removal(db, token.id, within_minutes=30):
                 continue
 
-            if volume_5m < 2000:
+            if volume_5m < 750:
                 continue
 
-            if buys_1h <= sells_1h:
+            if sells_1h > (buys_1h * 1.35):
                 continue
 
             vol_liq_ratio = ((volume_5m + volume_1h) / max(liquidity, 1))
-            if vol_liq_ratio > 2.8:
+            if vol_liq_ratio > 3.8:
                 continue
 
             top_holders_pct = self._estimate_top_holders_pct(token, latest_score)
             largest_wallet_pct = top_holders_pct * 0.28
             dev_wallet_pct = self._estimate_dev_wallet_pct(token, latest_score)
-            suspicious_cluster_flag = bool((latest_score and latest_score.smart_wallet_signal < 20) or (buys_5m > 120 and volume_5m < 800))
+            suspicious_cluster_flag = bool((latest_score and latest_score.smart_wallet_signal < 15 and sells_1h > buys_1h) or (buys_5m > 140 and volume_5m < 900))
 
-            if top_holders_pct > 45:
+            if top_holders_pct > 55:
                 continue
-            if largest_wallet_pct > 8:
+            if largest_wallet_pct > 10:
                 continue
-            if dev_wallet_pct > 7:
+            if dev_wallet_pct > 12:
                 continue
             if suspicious_cluster_flag:
                 continue
 
             dev_history_score = max(0.0, min(100.0, 100.0 - float(latest_score.rug_probability if latest_score else 55)))
-            if dev_history_score < 45:
-                continue
-            if sells_1h > (buys_1h * 1.3):
+            if dev_history_score < 35:
                 continue
 
             unique_buyers = max(new_wallets_count, buys_5m)
-            if unique_buyers < 3:
+            if unique_buyers < 1:
                 continue
-            if buys_5m > 80 and volume_5m < 1000:
+            if buys_5m > 120 and volume_5m < 900:
                 continue
 
             ai_payload = self._build_ai_payload(token, latest_score, top_holders_pct, dev_wallet_pct)
@@ -188,7 +195,7 @@ class SafeBuyService:
                         "alerts",
                         {
                             "type": "safe_buy_update",
-                            "chain": "solana",
+                            "chain": token.chain,
                             "contract": contract,
                             "symbol": token.symbol,
                             "safety_score": safety_score,
@@ -213,6 +220,7 @@ class SafeBuyService:
                 "dev_wallet_pct": round(dev_wallet_pct, 2),
                 "wallet_growth_rate": float(new_wallets_count),
                 "logo_url": extra.get("logo_url"),
+                "is_pump_fun": bool(getattr(token, "is_pump_fun", False) or extra.get("is_pump_fun", False)),
                 "safety_score": round(safety_score, 2),
                 "risk_level": risk_level,
                 "short_summary": str(ai_result.get("short_summary", "")),
@@ -221,21 +229,73 @@ class SafeBuyService:
                 "ai_source": ai_result.get("source", "fallback"),
                 "trend": trend,
                 "recently_added": recently_added,
+                "source_platform": (extra.get("source_platform") or token.dex_id or "dexscreener"),
                 "buy_links": {
-                    "raydium": f"https://raydium.io/swap/?inputMint=sol&outputMint={contract}",
-                    "jupiter": f"https://jup.ag/swap/SOL-{contract}",
-                    "dexscreener": f"https://dexscreener.com/solana/{contract}",
+                    "pump_fun": f"https://pump.fun/coin/{contract}",
+                    "raydium": f"https://raydium.io/swap/?inputMint=sol&outputMint={contract}" if token.chain == "solana" else f"https://dexscreener.com/{token.chain}/{contract}",
+                    "jupiter": f"https://jup.ag/swap/SOL-{contract}" if token.chain == "solana" else f"https://dexscreener.com/{token.chain}/{contract}",
+                    "dexscreener": f"https://dexscreener.com/{token.chain}/{contract}",
                 },
                 "created_at": str(token.created_at),
             }
 
-            if safety_score >= 75:
+            if safety_score >= 65:
                 safe_candidates.append(token_payload)
-            elif 65 <= safety_score < 75:
+            elif 50 <= safety_score < 65:
                 near_miss_candidates.append(token_payload)
 
-        safe_candidates.sort(key=lambda row: (row["safety_score"], row["confidence_score"]), reverse=True)
-        near_miss_candidates.sort(key=lambda row: (row["safety_score"], row["confidence_score"]), reverse=True)
+        safe_candidates.sort(
+            key=lambda row: (
+                1 if row.get("is_pump_fun") else 0,
+                row["safety_score"],
+                row["confidence_score"],
+                row.get("volume_5m", 0),
+            ),
+            reverse=True,
+        )
+        near_miss_candidates.sort(
+            key=lambda row: (
+                1 if row.get("is_pump_fun") else 0,
+                row["safety_score"],
+                row["confidence_score"],
+                row.get("volume_5m", 0),
+            ),
+            reverse=True,
+        )
+
+        if not safe_candidates and near_miss_candidates:
+            fallback_safe = [
+                {
+                    **row,
+                    "recommendation": "Monitor (Fresh Potential)",
+                    "short_summary": row.get("short_summary") or "Strong near-miss candidate promoted due to market scarcity.",
+                }
+                for row in near_miss_candidates
+                if row.get("safety_score", 0) >= 58 and row.get("risk_level") in {"Low", "Medium"}
+            ][: max(3, min(limit, 8))]
+            safe_candidates.extend(fallback_safe)
+
+        safe_candidates.sort(
+            key=lambda row: (
+                row.get("created_at", ""),
+                1 if row.get("is_pump_fun") else 0,
+                row.get("safety_score", 0),
+                row.get("confidence_score", 0),
+                row.get("volume_5m", 0),
+            ),
+            reverse=True,
+        )
+        near_miss_candidates.sort(
+            key=lambda row: (
+                row.get("created_at", ""),
+                1 if row.get("is_pump_fun") else 0,
+                row.get("safety_score", 0),
+                row.get("confidence_score", 0),
+                row.get("volume_5m", 0),
+            ),
+            reverse=True,
+        )
+
         trimmed = safe_candidates[:limit]
         trimmed_near_miss = near_miss_candidates[:limit]
 
@@ -243,7 +303,7 @@ class SafeBuyService:
         await cache_set(score_cache_key, trimmed_scores, ttl=3600)
 
         return {
-            "safe_tokens": [row for row in trimmed if row["safety_score"] >= 75],
+            "safe_tokens": trimmed,
             "near_miss_tokens": trimmed_near_miss,
         }
 

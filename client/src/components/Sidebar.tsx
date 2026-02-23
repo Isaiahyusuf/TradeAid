@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { TradeAidLogo } from "@/components/brand/TradeAidLogo";
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -15,6 +16,7 @@ const NAV_ITEMS = [
   { label: "WhaleWatch", href: "/whalewatch", icon: Eye },
   { label: "Safe Buy", href: "/safebuy", icon: Lock },
   { label: "Tokens", href: "/memetrend", icon: TrendingUp },
+  { label: "Subscription", href: "/subscription", icon: Bell },
   { label: "Account", href: "/account", icon: User },
 ];
 
@@ -23,11 +25,9 @@ export function Sidebar() {
   const { user, logout } = useAuth();
 
   return (
-    <aside className="fixed left-0 top-0 h-screen w-64 bg-card border-r border-border hidden md:flex flex-col z-40">
+    <aside className="fixed left-0 top-0 h-screen w-64 bg-card/90 backdrop-blur-xl border-r border-primary/15 hidden md:flex flex-col z-40">
       <div className="p-6 border-b border-border">
-        <h1 className="text-2xl font-bold font-sans tracking-tighter">
-          <span className="text-primary">Trade</span> Aid
-        </h1>
+        <TradeAidLogo />
       </div>
 
       <nav className="flex-1 p-4 space-y-2">
@@ -40,10 +40,10 @@ export function Sidebar() {
               key={item.href}
               onClick={() => setLocation(item.href)}
               className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-medium",
+                "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-medium border border-transparent",
                 isActive 
-                  ? "bg-primary/10 text-primary shadow-[0_0_15px_rgba(34,197,94,0.15)]" 
-                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                  ? "bg-gradient-to-r from-primary/15 via-accent/10 to-background text-primary border-primary/30 shadow-[0_0_15px_rgba(34,197,94,0.15)]" 
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/5 hover:border-primary/20"
               )}
               data-testid={`nav-${item.label.toLowerCase()}`}
             >
@@ -88,7 +88,7 @@ export function MobileNav() {
   const [location, setLocation] = useLocation();
   
   return (
-    <nav className="fixed bottom-0 left-0 w-full bg-card/95 backdrop-blur-lg border-t border-border md:hidden z-50 px-2 py-2 safe-area-bottom">
+    <nav className="fixed bottom-0 left-0 w-full bg-card/95 backdrop-blur-lg border-t border-primary/20 md:hidden z-50 px-2 py-2 safe-area-bottom">
       <div className="flex justify-around items-center max-w-xl mx-auto overflow-x-auto scrollbar-hide">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
@@ -99,8 +99,8 @@ export function MobileNav() {
               key={item.href}
               onClick={() => setLocation(item.href)}
               className={cn(
-                "flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors min-w-[56px]",
-                isActive ? "text-primary bg-primary/10" : "text-muted-foreground"
+                "flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors min-w-[56px] border border-transparent",
+                isActive ? "text-primary bg-primary/10 border-primary/25" : "text-muted-foreground"
               )} 
               data-testid={`mobile-nav-${item.label.toLowerCase()}`}
             >

@@ -3,12 +3,11 @@ import { View, Text, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { trendService } from '../services/api';
-import type { TrendingCoin } from '../types';
 
 export function MemeTrendScreen() {
   const { data: tokensData, isLoading, refetch } = useQuery({
     queryKey: ['memetrend'],
-    queryFn: () => tokenService.getAll({ limit: 50 }).then(res => res.data.tokens || []),
+    queryFn: () => trendService.getList().then((res: any) => res.data?.tokens || []),
   });
 
   const [refreshing, setRefreshing] = React.useState(false);
@@ -159,10 +158,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#6b7280',
-  },
-});
-    fontSize: 14,
-    fontWeight: '700',
-    marginTop: 4,
   },
 });

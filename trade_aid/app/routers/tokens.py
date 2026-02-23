@@ -20,6 +20,7 @@ async def list_tokens(
     sort_by: str = "created_at",
     new_only: bool = False,
     max_age_hours: int = Query(default=24, ge=1, le=168),
+    prioritize_pump_fun: bool = Query(default=False),
     min_age_minutes: Optional[int] = Query(default=None, ge=0, le=10080),
     max_age_minutes: Optional[int] = Query(default=None, ge=1, le=10080),
     db: AsyncSession = Depends(get_db),
@@ -29,29 +30,54 @@ async def list_tokens(
     if selected_chain != "solana":
         raise HTTPException(status_code=400, detail="Only Solana integration is supported")
 
-    query = select(Token).order_by(Token.created_at.desc())
+    query = select(Token)
     query = query.where(Token.chain == "solana")
 
     if min_age_minutes is not None and max_age_minutes is not None and min_age_minutes >= max_age_minutes:
         raise HTTPException(status_code=400, detail="min_age_minutes must be less than max_age_minutes")
 
     now = datetime.utcnow()
+    launch_timestamp = func.coalesce(Token.liquidity_created_at, Token.created_at)
 
     if min_age_minutes is not None:
         newer_than = now - timedelta(minutes=min_age_minutes)
-        query = query.where(Token.created_at <= newer_than)
+        query = query.where(launch_timestamp <= newer_than)
 
     if max_age_minutes is not None:
         older_than = now - timedelta(minutes=max_age_minutes)
-        query = query.where(Token.created_at > older_than)
+        query = query.where(launch_timestamp > older_than)
 
     if new_only:
         cutoff = now - timedelta(hours=max_age_hours)
-        query = query.where(Token.created_at >= cutoff)
+        query = query.where(launch_timestamp >= cutoff)
+
+    query = query.order_by(launch_timestamp.desc())
+
     query = query.limit(limit).offset(offset)
 
     result = await db.execute(query)
     tokens = result.scalars().all()
+
+    if prioritize_pump_fun:
+        major_launchpads = {"pump.fun", "raydium", "moonshot", "meteora", "bonkswap"}
+
+        def launch_priority(token: Token) -> int:
+            extra = token.extra_data or {}
+            source = str(extra.get("source_platform") or token.dex_id or "").lower()
+            if bool(extra.get("is_pump_fun", False)):
+                return 2
+            if source in major_launchpads:
+                return 1
+            return 0
+
+        tokens.sort(
+            key=lambda token: (
+                token.liquidity_created_at or token.created_at or datetime.min,
+                launch_priority(token),
+                float((token.extra_data or {}).get("volume_5m", 0) or 0),
+            ),
+            reverse=True,
+        )
 
     def build_latest_scores(score_rows: list[ScoringHistory]) -> dict[str, ScoringHistory]:
         latest: dict[str, ScoringHistory] = {}
@@ -137,7 +163,7 @@ async def list_tokens(
                 "is_mintable": t.is_mintable,
                 "is_ownership_renounced": t.is_ownership_renounced,
                 "dex_id": t.dex_id,
-                "created_at": str(t.created_at),
+                "created_at": str(t.liquidity_created_at or t.created_at),
             }
             for t in tokens
         ],

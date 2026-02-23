@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     MASTER_ACCESS_KEY: str = "change-this-master-key"
+    ACCESS_CODE: str = ""
 
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
@@ -42,6 +43,15 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = ""
     RESEND_BASE_URL: str = "https://api.resend.com"
     RESEND_FROM_EMAIL: str = ""
+
+    OAUTH_FRONTEND_URL: str = ""
+    FRONTEND_URL: str = ""
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    APPLE_CLIENT_ID: str = ""
+    APPLE_TEAM_ID: str = ""
+    APPLE_KEY_ID: str = ""
+    APPLE_PRIVATE_KEY: str = ""
 
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
@@ -85,6 +95,7 @@ class Settings(BaseSettings):
     MIN_MARKET_CAP_USD: float = 25000.0
 
     ENCRYPTION_KEY: str = "change-this-encryption-key-32chars!"
+    TELEMETRY_HASH_SALT: str = "change-this-telemetry-salt"
 
     class Config:
         env_file = ".env"

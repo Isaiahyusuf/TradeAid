@@ -3,21 +3,50 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { TradeAidLogo } from "@/components/brand/TradeAidLogo";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { Shield, Loader2, ArrowRight } from "lucide-react";
+import { Shield, Loader2, ArrowRight, Chrome, Apple } from "lucide-react";
+
+const EMAIL_PATTERN = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+const SPECIAL_PATTERN = /[^A-Za-z0-9]/;
+const USERNAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{2,19}$/;
+
+function getPasswordErrors(value: string): string[] {
+  const errors: string[] = [];
+  if (value.length < 6) errors.push("At least 6 characters");
+  if (!/[A-Z]/.test(value)) errors.push("At least 1 uppercase letter");
+  if (!/[0-9]/.test(value)) errors.push("At least 1 number");
+  if (!SPECIAL_PATTERN.test(value)) errors.push("At least 1 special character");
+  return errors;
+}
 
 export default function AuthPage() {
   const [mode, setMode] = useState<"login" | "register" | "verify" | "forgot" | "reset">("login");
   const [username, setUsername] = useState("");
+  const [accessCode, setAccessCode] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { login, register, verifyEmail, resendVerification, requestPasswordResetCode, confirmPasswordReset } = useAuth();
+  const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "valid" | "invalid" | "taken">("idle");
+  const [usernameMessage, setUsernameMessage] = useState("");
+  const { login, consumeOAuthTokens, register, checkUsername, verifyEmail, resendVerification, requestPasswordResetCode, confirmPasswordReset } = useAuth();
   const { toast } = useToast();
+  const registerPasswordErrors = getPasswordErrors(password);
+  const resetPasswordErrors = getPasswordErrors(newPassword);
+  const emailInvalid = !!email && !EMAIL_PATTERN.test(email);
+  const usernameInvalid = mode === "register" && !!username && !USERNAME_PATTERN.test(username.trim());
+
+  const isSubmitDisabled =
+    isSubmitting ||
+    (mode === "login" && (!username.trim() || !password || !accessCode.trim())) ||
+    (mode === "register" && (!username.trim() || !accessCode.trim() || usernameInvalid || usernameStatus !== "valid" || registerPasswordErrors.length > 0)) ||
+    (mode === "verify" && (emailInvalid || code.trim().length < 6)) ||
+    (mode === "forgot" && emailInvalid) ||
+    (mode === "reset" && (emailInvalid || code.trim().length < 6 || resetPasswordErrors.length > 0));
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -27,26 +56,131 @@ export default function AuthPage() {
     return () => clearInterval(timer);
   }, [resendCooldown]);
 
+  useEffect(() => {
+    if (mode !== "register") {
+      setUsernameStatus("idle");
+      setUsernameMessage("");
+      return;
+    }
+
+    const value = username.trim();
+    if (!value) {
+      setUsernameStatus("idle");
+      setUsernameMessage("");
+      return;
+    }
+
+    if (!USERNAME_PATTERN.test(value)) {
+      setUsernameStatus("invalid");
+      setUsernameMessage("Username must be 3-20 chars, start with a letter, and use only letters, numbers, or underscore.");
+      return;
+    }
+
+    setUsernameStatus("checking");
+    setUsernameMessage("Checking username availability...");
+    const timer = setTimeout(async () => {
+      try {
+        const result = await checkUsername(value);
+        if (!result.valid) {
+          setUsernameStatus("invalid");
+          setUsernameMessage(result.message);
+          return;
+        }
+        if (!result.available) {
+          setUsernameStatus("taken");
+          setUsernameMessage(result.message);
+          return;
+        }
+        setUsernameStatus("valid");
+        setUsernameMessage(result.message);
+      } catch {
+        setUsernameStatus("idle");
+        setUsernameMessage("");
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [mode, username, checkUsername]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthAccessToken = params.get("oauth_access_token");
+    const oauthRefreshToken = params.get("oauth_refresh_token") || undefined;
+    const oauthError = params.get("oauth_error");
+
+    if (!oauthAccessToken && !oauthError) return;
+
+    const clearParams = () => {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("oauth_access_token");
+      url.searchParams.delete("oauth_refresh_token");
+      url.searchParams.delete("oauth_success");
+      url.searchParams.delete("oauth_error");
+      window.history.replaceState({}, "", url.toString());
+    };
+
+    if (oauthError) {
+      toast({ title: "OAuth error", description: oauthError, variant: "destructive" });
+      clearParams();
+      return;
+    }
+
+    consumeOAuthTokens(oauthAccessToken, oauthRefreshToken)
+      .then(() => {
+        toast({ title: "Welcome", description: "Signed in successfully." });
+      })
+      .catch((error) => {
+        toast({
+          title: "OAuth sign-in failed",
+          description: error instanceof Error ? error.message : "Could not complete OAuth sign-in.",
+          variant: "destructive",
+        });
+      })
+      .finally(clearParams);
+  }, [consumeOAuthTokens, toast]);
+
+  const startOAuthSignIn = (provider: "google" | "apple") => {
+    const apiBase = (import.meta.env.VITE_API_URL || "").trim();
+    if (!apiBase) {
+      toast({ title: "OAuth not configured", description: "Missing VITE_API_URL for OAuth redirect.", variant: "destructive" });
+      return;
+    }
+    const frontendRedirect = `${window.location.origin}/`;
+    const startUrl = `${apiBase}/api/auth/oauth/${provider}/start?redirect_uri=${encodeURIComponent(frontendRedirect)}`;
+    window.location.assign(startUrl);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
+      if ((mode === "verify" || mode === "forgot" || mode === "reset") && !EMAIL_PATTERN.test(email)) {
+        throw new Error("Enter a valid email address");
+      }
+
+      if (mode === "register" && registerPasswordErrors.length > 0) {
+        throw new Error("Password must include uppercase, number, special character, and be at least 6 characters");
+      }
+
+      if (mode === "reset" && resetPasswordErrors.length > 0) {
+        throw new Error("New password must include uppercase, number, special character, and be at least 6 characters");
+      }
+
       if (mode === "login") {
-        await login(username, password);
+        await login(username, password, accessCode);
         toast({ title: "Welcome back!", description: "You are now logged in." });
       } else if (mode === "register") {
-        const result = await register(username, email, password);
+        const result = await register(username, undefined, password, accessCode);
         if (result?.verification_email_sent) {
           toast({ title: "Account created", description: "Verification code sent to your email." });
         } else {
           toast({
             title: "Account created",
-            description: "Email code was not delivered. Please check SMTP settings or try resend shortly.",
-            variant: "destructive",
+            description: "Your account is ready. You can sign in now.",
           });
         }
         setResendCooldown(result?.retry_after_seconds || 60);
-        setMode("verify");
+        setMode("login");
       } else if (mode === "verify") {
         await verifyEmail(email, code);
         toast({ title: "Email verified", description: "You can now sign in." });
@@ -84,8 +218,8 @@ export default function AuthPage() {
           <div className="mx-auto w-14 h-14 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mb-2 animate-pulse">
             <Shield className="w-7 h-7 text-primary" />
           </div>
-          <CardTitle className="text-2xl font-bold">
-            <span className="text-primary">Trade</span> Aid
+          <CardTitle className="text-2xl font-bold flex items-center justify-center">
+            <TradeAidLogo withText className="scale-95" />
           </CardTitle>
           <p className="text-muted-foreground text-sm">
             {mode === "login" && "Sign in to your trading dashboard"}
@@ -108,9 +242,27 @@ export default function AuthPage() {
                   required
                   data-testid="input-username"
                 />
+                {mode === "register" && usernameMessage && (
+                  <p className={`text-xs ${usernameStatus === "valid" ? "text-green-600" : usernameStatus === "checking" ? "text-muted-foreground" : "text-destructive"}`}>
+                    {usernameMessage}
+                  </p>
+                )}
               </div>
             )}
-            {(mode === "register" || mode === "verify" || mode === "forgot" || mode === "reset") && (
+            {(mode === "login" || mode === "register") && (
+              <div className="space-y-2">
+                <Label htmlFor="access-code">Access Code</Label>
+                <Input
+                  id="access-code"
+                  placeholder="Enter access code"
+                  value={accessCode}
+                  onChange={(e) => setAccessCode(e.target.value)}
+                  required
+                  data-testid="input-access-code"
+                />
+              </div>
+            )}
+            {(mode === "verify" || mode === "forgot" || mode === "reset") && (
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -122,6 +274,7 @@ export default function AuthPage() {
                   required
                   data-testid="input-email"
                 />
+                {emailInvalid && <p className="text-xs text-destructive">Enter a valid email format (example@domain.com)</p>}
               </div>
             )}
             {(mode === "login" || mode === "register") && (
@@ -136,6 +289,9 @@ export default function AuthPage() {
                 required
                 data-testid="input-password"
               />
+              {mode === "register" && registerPasswordErrors.length > 0 && (
+                <p className="text-xs text-destructive">Password rules: {registerPasswordErrors.join(", ")}</p>
+              )}
               </div>
             )}
             {(mode === "verify" || mode === "reset") && (
@@ -163,9 +319,12 @@ export default function AuthPage() {
                   required
                   data-testid="input-new-password"
                 />
+                {resetPasswordErrors.length > 0 && (
+                  <p className="text-xs text-destructive">Password rules: {resetPasswordErrors.join(", ")}</p>
+                )}
               </div>
             )}
-            <Button type="submit" className="w-full" disabled={isSubmitting} data-testid="button-submit-auth">
+            <Button type="submit" className="w-full" disabled={isSubmitDisabled} data-testid="button-submit-auth">
               {isSubmitting ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
@@ -179,6 +338,39 @@ export default function AuthPage() {
                 </>
               )}
             </Button>
+
+            {(mode === "login" || mode === "register") && (
+              <>
+                <div className="relative py-1">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-border" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">or continue with</span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => startOAuthSignIn("google")}
+                    data-testid="button-google-signin"
+                  >
+                    <Chrome className="w-4 h-4 mr-2" />
+                    Google
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => startOAuthSignIn("apple")}
+                    data-testid="button-apple-signin"
+                  >
+                    <Apple className="w-4 h-4 mr-2" />
+                    Apple ID
+                  </Button>
+                </div>
+              </>
+            )}
 
             {mode === "verify" && (
               <Button

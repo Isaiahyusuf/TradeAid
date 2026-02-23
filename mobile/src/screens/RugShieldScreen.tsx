@@ -3,17 +3,37 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Activi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMutation } from '@tanstack/react-query';
 import { tokenService } from '../services/api';
-import type { Token } from '../types';
+
+type ScanResult = {
+  contract_address: string;
+  chain: string;
+  symbol: string;
+  name: string;
+  eligible: boolean;
+  eligibility_reason?: string | null;
+  scores: {
+    rug_probability: number;
+    liquidity_stability: number;
+    holder_distribution: number;
+    smart_wallet_signal: number;
+    trade_confidence_index: number;
+  };
+  market_data?: {
+    market_cap_usd?: number;
+    liquidity_usd?: number;
+    holder_count?: number;
+  };
+};
 
 export function RugShieldScreen() {
   const [address, setAddress] = useState('');
   const [chain, setChain] = useState('solana');
-  const [result, setResult] = useState<Token | null>(null);
+  const [result, setResult] = useState<ScanResult | null>(null);
 
-  const scanMutation = useMutation({
+  const scanMutation = useMutation<ScanResult, Error, { chain: string; addr: string }>({
     mutationFn: ({ chain, addr }: { chain: string; addr: string }) => 
-      tokenService.scan(chain, addr).then(res => res.data),
-    onSuccess: (data) => {
+      tokenService.scan(chain, addr).then((res) => res.data as ScanResult),
+    onSuccess: (data: ScanResult) => {
       setResult(data);
     },
     onError: (error) => {
@@ -40,16 +60,9 @@ export function RugShieldScreen() {
   };
 
   // Calculate safety score from token data
-  const calculateSafetyScore = (token: Token): number => {
-    if (token.safety_score) return token.safety_score;
-    
-    let score = 50; // Base score
-    if (token.liquidity_usd && token.liquidity_usd > 50000) score += 20;
-    if (token.is_ownership_renounced) score += 15;
-    if (!token.is_mintable) score += 15;
-    if (token.is_honeypot) score -= 40;
-    
-    return Math.max(0, Math.min(100, score));
+  const calculateSafetyScore = (scan: ScanResult): number => {
+    const confidence = Number(scan.scores?.trade_confidence_index || 0);
+    return Math.max(0, Math.min(100, Math.round(confidence)));
   };
 
   return (
@@ -119,20 +132,20 @@ export function RugShieldScreen() {
 
             <View style={styles.checkList}>
               <View style={styles.checkItem}>
-                <View style={[styles.checkIcon, (result.liquidity_usd || 0) >= 10000 ? styles.checkGood : styles.checkBad]} />
-                <Text style={styles.checkText}>Liquidity: ${result.liquidity_usd?.toLocaleString() || '0'}</Text>
+                <View style={[styles.checkIcon, (result.market_data?.liquidity_usd || 0) >= 10000 ? styles.checkGood : styles.checkBad]} />
+                <Text style={styles.checkText}>Liquidity: ${result.market_data?.liquidity_usd?.toLocaleString() || '0'}</Text>
               </View>
               <View style={styles.checkItem}>
-                <View style={[styles.checkIcon, !result.is_honeypot ? styles.checkGood : styles.checkBad]} />
-                <Text style={styles.checkText}>Honeypot: {result.is_honeypot ? 'Yes' : 'No'}</Text>
+                <View style={[styles.checkIcon, result.scores.rug_probability <= 35 ? styles.checkGood : styles.checkBad]} />
+                <Text style={styles.checkText}>Rug Probability: {Math.round(result.scores.rug_probability)}%</Text>
               </View>
               <View style={styles.checkItem}>
-                <View style={[styles.checkIcon, !result.is_mintable ? styles.checkGood : styles.checkNeutral]} />
-                <Text style={styles.checkText}>Mint Disabled: {!result.is_mintable ? 'Yes' : 'No'}</Text>
+                <View style={[styles.checkIcon, result.scores.liquidity_stability >= 60 ? styles.checkGood : styles.checkNeutral]} />
+                <Text style={styles.checkText}>Liquidity Stability: {Math.round(result.scores.liquidity_stability)}%</Text>
               </View>
               <View style={styles.checkItem}>
-                <View style={[styles.checkIcon, result.is_ownership_renounced ? styles.checkGood : styles.checkNeutral]} />
-                <Text style={styles.checkText}>Ownership Renounced: {result.is_ownership_renounced ? 'Yes' : 'No'}</Text>
+                <View style={[styles.checkIcon, result.eligible ? styles.checkGood : styles.checkNeutral]} />
+                <Text style={styles.checkText}>Eligible: {result.eligible ? 'Yes' : 'No'}</Text>
               </View>
             </View>
 
@@ -140,9 +153,9 @@ export function RugShieldScreen() {
               <Text style={styles.analysisLabel}>Token Details</Text>
               <Text style={styles.analysisText}>
                 Chain: {result.chain}{'\n'}
-                Market Cap: ${result.market_cap_usd?.toLocaleString() || 'N/A'}{'\n'}
-                Holders: {result.holder_count || 'N/A'}{'\n'}
-                DEX: {result.dex_id || 'N/A'}
+                Market Cap: ${result.market_data?.market_cap_usd?.toLocaleString() || 'N/A'}{'\n'}
+                Holders: {result.market_data?.holder_count || 'N/A'}{'\n'}
+                Confidence: {Math.round(result.scores.trade_confidence_index)}
               </Text>
             </View>
           </View>

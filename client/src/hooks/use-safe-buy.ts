@@ -23,6 +23,7 @@ export type SafeBuyItem = {
   recently_added: boolean;
   logo_url?: string | null;
   buy_links: {
+    pump_fun?: string;
     raydium: string;
     jupiter: string;
     dexscreener: string;
@@ -30,11 +31,27 @@ export type SafeBuyItem = {
   created_at: string;
 };
 
-export function useSafeBuy(limit: number = 20) {
+export function useSafeBuy(
+  limit: number = 20,
+  options?: {
+    chain?: string;
+    chains?: string[];
+  }
+) {
   const { hasToken } = useAuth();
+
+  const chain = (options?.chain || "all").trim().toLowerCase();
+  const chainList = (options?.chains || []).map((item) => item.trim().toLowerCase()).filter(Boolean);
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  params.set("chain", chain || "all");
+  if (chain === "custom" && chainList.length) {
+    params.set("chains", chainList.join(","));
+  }
+
   return useQuery({
-    queryKey: ["safe-buy", limit],
-    queryFn: () => apiGet<{ tokens: SafeBuyItem[]; count: number; near_miss_tokens: SafeBuyItem[]; near_miss_count: number; refreshed_at: string }>(`/api/safe-buy?limit=${limit}`),
+    queryKey: ["safe-buy", limit, chain, chainList.join(",")],
+    queryFn: () => apiGet<{ tokens: SafeBuyItem[]; count: number; near_miss_tokens: SafeBuyItem[]; near_miss_count: number; refreshed_at: string }>(`/api/safe-buy?${params.toString()}`),
     staleTime: 10000,
     refetchInterval: 30000,
     enabled: hasToken,

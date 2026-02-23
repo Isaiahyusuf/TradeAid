@@ -3,12 +3,11 @@ import { View, Text, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { whaleService } from '../services/api';
-import type { TrackedWallet, WalletAlert } from '../types';
 
 export function WhaleWatchScreen() {
   const { data: alerts, isLoading, refetch } = useQuery({
     queryKey: ['whalewatch', 'alerts'],
-    queryFn: () => alertService.getAll({ alert_type: 'wallet_movement' }).then(res => res.data.alerts || []),
+    queryFn: () => whaleService.getAlerts().then((res: any) => res.data?.alerts || []),
   });
 
   const [refreshing, setRefreshing] = React.useState(false);
@@ -144,19 +143,5 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 14,
     color: '#6b7280',
-  },
-});
-    fontWeight: '600',
-    color: '#22c55e',
-  },
-  walletAddress: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginBottom: 8,
-  },
-  profit: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#ffffff',
   },
 });
