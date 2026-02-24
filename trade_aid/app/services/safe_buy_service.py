@@ -12,6 +12,24 @@ from app.utils.redis_client import cache_get, cache_set, publish_event
 class SafeBuyService:
     SAFE_BUY_MIN_SCORE = 50.0
     NEAR_MISS_MIN_SCORE = 40.0
+
+    def _compute_dynamic_thresholds(self, scores: list[float]) -> tuple[float, float]:
+        if not scores:
+            return self.SAFE_BUY_MIN_SCORE, self.NEAR_MISS_MIN_SCORE
+
+        ordered = sorted(float(score or 0) for score in scores)
+        max_score = ordered[-1]
+        mid = len(ordered) // 2
+        median_score = ordered[mid] if len(ordered) % 2 == 1 else (ordered[mid - 1] + ordered[mid]) / 2
+
+        # Adaptive gate: keep below current top score and close to live market distribution.
+        adaptive_safe = min(
+            self.SAFE_BUY_MIN_SCORE,
+            max(32.0, min(58.0, max_score - 6.0, median_score + 6.0)),
+        )
+        adaptive_near = max(24.0, adaptive_safe - 8.0)
+        return round(adaptive_safe, 2), round(adaptive_near, 2)
+
     def _estimate_top_holders_pct(self, token: Token, latest_score: ScoringHistory | None) -> float:
         extra = token.extra_data or {}
         explicit = extra.get("top_holders_pct")
@@ -114,6 +132,7 @@ class SafeBuyService:
         previous_scores = await cache_get(score_cache_key) or {}
         current_scores: dict[str, float] = {}
 
+        scored_candidates: list[dict[str, Any]] = []
         safe_candidates: list[dict[str, Any]] = []
         near_miss_candidates: list[dict[str, Any]] = []
 
@@ -181,7 +200,7 @@ class SafeBuyService:
             safety_score = float(ai_result.get("safety_score", 0) or 0)
             risk_level = str(ai_result.get("risk_level", "High") or "High").title()
 
-            if risk_level not in {"Low", "Medium"}:
+            if risk_level == "High" and safety_score < 45:
                 continue
 
             contract = token.contract_address
@@ -241,10 +260,18 @@ class SafeBuyService:
                 "created_at": str(token.created_at),
             }
 
-            if safety_score >= self.SAFE_BUY_MIN_SCORE:
-                safe_candidates.append(token_payload)
-            elif self.NEAR_MISS_MIN_SCORE <= safety_score < self.SAFE_BUY_MIN_SCORE:
-                near_miss_candidates.append(token_payload)
+            scored_candidates.append(token_payload)
+
+        dynamic_safe_min, dynamic_near_min = self._compute_dynamic_thresholds(
+            [float(row.get("safety_score", 0) or 0) for row in scored_candidates]
+        )
+
+        for row in scored_candidates:
+            score_val = float(row.get("safety_score", 0) or 0)
+            if score_val >= dynamic_safe_min:
+                safe_candidates.append(row)
+            elif dynamic_near_min <= score_val < dynamic_safe_min:
+                near_miss_candidates.append(row)
 
         safe_candidates.sort(
             key=lambda row: (
@@ -307,6 +334,10 @@ class SafeBuyService:
         return {
             "safe_tokens": trimmed,
             "near_miss_tokens": trimmed_near_miss,
+            "thresholds": {
+                "safe_buy_min_score": dynamic_safe_min,
+                "near_miss_min_score": dynamic_near_min,
+            },
         }
 
 

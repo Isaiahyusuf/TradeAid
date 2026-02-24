@@ -172,6 +172,9 @@ async def list_tokens(
                 "twitter_url": (t.extra_data or {}).get("twitter_url") or (t.extra_data or {}).get("twitter"),
                 "telegram_url": (t.extra_data or {}).get("telegram_url") or (t.extra_data or {}).get("telegram"),
                 "description": (t.extra_data or {}).get("description") or (t.extra_data or {}).get("project_description"),
+                "websites": (t.extra_data or {}).get("websites") or [],
+                "socials": (t.extra_data or {}).get("socials") or [],
+                "source_url": (t.extra_data or {}).get("source_url"),
                 "buy_urls": (t.extra_data or {}).get("buy_urls") or {
                     "pump_fun": f"https://pump.fun/coin/{t.contract_address}",
                     "axiom": f"https://axiom.trade/t/{t.contract_address}",
