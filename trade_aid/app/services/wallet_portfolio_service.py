@@ -52,7 +52,7 @@ async def _fetch_prices_usd(chains: list[str]) -> dict[str, float]:
 
     url = f"https://api.coingecko.com/api/v3/simple/price?ids={','.join(ids)}&vs_currencies=usd"
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=8.0, trust_env=False) as client:
             response = await client.get(url)
             response.raise_for_status()
             payload = response.json() or {}
@@ -83,7 +83,7 @@ async def _fetch_solana_balance(address: str) -> float | None:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=8.0, trust_env=False) as client:
             response = await client.post(settings.SOLANA_RPC_URL, json=payload)
             response.raise_for_status()
             body = response.json() or {}
@@ -109,7 +109,7 @@ async def _fetch_evm_balance(rpc_url: str, address: str) -> float | None:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=8.0, trust_env=False) as client:
             response = await client.post(rpc_url, json=payload)
             response.raise_for_status()
             body = response.json() or {}

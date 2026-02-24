@@ -48,6 +48,9 @@ class ConnectionManager:
     async def _subscribe_redis(self):
         try:
             redis = await get_redis()
+            if redis is None:
+                logger.warning("[WS] Redis unavailable; pubsub stream disabled")
+                return
             pubsub = redis.pubsub()
             await pubsub.subscribe("alerts", "chain_events", "scores")
             logger.info("[WS] Redis subscriber started")

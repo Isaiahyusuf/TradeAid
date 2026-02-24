@@ -15,7 +15,7 @@ from app.doctor.services import CoinGeckoService, HeliusService, JupiterService,
 class DoctorMultiSourceScanner:
     def __init__(self) -> None:
         settings = get_settings()
-        self._client = httpx.AsyncClient(timeout=12.0)
+        self._client = httpx.AsyncClient(timeout=12.0, trust_env=False)
         self._walletbot_key = str(getattr(settings, "WALLETBOT_KEY", "") or os.getenv("WALLETBOT_KEY") or "").strip()
         self._coingecko_key = str(getattr(settings, "COINGECKO_API_KEY", "") or os.getenv("COINGECKO_API_KEY") or "").strip()
         self._solscan_key = str(getattr(settings, "SOLSCAN_API_KEY", "") or os.getenv("SOLSCAN_API_KEY") or "").strip()

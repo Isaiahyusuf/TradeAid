@@ -252,7 +252,7 @@ export default function DoctorTrade() {
               <Bot className="w-8 h-8 text-primary" />
               DoctorTrade Terminal
             </h1>
-            <p className="text-muted-foreground">Axiom-style autonomous Solana trading terminal with live watchlist, execution feed, and risk engine controls.</p>
+            <p className="text-muted-foreground">Autonomous multi-chain trading terminal with live watchlist, execution feed, and risk engine controls.</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="outline">Solana Only</Badge>

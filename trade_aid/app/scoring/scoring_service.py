@@ -15,7 +15,7 @@ settings = get_settings()
 
 class ScoringService:
     def __init__(self):
-        self.client = httpx.AsyncClient(timeout=30.0)
+        self.client = httpx.AsyncClient(timeout=30.0, trust_env=False)
 
     @staticmethod
     def _normalize_chain_for_dex(chain: str) -> str:

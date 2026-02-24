@@ -199,6 +199,15 @@ async def list_tokens(
 
     result = await db.execute(query)
     tokens = result.scalars().all()
+
+    if offset == 0 and not tokens:
+        try:
+            await dex_scanner.scan_once()
+            refresh_result = await db.execute(query)
+            tokens = refresh_result.scalars().all()
+        except Exception:
+            pass
+
     tokens = [
         token
         for token in tokens

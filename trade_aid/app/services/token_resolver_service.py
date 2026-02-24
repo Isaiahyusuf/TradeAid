@@ -18,7 +18,7 @@ _BASE58_ALPHABET = set("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwx
 class TokenResolverService:
     def __init__(self) -> None:
         self.settings = get_settings()
-        self._client = httpx.AsyncClient(timeout=15.0)
+        self._client = httpx.AsyncClient(timeout=15.0, trust_env=False)
         self._sol_mint = "So11111111111111111111111111111111111111112"
 
     @staticmethod

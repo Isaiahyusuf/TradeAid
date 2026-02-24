@@ -8,7 +8,7 @@ import httpx
 
 class DoctorSolanaScanner:
     def __init__(self) -> None:
-        self._client = httpx.AsyncClient(timeout=12.0)
+        self._client = httpx.AsyncClient(timeout=12.0, trust_env=False)
         self._search_terms = ["solana", "pump.fun", "raydium", "meme", "bonk", "wif"]
         self._pump_terms = ["pump.fun", "pump", "launch", "moonshot", "degen"]
         self._new_terms = ["new pair", "just launched", "fresh", "solana meme"]

@@ -67,7 +67,7 @@ CHAIN_SEARCH_TERMS = {
 
 class DexScreenerScanner:
     def __init__(self):
-        self.client = httpx.AsyncClient(timeout=15.0)
+        self.client = httpx.AsyncClient(timeout=15.0, trust_env=False)
         self.running = False
         self.scan_count = 0
         self.chains = ENABLED_CHAINS
@@ -89,6 +89,13 @@ class DexScreenerScanner:
         self.running = False
         await self.client.aclose()
         logger.info("[DexScreener] Scanner stopped")
+
+    async def scan_once(self):
+        try:
+            await self._scan_cycle()
+            self.scan_count += 1
+        except Exception as e:
+            logger.error(f"[DexScreener] One-shot scan error: {e}")
 
     async def _scan_cycle(self):
         for chain in self.chains:
