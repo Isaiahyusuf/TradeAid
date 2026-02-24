@@ -199,13 +199,22 @@ async def build_user_trading_context(
         now=datetime.utcnow(),
     )
 
-    recent_scores_result = await db.execute(
-        select(ScoringHistory)
-        .where(ScoringHistory.scored_at >= since)
-        .order_by(ScoringHistory.scored_at.desc())
-        .limit(max(1, min(recent_score_limit, 200)))
-    )
-    recent_scores_rows = recent_scores_result.scalars().all()
+    recent_scores_rows: list[ScoringHistory] = []
+    recent_trade_contracts = [str(row.contract_address or "").strip() for row in recent_trades_rows if str(row.contract_address or "").strip()]
+    recent_trade_chains = [str(row.chain or "").strip().lower() for row in recent_trades_rows if str(row.chain or "").strip()]
+    score_limit = max(1, min(recent_score_limit, 200))
+    if recent_trade_contracts and recent_trade_chains:
+        recent_scores_result = await db.execute(
+            select(ScoringHistory)
+            .where(
+                ScoringHistory.scored_at >= since,
+                ScoringHistory.contract_address.in_(recent_trade_contracts),
+                ScoringHistory.chain.in_(recent_trade_chains),
+            )
+            .order_by(ScoringHistory.scored_at.desc())
+            .limit(score_limit)
+        )
+        recent_scores_rows = recent_scores_result.scalars().all()
 
     scores_by_chain: dict[str, dict[str, float]] = {}
     for row in recent_scores_rows:

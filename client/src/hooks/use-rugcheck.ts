@@ -122,9 +122,10 @@ export function useScanHistory(chain?: string, address?: string) {
 }
 
 export function useDevIntel(contractAddress?: string, chain: string = "solana") {
+  const normalizedChain = chain === "all" ? "solana" : chain;
   return useQuery({
-    queryKey: ["dev-intel", chain, contractAddress],
-    queryFn: () => apiGet<DevIntelResult>(`/api/wallets/dev-intel/${contractAddress}?chain=${chain}`),
+    queryKey: ["dev-intel", normalizedChain, contractAddress],
+    queryFn: () => apiGet<DevIntelResult>(`/api/wallets/dev-intel/${contractAddress}?chain=${normalizedChain}`),
     enabled: !!contractAddress,
     staleTime: 20000,
     retry: 1,

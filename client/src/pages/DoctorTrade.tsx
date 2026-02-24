@@ -6,7 +6,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Bot, ShieldAlert, Power, Activity, Wallet, TrendingUp, BarChart3, Radio } from "lucide-react";
 import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 function fmtUsd(value: number) {
@@ -24,10 +26,14 @@ function fmtTs(value?: string) {
 
 export default function DoctorTrade() {
   const { data } = useDoctorStatus();
+  const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const controlMutation = useDoctorControl();
   const configMutation = useDoctorConfig();
   const connectWalletMutation = useDoctorConnectWallet();
   const runMutation = useDoctorRunOnce();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsHydrated, setSettingsHydrated] = useState(false);
   const [intervalInput, setIntervalInput] = useState("20");
   const [buyAmountInput, setBuyAmountInput] = useState("0.1");
   const [maxTradesInput, setMaxTradesInput] = useState("12");
@@ -36,6 +42,18 @@ export default function DoctorTrade() {
   const [stopLossInput, setStopLossInput] = useState("6");
   const [trailInput, setTrailInput] = useState("10");
   const viewData = data;
+
+  useEffect(() => {
+    if (!viewData?.trade_controls || settingsHydrated) return;
+    setBuyAmountInput(String(viewData.trade_controls.buy_amount_sol ?? 0.1));
+    setMaxTradesInput(String(viewData.trade_controls.max_trades_per_day ?? 12));
+    setTpMultInput(String(viewData.trade_controls.take_profit_multiplier ?? 2.0));
+    setMinProfitInput(String(viewData.trade_controls.min_profit_pct ?? 12));
+    setStopLossInput(String(viewData.trade_controls.stop_loss_pct ?? 6));
+    setTrailInput(String(viewData.trade_controls.trailing_stop_pct ?? 10));
+    setSettingsHydrated(true);
+  }, [settingsHydrated, viewData?.trade_controls]);
+
   const performanceSeries = useMemo(
     () =>
       (viewData?.performance || []).slice(0, 12).reverse().map((row, index) => ({
@@ -57,6 +75,26 @@ export default function DoctorTrade() {
   );
 
   const scannerSuccessRate = Number(viewData?.scanner_health?.overall?.success_rate_pct || 0);
+
+  const handleConnectWallet = () => {
+    connectWalletMutation.mutate(
+      { use_existing_wallet: true },
+      {
+        onSuccess: () => {
+          toast({ title: "Wallet connected", description: "DoctorTrade is now linked to your wallet." });
+        },
+        onError: (error) => {
+          const message = error instanceof Error ? error.message : "Wallet connect failed";
+          const lower = message.toLowerCase();
+          if (lower.includes("no wallet found") || lower.includes("wallet data missing") || lower.includes("wallet not created")) {
+            setLocation("/wallet?action=connect&returnTo=%2Fdoctortrade");
+            return;
+          }
+          toast({ title: "Wallet connection failed", description: message, variant: "destructive" });
+        },
+      },
+    );
+  };
 
   return (
     <Layout>
@@ -98,7 +136,7 @@ export default function DoctorTrade() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => connectWalletMutation.mutate({ use_existing_wallet: true })}
+              onClick={handleConnectWallet}
               disabled={connectWalletMutation.isPending}
             >
               <Wallet className="w-4 h-4 mr-2" /> Connect Existing Wallet
@@ -117,7 +155,20 @@ export default function DoctorTrade() {
         </Card>
 
         <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60">
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 items-end">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold">Settings</p>
+              <p className="text-xs text-muted-foreground">Configure buy size, daily limit, take-profit and stop-loss.</p>
+            </div>
+            <Button variant="outline" onClick={() => setSettingsOpen((prev) => !prev)}>
+              {settingsOpen ? "Close" : "Open Settings"}
+            </Button>
+          </div>
+        </Card>
+
+        {settingsOpen && (
+          <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60">
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 items-end">
             <div>
               <p className="text-xs text-muted-foreground mb-1">Buy Amount (SOL, min 0.1)</p>
               <Input value={buyAmountInput} onChange={(e) => setBuyAmountInput(e.target.value)} placeholder="0.1" />
@@ -146,21 +197,37 @@ export default function DoctorTrade() {
               <Button
                 variant="outline"
                 className="self-end"
-                onClick={() => configMutation.mutate({
-                  buy_amount_sol: Math.max(0.1, Number(buyAmountInput) || 0.1),
-                  max_trades_per_day: Number(maxTradesInput) || 12,
-                  take_profit_multiplier: Number(tpMultInput) || 2.0,
-                  min_profit_pct: Number(minProfitInput) || 12,
-                  stop_loss_pct: Number(stopLossInput) || 6,
-                  trailing_stop_pct: Number(trailInput) || 10,
-                })}
+                onClick={() => configMutation.mutate(
+                  {
+                    buy_amount_sol: Math.max(0.1, Number(buyAmountInput) || 0.1),
+                    max_trades_per_day: Number(maxTradesInput) || 12,
+                    take_profit_multiplier: Number(tpMultInput) || 2.0,
+                    min_profit_pct: Number(minProfitInput) || 12,
+                    stop_loss_pct: Number(stopLossInput) || 6,
+                    trailing_stop_pct: Number(trailInput) || 10,
+                  },
+                  {
+                    onSuccess: () => {
+                      setSettingsOpen(false);
+                      toast({ title: "Risk rules saved", description: "DoctorTrade settings updated." });
+                    },
+                    onError: (error) => {
+                      toast({
+                        title: "Save failed",
+                        description: error instanceof Error ? error.message : "Unable to save settings",
+                        variant: "destructive",
+                      });
+                    },
+                  },
+                )}
                 disabled={configMutation.isPending}
               >
                 Save Risk Rules
               </Button>
             </div>
           </div>
-        </Card>
+          </Card>
+        )}
 
         {!viewData ? (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

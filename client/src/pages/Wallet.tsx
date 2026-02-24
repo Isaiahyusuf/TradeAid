@@ -13,6 +13,7 @@ import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetT
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { SUPPORTED_CHAINS } from "@/hooks/use-chain";
+import { useLocation } from "wouter";
 import {
   useApproveAssistantConsent,
   useAssistantContextOverview,
@@ -36,7 +37,11 @@ type SupportedWalletChain = Exclude<(typeof SUPPORTED_CHAINS)[number], "all">;
 
 export default function WalletPage() {
   const { toast } = useToast();
+  const [location, setLocation] = useLocation();
   const enabledChains = SUPPORTED_CHAINS.filter((item) => item !== "all") as SupportedWalletChain[];
+  const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const returnTo = String(searchParams.get("returnTo") || "").trim();
+  const walletAction = String(searchParams.get("action") || "").trim().toLowerCase();
 
   const tradingStatusQuery = useAssistantTradingStatus();
   const walletStatusQuery = useAssistantWalletStatus();
@@ -78,6 +83,7 @@ export default function WalletPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [walletSettingsOpen, setWalletSettingsOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [walletTab, setWalletTab] = useState<"assets" | "activity" | "security">("assets");
 
   const [sendChain, setSendChain] = useState<SupportedWalletChain>(enabledChains[0] || "solana");
   const [receiveChain, setReceiveChain] = useState<SupportedWalletChain>(enabledChains[0] || "solana");
@@ -97,6 +103,12 @@ export default function WalletPage() {
       setAssistantMode(trading.mode);
     }
   }, [trading?.mode]);
+
+  useEffect(() => {
+    if (walletAction === "connect") {
+      setWalletTab("assets");
+    }
+  }, [walletAction, location]);
 
   const addressesByChain = useMemo(() => {
     const incoming = trading?.wallets_by_chain || wallet?.addresses_by_chain || {};
@@ -224,6 +236,9 @@ export default function WalletPage() {
       setLatestBundle(result.bundle);
       setBackupPhraseInput("");
       toast({ title: "Wallet created", description: "Store your 12-word phrase and private keys before proceeding." });
+      if (returnTo) {
+        setLocation(returnTo);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed";
       if (message.toLowerCase().includes("wallet already exists")) {
@@ -244,6 +259,9 @@ export default function WalletPage() {
       const result = await importWallet.mutateAsync({ mnemonic, overwrite });
       setLatestBundle(result.bundle);
       toast({ title: "Wallet imported", description: "Addresses loaded successfully." });
+      if (returnTo) {
+        setLocation(returnTo);
+      }
     } catch (error) {
       toast({ title: "Wallet import failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
     }
@@ -362,6 +380,22 @@ export default function WalletPage() {
   return (
     <Layout>
       <div className="space-y-6">
+        {walletAction === "connect" && (
+          <Card className="p-4 border-primary/30 bg-primary/5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold">Connect Wallet for DoctorTrade</p>
+                <p className="text-xs text-muted-foreground">Create or import your wallet, then return to DoctorTrade.</p>
+              </div>
+              {returnTo && (
+                <Button variant="outline" onClick={() => setLocation(returnTo)}>
+                  Back to DoctorTrade
+                </Button>
+              )}
+            </div>
+          </Card>
+        )}
+
         <div className="space-y-1.5">
           <h1 className="text-3xl font-bold flex items-center gap-2">
             <WalletIcon className="w-8 h-8 text-primary" />
@@ -403,7 +437,7 @@ export default function WalletPage() {
           </CardContent>
         </Card>
 
-        <Tabs defaultValue="assets" className="space-y-3">
+        <Tabs value={walletTab} onValueChange={(value) => setWalletTab(value as "assets" | "activity" | "security")} className="space-y-3">
           <TabsList className="w-full grid grid-cols-3">
             <TabsTrigger value="assets">Assets</TabsTrigger>
             <TabsTrigger value="activity">Transactions</TabsTrigger>

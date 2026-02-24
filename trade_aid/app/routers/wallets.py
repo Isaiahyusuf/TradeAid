@@ -82,7 +82,11 @@ async def get_dev_intel_by_contract(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if chain.lower() != "solana":
+    normalized_chain = (chain or "solana").strip().lower()
+    if normalized_chain == "all":
+        normalized_chain = "solana"
+
+    if normalized_chain != "solana":
         raise HTTPException(status_code=400, detail="Only Solana integration is supported")
 
     resolved = await resolver_service.resolve_token(db, contract_address)
