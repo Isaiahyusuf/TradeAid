@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from app.config import get_settings
@@ -33,6 +33,16 @@ class DoctorTradeController:
         self.min_profit_pct = 12.0
         self.stop_loss_pct = 6.0
         self.trailing_stop_pct = 10.0
+        self.min_liquidity_usd = 20000.0
+        self.max_slippage_pct = 4.0
+        self.max_spread_pct = 3.0
+        self.daily_loss_limit_usd = 600.0
+        self.max_consecutive_losses = 3
+        self.strong_move_threshold_pct = 40.0
+        self.max_hold_minutes = 180
+        self.min_momentum_profit_pct = 4.0
+        self.quality_min_volume_spike_pct = 12.0
+        self.quality_max_top_holder_pct = 35.0
         self._trade_day: str = ""
         self._trades_today: int = 0
         self.current_tokens: list[dict[str, Any]] = []
@@ -40,6 +50,7 @@ class DoctorTradeController:
         self.trade_log: list[dict[str, Any]] = []
         self.performance_log: list[dict[str, Any]] = []
         self.last_tuning_suggestion: str | None = None
+        self.decision_journal: list[dict[str, Any]] = []
         self.high_watermark_usd: float = float(self.risk_state.equity_usd)
         self.strategy_mode: str = "trending"
         self.kill_switch = False
@@ -86,6 +97,57 @@ class DoctorTradeController:
         self._roll_trade_day()
         return self._trades_today < int(max(1, self.max_trades_per_day))
 
+    def _compute_spread_pct(self, token: dict[str, Any]) -> float:
+        spread_from_feed = float(token.get("spread_pct") or 0.0)
+        if spread_from_feed > 0:
+            return spread_from_feed
+        slippage = float(token.get("estimated_slippage_pct") or 0.0)
+        liquidity = float(token.get("liquidity") or 0.0)
+        volume_5m = float(token.get("volume_5m") or 0.0)
+        microstructure_penalty = 0.0
+        if liquidity > 0:
+            microstructure_penalty = min(2.5, max(0.0, (volume_5m / max(liquidity, 1.0)) * 12.0))
+        return max(0.0, slippage + microstructure_penalty)
+
+    def _register_journal(self, row: dict[str, Any]) -> None:
+        enriched = dict(row)
+        enriched.setdefault("timestamp", datetime.utcnow().isoformat())
+        self.decision_journal.insert(0, enriched)
+        self.decision_journal = self.decision_journal[:250]
+
+    def _quality_gate(self, token: dict[str, Any]) -> tuple[bool, str | None]:
+        liquidity = float(token.get("liquidity") or 0.0)
+        if liquidity < float(self.min_liquidity_usd or 0.0):
+            return False, "below_min_liquidity"
+
+        slippage_pct = float(token.get("estimated_slippage_pct") or 0.0)
+        if slippage_pct > float(self.max_slippage_pct or 100.0):
+            return False, "slippage_above_limit"
+
+        spread_pct = self._compute_spread_pct(token)
+        if spread_pct > float(self.max_spread_pct or 100.0):
+            return False, "spread_above_limit"
+
+        volume_spike_pct = float(token.get("volume_spike_pct") or 0.0)
+        if volume_spike_pct < float(self.quality_min_volume_spike_pct or 0.0):
+            return False, "volume_spike_too_low"
+
+        top_holder_pct = float(token.get("top_holder_pct") or 0.0)
+        if top_holder_pct > float(self.quality_max_top_holder_pct or 100.0):
+            return False, "holder_concentration_too_high"
+
+        return True, None
+
+    def _weighted_position_size_pct(self, token: dict[str, Any], signal: dict[str, Any], base_size_pct: float) -> float:
+        confidence = max(1.0, min(99.0, float(signal.get("confidence") or 0.0)))
+        confidence_factor = 0.6 + ((confidence / 100.0) * 0.8)
+        liquidity = float(token.get("liquidity") or 0.0)
+        liquidity_factor = min(1.4, max(0.5, liquidity / max(float(self.min_liquidity_usd or 1.0), 1.0)))
+        spike = max(0.0, float(token.get("volume_spike_pct") or 0.0))
+        momentum_factor = min(1.25, 0.75 + (spike / 120.0))
+        adjusted = float(base_size_pct or 0.0) * confidence_factor * liquidity_factor * momentum_factor
+        return max(0.1, min(5.0, adjusted))
+
     async def _process_position_exits(self, memes: list[dict[str, Any]]) -> list[dict[str, Any]]:
         by_address = {str(row.get("address") or "").strip(): row for row in memes}
         exits: list[dict[str, Any]] = []
@@ -105,10 +167,52 @@ class DoctorTradeController:
             position["current_price"] = current_price
 
             pnl_pct = ((current_price - entry_price) / entry_price) * 100.0
+            opened_at = str(position.get("opened_at") or "").strip()
+            held_minutes = 0.0
+            if opened_at:
+                try:
+                    open_dt = datetime.fromisoformat(opened_at)
+                    held_minutes = max(0.0, (datetime.utcnow() - open_dt).total_seconds() / 60.0)
+                except Exception:
+                    held_minutes = 0.0
+
+            tp1_hit = pnl_pct >= 25.0 and not bool(position.get("tp1_taken", False))
+            tp2_hit = pnl_pct >= 50.0 and not bool(position.get("tp2_taken", False))
+            if tp1_hit or tp2_hit:
+                partial_release = 20.0 if tp1_hit else 30.0
+                reason = "partial_tp_25" if tp1_hit else "partial_tp_50"
+                position["tp1_taken"] = bool(position.get("tp1_taken", False) or tp1_hit)
+                position["tp2_taken"] = bool(position.get("tp2_taken", False) or tp2_hit)
+                position["size_pct"] = max(0.05, float(position.get("size_pct") or 0.0) * (1.0 - (partial_release / 100.0)))
+                partial_row = {
+                    "token": position.get("symbol"),
+                    "address": address,
+                    "action": "SELL_PARTIAL",
+                    "status": "executed",
+                    "reason": reason,
+                    "confidence": int(position.get("confidence") or 0),
+                    "liquidity": float((token or {}).get("liquidity") or position.get("liquidity") or 0.0),
+                    "volume_5m": float((token or {}).get("volume_5m") or 0.0),
+                    "entry_price": entry_price,
+                    "current_price": current_price,
+                    "size_pct": float(position.get("size_pct") or 0.0),
+                    "strategy_mode": str(position.get("strategy_mode") or self.strategy_mode),
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+                self.trade_log.insert(0, partial_row)
+                self.trade_log = self.trade_log[:200]
+                await self._log_trade(partial_row)
+                self.risk.register_close(self.risk_state, pnl_usd=0.0, released_exposure_pct=partial_release)
+                exits.append(partial_row)
+
             take_profit_hit = current_price >= (entry_price * max(1.1, float(self.take_profit_multiplier or 2.0)))
             min_profit_hit = pnl_pct >= float(self.min_profit_pct or 0.0)
             stop_loss_hit = current_price <= (entry_price * (1.0 - (float(self.stop_loss_pct or 0.0) / 100.0)))
-            trailing_stop_hit = current_price <= (peak_price * (1.0 - (float(self.trailing_stop_pct or 0.0) / 100.0))) and pnl_pct > 0
+            dynamic_trailing_pct = float(self.trailing_stop_pct or 0.0)
+            if pnl_pct >= float(self.strong_move_threshold_pct or 40.0):
+                dynamic_trailing_pct = max(2.0, dynamic_trailing_pct * 0.5)
+            trailing_stop_hit = current_price <= (peak_price * (1.0 - (dynamic_trailing_pct / 100.0))) and pnl_pct > 0
+            time_stop_hit = held_minutes >= float(self.max_hold_minutes or 0.0) and pnl_pct < float(self.min_momentum_profit_pct or 0.0)
 
             exit_reason = None
             if take_profit_hit:
@@ -117,6 +221,8 @@ class DoctorTradeController:
                 exit_reason = "profit_secured"
             elif trailing_stop_hit:
                 exit_reason = "trailing_stop"
+            elif time_stop_hit:
+                exit_reason = "time_stop_no_momentum"
             elif stop_loss_hit:
                 exit_reason = "stop_loss"
 
@@ -255,6 +361,16 @@ class DoctorTradeController:
         if not self.enabled or self.kill_switch:
             return {"executed": False, "reason": "disabled"}
 
+        if float(self.risk_state.daily_realized_pnl_usd or 0.0) <= -abs(float(self.daily_loss_limit_usd or 0.0)):
+            self.risk_state.paused = True
+            self.risk_state.pause_reason = "daily_loss_limit_reached"
+            return {"executed": False, "reason": "daily_loss_limit_reached"}
+        if int(self.risk_state.consecutive_losses or 0) >= int(max(1, self.max_consecutive_losses)):
+            self.risk_state.paused = True
+            self.risk_state.pause_reason = "max_consecutive_losses_reached"
+            self.risk_state.cooldown_until = (datetime.utcnow() + timedelta(minutes=45)).isoformat()
+            return {"executed": False, "reason": "max_consecutive_losses_reached"}
+
         configured_buy_sol = max(float(self.min_buy_amount_sol or 0.1), float(self.buy_amount_sol or 0.1))
         self.buy_amount_sol = configured_buy_sol
 
@@ -308,31 +424,89 @@ class DoctorTradeController:
 
             signal = self.ai.generate(token, current_drawdown_pct=float(self.risk_state.total_loss_pct or 0.0))
             if bool(self.sniper_mode_only) and str(token.get("strategy_mode") or "") != "pump_sniper":
+                self._register_journal({
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "decision": "SKIP",
+                    "reason": "sniper_mode_only",
+                    "strategy_mode": str(token.get("strategy_mode") or "trending"),
+                })
                 continue
+
+            quality_ok, quality_reason = self._quality_gate(token)
+            if not quality_ok:
+                blocked_row = {
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "action": signal.get("action"),
+                    "status": "blocked",
+                    "reason": quality_reason,
+                    "strategy_mode": self.strategy_mode,
+                }
+                actions.append(blocked_row)
+                self._register_journal({
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "decision": "BLOCK",
+                    "reason": quality_reason,
+                    "confidence": int(signal.get("confidence") or 0),
+                })
+                continue
+
             if bool(token.get("fresh_intel_approved", False)) and str(signal.get("action") or "") == "BUY":
                 signal["position_size_pct"] = 5.0
             risk_result = self.risk.validate(signal, self.risk_state)
 
             if not risk_result.get("approved"):
-                actions.append({
+                blocked = {
                     "token": token.get("symbol"),
                     "address": token.get("address"),
                     "action": signal.get("action"),
                     "status": "blocked",
                     "reason": risk_result.get("reason"),
+                }
+                actions.append(blocked)
+                self._register_journal({
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "decision": "BLOCK",
+                    "reason": risk_result.get("reason"),
+                    "confidence": int(signal.get("confidence") or 0),
                 })
                 continue
 
             if signal.get("action") != "BUY":
+                self._register_journal({
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "decision": str(signal.get("action") or "HOLD"),
+                    "reason": "signal_not_buy",
+                    "confidence": int(signal.get("confidence") or 0),
+                })
                 continue
 
+            weighted_size_pct = self._weighted_position_size_pct(
+                token,
+                signal,
+                float(risk_result.get("position_size_pct") or 0.0),
+            )
+            risk_result["position_size_pct"] = weighted_size_pct
+
             if not self._can_open_trade():
-                actions.append({
+                blocked = {
                     "token": token.get("symbol"),
                     "address": token.get("address"),
                     "action": "BUY",
                     "status": "blocked",
                     "reason": "max_trades_24h_reached",
+                }
+                actions.append(blocked)
+                self._register_journal({
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "decision": "BLOCK",
+                    "reason": "max_trades_24h_reached",
+                    "confidence": int(signal.get("confidence") or 0),
                 })
                 continue
 
@@ -341,12 +515,20 @@ class DoctorTradeController:
             except Exception:
                 balance_sol = 0.0
             if balance_sol < configured_buy_sol:
-                actions.append({
+                blocked = {
                     "token": token.get("symbol"),
                     "address": token.get("address"),
                     "action": "BUY",
                     "status": "blocked",
                     "reason": f"insufficient_sol_balance_min_{configured_buy_sol:.3f}",
+                }
+                actions.append(blocked)
+                self._register_journal({
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "decision": "BLOCK",
+                    "reason": blocked["reason"],
+                    "confidence": int(signal.get("confidence") or 0),
                 })
                 continue
 
@@ -367,6 +549,13 @@ class DoctorTradeController:
                 }
                 actions.append(rejected)
                 await self._log_trade(rejected)
+                self._register_journal({
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "decision": "REJECT",
+                    "reason": execution.get("reason"),
+                    "confidence": int(signal.get("confidence") or 0),
+                })
                 continue
 
             position = {
@@ -411,6 +600,15 @@ class DoctorTradeController:
             self.trade_log = self.trade_log[:200]
             actions.append(trade_row)
             await self._log_trade(trade_row)
+            self._register_journal({
+                "token": token.get("symbol"),
+                "address": token.get("address"),
+                "decision": "BUY",
+                "reason": "executed",
+                "confidence": int(signal.get("confidence") or 0),
+                "size_pct": float(risk_result.get("position_size_pct") or 0.0),
+                "strategy_mode": self.strategy_mode,
+            })
 
             self.high_watermark_usd = max(self.high_watermark_usd, float(self.risk_state.equity_usd or 0.0))
 
@@ -465,6 +663,7 @@ class DoctorTradeController:
         return {
             "enabled": self.enabled,
             "kill_switch": self.kill_switch,
+            "scan_interval_seconds": int(self.scan_interval_seconds),
             "last_run_at": self.last_run_at,
             "last_error": self.last_error,
             "scanner_health": self.scanner.get_source_health() if hasattr(self.scanner, "get_source_health") else {},
@@ -497,11 +696,22 @@ class DoctorTradeController:
                 "min_profit_pct": float(self.min_profit_pct),
                 "stop_loss_pct": float(self.stop_loss_pct),
                 "trailing_stop_pct": float(self.trailing_stop_pct),
+                "min_liquidity_usd": float(self.min_liquidity_usd),
+                "max_slippage_pct": float(self.max_slippage_pct),
+                "max_spread_pct": float(self.max_spread_pct),
+                "daily_loss_limit_usd": float(self.daily_loss_limit_usd),
+                "max_consecutive_losses": int(self.max_consecutive_losses),
+                "strong_move_threshold_pct": float(self.strong_move_threshold_pct),
+                "max_hold_minutes": int(self.max_hold_minutes),
+                "min_momentum_profit_pct": float(self.min_momentum_profit_pct),
+                "quality_min_volume_spike_pct": float(self.quality_min_volume_spike_pct),
+                "quality_max_top_holder_pct": float(self.quality_max_top_holder_pct),
                 "wallet_connected": bool(str(self.wallet.public_address or "").strip() and str(self.wallet.private_key or "").strip()),
             },
             "active_tokens": self.current_tokens,
             "positions": self.positions,
             "recent_trades": self.trade_log[:30],
+            "decision_journal": self.decision_journal[:40],
             "performance": self.performance_log[:10],
             "tuning_suggestion": self.last_tuning_suggestion,
             "strategy_mode": self.strategy_mode,

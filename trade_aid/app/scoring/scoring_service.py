@@ -17,6 +17,130 @@ class ScoringService:
     def __init__(self):
         self.client = httpx.AsyncClient(timeout=30.0)
 
+    @staticmethod
+    def _normalize_chain_for_dex(chain: str) -> str:
+        normalized = (chain or "").strip().lower()
+        mapping = {
+            "solana": "solana",
+            "ethereum": "ethereum",
+            "eth": "ethereum",
+            "bsc": "bsc",
+            "bnb": "bsc",
+            "base": "base",
+            "arbitrum": "arbitrum",
+            "avax": "avalanche",
+            "avalanche": "avalanche",
+            "polygon": "polygon",
+            "matic": "polygon",
+        }
+        return mapping.get(normalized, normalized)
+
+    async def _fetch_dex_pair(self, contract_address: str, chain: str) -> dict:
+        normalized_chain = self._normalize_chain_for_dex(chain)
+        try:
+            response = await self.client.get(f"https://api.dexscreener.com/latest/dex/tokens/{contract_address}")
+            if response.status_code >= 400:
+                return {}
+            rows = (response.json() or {}).get("pairs", []) or []
+            best = None
+            best_liquidity = -1.0
+            for row in rows:
+                row_chain = self._normalize_chain_for_dex(str((row or {}).get("chainId") or ""))
+                if normalized_chain and normalized_chain != "all" and row_chain != normalized_chain:
+                    continue
+                liquidity = float(((row or {}).get("liquidity") or {}).get("usd") or 0.0)
+                if liquidity > best_liquidity:
+                    best_liquidity = liquidity
+                    best = row
+            return best or {}
+        except Exception:
+            return {}
+
+    async def _score_from_dex_pair(self, contract_address: str, chain: str, pair: dict) -> dict:
+        if not pair:
+            return {"error": "Token not found", "eligible": False}
+
+        normalized_chain = self._normalize_chain_for_dex(chain)
+        volume = pair.get("volume") or {}
+        txns = pair.get("txns") or {}
+        base = pair.get("baseToken") or {}
+        liquidity_usd = float((pair.get("liquidity") or {}).get("usd") or 0.0)
+        market_cap_usd = float(pair.get("marketCap") or pair.get("fdv") or 0.0)
+        buys_5m = float(((txns.get("m5") or {}).get("buys") or 0.0))
+        sells_5m = float(((txns.get("m5") or {}).get("sells") or 0.0))
+        buy_sell_ratio = (buys_5m + 1.0) / (sells_5m + 1.0)
+        volume_5m = float(volume.get("m5") or 0.0)
+        volume_1h = float(volume.get("h1") or 0.0)
+        slippage_hint = max(0.0, min(10.0, (volume_5m / max(liquidity_usd, 1.0)) * 100.0))
+
+        rug_probability = 50.0
+        risk_flags: list[str] = []
+        if liquidity_usd < 2000.0:
+            rug_probability += 25.0
+            risk_flags.append("LOW_LIQUIDITY")
+        elif liquidity_usd < 10000.0:
+            rug_probability += 10.0
+            risk_flags.append("THIN_LIQUIDITY")
+
+        if buy_sell_ratio < 0.9:
+            rug_probability += 8.0
+            risk_flags.append("SELL_PRESSURE")
+        if slippage_hint > 3.0:
+            rug_probability += 8.0
+            risk_flags.append("HIGH_SLIPPAGE")
+
+        rug_probability = max(5.0, min(99.0, rug_probability))
+
+        liquidity_stability = max(0.0, min(100.0, (liquidity_usd / 25000.0) * 100.0))
+        holder_distribution = max(0.0, min(100.0, 100.0 - min(slippage_hint * 10.0, 90.0)))
+        smart_wallet_signal = max(0.0, min(100.0, buy_sell_ratio * 40.0))
+
+        opportunity = 30.0
+        if liquidity_usd > 10000.0:
+            opportunity += 18.0
+        if volume_1h > 0 and volume_5m > (volume_1h / 12.0):
+            opportunity += 18.0
+        if buy_sell_ratio > 1.15:
+            opportunity += 15.0
+        opportunity = max(0.0, min(100.0, opportunity))
+
+        trade_confidence = max(0.0, min(100.0, opportunity - max(0.0, (rug_probability - 50.0) * 0.6)))
+        eligible = bool(rug_probability <= 85.0 and liquidity_usd >= 2000.0)
+        reason = None if eligible else ("rug_risk_above_85" if rug_probability > 85.0 else "liquidity_below_2k")
+
+        return {
+            "contract_address": contract_address,
+            "chain": normalized_chain,
+            "symbol": str(base.get("symbol") or "UNKNOWN"),
+            "name": str(base.get("name") or "DexScreener Token"),
+            "eligible": eligible,
+            "eligibility_reason": reason,
+            "risk_flags": risk_flags,
+            "status": "dex_live",
+            "scores": {
+                "rug_probability": round(rug_probability, 2),
+                "liquidity_stability": round(liquidity_stability, 2),
+                "holder_distribution": round(holder_distribution, 2),
+                "smart_wallet_signal": round(smart_wallet_signal, 2),
+                "trade_confidence_index": round(trade_confidence, 2),
+                "rug_risk_score": round(rug_probability, 2),
+                "opportunity_score": round(opportunity, 2),
+            },
+            "market_data": {
+                "market_cap_usd": market_cap_usd,
+                "liquidity_usd": liquidity_usd,
+                "holder_count": 0,
+                "price_usd": float(pair.get("priceUsd") or 0.0),
+            },
+            "source": {
+                "provider": "dexscreener",
+                "pair_address": str(pair.get("pairAddress") or ""),
+                "dex_id": str(pair.get("dexId") or ""),
+                "url": str(pair.get("url") or ""),
+            },
+            "scored_at": str(datetime.utcnow()),
+        }
+
     async def score_token(
         self, db: AsyncSession, contract_address: str, chain: str
     ) -> dict:
@@ -62,7 +186,9 @@ class ScoringService:
                 }
 
         if not token:
-            return {"error": "Token not found", "eligible": False}
+            pair = await self._fetch_dex_pair(contract_address, normalized_chain)
+            fallback = await self._score_from_dex_pair(contract_address, normalized_chain, pair)
+            return fallback
 
         scores = await self._compute_scores(db, token)
         risk_flags = list(scores.get("risk_flags") or [])

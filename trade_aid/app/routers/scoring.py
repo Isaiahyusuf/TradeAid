@@ -49,6 +49,11 @@ async def score_token(
                 result = candidate
                 requested_chain = chain_name
                 break
+        if result.get("error"):
+            dex_candidate = await scoring_service.score_token(db, req.contract_address, chain_candidates[0] if chain_candidates else "solana")
+            if not dex_candidate.get("error"):
+                result = dex_candidate
+                requested_chain = str(dex_candidate.get("chain") or requested_chain or "solana")
     else:
         target_chain = requested_chain or "solana"
         if target_chain == "solana":

@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio } from "lucide-react";
-import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
+import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorHealth, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
@@ -26,6 +26,7 @@ function fmtTs(value?: string) {
 
 export default function DoctorTrade() {
   const { data } = useDoctorStatus();
+  const doctorHealth = useDoctorHealth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const controlMutation = useDoctorControl();
@@ -41,6 +42,16 @@ export default function DoctorTrade() {
   const [minProfitInput, setMinProfitInput] = useState("12");
   const [stopLossInput, setStopLossInput] = useState("6");
   const [trailInput, setTrailInput] = useState("10");
+  const [minLiquidityInput, setMinLiquidityInput] = useState("20000");
+  const [maxSlippageInput, setMaxSlippageInput] = useState("4");
+  const [maxSpreadInput, setMaxSpreadInput] = useState("3");
+  const [dailyLossInput, setDailyLossInput] = useState("600");
+  const [maxConsecutiveLossesInput, setMaxConsecutiveLossesInput] = useState("3");
+  const [strongMoveInput, setStrongMoveInput] = useState("40");
+  const [maxHoldMinutesInput, setMaxHoldMinutesInput] = useState("180");
+  const [minMomentumInput, setMinMomentumInput] = useState("4");
+  const [qualityMinSpikeInput, setQualityMinSpikeInput] = useState("12");
+  const [qualityMaxHolderInput, setQualityMaxHolderInput] = useState("35");
   const viewData = data;
   const hasData = Boolean(viewData);
 
@@ -53,6 +64,16 @@ export default function DoctorTrade() {
     setMinProfitInput(String(viewData.trade_controls.min_profit_pct ?? 12));
     setStopLossInput(String(viewData.trade_controls.stop_loss_pct ?? 6));
     setTrailInput(String(viewData.trade_controls.trailing_stop_pct ?? 10));
+    setMinLiquidityInput(String(viewData.trade_controls.min_liquidity_usd ?? 20000));
+    setMaxSlippageInput(String(viewData.trade_controls.max_slippage_pct ?? 4));
+    setMaxSpreadInput(String(viewData.trade_controls.max_spread_pct ?? 3));
+    setDailyLossInput(String(viewData.trade_controls.daily_loss_limit_usd ?? 600));
+    setMaxConsecutiveLossesInput(String(viewData.trade_controls.max_consecutive_losses ?? 3));
+    setStrongMoveInput(String(viewData.trade_controls.strong_move_threshold_pct ?? 40));
+    setMaxHoldMinutesInput(String(viewData.trade_controls.max_hold_minutes ?? 180));
+    setMinMomentumInput(String(viewData.trade_controls.min_momentum_profit_pct ?? 4));
+    setQualityMinSpikeInput(String(viewData.trade_controls.quality_min_volume_spike_pct ?? 12));
+    setQualityMaxHolderInput(String(viewData.trade_controls.quality_max_top_holder_pct ?? 35));
     setSettingsHydrated(true);
   }, [settingsHydrated, viewData?.trade_controls]);
 
@@ -61,9 +82,9 @@ export default function DoctorTrade() {
       (viewData?.performance || []).slice(0, 12).reverse().map((row, index) => ({
         name: String(index + 1),
         winRate: Number((row?.latest_win_rate ?? row?.win_rate ?? 0) || 0) * 100,
-        drawdown: Number((viewData?.risk_state.drawdown_pct ?? 0) || 0),
+        drawdown: Number((viewData?.risk_state?.drawdown_pct ?? 0) || 0),
       })),
-    [viewData?.performance, viewData?.risk_state.drawdown_pct],
+    [viewData?.performance, viewData?.risk_state?.drawdown_pct],
   );
 
   const tradeSeries = useMemo(
@@ -91,6 +112,16 @@ export default function DoctorTrade() {
     const minProfitPct = Math.max(0.1, Number.parseFloat(minProfitInput) || 12);
     const stopLossPct = Math.max(0.1, Number.parseFloat(stopLossInput) || 6);
     const trailingStopPct = Math.max(0.1, Number.parseFloat(trailInput) || 10);
+    const minLiquidityUsd = Math.max(1000, Number.parseFloat(minLiquidityInput) || 20000);
+    const maxSlippagePct = Math.max(0.1, Number.parseFloat(maxSlippageInput) || 4);
+    const maxSpreadPct = Math.max(0.1, Number.parseFloat(maxSpreadInput) || 3);
+    const dailyLossLimitUsd = Math.max(10, Number.parseFloat(dailyLossInput) || 600);
+    const maxConsecutiveLosses = Math.max(1, Math.trunc(Number.parseFloat(maxConsecutiveLossesInput) || 3));
+    const strongMoveThresholdPct = Math.max(5, Number.parseFloat(strongMoveInput) || 40);
+    const maxHoldMinutes = Math.max(5, Math.trunc(Number.parseFloat(maxHoldMinutesInput) || 180));
+    const minMomentumProfitPct = Math.max(0, Number.parseFloat(minMomentumInput) || 4);
+    const qualityMinVolumeSpikePct = Math.max(0, Number.parseFloat(qualityMinSpikeInput) || 12);
+    const qualityMaxTopHolderPct = Math.max(1, Number.parseFloat(qualityMaxHolderInput) || 35);
 
     configMutation.mutate(
       {
@@ -101,6 +132,16 @@ export default function DoctorTrade() {
         min_profit_pct: minProfitPct,
         stop_loss_pct: stopLossPct,
         trailing_stop_pct: trailingStopPct,
+        min_liquidity_usd: minLiquidityUsd,
+        max_slippage_pct: maxSlippagePct,
+        max_spread_pct: maxSpreadPct,
+        daily_loss_limit_usd: dailyLossLimitUsd,
+        max_consecutive_losses: maxConsecutiveLosses,
+        strong_move_threshold_pct: strongMoveThresholdPct,
+        max_hold_minutes: maxHoldMinutes,
+        min_momentum_profit_pct: minMomentumProfitPct,
+        quality_min_volume_spike_pct: qualityMinVolumeSpikePct,
+        quality_max_top_holder_pct: qualityMaxTopHolderPct,
       },
       {
         onSuccess: () => {
@@ -116,6 +157,64 @@ export default function DoctorTrade() {
         },
       },
     );
+  };
+
+  const applyPreset = (preset: "conservative" | "balanced" | "aggressive") => {
+    if (preset === "conservative") {
+      setBuyAmountInput("0.1");
+      setMaxTradesInput("6");
+      setTpMultInput("1.8");
+      setMinProfitInput("9");
+      setStopLossInput("4");
+      setTrailInput("7");
+      setMinLiquidityInput("45000");
+      setMaxSlippageInput("2.2");
+      setMaxSpreadInput("1.8");
+      setDailyLossInput("300");
+      setMaxConsecutiveLossesInput("2");
+      setStrongMoveInput("32");
+      setMaxHoldMinutesInput("120");
+      setMinMomentumInput("3");
+      setQualityMinSpikeInput("18");
+      setQualityMaxHolderInput("28");
+    }
+    if (preset === "balanced") {
+      setBuyAmountInput("0.15");
+      setMaxTradesInput("12");
+      setTpMultInput("2.0");
+      setMinProfitInput("12");
+      setStopLossInput("6");
+      setTrailInput("10");
+      setMinLiquidityInput("20000");
+      setMaxSlippageInput("4");
+      setMaxSpreadInput("3");
+      setDailyLossInput("600");
+      setMaxConsecutiveLossesInput("3");
+      setStrongMoveInput("40");
+      setMaxHoldMinutesInput("180");
+      setMinMomentumInput("4");
+      setQualityMinSpikeInput("12");
+      setQualityMaxHolderInput("35");
+    }
+    if (preset === "aggressive") {
+      setBuyAmountInput("0.25");
+      setMaxTradesInput("20");
+      setTpMultInput("2.4");
+      setMinProfitInput("15");
+      setStopLossInput("8");
+      setTrailInput("14");
+      setMinLiquidityInput("12000");
+      setMaxSlippageInput("6");
+      setMaxSpreadInput("5");
+      setDailyLossInput("1000");
+      setMaxConsecutiveLossesInput("4");
+      setStrongMoveInput("50");
+      setMaxHoldMinutesInput("240");
+      setMinMomentumInput("5");
+      setQualityMinSpikeInput("8");
+      setQualityMaxHolderInput("40");
+    }
+    toast({ title: "Preset loaded", description: `${preset} profile applied. Save to activate.` });
   };
 
   const handleConnectWallet = () => {
@@ -177,19 +276,18 @@ export default function DoctorTrade() {
               <Activity className="w-4 h-4 mr-2" /> Run Cycle
             </Button>
             <Button
-              variant="destructive"
-              onClick={() => configMutation.mutate({ kill_switch: true })}
-              disabled={configMutation.isPending}
-            >
-              <ShieldAlert className="w-4 h-4 mr-2" /> Kill Switch
-            </Button>
-            <Button
               variant="outline"
               onClick={handleConnectWallet}
               disabled={connectWalletMutation.isPending}
             >
               <Wallet className="w-4 h-4 mr-2" /> Connect Existing Wallet
             </Button>
+            {doctorHealth.isError && (
+              <Badge variant="destructive">Backend target mismatch</Badge>
+            )}
+            {doctorHealth.data?.ok && (
+              <Badge variant="outline" className="border-green-500/40 text-green-400">Backend Healthy</Badge>
+            )}
           </div>
         </Card>
 
@@ -199,6 +297,11 @@ export default function DoctorTrade() {
           open={settingsOpen}
           onToggle={() => setSettingsOpen((prev) => !prev)}
         >
+          <div className="flex flex-wrap gap-2 mb-3">
+            <Button variant="outline" size="sm" onClick={() => applyPreset("conservative")}>Conservative</Button>
+            <Button variant="outline" size="sm" onClick={() => applyPreset("balanced")}>Balanced</Button>
+            <Button variant="outline" size="sm" onClick={() => applyPreset("aggressive")}>Aggressive</Button>
+          </div>
           <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 items-end">
             <div>
               <p className="text-xs text-muted-foreground mb-1">Scan Interval (sec)</p>
@@ -237,6 +340,48 @@ export default function DoctorTrade() {
               >
                 Save
               </Button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 items-end mt-2">
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Min Liquidity USD</p>
+              <Input value={minLiquidityInput} onChange={(e) => setMinLiquidityInput(e.target.value)} placeholder="20000" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Max Slippage %</p>
+              <Input value={maxSlippageInput} onChange={(e) => setMaxSlippageInput(e.target.value)} placeholder="4" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Max Spread %</p>
+              <Input value={maxSpreadInput} onChange={(e) => setMaxSpreadInput(e.target.value)} placeholder="3" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Daily Loss Limit $</p>
+              <Input value={dailyLossInput} onChange={(e) => setDailyLossInput(e.target.value)} placeholder="600" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Max Consecutive Losses</p>
+              <Input value={maxConsecutiveLossesInput} onChange={(e) => setMaxConsecutiveLossesInput(e.target.value)} placeholder="3" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Strong Move %</p>
+              <Input value={strongMoveInput} onChange={(e) => setStrongMoveInput(e.target.value)} placeholder="40" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Max Hold Minutes</p>
+              <Input value={maxHoldMinutesInput} onChange={(e) => setMaxHoldMinutesInput(e.target.value)} placeholder="180" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Min Momentum Profit %</p>
+              <Input value={minMomentumInput} onChange={(e) => setMinMomentumInput(e.target.value)} placeholder="4" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Quality Min Spike %</p>
+              <Input value={qualityMinSpikeInput} onChange={(e) => setQualityMinSpikeInput(e.target.value)} placeholder="12" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Quality Max Holder %</p>
+              <Input value={qualityMaxHolderInput} onChange={(e) => setQualityMaxHolderInput(e.target.value)} placeholder="35" />
             </div>
           </div>
         </SettingsMenuCard>
@@ -328,11 +473,28 @@ export default function DoctorTrade() {
                       <p className="text-sm font-semibold">{trade.token || "UNKNOWN"}</p>
                       <Badge variant="outline" className="text-[10px]">{trade.action || "-"}</Badge>
                     </div>
-                    <p className="text-[11px] text-muted-foreground">{trade.status || "unknown"} · conf {trade.confidence ?? 0}</p>
-                    <p className="text-[11px] text-muted-foreground">{fmtTs(trade.timestamp)} · size {(trade.size_pct ?? 0).toFixed(2)}%</p>
+                    <p className="text-[11px] text-muted-foreground">{trade.status || "unknown"} · conf {Number(trade.confidence ?? 0)}</p>
+                    <p className="text-[11px] text-muted-foreground">{fmtTs(trade.timestamp)} · size {Number(trade.size_pct ?? 0).toFixed(2)}%</p>
                   </div>
                 ))}
                 {!viewData?.recent_trades?.length && <p className="text-sm text-muted-foreground">No execution history yet.</p>}
+              </div>
+            </Card>
+
+            <Card className="p-4">
+              <h2 className="text-sm font-semibold mb-3">Decision Journal</h2>
+              <div className="space-y-2 max-h-56 overflow-auto">
+                {(viewData?.decision_journal || []).slice(0, 16).map((row, index) => (
+                  <div key={`${row.address || "journal"}-${index}`} className="border rounded-md p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold">{row.token || "UNKNOWN"}</p>
+                      <Badge variant="outline" className="text-[10px]">{row.decision || "-"}</Badge>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">{row.reason || "-"} · conf {row.confidence ?? 0}</p>
+                    <p className="text-[11px] text-muted-foreground">{fmtTs(row.timestamp)} · size {(row.size_pct ?? 0).toFixed(2)}%</p>
+                  </div>
+                ))}
+                {!viewData?.decision_journal?.length && <p className="text-sm text-muted-foreground">No decisions logged yet.</p>}
               </div>
             </Card>
           </div>
@@ -343,12 +505,14 @@ export default function DoctorTrade() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">Engine</span><span>{viewData?.enabled ? "Live" : "Stopped"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Wallet Link</span><span>{viewData?.trade_controls?.wallet_connected ? "Connected" : "Missing"}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Wallet SOL</span><span>{(viewData?.wallet.balance_sol || 0).toFixed(4)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Wallet SOL</span><span>{(viewData?.wallet?.balance_sol || 0).toFixed(4)}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Trades Today</span><span>{viewData?.trade_controls?.trades_today || 0}/{viewData?.trade_controls?.max_trades_per_day || 12}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Buy Amount</span><span>{(viewData?.trade_controls?.buy_amount_sol || 0.1).toFixed(3)} SOL</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Stop Loss</span><span>{(viewData?.trade_controls?.stop_loss_pct || 6).toFixed(1)}%</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Target</span><span>{(viewData?.trade_controls?.take_profit_multiplier || 2).toFixed(2)}x</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Scanner Health</span><span>{scannerSuccessRate.toFixed(1)}%</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Max Slippage</span><span>{(viewData?.trade_controls?.max_slippage_pct || 0).toFixed(1)}%</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Daily Loss Limit</span><span>${(viewData?.trade_controls?.daily_loss_limit_usd || 0).toFixed(0)}</span></div>
               </div>
             </Card>
 
@@ -403,8 +567,8 @@ export default function DoctorTrade() {
                       <p className="text-sm font-semibold">{position.symbol}</p>
                       <Badge variant="outline" className="text-[10px]">{position.risk_status}</Badge>
                     </div>
-                    <p className="text-[11px] text-muted-foreground">Entry ${position.entry_price.toFixed(6)} · Now ${position.current_price.toFixed(6)}</p>
-                    <p className="text-[11px] text-muted-foreground">Liq {fmtUsd(position.liquidity)} · Conf {position.confidence}</p>
+                    <p className="text-[11px] text-muted-foreground">Entry ${Number(position.entry_price || 0).toFixed(6)} · Now ${Number(position.current_price || 0).toFixed(6)}</p>
+                    <p className="text-[11px] text-muted-foreground">Liq {fmtUsd(Number(position.liquidity || 0))} · Conf {Number(position.confidence || 0)}</p>
                   </div>
                 ))}
                 {!viewData?.positions?.length && <p className="text-sm text-muted-foreground">No open positions.</p>}

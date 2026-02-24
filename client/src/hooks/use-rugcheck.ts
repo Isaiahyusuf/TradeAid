@@ -3,6 +3,13 @@ import { apiPost, apiGet } from "@/lib/api";
 
 export type ScoreResult = {
   id?: string;
+  chain?: string;
+  source?: {
+    provider?: string;
+    pair_address?: string;
+    dex_id?: string;
+    url?: string;
+  };
   rug_probability: number;
   rug_risk_score?: number;
   liquidity_stability: number;
