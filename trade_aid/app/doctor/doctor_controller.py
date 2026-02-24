@@ -50,7 +50,11 @@ class DoctorTradeController:
             public_address=doctor_wallet,
             max_slippage_pct=float(getattr(self.settings, "DOCTOR_MAX_SLIPPAGE_PCT", 2.0) or 2.0),
         )
-        self.execution = DoctorExecutionEngine(self.wallet, mode=str(getattr(self.settings, "DOCTOR_EXECUTION_MODE", "paper") or "paper"))
+        self.execution = DoctorExecutionEngine(
+            self.wallet,
+            mode=str(getattr(self.settings, "DOCTOR_EXECUTION_MODE", "paper") or "paper"),
+            jupiter_api_key=str(getattr(self.settings, "JUPITER_API_KEY", "") or ""),
+        )
 
     async def _log_event(self, event_type: str, severity: str, message: str, *, contract_address: str | None = None, extra: dict[str, Any] | None = None) -> None:
         async with doctor_db_session() as db:
@@ -155,6 +159,15 @@ class DoctorTradeController:
             return {"executed": False, "reason": "disabled"}
 
         memes = await self.scanner.scan_all_sources(limit=18)
+        intelligence_rows = self.scanner.drain_recent_intelligence() if hasattr(self.scanner, "drain_recent_intelligence") else []
+        for row in intelligence_rows[:60]:
+            await self._log_event(
+                "fresh_token_intelligence",
+                "info" if str(row.get("decision") or "") == "APPROVED" else "warning",
+                f"{row.get('symbol') or row.get('mint')}: {row.get('decision')}",
+                contract_address=str(row.get("mint") or row.get("address") or "") or None,
+                extra=row,
+            )
         self.current_tokens = memes
         actions: list[dict[str, Any]] = []
         self.self_evolution["cycles"] = int(self.self_evolution.get("cycles") or 0) + 1
@@ -191,6 +204,8 @@ class DoctorTradeController:
                 break
 
             signal = self.ai.generate(token, current_drawdown_pct=float(self.risk_state.total_loss_pct or 0.0))
+            if bool(token.get("fresh_intel_approved", False)) and str(signal.get("action") or "") == "BUY":
+                signal["position_size_pct"] = 5.0
             risk_result = self.risk.validate(signal, self.risk_state)
 
             if not risk_result.get("approved"):
@@ -228,8 +243,9 @@ class DoctorTradeController:
                 "liquidity": float(token.get("liquidity") or 0.0),
                 "confidence": int(signal.get("confidence") or 0),
                 "size_pct": float(risk_result.get("position_size_pct") or 0.0),
-                "stop_loss": float(signal.get("stop_loss") or 0.0),
-                "take_profit": float(signal.get("take_profit") or 0.0),
+                "stop_loss": round(float(signal.get("entry_price") or token.get("price_usd") or 0.0) * 0.8, 8),
+                "take_profit": round(float(signal.get("entry_price") or token.get("price_usd") or 0.0) * 1.5, 8),
+                "trailing_stop_pct": 12.0,
                 "opened_at": datetime.utcnow().isoformat(),
                 "signature": execution.get("signature"),
                 "risk_status": "active",
@@ -304,6 +320,7 @@ class DoctorTradeController:
             "last_run_at": self.last_run_at,
             "last_error": self.last_error,
             "scanner_health": self.scanner.get_source_health() if hasattr(self.scanner, "get_source_health") else {},
+            "fresh_feed": self.scanner.get_fresh_feed_status() if hasattr(self.scanner, "get_fresh_feed_status") else {},
             "risk_state": {
                 "drawdown_pct": round(float(self.risk_state.total_loss_pct or 0.0), 4),
                 "daily_realized_pnl_usd": round(float(self.risk_state.daily_realized_pnl_usd or 0.0), 4),

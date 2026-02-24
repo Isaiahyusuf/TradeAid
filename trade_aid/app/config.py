@@ -1,6 +1,10 @@
 import os
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 
 def build_database_url(async_driver: bool = False) -> str:
@@ -80,7 +84,9 @@ class Settings(BaseSettings):
     SOLSCAN_API_KEY: str = ""
     BITQUERY_API_KEY: str = ""
     HELIUS_API_KEY: str = ""
+    MORALIS_API_KEY: str = ""
     WALLETBOT_KEY: str = ""
+    JUPITER_API_KEY: str = ""
     COVALENT_API_KEY: str = ""
     THE_GRAPH_ENDPOINT: str = ""
 

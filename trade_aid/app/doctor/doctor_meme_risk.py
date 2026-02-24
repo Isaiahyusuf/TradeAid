@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 
@@ -17,15 +17,17 @@ class DoctorRiskState:
     paused: bool = False
     permanent_lock: bool = False
     pause_reason: str | None = None
+    cooldown_until: str | None = None
     current_day: str = ""
 
 
 class DoctorMemeRiskGovernor:
-    MAX_PER_TRADE_PCT = 1.0
-    MAX_DAILY_DRAWDOWN_PCT = 4.0
-    MAX_OPEN_POSITIONS = 2
-    MAX_TOTAL_EXPOSURE_PCT = 8.0
+    MAX_PER_TRADE_PCT = 5.0
+    MAX_DAILY_DRAWDOWN_PCT = 15.0
+    MAX_OPEN_POSITIONS = 3
+    MAX_TOTAL_EXPOSURE_PCT = 20.0
     PERMANENT_LOCK_LOSS_PCT = 12.0
+    COOLDOWN_MINUTES = 30
 
     def _roll_day(self, state: DoctorRiskState) -> None:
         day = datetime.utcnow().date().isoformat()
@@ -39,6 +41,17 @@ class DoctorMemeRiskGovernor:
 
         if state.permanent_lock:
             return {"approved": False, "reason": "permanent_lock"}
+        if state.paused:
+            if state.pause_reason == "three_consecutive_losses" and state.cooldown_until:
+                try:
+                    until = datetime.fromisoformat(state.cooldown_until)
+                    if datetime.utcnow() >= until:
+                        state.paused = False
+                        state.pause_reason = None
+                        state.cooldown_until = None
+                        state.consecutive_losses = 0
+                except Exception:
+                    pass
         if state.paused:
             return {"approved": False, "reason": state.pause_reason or "paused"}
 
@@ -54,6 +67,7 @@ class DoctorMemeRiskGovernor:
         if state.consecutive_losses >= 3:
             state.paused = True
             state.pause_reason = "three_consecutive_losses"
+            state.cooldown_until = (datetime.utcnow() + timedelta(minutes=self.COOLDOWN_MINUTES)).isoformat()
             return {"approved": False, "reason": state.pause_reason}
 
         requested_pct = float(signal.get("position_size_pct") or 0.0)

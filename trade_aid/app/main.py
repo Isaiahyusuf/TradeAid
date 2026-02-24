@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.config import get_settings
 from app.database import init_db, close_db
+from app.doctor.services import validate_required_doctor_env_keys
 from app.utils.rate_limiter import RateLimitMiddleware
 from app.utils.redis_client import close_redis
 from app.utils.logging_config import logger
@@ -21,6 +22,7 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Trade Aid API starting up...")
+    validate_required_doctor_env_keys()
     await init_db()
     logger.info("Database initialized")
     scanner_task = None

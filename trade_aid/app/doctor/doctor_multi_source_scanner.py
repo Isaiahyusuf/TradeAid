@@ -8,6 +8,8 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
+from app.doctor.pump_detector import DexNewPairsScanner, FreshTokenScoringEngine, PumpListener, TokenEnricher, TokenValidator
+from app.doctor.services import CoinGeckoService, HeliusService, JupiterService, MoralisService, SolscanService
 
 
 class DoctorMultiSourceScanner:
@@ -19,6 +21,8 @@ class DoctorMultiSourceScanner:
         self._solscan_key = str(getattr(settings, "SOLSCAN_API_KEY", "") or os.getenv("SOLSCAN_API_KEY") or "").strip()
         self._bitquery_key = str(getattr(settings, "BITQUERY_API_KEY", "") or os.getenv("BITQUERY_API_KEY") or "").strip()
         self._helius_key = str(getattr(settings, "HELIUS_API_KEY", "") or os.getenv("HELIUS_API_KEY") or "").strip()
+        self._moralis_key = str(getattr(settings, "MORALIS_API_KEY", "") or os.getenv("MORALIS_API_KEY") or "").strip()
+        self._jupiter_key = str(getattr(settings, "JUPITER_API_KEY", "") or os.getenv("JUPITER_API_KEY") or "").strip()
         self._covalent_key = str(getattr(settings, "COVALENT_API_KEY", "") or os.getenv("COVALENT_API_KEY") or "").strip()
         self._the_graph_endpoint = str(getattr(settings, "THE_GRAPH_ENDPOINT", "") or os.getenv("THE_GRAPH_ENDPOINT") or "").strip()
 
@@ -36,12 +40,45 @@ class DoctorMultiSourceScanner:
         self.max_age_minutes = float(
             getattr(settings, "DOCTOR_MAX_AGE_MINUTES", 1440) or os.getenv("DOCTOR_MAX_AGE_MINUTES", "1440")
         )
+        self._strict_fresh_age_minutes = 60.0
+        self._sol_mint = "So11111111111111111111111111111111111111112"
+        self._security_blacklist: set[str] = set()
+
+        self.coingecko_service = CoinGeckoService(self._coingecko_key, min_volume_usd=self.min_volume_24h_usd)
+        self.helius_service = HeliusService(self._helius_key)
+        self.moralis_service = MoralisService(self._moralis_key)
+        self.solscan_service = SolscanService(self._solscan_key, min_liquidity_usd=self.min_liquidity_usd)
+        self.jupiter_service = JupiterService(self._jupiter_key)
+
+        self.dex_pairs_scanner = DexNewPairsScanner(min_liquidity_usd=self.min_liquidity_usd)
+        self.pump_listener = PumpListener(self.helius_service)
+        self.token_enricher = TokenEnricher(
+            coingecko=self.coingecko_service,
+            helius=self.helius_service,
+            moralis=self.moralis_service,
+            solscan=self.solscan_service,
+            jupiter=self.jupiter_service,
+            dex_scanner=self.dex_pairs_scanner,
+        )
+        self.token_validator = TokenValidator(min_liquidity_usd=self.min_liquidity_usd, min_volume_24h_usd=self.min_volume_24h_usd)
+        self.scoring_engine = FreshTokenScoringEngine()
+        self.fresh_token_queue: list[dict[str, Any]] = []
+        self._recent_intelligence: list[dict[str, Any]] = []
+        self._fresh_feed_status: dict[str, Any] = {
+            "last_cycle_at": None,
+            "detected": 0,
+            "enriched": 0,
+            "approved": 0,
+            "rejected": 0,
+        }
         self._telemetry: dict[str, dict[str, Any]] = {
             "walletbot": self._new_source_metrics(),
             "dexscreener": self._new_source_metrics(),
             "coingecko": self._new_source_metrics(),
             "solscan": self._new_source_metrics(),
             "helius": self._new_source_metrics(),
+            "moralis": self._new_source_metrics(),
+            "jupiter": self._new_source_metrics(),
             "bitquery": self._new_source_metrics(),
             "covalent": self._new_source_metrics(),
             "the_graph": self._new_source_metrics(),
@@ -117,24 +154,26 @@ class DoctorMultiSourceScanner:
         }
 
     async def _request_json(self, method: str, url: str, *, source: str, key_required: bool = False, key_present: bool = True, **kwargs: Any) -> Any:
-        start = time.perf_counter()
         if key_required and not key_present:
             self._record_metric(source, ok=False, latency_ms=0.0, error="missing_api_key", key_missing=True)
             return None
-        try:
-            response = await self._client.request(method.upper(), url, **kwargs)
-            if response.status_code >= 400:
+        for _attempt in range(3):
+            start = time.perf_counter()
+            try:
+                response = await self._client.request(method.upper(), url, **kwargs)
+                if response.status_code >= 400:
+                    latency_ms = (time.perf_counter() - start) * 1000.0
+                    self._record_metric(source, ok=False, latency_ms=latency_ms, error=f"http_{response.status_code}")
+                    continue
+                payload = response.json()
                 latency_ms = (time.perf_counter() - start) * 1000.0
-                self._record_metric(source, ok=False, latency_ms=latency_ms, error=f"http_{response.status_code}")
-                return None
-            payload = response.json()
-            latency_ms = (time.perf_counter() - start) * 1000.0
-            self._record_metric(source, ok=True, latency_ms=latency_ms)
-            return payload
-        except Exception as exc:
-            latency_ms = (time.perf_counter() - start) * 1000.0
-            self._record_metric(source, ok=False, latency_ms=latency_ms, error=str(exc))
-            return None
+                self._record_metric(source, ok=True, latency_ms=latency_ms)
+                return payload
+            except Exception as exc:
+                latency_ms = (time.perf_counter() - start) * 1000.0
+                self._record_metric(source, ok=False, latency_ms=latency_ms, error=str(exc))
+                continue
+        return None
 
     async def get_trending_walletbot(self) -> list[dict[str, Any]]:
         headers = {"accept": "application/json"}
@@ -324,6 +363,16 @@ class DoctorMultiSourceScanner:
                 return 0.0
         return 0.0
 
+    def _compute_age_from_moralis(self, created_at: Any) -> float:
+        value = str(created_at or "").strip()
+        if not value:
+            return 0.0
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return max(0.0, (datetime.utcnow() - dt.replace(tzinfo=None)).total_seconds() / 60.0)
+        except Exception:
+            return 0.0
+
     def _is_lp_verified(self, pair: dict[str, Any], solscan: dict[str, Any]) -> bool:
         labels = [str(item).lower() for item in (pair.get("labels") or [])]
         if any("verified" in item for item in labels):
@@ -379,11 +428,25 @@ class DoctorMultiSourceScanner:
         address = str(token_address or "").strip()
         if not address:
             return None
+        if address in self._security_blacklist:
+            return None
 
         pair = await self.get_dexscreener_token_detail(address) or {}
         coingecko = await self.get_coingecko_stats(address)
         solscan = await self.get_solscan_stats(address)
         bitquery = await self.get_bitquery_trades(address)
+
+        cg_market = await self.coingecko_service.get_token_market(address)
+        moralis_meta = await self.moralis_service.get_token_metadata(address)
+        helius_supply = await self.helius_service.get_token_supply(address)
+        helius_holders = await self.helius_service.get_holder_distribution(address)
+        solscan_risk = await self.solscan_service.validate_holder_risk(address)
+        jupiter_sim = await self.jupiter_service.simulate_trade(
+            input_mint=self._sol_mint,
+            output_mint=address,
+            amount_lamports=10_000_000,
+            slippage_bps=200,
+        )
 
         covalent = {}
         the_graph = {}
@@ -402,10 +465,12 @@ class DoctorMultiSourceScanner:
         volume_24h = self._safe_float(volume.get("h24"), 0.0)
         if volume_24h <= 0:
             volume_24h = self._safe_float((market_data.get("total_volume") or {}).get("usd"), 0.0)
+        volume_24h = max(volume_24h, self._safe_float(cg_market.get("volume_24h"), 0.0))
 
         market_cap = self._safe_float(pair.get("marketCap"), 0.0)
         if market_cap <= 0:
             market_cap = self._safe_float((market_data.get("market_cap") or {}).get("usd"), 0.0)
+        market_cap = max(market_cap, self._safe_float(cg_market.get("market_cap"), 0.0))
 
         buys_5m = self._safe_float(((txns.get("m5") or {}).get("buys")), 0.0)
         sells_5m = self._safe_float(((txns.get("m5") or {}).get("sells")), 0.0)
@@ -417,9 +482,20 @@ class DoctorMultiSourceScanner:
         volume_spike_pct = ((volume_5m * 12.0) / max(volume_1h, 1.0) - 1.0) * 100.0
 
         age_minutes = self._compute_age_minutes(pair, coingecko)
+        moralis_age = self._compute_age_from_moralis(moralis_meta.get("created_at"))
+        if moralis_age > 0:
+            age_minutes = moralis_age
         lp_verified = self._is_lp_verified(pair, solscan)
         top_holder_pct = self._top_holder_pct(pair, solscan)
+        top_holder_pct = max(top_holder_pct, self._safe_float(helius_holders.get("top3_holder_pct"), 0.0))
         unlocked_risk = bool((pair.get("info") or {}).get("lpLocked") is False)
+
+        if isinstance(solscan_risk, dict) and not bool(solscan_risk.get("passed", True)):
+            self._security_blacklist.add(address)
+            return None
+        if top_holder_pct > 40.0:
+            self._security_blacklist.add(address)
+            return None
 
         tx_count, bitquery_trade_usd = self._bitquery_activity(bitquery)
         volume_24h = max(volume_24h, bitquery_trade_usd)
@@ -430,11 +506,13 @@ class DoctorMultiSourceScanner:
             return None
         if age_minutes < self.min_age_minutes:
             return None
+        if age_minutes < self._strict_fresh_age_minutes and volume_24h < (self.min_volume_24h_usd * 3.0):
+            return None
         if self.max_age_minutes > 0 and age_minutes > self.max_age_minutes:
             return None
         if not lp_verified:
             return None
-        if top_holder_pct > 20.0:
+        if top_holder_pct > 40.0:
             return None
         if unlocked_risk:
             return None
@@ -442,10 +520,11 @@ class DoctorMultiSourceScanner:
         price_usd = self._safe_float(pair.get("priceUsd"), 0.0)
         if price_usd <= 0:
             price_usd = self._safe_float(market_data.get("current_price", {}).get("usd"), 0.0) if isinstance(market_data, dict) else 0.0
+        price_usd = max(price_usd, self._safe_float(cg_market.get("price_usd"), 0.0))
 
         base = (pair.get("baseToken") or {}) if isinstance(pair, dict) else {}
-        symbol = str(base.get("symbol") or (coingecko.get("symbol") if isinstance(coingecko, dict) else "") or (seed or {}).get("symbol") or "UNKNOWN").upper()
-        name = str(base.get("name") or (coingecko.get("name") if isinstance(coingecko, dict) else "") or (seed or {}).get("name") or symbol)
+        symbol = str(base.get("symbol") or moralis_meta.get("symbol") or (coingecko.get("symbol") if isinstance(coingecko, dict) else "") or (seed or {}).get("symbol") or "UNKNOWN").upper()
+        name = str(base.get("name") or moralis_meta.get("name") or (coingecko.get("name") if isinstance(coingecko, dict) else "") or (seed or {}).get("name") or symbol)
         strategy_mode = str((seed or {}).get("_doctor_strategy_mode") or "trending")
         fomo_trend_score = self._fomo_trend_score(volume_5m, volume_15m, buy_sell_ratio, age_minutes, strategy_mode)
 
@@ -480,11 +559,17 @@ class DoctorMultiSourceScanner:
             "fomo_trend_score": fomo_trend_score,
             "score": score,
             "price_usd": price_usd,
+            "token_supply": helius_supply,
+            "holder_count": int(solscan_risk.get("holder_count") or helius_holders.get("accounts") or 0) if isinstance(solscan_risk, dict) else int(helius_holders.get("accounts") or 0),
             "pair_address": str(pair.get("pairAddress") or ""),
             "dex_id": str(pair.get("dexId") or ""),
             "lp_verified": lp_verified,
             "top_holder_pct": top_holder_pct,
             "liquidity_unlocked_risk": unlocked_risk,
+            "estimated_slippage_pct": float(jupiter_sim.get("price_impact_pct") or 0.0),
+            "jupiter_liquidity_confirmed": bool(jupiter_sim.get("approved", False)),
+            "fresh_intel_approved": bool((seed or {}).get("_fresh_approved", False)),
+            "fresh_intel_score": int((seed or {}).get("_fresh_score", 0) or 0),
             "strategy_mode": strategy_mode,
             "honeypot_risk": bool((pair.get("info") or {}).get("honeypotRisk", False)),
             "suspicious_contract": bool((pair.get("info") or {}).get("suspicious", False)),
@@ -494,14 +579,73 @@ class DoctorMultiSourceScanner:
                 "coingecko": bool(coingecko),
                 "solscan": bool(solscan),
                 "helius": bool(seed and seed.get("_source_helius")),
+                "moralis": bool(moralis_meta),
+                "jupiter": bool(jupiter_sim),
                 "bitquery": bool(bitquery),
                 "covalent": bool(covalent),
                 "the_graph": bool(the_graph),
             },
         }
 
+    async def monitor_fresh_tokens(self, limit: int = 25) -> list[dict[str, Any]]:
+        self._fresh_feed_status["last_cycle_at"] = datetime.utcnow().isoformat()
+        primary = await self.pump_listener.detect_fresh_tokens(max_age_minutes=5.0, limit=max(50, limit * 5))
+        secondary = await self.dex_pairs_scanner.fetch_new_pairs(max_age_minutes=5.0)
+
+        combined: dict[str, dict[str, Any]] = {}
+        for row in primary + secondary:
+            mint = str(row.get("mint_address") or "").strip()
+            if not mint:
+                continue
+            existing = combined.get(mint, {})
+            next_row = dict(existing)
+            next_row.update(row)
+            combined[mint] = next_row
+
+        self.fresh_token_queue = list(combined.values())
+        self._fresh_feed_status["detected"] = len(self.fresh_token_queue)
+        results: list[dict[str, Any]] = []
+        for seed in self.fresh_token_queue[: max(10, limit * 2)]:
+            mint = str(seed.get("mint_address") or "").strip()
+            if not mint:
+                continue
+            intelligence = await self.token_enricher.enrich_token(mint, seed=seed)
+            intelligence = self.token_validator.validate(intelligence)
+            intelligence = self.scoring_engine.score(intelligence)
+            results.append(intelligence)
+
+        self._recent_intelligence = sorted(results, key=lambda row: int(row.get("score") or 0), reverse=True)[:120]
+        self._fresh_feed_status["enriched"] = len(self._recent_intelligence)
+        approved = [row for row in self._recent_intelligence if str(row.get("decision") or "") == "APPROVED"]
+        self._fresh_feed_status["approved"] = len(approved)
+        self._fresh_feed_status["rejected"] = max(0, len(self._recent_intelligence) - len(approved))
+        return approved[: max(1, min(limit, 30))]
+
+    def drain_recent_intelligence(self) -> list[dict[str, Any]]:
+        rows = list(self._recent_intelligence)
+        self._recent_intelligence = []
+        return rows
+
+    def get_fresh_feed_status(self) -> dict[str, Any]:
+        return dict(self._fresh_feed_status)
+
     async def aggregate_tokens(self, limit: int = 24) -> list[dict[str, Any]]:
         seeds: dict[str, dict[str, Any]] = {}
+
+        approved_fresh = await self.monitor_fresh_tokens(limit=max(8, limit))
+        for intel in approved_fresh:
+            address = str(intel.get("mint") or "").strip()
+            if not address:
+                continue
+            seeds[address] = {
+                "address": address,
+                "symbol": intel.get("symbol"),
+                "name": intel.get("name"),
+                "_source_helius": True,
+                "_doctor_strategy_mode": "pump_sniper",
+                "_fresh_approved": True,
+                "_fresh_score": int(intel.get("score") or 0),
+            }
 
         walletbot_tokens = await self.get_trending_walletbot()
         for row in walletbot_tokens:
