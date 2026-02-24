@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDownLeft, ArrowUpRight, CheckCircle2, Copy, History, KeyRound, Shield, Trash2, Wallet as WalletIcon } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Bot, CheckCircle2, Copy, History, KeyRound, Settings2, Shield, Trash2, Wallet as WalletIcon } from "lucide-react";
 
 import { Layout } from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { SUPPORTED_CHAINS } from "@/hooks/use-chain";
 import {
@@ -69,10 +70,13 @@ export default function WalletPage() {
   const [sendOpen, setSendOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [walletSettingsOpen, setWalletSettingsOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   const [sendChain, setSendChain] = useState(enabledChains[0] || "solana");
   const [receiveChain, setReceiveChain] = useState(enabledChains[0] || "solana");
   const [exportChain, setExportChain] = useState(enabledChains[0] || "solana");
+  const [settingsChain, setSettingsChain] = useState(enabledChains[0] || "solana");
 
   const [sendRecipient, setSendRecipient] = useState("");
   const [sendAmount, setSendAmount] = useState("");
@@ -167,6 +171,11 @@ export default function WalletPage() {
     setExportChain(chainName);
     setExportedKey(null);
     setExportOpen(true);
+  };
+
+  const handleOpenWalletSettings = (chainName: string) => {
+    setSettingsChain(chainName);
+    setWalletSettingsOpen(true);
   };
 
   const handleSendSubmit = () => {
@@ -368,7 +377,7 @@ export default function WalletPage() {
         <Tabs defaultValue="assets" className="space-y-3">
           <TabsList className="w-full grid grid-cols-3">
             <TabsTrigger value="assets">Assets</TabsTrigger>
-            <TabsTrigger value="activity">Activity</TabsTrigger>
+            <TabsTrigger value="activity">Transactions</TabsTrigger>
             <TabsTrigger value="security">Security</TabsTrigger>
           </TabsList>
 
@@ -407,12 +416,19 @@ export default function WalletPage() {
                         <Button size="sm" variant="outline" disabled={!address} onClick={() => copyText(address, `${chainName} address copied`)}>
                           <Copy className="w-3.5 h-3.5 mr-1" />Address
                         </Button>
-                        <Button size="sm" variant="outline" disabled={!address} onClick={() => handleOpenExportKey(chainName)}>
-                          <KeyRound className="w-3.5 h-3.5 mr-1" />Export Key
-                        </Button>
-                        <Button size="sm" variant="outline" disabled={!address || removeWalletChain.isPending} onClick={() => handleRemoveWalletChain(chainName)}>
-                          <Trash2 className="w-3.5 h-3.5 mr-1" />Remove Wallet
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="sm" variant="outline" disabled={!address}>
+                              <Settings2 className="w-3.5 h-3.5 mr-1" />Settings
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuItem onClick={() => handleOpenWalletSettings(chainName)}>
+                              <KeyRound className="w-3.5 h-3.5 mr-2" />
+                              Wallet Security
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
                   );
@@ -424,11 +440,11 @@ export default function WalletPage() {
           <TabsContent value="activity" className="space-y-3">
             <Card className="solana-card">
               <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2"><History className="w-4 h-4" />Recent Activity</CardTitle>
+                <CardTitle className="text-base flex items-center gap-2"><History className="w-4 h-4" />Transaction History</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 {(context?.recent_trades || []).length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No wallet activity yet. Transfers and assistant trades will appear here.</p>
+                  <p className="text-sm text-muted-foreground">No transactions yet. Real transfers and assistant trades will appear here when executed.</p>
                 ) : (
                   (context?.recent_trades || []).slice(0, 10).map((trade) => (
                     <div key={trade.id} className="rounded-lg border border-border/60 px-3 py-2 bg-muted/20 flex items-center justify-between">
@@ -508,45 +524,19 @@ export default function WalletPage() {
 
         <Card className="solana-card">
           <CardHeader>
-            <CardTitle className="text-base">Assistant Permission & Execution</CardTitle>
+            <CardTitle className="text-base flex items-center justify-between">
+              <span className="flex items-center gap-2"><Bot className="w-4 h-4" />Assistant Permission & Execution</span>
+              <Button variant="outline" size="sm" onClick={() => setAssistantOpen(true)}>
+                <Settings2 className="w-4 h-4 mr-1" /> Open
+              </Button>
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
               <span className="text-sm">DoctorTrade Status</span>
               <Badge variant={trading?.enabled ? "default" : "outline"}>{trading?.enabled ? "Enabled" : trading?.pending_approval ? "Pending Approval" : "Disabled"}</Badge>
             </div>
-            <div className="space-y-2">
-              <Label>Mode</Label>
-              <select value={assistantMode} onChange={(e) => setAssistantMode(e.target.value as "paper" | "live")} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
-                <option value="paper">Paper</option>
-                <option value="live">Live</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="assistant-confirmation">Approval Phrase</Label>
-              <Input id="assistant-confirmation" value={confirmationText} onChange={(e) => setConfirmationText(e.target.value)} />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={handleRequestAssistantConsent} disabled={requestConsent.isPending}>{requestConsent.isPending ? "Requesting..." : "Request Consent"}</Button>
-              <Button variant="outline" onClick={handleApproveAssistantConsent} disabled={approveConsent.isPending || !trading?.pending_approval}>{approveConsent.isPending ? "Approving..." : "Approve Consent"}</Button>
-              <Button variant="outline" onClick={handleRevokeAssistantConsent} disabled={revokeConsent.isPending}>{revokeConsent.isPending ? "Revoking..." : "Revoke"}</Button>
-            </div>
-
-            <div className="rounded-lg border border-border/60 p-3 space-y-3">
-              <p className="text-sm font-medium flex items-center gap-2"><KeyRound className="w-4 h-4" />Execute Trade</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <select value={tradeChain} onChange={(e) => setTradeChain(e.target.value)} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
-                  {enabledChains.map((chainName) => <option key={chainName} value={chainName}>{chainName}</option>)}
-                </select>
-                <select value={tradeSide} onChange={(e) => setTradeSide(e.target.value as "buy" | "sell")} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="buy">BUY</option>
-                  <option value="sell">SELL</option>
-                </select>
-              </div>
-              <Input placeholder="Contract address" value={tradeContract} onChange={(e) => setTradeContract(e.target.value)} />
-              <Input type="number" min={1} step="0.01" placeholder="Notional USD" value={tradeNotional} onChange={(e) => setTradeNotional(e.target.value)} />
-              <Button onClick={handleExecuteAssistantTrade} disabled={executeTrade.isPending || !trading?.enabled}>{executeTrade.isPending ? "Executing..." : `Execute ${tradeSide.toUpperCase()}`}</Button>
-            </div>
+            <p className="text-sm text-muted-foreground">Assistant controls are organized in one panel. Tap <span className="font-medium">Open</span> to manage permissions and execution.</p>
           </CardContent>
         </Card>
 
@@ -554,7 +544,7 @@ export default function WalletPage() {
           <SheetContent side="right" className="sm:max-w-md">
             <SheetHeader>
               <SheetTitle>Send</SheetTitle>
-              <SheetDescription>Send tokens from your wallet account.</SheetDescription>
+              <SheetDescription>Transfer flow UI is ready. Live on-chain transfer execution is being finalized.</SheetDescription>
             </SheetHeader>
             <div className="space-y-3 mt-4">
               <Label>Chain</Label>
@@ -633,6 +623,79 @@ export default function WalletPage() {
                   <Button variant="outline" onClick={() => copyText(exportedKey.private_key, "Private key copied")}>Copy Private Key</Button>
                 </div>
               )}
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        <Sheet open={walletSettingsOpen} onOpenChange={setWalletSettingsOpen}>
+          <SheetContent side="right" className="sm:max-w-md">
+            <SheetHeader>
+              <SheetTitle>Wallet Settings</SheetTitle>
+              <SheetDescription>Manage private key export and wallet removal for one chain.</SheetDescription>
+            </SheetHeader>
+            <div className="space-y-3 mt-4">
+              <Label>Chain</Label>
+              <select value={settingsChain} onChange={(e) => setSettingsChain(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+                {enabledChains.map((chainName) => <option key={chainName} value={chainName}>{chainName}</option>)}
+              </select>
+
+              <Button variant="outline" onClick={() => { setWalletSettingsOpen(false); handleOpenExportKey(settingsChain); }}>
+                <KeyRound className="w-4 h-4 mr-2" /> Export Private Key
+              </Button>
+
+              <Button variant="outline" onClick={() => handleRemoveWalletChain(settingsChain)} disabled={removeWalletChain.isPending || !addressesByChain[settingsChain]}>
+                <Trash2 className="w-4 h-4 mr-2" /> Remove Wallet
+              </Button>
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        <Sheet open={assistantOpen} onOpenChange={setAssistantOpen}>
+          <SheetContent side="right" className="sm:max-w-md">
+            <SheetHeader>
+              <SheetTitle>Assistant Permission & Execution</SheetTitle>
+              <SheetDescription>Enable/disable assistant permission and run assistant execution from one place.</SheetDescription>
+            </SheetHeader>
+            <div className="space-y-3 mt-4">
+              <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
+                <span className="text-sm">DoctorTrade Status</span>
+                <Badge variant={trading?.enabled ? "default" : "outline"}>{trading?.enabled ? "Enabled" : trading?.pending_approval ? "Pending Approval" : "Disabled"}</Badge>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Mode</Label>
+                <select value={assistantMode} onChange={(e) => setAssistantMode(e.target.value as "paper" | "live")} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+                  <option value="paper">Paper</option>
+                  <option value="live">Live</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="assistant-confirmation-sheet">Approval Phrase</Label>
+                <Input id="assistant-confirmation-sheet" value={confirmationText} onChange={(e) => setConfirmationText(e.target.value)} />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={handleRequestAssistantConsent} disabled={requestConsent.isPending}>{requestConsent.isPending ? "Requesting..." : "Request Consent"}</Button>
+                <Button variant="outline" onClick={handleApproveAssistantConsent} disabled={approveConsent.isPending || !trading?.pending_approval}>{approveConsent.isPending ? "Approving..." : "Approve Consent"}</Button>
+                <Button variant="outline" onClick={handleRevokeAssistantConsent} disabled={revokeConsent.isPending}>{revokeConsent.isPending ? "Revoking..." : "Revoke"}</Button>
+              </div>
+
+              <div className="rounded-lg border border-border/60 p-3 space-y-3">
+                <p className="text-sm font-medium flex items-center gap-2"><KeyRound className="w-4 h-4" />Execute Trade</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <select value={tradeChain} onChange={(e) => setTradeChain(e.target.value)} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
+                    {enabledChains.map((chainName) => <option key={chainName} value={chainName}>{chainName}</option>)}
+                  </select>
+                  <select value={tradeSide} onChange={(e) => setTradeSide(e.target.value as "buy" | "sell")} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
+                    <option value="buy">BUY</option>
+                    <option value="sell">SELL</option>
+                  </select>
+                </div>
+                <Input placeholder="Contract address" value={tradeContract} onChange={(e) => setTradeContract(e.target.value)} />
+                <Input type="number" min={1} step="0.01" placeholder="Notional USD" value={tradeNotional} onChange={(e) => setTradeNotional(e.target.value)} />
+                <Button onClick={handleExecuteAssistantTrade} disabled={executeTrade.isPending || !trading?.enabled}>{executeTrade.isPending ? "Executing..." : `Execute ${tradeSide.toUpperCase()}`}</Button>
+              </div>
             </div>
           </SheetContent>
         </Sheet>
