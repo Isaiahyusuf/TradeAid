@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio } from "lucide-react";
-import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorHealth, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
+import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorHealth, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
@@ -33,6 +33,7 @@ export default function DoctorTrade() {
   const configMutation = useDoctorConfig();
   const connectWalletMutation = useDoctorConnectWallet();
   const runMutation = useDoctorRunOnce();
+  const directBuyMutation = useDoctorDirectBuy();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsHydrated, setSettingsHydrated] = useState(false);
   const [intervalInput, setIntervalInput] = useState("20");
@@ -54,6 +55,11 @@ export default function DoctorTrade() {
   const [qualityMaxHolderInput, setQualityMaxHolderInput] = useState("35");
   const viewData = data;
   const hasData = Boolean(viewData);
+  const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const autoAction = String(searchParams.get("action") || "").trim().toLowerCase();
+  const autoBuyContract = String(searchParams.get("contract") || "").trim();
+  const autoBuyChain = String(searchParams.get("chain") || "solana").trim().toLowerCase();
+  const [autoBuyHandled, setAutoBuyHandled] = useState(false);
 
   useEffect(() => {
     if (!viewData?.trade_controls || settingsHydrated) return;
@@ -76,6 +82,47 @@ export default function DoctorTrade() {
     setQualityMaxHolderInput(String(viewData.trade_controls.quality_max_top_holder_pct ?? 35));
     setSettingsHydrated(true);
   }, [settingsHydrated, viewData?.trade_controls]);
+
+  useEffect(() => {
+    if (autoBuyHandled) return;
+    if (autoAction !== "autobuy" && autoAction !== "auto-buy") return;
+    if (!autoBuyContract) {
+      setAutoBuyHandled(true);
+      return;
+    }
+
+    if (autoBuyChain !== "solana") {
+      toast({
+        title: "Automatic buy unavailable",
+        description: "Automatic buy is currently supported for Solana tokens only.",
+        variant: "destructive",
+      });
+      setAutoBuyHandled(true);
+      return;
+    }
+
+    directBuyMutation.mutate(
+      { contract_address: autoBuyContract, chain: autoBuyChain },
+      {
+        onSuccess: (response) => {
+          const buyAmount = Number(response?.result?.buy_amount_sol || viewData?.trade_controls?.buy_amount_sol || 0.1);
+          toast({
+            title: "Automatic buy submitted",
+            description: `DoctorTrade bought ${buyAmount.toFixed(3)} SOL for the selected token.`,
+          });
+          setAutoBuyHandled(true);
+        },
+        onError: (error) => {
+          toast({
+            title: "Automatic buy failed",
+            description: error instanceof Error ? error.message : "Could not execute automatic buy.",
+            variant: "destructive",
+          });
+          setAutoBuyHandled(true);
+        },
+      }
+    );
+  }, [autoAction, autoBuyChain, autoBuyContract, autoBuyHandled, directBuyMutation, toast, viewData?.trade_controls?.buy_amount_sol]);
 
   const performanceSeries = useMemo(
     () =>

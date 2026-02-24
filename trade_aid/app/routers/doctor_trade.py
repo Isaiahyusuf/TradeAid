@@ -63,6 +63,11 @@ class DoctorWalletConnectRequest(BaseModel):
     use_existing_wallet: bool = True
 
 
+class DoctorDirectBuyRequest(BaseModel):
+    contract_address: str
+    chain: str = "solana"
+
+
 @router.get("/status")
 async def doctor_status(user: User = Depends(get_current_user)) -> dict[str, Any]:
     _ = user
@@ -151,5 +156,18 @@ async def doctor_run_once(user: User = Depends(get_current_user)) -> dict[str, A
     if not doctor_controller.enabled:
         await doctor_controller.start()
     result = await doctor_controller.run_once()
+    status = await doctor_controller.status()
+    return {"result": result, "status": status}
+
+
+@router.post("/direct-buy")
+async def doctor_direct_buy(req: DoctorDirectBuyRequest, user: User = Depends(get_current_user)) -> dict[str, Any]:
+    _ = user
+    result = await doctor_controller.execute_direct_buy(
+        contract_address=req.contract_address,
+        chain=req.chain,
+    )
+    if not result.get("executed"):
+        raise HTTPException(status_code=400, detail=str(result.get("reason") or "direct_buy_failed"))
     status = await doctor_controller.status()
     return {"result": result, "status": status}

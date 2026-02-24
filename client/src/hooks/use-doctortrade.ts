@@ -366,3 +366,12 @@ export function useDoctorRunOnce() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade"] }),
   });
 }
+
+export function useDoctorDirectBuy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { contract_address: string; chain?: string }) =>
+      apiPost<{ result: { executed: boolean; reason?: string; signature?: string; buy_amount_sol?: number } }>("/api/doctor/direct-buy", payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade"] }),
+  });
+}

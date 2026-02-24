@@ -5,7 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { executeDirectBuy } from "@/lib/solana-trade";
 import { cn } from "@/lib/utils";
 import { type SafeBuyItem } from "@/hooks/use-safe-buy";
 import { Input } from "@/components/ui/input";
@@ -21,32 +20,19 @@ export function SafeBuyCard({ item }: { item: SafeBuyItem }) {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [amountSol, setAmountSol] = useState("0.1");
-  const [isBuying, setIsBuying] = useState(false);
   const scoreTone = item.safety_score >= 85 ? "text-green-400 border-green-400/40" : item.safety_score >= 75 ? "text-primary border-primary/40" : "text-yellow-400 border-yellow-400/40";
   const riskTone = item.risk_level === "Low" ? "text-green-400 border-green-400/40" : item.risk_level === "Medium" ? "text-yellow-400 border-yellow-400/40" : "text-red-400 border-red-400/40";
 
-  const handleDirectBuy = async () => {
-    try {
-      setIsBuying(true);
-      const amount = Number(amountSol);
-      const result = await executeDirectBuy({
-        outputMint: item.contract_address,
-        amountSol: amount,
-      });
-      toast({
-        title: "Buy submitted",
-        description: `Tx: ${result.signature.slice(0, 10)}...`,
-      });
-      window.open(result.explorerUrl, "_blank");
-    } catch (error) {
-      toast({
-        title: "Direct buy failed",
-        description: error instanceof Error ? error.message : "Could not execute swap",
-        variant: "destructive",
-      });
-    } finally {
-      setIsBuying(false);
-    }
+  const handleDirectBuy = () => {
+    const requestedChain = String(item.chain || "solana").trim().toLowerCase();
+    const params = new URLSearchParams();
+    params.set("action", "buy");
+    params.set("chain", requestedChain || "solana");
+    params.set("contract", item.contract_address);
+    params.set("amount", String(amountSol || "0.1"));
+    params.set("returnTo", "/safe-buy");
+    setLocation(`/wallet?${params.toString()}`);
+    toast({ title: "Open Wallet", description: "Redirected to Wallet with selected token and chain." });
   };
 
   return (
@@ -125,9 +111,7 @@ export function SafeBuyCard({ item }: { item: SafeBuyItem }) {
               placeholder="0.1"
               aria-label="SOL amount"
             />
-            <Button size="sm" onClick={handleDirectBuy} disabled={isBuying}>
-              {isBuying ? "Buying..." : "Direct Buy"}
-            </Button>
+            <Button size="sm" onClick={handleDirectBuy}>Direct Buy</Button>
           </div>
           <Button size="sm" variant="outline" onClick={() => window.open(item.buy_links.pump_fun || `https://pump.fun/coin/${item.contract_address}`, "_blank")}>Buy on Pump.fun <ExternalLink className="w-3 h-3 ml-1" /></Button>
           <Button size="sm" variant="outline" onClick={() => window.open(item.buy_links.raydium, "_blank")}>Buy on Raydium <ExternalLink className="w-3 h-3 ml-1" /></Button>

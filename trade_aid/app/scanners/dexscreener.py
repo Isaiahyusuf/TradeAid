@@ -69,20 +69,39 @@ class DexScreenerScanner:
     def __init__(self):
         self.client = httpx.AsyncClient(timeout=15.0, trust_env=False)
         self.running = False
+        self.in_flight = False
         self.scan_count = 0
         self.chains = ENABLED_CHAINS
+        self.last_scan_at: datetime | None = None
+        self.last_duration_ms: float = 0.0
+        self.candidates_discovered: int = 0
+        self.candidates_processed: int = 0
+        self.successful_scans: int = 0
+        self.new_tokens_saved: int = 0
+        self.liquidity_positive_count: int = 0
 
     async def start(self):
         self.running = True
         logger.info("[DexScreener] Scanner started")
         while self.running:
             try:
-                await self._scan_cycle()
+                started = datetime.utcnow()
+                self.in_flight = True
+                cycle_stats = await self._scan_cycle()
                 self.scan_count += 1
+                self.successful_scans += 1
+                self.last_scan_at = datetime.utcnow()
+                self.last_duration_ms = max((self.last_scan_at - started).total_seconds() * 1000.0, 0.0)
+                self.candidates_discovered = int(cycle_stats.get("discovered", 0) or 0)
+                self.candidates_processed = int(cycle_stats.get("processed", 0) or 0)
+                self.new_tokens_saved = int(cycle_stats.get("new_tokens", 0) or 0)
+                self.liquidity_positive_count = int(cycle_stats.get("liquidity_positive", 0) or 0)
                 if self.scan_count % 6 == 0:
                     logger.info(f"[DexScreener] Completed {self.scan_count} scan cycles")
             except Exception as e:
                 logger.error(f"[DexScreener] Scan error: {e}")
+            finally:
+                self.in_flight = False
             await asyncio.sleep(settings.SCAN_INTERVAL_SECONDS)
 
     async def stop(self):
@@ -92,27 +111,56 @@ class DexScreenerScanner:
 
     async def scan_once(self):
         try:
-            await self._scan_cycle()
+            started = datetime.utcnow()
+            self.in_flight = True
+            cycle_stats = await self._scan_cycle()
             self.scan_count += 1
+            self.successful_scans += 1
+            self.last_scan_at = datetime.utcnow()
+            self.last_duration_ms = max((self.last_scan_at - started).total_seconds() * 1000.0, 0.0)
+            self.candidates_discovered = int(cycle_stats.get("discovered", 0) or 0)
+            self.candidates_processed = int(cycle_stats.get("processed", 0) or 0)
+            self.new_tokens_saved = int(cycle_stats.get("new_tokens", 0) or 0)
+            self.liquidity_positive_count = int(cycle_stats.get("liquidity_positive", 0) or 0)
         except Exception as e:
             logger.error(f"[DexScreener] One-shot scan error: {e}")
+        finally:
+            self.in_flight = False
 
     async def _scan_cycle(self):
+        discovered = 0
+        processed = 0
+        new_tokens = 0
+        liquidity_positive = 0
         for chain in self.chains:
             try:
-                await self._scan_chain_new_pairs(chain)
+                chain_stats = await self._scan_chain_new_pairs(chain)
+                discovered += int(chain_stats.get("discovered", 0) or 0)
+                processed += int(chain_stats.get("processed", 0) or 0)
+                new_tokens += int(chain_stats.get("new_tokens", 0) or 0)
+                liquidity_positive += int(chain_stats.get("liquidity_positive", 0) or 0)
             except Exception as e:
                 logger.error(f"[DexScreener] Error scanning {chain}: {e}")
+        return {
+            "discovered": discovered,
+            "processed": processed,
+            "new_tokens": new_tokens,
+            "liquidity_positive": liquidity_positive,
+        }
 
     async def _scan_chain_new_pairs(self, chain: str):
         cache_key = f"dex:latest_pairs:{chain}"
         cached = await cache_get(cache_key)
         new_contracts: list[str] = []
+        discovered = 0
+        processed = 0
+        liquidity_positive = 0
 
         try:
             pairs = await self._fetch_chain_pairs(chain)
             if not pairs:
-                return
+                return {"discovered": 0, "processed": 0, "new_tokens": 0, "liquidity_positive": 0}
+            discovered = len(pairs)
 
             async with async_session_factory() as db:
                 scan_limit = 500 if chain in {"ethereum", "base"} else 300
@@ -142,6 +190,9 @@ class DexScreenerScanner:
                     token = existing.scalar_one_or_none()
 
                     liquidity_usd = float(pair.get("liquidity", {}).get("usd", 0) or 0)
+                    processed += 1
+                    if liquidity_usd > 0:
+                        liquidity_positive += 1
                     market_cap = float(pair.get("marketCap", 0) or 0)
                     volume = pair.get("volume", {}) or {}
                     txns = pair.get("txns", {}) or {}
@@ -289,6 +340,31 @@ class DexScreenerScanner:
 
         except httpx.HTTPError as e:
             logger.warning(f"[DexScreener] HTTP error for {chain}: {e}")
+
+        return {
+            "discovered": discovered,
+            "processed": processed,
+            "new_tokens": len(new_contracts),
+            "liquidity_positive": liquidity_positive,
+        }
+
+    def get_health_snapshot(self) -> dict[str, object]:
+        processed = max(self.candidates_processed, 0)
+        liquidity_positive = max(self.liquidity_positive_count, 0)
+        rate_pct = (liquidity_positive / processed * 100.0) if processed > 0 else 0.0
+        return {
+            "running": bool(self.running),
+            "inFlight": bool(self.in_flight),
+            "lastScanAt": self.last_scan_at.isoformat() if self.last_scan_at else None,
+            "lastDurationMs": round(float(self.last_duration_ms or 0.0), 2),
+            "candidatesDiscovered": int(self.candidates_discovered or 0),
+            "candidatesProcessed": int(self.candidates_processed or 0),
+            "successfulScans": int(self.successful_scans or 0),
+            "newTokensSaved": int(self.new_tokens_saved or 0),
+            "liquidityPositiveCount": int(liquidity_positive),
+            "liquidityPositiveRatePct": round(rate_pct, 2),
+            "cycleCount": int(self.scan_count or 0),
+        }
 
     async def _fetch_chain_pairs(self, chain: str) -> list[dict]:
         search_terms = CHAIN_SEARCH_TERMS.get(chain, [chain, "new pair"])

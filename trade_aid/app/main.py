@@ -12,7 +12,7 @@ from app.utils.redis_client import close_redis
 from app.utils.logging_config import logger
 from app.utils.request_logging import RequestLoggingMiddleware
 from app.websocket.manager import ws_manager
-from app.routers import auth, tokens, wallets, scoring, alerts, safe_buy, ai_assistant, doctor_trade
+from app.routers import auth, tokens, wallets, scoring, alerts, safe_buy, ai_assistant, doctor_trade, scanner
 from app.scanners.dexscreener import dex_scanner
 from app.scanners.chain_scanner import chain_scanner_manager
 
@@ -96,6 +96,7 @@ app.include_router(alerts.router)
 app.include_router(safe_buy.router)
 app.include_router(ai_assistant.router)
 app.include_router(doctor_trade.router)
+app.include_router(scanner.router)
 
 
 @app.get("/")

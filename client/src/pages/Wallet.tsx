@@ -44,6 +44,9 @@ export default function WalletPage() {
   const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
   const returnTo = String(searchParams.get("returnTo") || "").trim();
   const walletAction = String(searchParams.get("action") || "").trim().toLowerCase();
+  const prefillTradeChain = String(searchParams.get("chain") || "").trim().toLowerCase();
+  const prefillTradeContract = String(searchParams.get("contract") || "").trim();
+  const prefillTradeAmount = String(searchParams.get("amount") || "").trim();
 
   const tradingStatusQuery = useAssistantTradingStatus();
   const doctorStatusQuery = useDoctorStatus();
@@ -127,6 +130,23 @@ export default function WalletPage() {
       setWalletTab("assets");
     }
   }, [walletAction, location]);
+
+  useEffect(() => {
+    if (walletAction !== "buy") return;
+    const requestedChain = enabledChains.includes(prefillTradeChain as SupportedWalletChain)
+      ? (prefillTradeChain as SupportedWalletChain)
+      : (enabledChains[0] || "solana");
+    setWalletTab("assets");
+    setAssistantOpen(true);
+    setTradeSide("buy");
+    setTradeChain(requestedChain);
+    if (prefillTradeContract) {
+      setTradeContract(prefillTradeContract);
+    }
+    if (prefillTradeAmount) {
+      setTradeNotional(prefillTradeAmount);
+    }
+  }, [walletAction, prefillTradeChain, prefillTradeContract, prefillTradeAmount, enabledChains]);
 
   useEffect(() => {
     const controls = doctorStatusQuery.data?.trade_controls;

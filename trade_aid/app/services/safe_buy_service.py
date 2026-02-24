@@ -12,10 +12,11 @@ from app.utils.redis_client import cache_get, cache_set, publish_event
 class SafeBuyService:
     SAFE_BUY_MIN_SCORE = 20.0
     NEAR_MISS_MIN_SCORE = 15.0
-    PROJECT_TTL_HOURS = 24
+    PROJECT_TTL_HOURS = 2
     MIN_LIQUIDITY_USD = 1_000.0
     MIN_ACTIVE_VOLUME_5M = 150.0
     MIN_ACTIVE_VOLUME_1H = 1_000.0
+    MIN_TRADES_1H = 30
 
     def _compute_dynamic_thresholds(self, scores: list[float]) -> tuple[float, float]:
         return self.SAFE_BUY_MIN_SCORE, self.NEAR_MISS_MIN_SCORE
@@ -166,6 +167,7 @@ class SafeBuyService:
             buys_1h = int(extra.get("buys_1h", 0) or 0)
             sells_1h = int(extra.get("sells_1h", 0) or 0)
             new_wallets_count = int(extra.get("new_wallets_count", 0) or 0)
+            trades_1h = buys_1h + sells_1h
 
             if market_cap < 10000 or market_cap > 750000:
                 continue
@@ -175,6 +177,9 @@ class SafeBuyService:
 
             has_active_volume = volume_5m >= self.MIN_ACTIVE_VOLUME_5M or volume_1h >= self.MIN_ACTIVE_VOLUME_1H
             if not has_active_volume:
+                continue
+
+            if trades_1h < self.MIN_TRADES_1H:
                 continue
 
             liq_ratio = (liquidity / market_cap) if market_cap > 0 else 0

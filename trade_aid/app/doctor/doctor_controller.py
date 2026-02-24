@@ -357,6 +357,139 @@ class DoctorTradeController:
             return {"triggered": True, "reason": "honeypot_risk"}
         return {"triggered": False}
 
+    async def execute_direct_buy(self, contract_address: str, *, chain: str = "solana") -> dict[str, Any]:
+        normalized_chain = str(chain or "").strip().lower()
+        if normalized_chain != "solana":
+            return {"executed": False, "reason": "automatic_buy_only_supported_for_solana"}
+
+        target_address = str(contract_address or "").strip()
+        if not target_address:
+            return {"executed": False, "reason": "contract_address_required"}
+
+        if not bool(str(self.wallet.public_address or "").strip() and str(self.wallet.private_key or "").strip()):
+            return {"executed": False, "reason": "wallet_not_connected"}
+
+        if self.kill_switch or bool(self.risk_state.paused):
+            return {"executed": False, "reason": "doctortrade_paused"}
+
+        configured_buy_sol = max(float(self.min_buy_amount_sol or 0.1), float(self.buy_amount_sol or 0.1))
+        self.buy_amount_sol = configured_buy_sol
+
+        memes = await self.scanner.scan_all_sources(limit=40)
+        self.current_tokens = memes
+        token = next((row for row in memes if str(row.get("address") or "").strip().lower() == target_address.lower()), None)
+        if not token:
+            return {"executed": False, "reason": "token_not_in_fresh_feed"}
+
+        self.strategy_mode = str(token.get("strategy_mode") or "trending")
+
+        safety = self._safety_checks(token)
+        if safety.get("triggered"):
+            return {"executed": False, "reason": str(safety.get("reason") or "safety_triggered")}
+
+        quality_ok, quality_reason = self._quality_gate(token)
+        if not quality_ok:
+            return {"executed": False, "reason": str(quality_reason or "quality_gate_blocked")}
+
+        signal = self.ai.generate(token, current_drawdown_pct=float(self.risk_state.total_loss_pct or 0.0))
+        signal["action"] = "BUY"
+        signal["entry_price"] = float(signal.get("entry_price") or token.get("price_usd") or 0.0)
+        signal["confidence"] = max(int(signal.get("confidence") or 0), 70)
+
+        risk_result = self.risk.validate(signal, self.risk_state)
+        if not risk_result.get("approved"):
+            return {"executed": False, "reason": str(risk_result.get("reason") or "risk_blocked")}
+
+        weighted_size_pct = self._weighted_position_size_pct(
+            token,
+            signal,
+            float(risk_result.get("position_size_pct") or 0.0),
+        )
+        risk_result["position_size_pct"] = weighted_size_pct
+
+        if not self._can_open_trade():
+            return {"executed": False, "reason": "max_trades_24h_reached"}
+
+        try:
+            balance_sol = await self.wallet.get_balance_sol()
+        except Exception:
+            balance_sol = 0.0
+        if balance_sol < configured_buy_sol:
+            return {"executed": False, "reason": f"insufficient_sol_balance_min_{configured_buy_sol:.3f}"}
+
+        execution = await self.execution.execute(
+            token,
+            signal,
+            float(risk_result.get("position_size_pct") or 0.0),
+            buy_amount_sol=configured_buy_sol,
+        )
+        if not execution.get("executed"):
+            return {"executed": False, "reason": str(execution.get("reason") or "execution_failed")}
+
+        position = {
+            "symbol": token.get("symbol"),
+            "address": token.get("address"),
+            "entry_price": float(signal.get("entry_price") or 0.0),
+            "current_price": float(token.get("price_usd") or 0.0),
+            "liquidity": float(token.get("liquidity") or 0.0),
+            "confidence": int(signal.get("confidence") or 0),
+            "size_pct": float(risk_result.get("position_size_pct") or 0.0),
+            "stop_loss": round(float(signal.get("entry_price") or token.get("price_usd") or 0.0) * (1.0 - (float(self.stop_loss_pct) / 100.0)), 8),
+            "take_profit": round(float(signal.get("entry_price") or token.get("price_usd") or 0.0) * float(self.take_profit_multiplier), 8),
+            "trailing_stop_pct": float(self.trailing_stop_pct),
+            "opened_at": datetime.utcnow().isoformat(),
+            "signature": execution.get("signature"),
+            "risk_status": "active",
+            "strategy_mode": self.strategy_mode,
+            "peak_price": float(token.get("price_usd") or signal.get("entry_price") or 0.0),
+            "notional_usd": float(self.risk_state.equity_usd * (float(risk_result.get("position_size_pct") or 0.0) / 100.0)),
+        }
+        self.positions.append(position)
+        self.positions = self.positions[: int(getattr(self.risk, "MAX_OPEN_POSITIONS", 3) or 3)]
+        self.risk.register_open(self.risk_state, float(position["size_pct"]))
+        self._register_trade_count()
+
+        trade_row = {
+            "token": token.get("symbol"),
+            "address": token.get("address"),
+            "action": "BUY",
+            "status": "executed",
+            "confidence": int(signal.get("confidence") or 0),
+            "liquidity": float(token.get("liquidity") or 0.0),
+            "volume_5m": float(token.get("volume_5m") or 0.0),
+            "entry_price": float(signal.get("entry_price") or 0.0),
+            "current_price": float(token.get("price_usd") or 0.0),
+            "size_pct": float(risk_result.get("position_size_pct") or 0.0),
+            "strategy_mode": self.strategy_mode,
+            "timestamp": datetime.utcnow().isoformat(),
+            "signature": execution.get("signature"),
+        }
+        self.trade_log.insert(0, trade_row)
+        self.trade_log = self.trade_log[:200]
+        await self._log_trade(trade_row)
+        self._register_journal({
+            "token": token.get("symbol"),
+            "address": token.get("address"),
+            "decision": "BUY",
+            "reason": "direct_buy_executed",
+            "confidence": int(signal.get("confidence") or 0),
+            "size_pct": float(risk_result.get("position_size_pct") or 0.0),
+            "strategy_mode": self.strategy_mode,
+        })
+
+        self.last_run_at = datetime.utcnow().isoformat()
+        return {
+            "executed": True,
+            "mode": str(execution.get("mode") or self.execution.mode),
+            "reason": "direct_buy_executed",
+            "token": {
+                "symbol": token.get("symbol"),
+                "address": token.get("address"),
+            },
+            "signature": execution.get("signature"),
+            "buy_amount_sol": configured_buy_sol,
+        }
+
     async def run_once(self) -> dict[str, Any]:
         if not self.enabled or self.kill_switch:
             return {"executed": False, "reason": "disabled"}
