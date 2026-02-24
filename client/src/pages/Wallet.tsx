@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDownLeft, ArrowUpRight, CheckCircle2, Copy, History, KeyRound, Shield, Wallet as WalletIcon } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, CheckCircle2, Copy, History, KeyRound, Shield, Trash2, Wallet as WalletIcon } from "lucide-react";
 
 import { Layout } from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,17 +14,31 @@ import { useToast } from "@/hooks/use-toast";
 import { SUPPORTED_CHAINS } from "@/hooks/use-chain";
 import {
   useApproveAssistantConsent,
+  useAssistantContextOverview,
   useAssistantTradingStatus,
   useAssistantWalletStatus,
   useConfirmAssistantWalletBackup,
   useCreateAssistantWallet,
   useExecuteAssistantTrade,
+  useExportAssistantWalletKey,
   useImportAssistantWallet,
+  useRemoveAssistantWalletChain,
   useRequestAssistantConsent,
   useRevealAssistantWallet,
   useRevokeAssistantConsent,
-  useAssistantContextOverview,
 } from "@/hooks/use-ai-assistant";
+
+const CHAIN_PRICE_ID_MAP: Record<string, string> = {
+  solana: "solana",
+  ethereum: "ethereum",
+  bsc: "binancecoin",
+  base: "ethereum",
+  arbitrum: "ethereum",
+  avalanche: "avalanche-2",
+  polygon: "matic-network",
+};
+
+type ChainPrices = Record<string, number>;
 
 export default function WalletPage() {
   const { toast } = useToast();
@@ -32,15 +46,19 @@ export default function WalletPage() {
 
   const tradingStatusQuery = useAssistantTradingStatus();
   const walletStatusQuery = useAssistantWalletStatus();
+  const contextOverviewQuery = useAssistantContextOverview(30);
+
   const requestConsent = useRequestAssistantConsent();
   const approveConsent = useApproveAssistantConsent();
   const revokeConsent = useRevokeAssistantConsent();
   const executeTrade = useExecuteAssistantTrade();
+
   const createWallet = useCreateAssistantWallet();
   const importWallet = useImportAssistantWallet();
   const confirmBackup = useConfirmAssistantWalletBackup();
   const revealWallet = useRevealAssistantWallet();
-  const contextOverviewQuery = useAssistantContextOverview(30);
+  const removeWalletChain = useRemoveAssistantWalletChain();
+  const exportWalletKey = useExportAssistantWalletKey();
 
   const trading = tradingStatusQuery.data?.trading;
   const wallet = walletStatusQuery.data?.wallet;
@@ -48,6 +66,7 @@ export default function WalletPage() {
 
   const [assistantMode, setAssistantMode] = useState<"paper" | "live">("paper");
   const [confirmationText, setConfirmationText] = useState("I_APPROVE_ASSISTANT_TRADING");
+
   const [tradeChain, setTradeChain] = useState(enabledChains[0] || "solana");
   const [tradeContract, setTradeContract] = useState("");
   const [tradeSide, setTradeSide] = useState<"buy" | "sell">("buy");
@@ -56,20 +75,57 @@ export default function WalletPage() {
   const [backupPhraseInput, setBackupPhraseInput] = useState("");
   const [importMnemonic, setImportMnemonic] = useState("");
   const [revealPhrase, setRevealPhrase] = useState("I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS");
+
   const [sendOpen, setSendOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+
   const [sendChain, setSendChain] = useState(enabledChains[0] || "solana");
   const [receiveChain, setReceiveChain] = useState(enabledChains[0] || "solana");
+  const [exportChain, setExportChain] = useState(enabledChains[0] || "solana");
+
   const [sendRecipient, setSendRecipient] = useState("");
   const [sendAmount, setSendAmount] = useState("");
   const [sendAsset, setSendAsset] = useState("USDC");
+
+  const [chainPrices, setChainPrices] = useState<ChainPrices>({});
+  const [exportedKey, setExportedKey] = useState<{ chain: string; address: string; private_key: string; warning: string } | null>(null);
+
   const [latestBundle, setLatestBundle] = useState<{ mnemonic?: string; addresses_by_chain: Record<string, string>; private_keys_by_chain?: Record<string, string>; warning: string; } | null>(null);
 
   useEffect(() => {
-    if (trading?.mode === "live" || trading?.mode === "paper") {
+    if (trading?.mode === "paper" || trading?.mode === "live") {
       setAssistantMode(trading.mode);
     }
   }, [trading?.mode]);
+
+  useEffect(() => {
+    const fetchPrices = async () => {
+      const ids = Array.from(new Set(enabledChains.map((chainName) => CHAIN_PRICE_ID_MAP[chainName]).filter(Boolean))).join(",");
+      if (!ids) return;
+
+      try {
+        const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`, {
+          method: "GET",
+        });
+        if (!response.ok) return;
+        const json = (await response.json()) as Record<string, { usd?: number }>;
+
+        const mapped: ChainPrices = {};
+        for (const chainName of enabledChains) {
+          const id = CHAIN_PRICE_ID_MAP[chainName];
+          const usd = Number(json?.[id]?.usd || 0);
+          mapped[chainName] = Number.isFinite(usd) ? usd : 0;
+        }
+        setChainPrices(mapped);
+      } catch {
+      }
+    };
+
+    fetchPrices();
+    const timer = setInterval(fetchPrices, 60_000);
+    return () => clearInterval(timer);
+  }, [enabledChains]);
 
   const addressesByChain = useMemo(() => {
     const incoming = trading?.wallets_by_chain || wallet?.addresses_by_chain || {};
@@ -82,11 +138,6 @@ export default function WalletPage() {
 
   const activeChainsCount = Object.values(addressesByChain).filter(Boolean).length;
 
-  const estimatedUsdBalance = useMemo(() => {
-    const recentNotional = context?.recent_trades?.slice(0, 8).reduce((sum, item) => sum + Number(item.notional_usd || 0), 0) || 0;
-    return Math.max(0, Math.round(recentNotional * 0.18 * 100) / 100);
-  }, [context?.recent_trades]);
-
   const chainBalances = useMemo(() => {
     const rows: Record<string, number> = {};
     for (const chainName of enabledChains) {
@@ -96,16 +147,30 @@ export default function WalletPage() {
     return rows;
   }, [enabledChains, addressesByChain]);
 
+  const estimatedUsdBalance = useMemo(() => {
+    let total = 0;
+    for (const chainName of enabledChains) {
+      const qty = chainBalances[chainName] || 0;
+      const px = chainPrices[chainName] || 0;
+      total += qty * px;
+    }
+    if (total > 0) {
+      return Math.round(total * 100) / 100;
+    }
+    const recentNotional = context?.recent_trades?.slice(0, 8).reduce((sum, item) => sum + Number(item.notional_usd || 0), 0) || 0;
+    return Math.max(0, Math.round(recentNotional * 0.18 * 100) / 100);
+  }, [enabledChains, chainBalances, chainPrices, context?.recent_trades]);
+
   const shortAddress = (address?: string) => {
     if (!address) return "Not generated";
     if (address.length <= 14) return address;
     return `${address.slice(0, 6)}...${address.slice(-6)}`;
   };
 
-  const copyText = async (value: string) => {
+  const copyText = async (value: string, message: string = "Copied to clipboard") => {
     try {
       await navigator.clipboard.writeText(value);
-      toast({ title: "Copied", description: "Address copied to clipboard." });
+      toast({ title: "Copied", description: message });
     } catch {
       toast({ title: "Copy failed", description: "Could not copy to clipboard.", variant: "destructive" });
     }
@@ -129,15 +194,18 @@ export default function WalletPage() {
     setReceiveOpen(true);
   };
 
+  const handleOpenExportKey = (chainName: string) => {
+    setExportChain(chainName);
+    setExportedKey(null);
+    setExportOpen(true);
+  };
+
   const handleSendSubmit = () => {
     if (!sendRecipient.trim() || !sendAmount.trim()) {
       toast({ title: "Missing fields", description: "Enter recipient and amount.", variant: "destructive" });
       return;
     }
-    toast({
-      title: "Transfer queued",
-      description: `Prepared ${sendAmount} ${sendAsset} on ${sendChain}.` ,
-    });
+    toast({ title: "Transfer queued", description: `Prepared ${sendAmount} ${sendAsset} on ${sendChain}.` });
     setSendOpen(false);
     setSendRecipient("");
     setSendAmount("");
@@ -152,10 +220,7 @@ export default function WalletPage() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed";
       if (message.toLowerCase().includes("wallet already exists")) {
-        toast({
-          title: "Wallet already exists",
-          description: "Use Reveal Secrets to view your phrase/keys or Overwrite Wallet to generate a new one.",
-        });
+        toast({ title: "Wallet already exists", description: "Use Export Key / Reveal Secrets or Overwrite Wallet." });
         return;
       }
       toast({ title: "Wallet creation failed", description: message, variant: "destructive" });
@@ -193,6 +258,28 @@ export default function WalletPage() {
       toast({ title: "Secrets revealed", description: "Keep these keys offline and private." });
     } catch (error) {
       toast({ title: "Reveal failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
+  };
+
+  const handleRemoveWalletChain = async (chainName: string) => {
+    const confirmed = window.confirm(`Remove wallet for ${chainName}? This removes the chain account from TradeAid.`);
+    if (!confirmed) return;
+
+    try {
+      await removeWalletChain.mutateAsync({ chain: chainName });
+      toast({ title: "Wallet removed", description: `${chainName} wallet removed successfully.` });
+    } catch (error) {
+      toast({ title: "Remove failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
+  };
+
+  const handleExportPrivateKey = async () => {
+    try {
+      const result = await exportWalletKey.mutateAsync({ chain: exportChain, confirmation_text: revealPhrase.trim() });
+      setExportedKey(result.wallet_key);
+      toast({ title: "Private key exported", description: `Exported key for ${exportChain}. Keep it secure.` });
+    } catch (error) {
+      toast({ title: "Export failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
     }
   };
 
@@ -273,11 +360,11 @@ export default function WalletPage() {
             <WalletIcon className="w-8 h-8 text-primary" />
             <span className="doctorstrange-font text-gradient">Wallet</span>
           </h1>
-          <p className="text-muted-foreground">One secure wallet, multi-chain addresses, and assistant permissions in one place.</p>
+          <p className="text-muted-foreground">Professional multi-chain wallet with live chain prices, send/receive actions, and secure key controls.</p>
           <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="outline" className="solana-badge">Master Recovery Phrase</Badge>
             <Badge variant="outline">Multi-chain Accounts</Badge>
-            <Badge variant="outline">Encrypted Storage</Badge>
+            <Badge variant="outline">Private Key Export</Badge>
           </div>
         </div>
 
@@ -301,8 +388,8 @@ export default function WalletPage() {
               <Button className="w-full" variant="outline" onClick={() => handleCreateWallet(false)} disabled={createWallet.isPending}>
                 {createWallet.isPending ? "Creating..." : "Create"}
               </Button>
-              <Button className="w-full" variant="outline" onClick={() => handleImportWallet(false)} disabled={importWallet.isPending || !importMnemonic.trim()}>
-                {importWallet.isPending ? "Importing..." : "Import"}
+              <Button className="w-full" variant="outline" onClick={() => handleCreateWallet(true)} disabled={createWallet.isPending}>
+                Overwrite
               </Button>
             </div>
           </CardContent>
@@ -318,30 +405,41 @@ export default function WalletPage() {
           <TabsContent value="assets" className="space-y-3">
             <Card className="solana-card">
               <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2"><WalletIcon className="w-4 h-4" />Multi-Chain Assets</CardTitle>
+                <CardTitle className="text-base flex items-center gap-2"><WalletIcon className="w-4 h-4" />Multi-Chain Wallets</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 {enabledChains.map((chainName) => {
                   const address = addressesByChain[chainName] || "";
                   const balance = chainBalances[chainName] || 0;
+                  const chainUsdPrice = Number(chainPrices[chainName] || 0);
+                  const chainUsdValue = balance * chainUsdPrice;
+
                   return (
-                    <div key={chainName} className="rounded-lg border border-border/60 px-3 py-3 bg-muted/20">
-                      <div className="flex items-center justify-between gap-3">
+                    <div key={chainName} className="rounded-lg border border-border/60 px-3 py-3 bg-muted/20 space-y-2">
+                      <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-semibold capitalize">{chainName}</p>
+                          <p className="text-sm font-semibold capitalize flex items-center gap-2">
+                            {chainName}
+                            {address ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" /> : <Shield className="w-3.5 h-3.5 text-muted-foreground" />}
+                          </p>
                           <p className="text-xs text-muted-foreground">{shortAddress(address)}</p>
+                          <p className="text-xs text-muted-foreground mt-1">Price: {chainUsdPrice > 0 ? `$${chainUsdPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}` : "Loading..."}</p>
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-semibold">{balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                          <p className="text-xs text-muted-foreground">$ {(balance * 1.02).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                          <p className="text-xs text-muted-foreground">$ {chainUsdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                         </div>
                       </div>
-                      <div className="mt-2 flex items-center justify-between">
-                        <Badge variant={address ? "default" : "outline"} className="text-[10px]">
-                          {address ? "Connected" : "Not Connected"}
-                        </Badge>
-                        <Button size="sm" variant="outline" disabled={!address} onClick={() => copyText(address)}>
-                          <Copy className="w-3.5 h-3.5 mr-1" />Copy Address
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Button size="sm" variant="outline" disabled={!address} onClick={() => copyText(address, `${chainName} address copied`)}>
+                          <Copy className="w-3.5 h-3.5 mr-1" />Address
+                        </Button>
+                        <Button size="sm" variant="outline" disabled={!address} onClick={() => handleOpenExportKey(chainName)}>
+                          <KeyRound className="w-3.5 h-3.5 mr-1" />Export Key
+                        </Button>
+                        <Button size="sm" variant="outline" disabled={!address || removeWalletChain.isPending} onClick={() => handleRemoveWalletChain(chainName)}>
+                          <Trash2 className="w-3.5 h-3.5 mr-1" />Remove Wallet
                         </Button>
                       </div>
                     </div>
@@ -358,7 +456,7 @@ export default function WalletPage() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {(context?.recent_trades || []).length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No wallet activity yet. Your transfers and trades will appear here.</p>
+                  <p className="text-sm text-muted-foreground">No wallet activity yet. Transfers and assistant trades will appear here.</p>
                 ) : (
                   (context?.recent_trades || []).slice(0, 10).map((trade) => (
                     <div key={trade.id} className="rounded-lg border border-border/60 px-3 py-2 bg-muted/20 flex items-center justify-between">
@@ -386,49 +484,24 @@ export default function WalletPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label htmlFor="wallet-import">Import 12-word phrase</Label>
-                    <Textarea
-                      id="wallet-import"
-                      value={importMnemonic}
-                      onChange={(e) => setImportMnemonic(e.target.value)}
-                      className="min-h-[90px]"
-                      placeholder="Enter your 12-word recovery phrase"
-                    />
+                    <Textarea id="wallet-import" value={importMnemonic} onChange={(e) => setImportMnemonic(e.target.value)} className="min-h-[90px]" placeholder="Enter your 12-word recovery phrase" />
                     <div className="flex gap-2">
-                      <Button variant="outline" onClick={() => handleImportWallet(false)} disabled={importWallet.isPending}>
-                        {importWallet.isPending ? "Importing..." : "Import Wallet"}
-                      </Button>
-                      <Button variant="outline" onClick={() => handleImportWallet(true)} disabled={importWallet.isPending}>
-                        Import + Overwrite
-                      </Button>
+                      <Button variant="outline" onClick={() => handleImportWallet(false)} disabled={importWallet.isPending}>{importWallet.isPending ? "Importing..." : "Import Wallet"}</Button>
+                      <Button variant="outline" onClick={() => handleImportWallet(true)} disabled={importWallet.isPending}>Import + Overwrite</Button>
                     </div>
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="wallet-backup-phrase">Confirm phrase backup</Label>
-                    <Textarea
-                      id="wallet-backup-phrase"
-                      placeholder="Paste your phrase exactly to confirm backup"
-                      value={backupPhraseInput}
-                      onChange={(e) => setBackupPhraseInput(e.target.value)}
-                      className="min-h-[80px]"
-                    />
-                    <Button variant="outline" onClick={handleConfirmBackup} disabled={confirmBackup.isPending || !backupPhraseInput.trim()}>
-                      {confirmBackup.isPending ? "Confirming..." : "Confirm Backup"}
-                    </Button>
+                    <Textarea id="wallet-backup-phrase" placeholder="Paste your phrase exactly to confirm backup" value={backupPhraseInput} onChange={(e) => setBackupPhraseInput(e.target.value)} className="min-h-[80px]" />
+                    <Button variant="outline" onClick={handleConfirmBackup} disabled={confirmBackup.isPending || !backupPhraseInput.trim()}>{confirmBackup.isPending ? "Confirming..." : "Confirm Backup"}</Button>
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="wallet-reveal-phrase">Reveal phrase/private keys</Label>
-                  <Input
-                    id="wallet-reveal-phrase"
-                    value={revealPhrase}
-                    onChange={(e) => setRevealPhrase(e.target.value)}
-                    placeholder="I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS"
-                  />
-                  <Button variant="outline" onClick={handleRevealWallet} disabled={revealWallet.isPending}>
-                    {revealWallet.isPending ? "Revealing..." : "Reveal Secrets"}
-                  </Button>
+                  <Input id="wallet-reveal-phrase" value={revealPhrase} onChange={(e) => setRevealPhrase(e.target.value)} placeholder="I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS" />
+                  <Button variant="outline" onClick={handleRevealWallet} disabled={revealWallet.isPending}>{revealWallet.isPending ? "Revealing..." : "Reveal Secrets"}</Button>
                 </div>
 
                 {latestBundle && (
@@ -463,94 +536,6 @@ export default function WalletPage() {
 
         <Card className="solana-card">
           <CardHeader>
-            <CardTitle className="text-base">Setup & Recovery</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => handleCreateWallet(false)} disabled={createWallet.isPending}>
-                {createWallet.isPending ? "Creating..." : "Create Wallet"}
-              </Button>
-              <Button variant="outline" onClick={() => handleCreateWallet(true)} disabled={createWallet.isPending}>
-                Overwrite Wallet
-              </Button>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="wallet-import">Import 12-word phrase</Label>
-              <Textarea
-                id="wallet-import"
-                value={importMnemonic}
-                onChange={(e) => setImportMnemonic(e.target.value)}
-                className="min-h-[90px]"
-                placeholder="Enter your 12-word recovery phrase"
-              />
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => handleImportWallet(false)} disabled={importWallet.isPending}>
-                  {importWallet.isPending ? "Importing..." : "Import Wallet"}
-                </Button>
-                <Button variant="outline" onClick={() => handleImportWallet(true)} disabled={importWallet.isPending}>
-                  Import + Overwrite
-                </Button>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="wallet-backup-phrase">Confirm phrase backup</Label>
-              <Textarea
-                id="wallet-backup-phrase"
-                placeholder="Paste your phrase exactly to confirm backup"
-                value={backupPhraseInput}
-                onChange={(e) => setBackupPhraseInput(e.target.value)}
-                className="min-h-[80px]"
-              />
-              <Button variant="outline" onClick={handleConfirmBackup} disabled={confirmBackup.isPending || !backupPhraseInput.trim()}>
-                {confirmBackup.isPending ? "Confirming..." : "Confirm Backup"}
-              </Button>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="wallet-reveal-phrase">Reveal phrase/private keys</Label>
-              <Input
-                id="wallet-reveal-phrase"
-                value={revealPhrase}
-                onChange={(e) => setRevealPhrase(e.target.value)}
-                placeholder="I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS"
-              />
-              <Button variant="outline" onClick={handleRevealWallet} disabled={revealWallet.isPending}>
-                {revealWallet.isPending ? "Revealing..." : "Reveal Secrets"}
-              </Button>
-            </div>
-
-            {latestBundle && (
-              <div className="rounded-lg border border-border/60 p-3 space-y-3 bg-muted/20">
-                <p className="text-xs text-amber-300">{latestBundle.warning}</p>
-                {latestBundle.mnemonic && (
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">12-word phrase</p>
-                    <Textarea readOnly value={latestBundle.mnemonic} className="min-h-[70px]" />
-                  </div>
-                )}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {Object.entries(latestBundle.addresses_by_chain || {}).map(([chainName, address]) => (
-                    <div key={chainName} className="rounded-md border border-border/60 p-2">
-                      <p className="text-xs uppercase text-muted-foreground">{chainName} address</p>
-                      <p className="text-xs break-all">{address}</p>
-                      {latestBundle.private_keys_by_chain?.[chainName] && (
-                        <>
-                          <p className="text-xs uppercase text-muted-foreground mt-1">private key</p>
-                          <p className="text-xs break-all">{latestBundle.private_keys_by_chain[chainName]}</p>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="solana-card">
-          <CardHeader>
             <CardTitle className="text-base">Assistant Permission & Execution</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -560,70 +545,35 @@ export default function WalletPage() {
             </div>
             <div className="space-y-2">
               <Label>Mode</Label>
-              <select
-                value={assistantMode}
-                onChange={(e) => setAssistantMode(e.target.value as "paper" | "live")}
-                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-              >
+              <select value={assistantMode} onChange={(e) => setAssistantMode(e.target.value as "paper" | "live")} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
                 <option value="paper">Paper</option>
                 <option value="live">Live</option>
               </select>
-            </div>
-            <div className="space-y-3">
-              <Label>Wallet Accounts</Label>
-              {enabledChains.map((chainName) => (
-                <div key={chainName} className="space-y-1">
-                  <Label htmlFor={`wallet-${chainName}`} className="text-xs uppercase text-muted-foreground">{chainName}</Label>
-                  <Input
-                    id={`wallet-${chainName}`}
-                    value={addressesByChain[chainName] || ""}
-                    readOnly
-                  />
-                </div>
-              ))}
             </div>
             <div className="space-y-2">
               <Label htmlFor="assistant-confirmation">Approval Phrase</Label>
               <Input id="assistant-confirmation" value={confirmationText} onChange={(e) => setConfirmationText(e.target.value)} />
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={handleRequestAssistantConsent} disabled={requestConsent.isPending}>
-                {requestConsent.isPending ? "Requesting..." : "Request Consent"}
-              </Button>
-              <Button variant="outline" onClick={handleApproveAssistantConsent} disabled={approveConsent.isPending || !trading?.pending_approval}>
-                {approveConsent.isPending ? "Approving..." : "Approve Consent"}
-              </Button>
-              <Button variant="outline" onClick={handleRevokeAssistantConsent} disabled={revokeConsent.isPending}>
-                {revokeConsent.isPending ? "Revoking..." : "Revoke"}
-              </Button>
+              <Button variant="outline" onClick={handleRequestAssistantConsent} disabled={requestConsent.isPending}>{requestConsent.isPending ? "Requesting..." : "Request Consent"}</Button>
+              <Button variant="outline" onClick={handleApproveAssistantConsent} disabled={approveConsent.isPending || !trading?.pending_approval}>{approveConsent.isPending ? "Approving..." : "Approve Consent"}</Button>
+              <Button variant="outline" onClick={handleRevokeAssistantConsent} disabled={revokeConsent.isPending}>{revokeConsent.isPending ? "Revoking..." : "Revoke"}</Button>
             </div>
 
             <div className="rounded-lg border border-border/60 p-3 space-y-3">
               <p className="text-sm font-medium flex items-center gap-2"><KeyRound className="w-4 h-4" />Execute Trade</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <select
-                  value={tradeChain}
-                  onChange={(e) => setTradeChain(e.target.value)}
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  {enabledChains.map((chainName) => (
-                    <option key={chainName} value={chainName}>{chainName}</option>
-                  ))}
+                <select value={tradeChain} onChange={(e) => setTradeChain(e.target.value)} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
+                  {enabledChains.map((chainName) => <option key={chainName} value={chainName}>{chainName}</option>)}
                 </select>
-                <select
-                  value={tradeSide}
-                  onChange={(e) => setTradeSide(e.target.value as "buy" | "sell")}
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                >
+                <select value={tradeSide} onChange={(e) => setTradeSide(e.target.value as "buy" | "sell")} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
                   <option value="buy">BUY</option>
                   <option value="sell">SELL</option>
                 </select>
               </div>
               <Input placeholder="Contract address" value={tradeContract} onChange={(e) => setTradeContract(e.target.value)} />
               <Input type="number" min={1} step="0.01" placeholder="Notional USD" value={tradeNotional} onChange={(e) => setTradeNotional(e.target.value)} />
-              <Button onClick={handleExecuteAssistantTrade} disabled={executeTrade.isPending || !trading?.enabled}>
-                {executeTrade.isPending ? "Executing..." : `Execute ${tradeSide.toUpperCase()}`}
-              </Button>
+              <Button onClick={handleExecuteAssistantTrade} disabled={executeTrade.isPending || !trading?.enabled}>{executeTrade.isPending ? "Executing..." : `Execute ${tradeSide.toUpperCase()}`}</Button>
             </div>
           </CardContent>
         </Card>
@@ -677,9 +627,40 @@ export default function WalletPage() {
 
               <Label>Address</Label>
               <Textarea readOnly value={selectedReceiveAddress || "Address unavailable for selected chain"} className="min-h-[88px]" />
-              <Button variant="outline" disabled={!selectedReceiveAddress} onClick={() => copyText(selectedReceiveAddress)}>
+              <Button variant="outline" disabled={!selectedReceiveAddress} onClick={() => copyText(selectedReceiveAddress, `${receiveChain} address copied`)}>
                 <Copy className="w-4 h-4 mr-2" /> Copy Address
               </Button>
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        <Sheet open={exportOpen} onOpenChange={setExportOpen}>
+          <SheetContent side="right" className="sm:max-w-md">
+            <SheetHeader>
+              <SheetTitle>Export Private Key</SheetTitle>
+              <SheetDescription>Export key for one chain wallet only. Keep this offline.</SheetDescription>
+            </SheetHeader>
+            <div className="space-y-3 mt-4">
+              <Label>Chain</Label>
+              <select value={exportChain} onChange={(e) => setExportChain(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+                {enabledChains.map((chainName) => <option key={chainName} value={chainName}>{chainName}</option>)}
+              </select>
+
+              <Label>Confirmation Phrase</Label>
+              <Input value={revealPhrase} onChange={(e) => setRevealPhrase(e.target.value)} placeholder="I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS" />
+
+              <Button onClick={handleExportPrivateKey} disabled={exportWalletKey.isPending}>{exportWalletKey.isPending ? "Exporting..." : "Export Key"}</Button>
+
+              {exportedKey && (
+                <div className="rounded-lg border border-border/60 p-3 bg-muted/20 space-y-2">
+                  <p className="text-xs text-amber-300">{exportedKey.warning}</p>
+                  <p className="text-xs text-muted-foreground">Address</p>
+                  <Textarea readOnly value={exportedKey.address} className="min-h-[64px]" />
+                  <p className="text-xs text-muted-foreground">Private Key</p>
+                  <Textarea readOnly value={exportedKey.private_key} className="min-h-[88px]" />
+                  <Button variant="outline" onClick={() => copyText(exportedKey.private_key, "Private key copied")}>Copy Private Key</Button>
+                </div>
+              )}
             </div>
           </SheetContent>
         </Sheet>

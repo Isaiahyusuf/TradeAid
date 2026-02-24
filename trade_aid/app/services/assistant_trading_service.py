@@ -296,6 +296,78 @@ def reveal_wallet_bundle(user: User, confirmation_text: str) -> dict[str, Any]:
     }
 
 
+def export_wallet_private_key(user: User, chain: str, confirmation_text: str) -> dict[str, Any]:
+    if (confirmation_text or "").strip() != WALLET_REVEAL_PHRASE:
+        raise HTTPException(status_code=400, detail="Invalid reveal confirmation text")
+
+    normalized_chain = (chain or "").strip().lower()
+    if not normalized_chain:
+        raise HTTPException(status_code=400, detail="chain is required")
+
+    cfg = _get_wallet_config(user)
+    chains = dict(cfg.get("chains") or {})
+    chain_cfg = chains.get(normalized_chain)
+    if not isinstance(chain_cfg, dict):
+        raise HTTPException(status_code=404, detail=f"No wallet found for chain '{normalized_chain}'")
+
+    address = str(chain_cfg.get("address") or "").strip()
+    encrypted_pk = str(chain_cfg.get("private_key_encrypted") or "").strip()
+    if not address or not encrypted_pk:
+        raise HTTPException(status_code=404, detail=f"Wallet data missing for chain '{normalized_chain}'")
+
+    try:
+        private_key = decrypt_api_key(encrypted_pk)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Stored wallet key is invalid")
+
+    return {
+        "chain": normalized_chain,
+        "address": address,
+        "private_key": private_key,
+        "warning": "Never share this private key. Anyone with this key controls your wallet.",
+    }
+
+
+def remove_wallet_chain(user: User, chain: str) -> dict[str, Any]:
+    normalized_chain = (chain or "").strip().lower()
+    if not normalized_chain:
+        raise HTTPException(status_code=400, detail="chain is required")
+
+    wallet_cfg = _get_wallet_config(user)
+    chains = dict(wallet_cfg.get("chains") or {})
+    if normalized_chain not in chains:
+        raise HTTPException(status_code=404, detail=f"No wallet found for chain '{normalized_chain}'")
+
+    chains.pop(normalized_chain, None)
+    wallet_cfg["chains"] = chains
+
+    if not chains:
+        wallet_cfg = {
+            "mnemonic_encrypted": None,
+            "backup_confirmed": False,
+            "backup_confirmed_at": None,
+            "created_at": None,
+            "chains": {},
+        }
+
+    _set_wallet_config(user, wallet_cfg)
+
+    trading_cfg = _get_trading_config(user)
+    wallets_by_chain = dict(trading_cfg.get("wallets_by_chain") or {})
+    wallets_by_chain.pop(normalized_chain, None)
+    trading_cfg["wallets_by_chain"] = wallets_by_chain
+
+    if wallets_by_chain:
+        trading_cfg["wallet_address"] = next(iter(wallets_by_chain.values()))
+    else:
+        trading_cfg["wallet_address"] = None
+        trading_cfg["enabled"] = False
+        trading_cfg["pending_approval"] = False
+
+    _set_trading_config(user, trading_cfg)
+    return wallet_status(user)
+
+
 def trading_status(user: User) -> dict[str, Any]:
     cfg = _get_trading_config(user)
     enabled_chains = get_enabled_chains()

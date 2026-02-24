@@ -1,5 +1,6 @@
 import { Sidebar, MobileNav } from "./Sidebar";
 import { ReactNode, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { TradeAidLogo } from "@/components/brand/TradeAidLogo";
 import { useAuth } from "@/hooks/use-auth";
 import { useChain, SUPPORTED_CHAINS, type AppChain } from "@/hooks/use-chain";
 import { useLocation } from "wouter";
@@ -79,8 +80,16 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="absolute inset-0 pointer-events-none wow-grid" />
         <div className="absolute inset-0 pointer-events-none wow-spotlight" />
         <div className="absolute inset-x-0 top-24 h-40 bg-gradient-to-b from-white/[0.04] to-transparent pointer-events-none" />
-        <div className="absolute top-0 left-0 right-0 md:left-auto md:right-0 p-4 md:p-6 z-20">
-          <div className="flex items-center justify-center md:justify-end gap-2">
+        <div className="absolute top-0 left-0 right-0 p-4 md:p-6 z-20">
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => setLocation("/")}
+              className="inline-flex items-center rounded-md px-2 py-1 bg-card/70 backdrop-blur-md border border-primary/20 hover:border-primary/40"
+              data-testid="button-global-logo-home"
+            >
+              <TradeAidLogo withText={false} className="scale-90" />
+            </button>
             <Select value={chain} onValueChange={(value) => setChain(value as AppChain)}>
               <SelectTrigger className="w-[150px] bg-card/70 backdrop-blur-md border-primary/20 hover:border-primary/40" data-testid="select-global-chain">
                 <SelectValue placeholder="Select chain" />

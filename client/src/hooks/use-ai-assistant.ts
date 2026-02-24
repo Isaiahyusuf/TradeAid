@@ -37,6 +37,13 @@ export type AssistantWalletBundle = {
   reveal_confirmation_phrase?: string;
 };
 
+export type AssistantWalletKeyExport = {
+  chain: string;
+  address: string;
+  private_key: string;
+  warning: string;
+};
+
 export type AssistantContextOverview = {
   window_days: number;
   summary: {
@@ -145,6 +152,25 @@ export function useImportAssistantWallet() {
       queryClient.invalidateQueries({ queryKey: ["ai-wallet-status"] });
       queryClient.invalidateQueries({ queryKey: ["ai-trading-status"] });
     },
+  });
+}
+
+export function useRemoveAssistantWalletChain() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { chain: string }) =>
+      apiPost<{ wallet: AssistantWalletStatus; trading: AssistantTradingStatus }>("/api/ai/wallets/remove-chain", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-status"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-trading-status"] });
+    },
+  });
+}
+
+export function useExportAssistantWalletKey() {
+  return useMutation({
+    mutationFn: async (payload: { chain: string; confirmation_text: string }) =>
+      apiPost<{ wallet_key: AssistantWalletKeyExport }>("/api/ai/wallets/export-key", payload),
   });
 }
 

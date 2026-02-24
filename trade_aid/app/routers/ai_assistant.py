@@ -14,7 +14,9 @@ from app.services.assistant_trading_service import (
     confirm_wallet_backup,
     create_user_wallet_bundle,
     execute_assistant_trade,
+    export_wallet_private_key,
     import_user_wallet_bundle,
+    remove_wallet_chain,
     request_consent,
     reveal_wallet_bundle,
     revoke_consent,
@@ -85,6 +87,15 @@ class WalletRevealRequest(BaseModel):
 class WalletImportRequest(BaseModel):
     mnemonic: str
     overwrite: bool = False
+
+
+class WalletRemoveChainRequest(BaseModel):
+    chain: str
+
+
+class WalletExportKeyRequest(BaseModel):
+    chain: str
+    confirmation_text: str
 
 
 @router.post("/assist")
@@ -285,6 +296,31 @@ async def reveal_wallet_secrets(
     return {
         "bundle": bundle,
         "wallet": wallet_status(user),
+    }
+
+
+@router.post("/wallets/remove-chain")
+async def remove_wallet_chain_route(
+    req: WalletRemoveChainRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    wallet_payload = remove_wallet_chain(user, req.chain)
+    await db.flush()
+    return {
+        "wallet": wallet_payload,
+        "trading": trading_status(user),
+    }
+
+
+@router.post("/wallets/export-key")
+async def export_wallet_key_route(
+    req: WalletExportKeyRequest,
+    user: User = Depends(get_current_user),
+):
+    key_payload = export_wallet_private_key(user, req.chain, req.confirmation_text)
+    return {
+        "wallet_key": key_payload,
     }
 
 
