@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models.models import Token
+from app.services.dexscreener_client import get_token_pairs
 
 
 _BASE58_ALPHABET = set("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
@@ -135,10 +136,8 @@ class TokenResolverService:
 
     async def _fetch_dex(self, mint_address: str) -> dict[str, Any]:
         try:
-            response = await self._client.get(f"https://api.dexscreener.com/latest/dex/tokens/{mint_address}")
-            if response.status_code >= 400:
-                return {}
-            rows = (response.json() or {}).get("pairs", []) or []
+            dex_data = get_token_pairs(mint_address)
+            rows = (dex_data or {}).get("pairs", []) or []
             best: dict[str, Any] | None = None
             best_liquidity = -1.0
             for row in rows:
@@ -269,7 +268,7 @@ class TokenResolverService:
 
         resolved = await self._resolve_from_apis(mint)
         if not resolved:
-            return {"error": "Token Not Indexed Yet", "invalid": False}
+            return {"error": "Fetching live token data...", "invalid": False}
 
         if not token:
             token = Token(contract_address=mint, chain="solana", created_at=datetime.utcnow())

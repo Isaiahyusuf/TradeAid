@@ -116,9 +116,8 @@ JWT_SECRET_KEY=your-super-secret-jwt-key-change-this
 MASTER_ACCESS_KEY=your-master-access-key-change-this
 ENCRYPTION_KEY=your-32-plus-char-encryption-key
 
-# API Keys (optional but recommended)
-DEXSCREENER_API_KEY=your-key
-BIRDEYE_API_KEY=your-key
+# API Keys (optional)
+# DexScreener does not require an API key
 HELIUS_API_KEY=your-key
 
 # CORS
