@@ -17,11 +17,19 @@ class SafeBuyService:
     MIN_ACTIVE_VOLUME_5M = 150.0
     MIN_ACTIVE_VOLUME_1H = 1_000.0
     MIN_TRADES_1H = 30
+    PURGE_INTERVAL_SECONDS = 600
+
+    def __init__(self) -> None:
+        self._last_purge_at: datetime | None = None
 
     def _compute_dynamic_thresholds(self, scores: list[float]) -> tuple[float, float]:
         return self.SAFE_BUY_MIN_SCORE, self.NEAR_MISS_MIN_SCORE
 
     async def purge_expired_projects(self, db: AsyncSession) -> int:
+        now = datetime.utcnow()
+        if self._last_purge_at and (now - self._last_purge_at).total_seconds() < self.PURGE_INTERVAL_SECONDS:
+            return 0
+
         now = datetime.utcnow()
         cutoff = now - timedelta(hours=self.PROJECT_TTL_HOURS)
         launch_ts = func.coalesce(Token.liquidity_created_at, Token.created_at)
@@ -35,12 +43,20 @@ class SafeBuyService:
         if not stale_ids:
             return 0
 
-        await db.execute(delete(ScoringHistory).where(ScoringHistory.token_id.in_(stale_ids)))
-        await db.execute(delete(LiquidityEvent).where(LiquidityEvent.token_id.in_(stale_ids)))
-        await db.execute(delete(Alert).where(Alert.token_id.in_(stale_ids)))
-        await db.execute(delete(Token).where(Token.id.in_(stale_ids)))
-        await db.flush()
-        return len(stale_ids)
+        try:
+            await db.execute(delete(ScoringHistory).where(ScoringHistory.token_id.in_(stale_ids)))
+            await db.execute(delete(LiquidityEvent).where(LiquidityEvent.token_id.in_(stale_ids)))
+            await db.execute(delete(Alert).where(Alert.token_id.in_(stale_ids)))
+            await db.execute(delete(Token).where(Token.id.in_(stale_ids)))
+            await db.flush()
+            self._last_purge_at = now
+            return len(stale_ids)
+        except Exception:
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+            return 0
 
     def _estimate_top_holders_pct(self, token: Token, latest_score: ScoringHistory | None) -> float:
         extra = token.extra_data or {}
