@@ -4,12 +4,16 @@ import { apiPost, apiGet } from "@/lib/api";
 export type ScoreResult = {
   id?: string;
   rug_probability: number;
+  rug_risk_score?: number;
   liquidity_stability: number;
   holder_distribution: number;
   smart_wallet_signal: number;
   trade_confidence_index: number;
+  opportunity_score?: number;
   eligible: boolean;
   eligibility_reason?: string;
+  risk_flags?: string[];
+  status?: string;
   scored_at?: string;
 };
 
@@ -88,12 +92,16 @@ export function useScanToken() {
         const normalize = (value: number) => (value > 1 ? value / 100 : value);
         return {
           rug_probability: normalize(response.scores.rug_probability ?? 0),
+          rug_risk_score: normalize(response.scores.rug_risk_score ?? response.scores.rug_probability ?? 0),
           liquidity_stability: normalize(response.scores.liquidity_stability ?? 0),
           holder_distribution: normalize(response.scores.holder_distribution ?? 0),
           smart_wallet_signal: normalize(response.scores.smart_wallet_signal ?? 0),
           trade_confidence_index: normalize(response.scores.trade_confidence_index ?? 0),
+          opportunity_score: normalize(response.scores.opportunity_score ?? response.scores.trade_confidence_index ?? 0),
           eligible: !!response.eligible,
           eligibility_reason: response.eligibility_reason,
+          risk_flags: Array.isArray(response.risk_flags) ? response.risk_flags : [],
+          status: response.status,
         } as ScoreResult;
       }
 

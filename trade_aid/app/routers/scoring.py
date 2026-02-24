@@ -8,6 +8,7 @@ from app.config import get_enabled_chains
 from app.models.models import ScoringHistory, Token, User
 from app.services.auth_service import get_current_user
 from app.scoring.scoring_service import scoring_service
+from app.services.token_resolver_service import resolver_service
 from app.workers.tasks import score_token_task
 from app.services.ai_insight_service import generate_ai_insight
 from app.utils.telemetry import build_telemetry_fingerprint, get_client_ip
@@ -42,6 +43,10 @@ async def score_token(
                 break
     else:
         target_chain = requested_chain or "solana"
+        if target_chain == "solana":
+            resolved = await resolver_service.resolve_token(db, req.contract_address)
+            if resolved.get("invalid"):
+                raise HTTPException(status_code=400, detail=str(resolved.get("error") or "Invalid Solana mint"))
         result = await scoring_service.score_token(db, req.contract_address, target_chain)
         requested_chain = target_chain
 

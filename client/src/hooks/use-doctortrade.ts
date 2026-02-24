@@ -20,6 +20,20 @@ export type DoctorPosition = {
   confidence: number;
   size_pct: number;
   risk_status: string;
+  trailing_stop_pct?: number;
+};
+
+export type DoctorRecentTrade = {
+  token?: string;
+  address?: string;
+  action?: string;
+  status?: string;
+  reason?: string;
+  confidence?: number;
+  liquidity?: number;
+  volume_5m?: number;
+  size_pct?: number;
+  timestamp?: string;
 };
 
 export type DoctorStatus = {
@@ -45,7 +59,7 @@ export type DoctorStatus = {
   };
   active_tokens: DoctorToken[];
   positions: DoctorPosition[];
-  recent_trades: Array<Record<string, any>>;
+  recent_trades: DoctorRecentTrade[];
   performance?: Array<Record<string, any>>;
   tuning_suggestion?: string | null;
   strategy_mode?: string;
@@ -58,6 +72,21 @@ export type DoctorStatus = {
     cycles: number;
     last_updated_at?: string | null;
   };
+  fresh_feed?: {
+    last_cycle_at?: string | null;
+    detected?: number;
+    enriched?: number;
+    approved?: number;
+    rejected?: number;
+  };
+  scanner_health?: {
+    overall?: {
+      calls?: number;
+      success?: number;
+      errors?: number;
+      success_rate_pct?: number;
+    };
+  };
 };
 
 export function useDoctorStatus() {
@@ -66,8 +95,12 @@ export function useDoctorStatus() {
     queryKey: ["doctortrade", "status"],
     queryFn: () => apiGet<DoctorStatus>("/api/doctor/status"),
     enabled: hasToken,
+    placeholderData: (previousData) => previousData,
     staleTime: 2000,
     refetchInterval: 5000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: false,
+    retry: 1,
   });
 }
 

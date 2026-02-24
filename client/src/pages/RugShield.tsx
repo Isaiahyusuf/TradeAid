@@ -62,9 +62,10 @@ export default function RugShield() {
         { address: prefilledAddress, chain: ((SUPPORTED_CHAINS as readonly string[]).includes(prefilledChain) ? prefilledChain : chain) },
         {
           onError: (error) => {
+            const message = error instanceof Error ? error.message : "Unable to score token";
             toast({
               title: "Scan failed",
-              description: error instanceof Error ? error.message : "Unable to score token",
+              description: message,
               variant: "destructive",
             });
           },
@@ -85,9 +86,10 @@ export default function RugShield() {
       { address, chain },
       {
         onError: (error) => {
+          const message = error instanceof Error ? error.message : "Unable to score token";
           toast({
             title: "Scan failed",
-            description: error instanceof Error ? error.message : "Unable to score token",
+            description: message,
             variant: "destructive",
           });
         },
@@ -165,14 +167,19 @@ export default function RugShield() {
                 </div>
                 <div className="mt-4 text-center">
                   <Badge className={cn(
-                    result.eligible 
+                    result.status === "indexing"
+                      ? "bg-blue-500/20 text-blue-400"
+                      : result.eligible 
                       ? "bg-green-500/20 text-green-400" 
                       : "bg-red-500/20 text-red-400"
                   )}>
-                    {result.eligible ? "Eligible" : "Not Eligible"}
+                    {result.status === "indexing" ? "Indexing Token" : result.eligible ? "Eligible" : "Not Eligible"}
                   </Badge>
                   {result.eligibility_reason && (
                     <p className="text-xs text-muted-foreground mt-2">{result.eligibility_reason}</p>
+                  )}
+                  {!!result.risk_flags?.length && (
+                    <p className="text-xs text-muted-foreground mt-2">Flags: {result.risk_flags.slice(0, 3).join(", ")}</p>
                   )}
                 </div>
               </CardContent>

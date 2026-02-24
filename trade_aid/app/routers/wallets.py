@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.models import User
 from app.services.auth_service import get_current_user
+from app.services.token_resolver_service import resolver_service
 from app.intelligence.developer_intel import developer_intelligence
 from app.intelligence.trader_intel import trader_intelligence
 from app.intelligence.wallet_clustering import wallet_cluster_engine
@@ -84,7 +85,11 @@ async def get_dev_intel_by_contract(
     if chain.lower() != "solana":
         raise HTTPException(status_code=400, detail="Only Solana integration is supported")
 
+    resolved = await resolver_service.resolve_token(db, contract_address)
+    if resolved.get("invalid"):
+        raise HTTPException(status_code=400, detail=str(resolved.get("error") or "Invalid Solana mint"))
+
     intel = await dev_behavior_service.get_dev_token_intel(db, contract_address=contract_address, chain="solana")
     if not intel:
-        return {"error": "Token not found"}
+        return {"status": "indexing", "message": "Indexing token..."}
     return intel

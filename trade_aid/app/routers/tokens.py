@@ -9,6 +9,7 @@ from app.config import get_enabled_chains
 from app.models.models import Token, LiquidityEvent, ScoringHistory, User
 from app.services.auth_service import get_current_user
 from app.services.safe_buy_service import safe_buy_service
+from app.services.token_resolver_service import resolver_service
 from app.scoring.scoring_service import scoring_service
 
 router = APIRouter(prefix="/api/tokens", tags=["Tokens"])
@@ -253,20 +254,16 @@ async def get_token(
         )
     )
     token = result.scalar_one_or_none()
+    if not token and normalized_chain == "solana":
+        resolved = await resolver_service.resolve_token(db, contract_address)
+        if resolved.get("invalid"):
+            raise HTTPException(status_code=400, detail=str(resolved.get("error") or "Invalid Solana mint"))
+        token = resolved.get("token")
+        if not token:
+            return {"status": "indexing", "message": "Indexing token..."}
+
     if not token:
-        return {"error": "Token not found"}
-
-    launch_at = token.liquidity_created_at or token.created_at
-    if launch_at < (datetime.utcnow() - timedelta(hours=24)):
-        return {"error": "Token not found"}
-
-    extra = token.extra_data or {}
-    volume_5m = float(extra.get("volume_5m", 0) or 0)
-    volume_1h = float(extra.get("volume_1h", 0) or 0)
-    if float(token.liquidity_usd or 0) < safe_buy_service.MIN_LIQUIDITY_USD:
-        return {"error": "Token not found"}
-    if volume_5m < safe_buy_service.MIN_ACTIVE_VOLUME_5M and volume_1h < safe_buy_service.MIN_ACTIVE_VOLUME_1H:
-        return {"error": "Token not found"}
+        return {"status": "indexing", "message": "Indexing token..."}
 
     events_result = await db.execute(
         select(LiquidityEvent)
@@ -290,6 +287,7 @@ async def get_token(
             "is_ownership_renounced": token.is_ownership_renounced,
             "pair_address": token.pair_address,
             "dex_id": token.dex_id,
+            "extra_data": token.extra_data or {},
             "deployer_wallet": token.deployer_wallet,
             "liquidity_created_at": str(token.liquidity_created_at) if token.liquidity_created_at else None,
             "created_at": str(token.created_at),
