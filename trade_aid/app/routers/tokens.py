@@ -11,8 +11,132 @@ from app.services.auth_service import get_current_user
 from app.services.safe_buy_service import safe_buy_service
 from app.services.token_resolver_service import resolver_service
 from app.scoring.scoring_service import scoring_service
+from app.scanners.dexscreener import dex_scanner
 
 router = APIRouter(prefix="/api/tokens", tags=["Tokens"])
+
+
+@router.get("/project-info/{chain}/{contract_address}")
+async def get_project_info_from_dexscreener(
+    chain: str,
+    contract_address: str,
+    user: User = Depends(get_current_user),
+):
+    _ = user
+    normalized_chain = (chain or "").strip().lower()
+    if not normalized_chain:
+        raise HTTPException(status_code=400, detail="chain is required")
+
+    pair = None
+    resolved_chain = normalized_chain
+    if normalized_chain == "all":
+        for chain_name in get_enabled_chains():
+            candidate = await dex_scanner.get_token_profile(chain_name, contract_address)
+            if candidate:
+                pair = candidate
+                resolved_chain = chain_name
+                break
+    else:
+        pair = await dex_scanner.get_token_profile(normalized_chain, contract_address)
+
+    if not pair:
+        return {
+            "status": "indexing",
+            "message": "Project info unavailable yet on DexScreener",
+            "project_info": None,
+        }
+
+    info = pair.get("info") or {}
+    websites = [
+        str(item.get("url") or "").strip()
+        for item in (info.get("websites") or [])
+        if isinstance(item, dict) and str(item.get("url") or "").strip()
+    ]
+    socials = [
+        item for item in (info.get("socials") or []) if isinstance(item, dict)
+    ]
+    social_links = {
+        "x": next((str(item.get("url") or "").strip() for item in socials if str(item.get("type") or "").lower() in {"twitter", "x"} and str(item.get("url") or "").strip()), None),
+        "telegram": next((str(item.get("url") or "").strip() for item in socials if str(item.get("type") or "").lower() == "telegram" and str(item.get("url") or "").strip()), None),
+        "discord": next((str(item.get("url") or "").strip() for item in socials if str(item.get("type") or "").lower() == "discord" and str(item.get("url") or "").strip()), None),
+    }
+
+    volume_1h = float(((pair.get("volume") or {}).get("h1") or 0) or 0)
+    trades_5m = float((((pair.get("txns") or {}).get("m5") or {}).get("buys") or 0) + (((pair.get("txns") or {}).get("m5") or {}).get("sells") or 0))
+    trades_1h = float((((pair.get("txns") or {}).get("h1") or {}).get("buys") or 0) + (((pair.get("txns") or {}).get("h1") or {}).get("sells") or 0))
+    price_change_1h = float(((pair.get("priceChange") or {}).get("h1") or 0) or 0)
+    activity_score = min(100.0, (min(volume_1h / 250000.0, 1.0) * 50.0) + (min(trades_1h / 500.0, 1.0) * 35.0) + (min(abs(price_change_1h) / 30.0, 1.0) * 15.0))
+
+    if activity_score >= 65:
+        overall_status = "active"
+    elif activity_score >= 35:
+        overall_status = "moderate"
+    else:
+        overall_status = "low"
+
+    platforms = [
+        {
+            "platform": "x",
+            "url": social_links["x"],
+            "available": bool(social_links["x"]),
+            "reachable": bool(social_links["x"]),
+            "is_active": bool(social_links["x"] and trades_1h > 20),
+            "status": "active" if social_links["x"] and trades_1h > 20 else ("inactive" if social_links["x"] else "unavailable"),
+            "status_code": None,
+        },
+        {
+            "platform": "telegram",
+            "url": social_links["telegram"],
+            "available": bool(social_links["telegram"]),
+            "reachable": bool(social_links["telegram"]),
+            "is_active": bool(social_links["telegram"] and trades_1h > 20),
+            "status": "active" if social_links["telegram"] and trades_1h > 20 else ("inactive" if social_links["telegram"] else "unavailable"),
+            "status_code": None,
+        },
+        {
+            "platform": "discord",
+            "url": social_links["discord"],
+            "available": bool(social_links["discord"]),
+            "reachable": bool(social_links["discord"]),
+            "is_active": bool(social_links["discord"] and trades_1h > 20),
+            "status": "active" if social_links["discord"] and trades_1h > 20 else ("inactive" if social_links["discord"] else "unavailable"),
+            "status_code": None,
+        },
+    ]
+
+    return {
+        "status": "ok",
+        "project_info": {
+            "symbol": str((pair.get("baseToken") or {}).get("symbol") or "").upper() or "UNKNOWN",
+            "name": str((pair.get("baseToken") or {}).get("name") or "").strip() or "Unknown Token",
+            "chain": resolved_chain,
+            "dex_id": str(pair.get("dexId") or "").strip(),
+            "pair_address": str(pair.get("pairAddress") or "").strip(),
+            "price_usd": float(pair.get("priceUsd") or 0),
+            "liquidity_usd": float(((pair.get("liquidity") or {}).get("usd") or 0) or 0),
+            "market_cap_usd": float(pair.get("marketCap") or 0),
+            "fdv": float(pair.get("fdv") or 0),
+            "volume_24h": float(((pair.get("volume") or {}).get("h24") or 0) or 0),
+            "price_change_24h": float(((pair.get("priceChange") or {}).get("h24") or 0) or 0),
+            "pair_url": str(pair.get("url") or "").strip() or None,
+            "websites": websites,
+            "social_links": social_links,
+            "community_checker": {
+                "activity_score": round(activity_score, 2),
+                "overall_status": overall_status,
+                "active_platforms": len([p for p in platforms if p.get("is_active")]),
+                "available_platforms": len([p for p in platforms if p.get("available")]),
+                "summary": f"DexScreener activity is {overall_status} for this pair.",
+                "signals": {
+                    "volume_1h": float(volume_1h),
+                    "trades_5m": float(trades_5m),
+                    "trades_1h": float(trades_1h),
+                    "price_change_1h": float(price_change_1h),
+                },
+                "platforms": platforms,
+            },
+        },
+    }
 
 
 @router.get("")

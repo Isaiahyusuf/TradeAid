@@ -25,6 +25,7 @@ class DoctorTradeController:
         self.enabled = False
         self.loop_task: asyncio.Task | None = None
         self.scan_interval_seconds = 20
+        self.sniper_mode_only = True
         self.max_trades_per_day = 12
         self.min_buy_amount_sol = 0.1
         self.buy_amount_sol = 0.1
@@ -306,6 +307,8 @@ class DoctorTradeController:
                 break
 
             signal = self.ai.generate(token, current_drawdown_pct=float(self.risk_state.total_loss_pct or 0.0))
+            if bool(self.sniper_mode_only) and str(token.get("strategy_mode") or "") != "pump_sniper":
+                continue
             if bool(token.get("fresh_intel_approved", False)) and str(signal.get("action") or "") == "BUY":
                 signal["position_size_pct"] = 5.0
             risk_result = self.risk.validate(signal, self.risk_state)
@@ -487,6 +490,7 @@ class DoctorTradeController:
             "trade_controls": {
                 "max_trades_per_day": int(self.max_trades_per_day),
                 "trades_today": int(self._trades_today),
+                "sniper_mode_only": bool(self.sniper_mode_only),
                 "min_buy_amount_sol": float(self.min_buy_amount_sol),
                 "buy_amount_sol": float(self.buy_amount_sol),
                 "take_profit_multiplier": float(self.take_profit_multiplier),

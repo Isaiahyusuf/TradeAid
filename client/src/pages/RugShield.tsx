@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Layout } from "@/components/Layout";
-import { useDevIntel, useScanToken, type ScoreResult } from "@/hooks/use-rugcheck";
+import { useDexProjectInfo, useDevIntel, useScanToken, type ScoreResult } from "@/hooks/use-rugcheck";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Shield, AlertTriangle, CheckCircle2, Search, TrendingUp, Activity, Loader2, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,7 @@ export default function RugShield() {
   const didAutoScan = useRef(false);
   const { mutate: scanToken, isPending, data: result } = useScanToken();
   const { data: devIntel } = useDevIntel(scannedAddress || undefined, chain);
+  const { data: dexProjectInfo } = useDexProjectInfo(scannedAddress || undefined, chain);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -58,7 +60,7 @@ export default function RugShield() {
     setAddress(prefilledAddress);
     if (auto) {
       setScannedAddress(prefilledAddress);
-      const scanChain = ((SUPPORTED_CHAINS as readonly string[]).includes(prefilledChain) ? prefilledChain : chain) === "all" ? "solana" : ((SUPPORTED_CHAINS as readonly string[]).includes(prefilledChain) ? prefilledChain : chain);
+      const scanChain = ((SUPPORTED_CHAINS as readonly string[]).includes(prefilledChain) ? prefilledChain : chain);
       scanToken(
         { address: prefilledAddress, chain: scanChain },
         {
@@ -83,9 +85,8 @@ export default function RugShield() {
       return;
     }
     setScannedAddress(address.trim());
-    const scanChain = chain === "all" ? "solana" : chain;
     scanToken(
-      { address, chain: scanChain },
+      { address, chain },
       {
         onError: (error) => {
           const message = error instanceof Error ? error.message : "Unable to score token";
@@ -130,9 +131,18 @@ export default function RugShield() {
 
         <Card className="p-6 solana-card bg-card/70 backdrop-blur-sm border-border/60">
           <div className="flex flex-col md:flex-row gap-4">
-            <div className="w-full md:w-40 h-10 px-3 border border-input rounded-md bg-muted/40 text-sm flex items-center" data-testid="select-chain">
-              {chainLabel}
-            </div>
+            <Select value={chain} onValueChange={(value) => setChain(value as AppChain)}>
+              <SelectTrigger className="w-full md:w-44" data-testid="select-chain">
+                <SelectValue placeholder={chainLabel} />
+              </SelectTrigger>
+              <SelectContent>
+                {SUPPORTED_CHAINS.map((item) => (
+                  <SelectItem key={item} value={item} className="capitalize">
+                    {item === "all" ? "All Chains" : item === "bsc" ? "BNB Chain" : item}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
               <Input
@@ -239,12 +249,33 @@ export default function RugShield() {
               </CardContent>
             </Card>
 
-            {devIntel && !('error' in (devIntel as any)) && (
+            {(dexProjectInfo?.project_info || (devIntel && !('error' in (devIntel as any)))) && (
               <Card className="solana-card md:col-span-3 animate-fade-in-up">
                 <CardHeader>
                   <CardTitle>Developer Rug + Jeet Intelligence</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-5">
+                  {dexProjectInfo?.project_info && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <p className="text-xs text-muted-foreground">DexScreener Project Info</p>
+                        {dexProjectInfo.project_info.community_checker && (
+                          <Badge className={cn(getCommunityStatusClasses(dexProjectInfo.project_info.community_checker.overall_status))}>
+                            Community {dexProjectInfo.project_info.community_checker.overall_status.toUpperCase()} · {dexProjectInfo.project_info.community_checker.activity_score.toFixed(0)}/100
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div className="p-3 rounded-lg bg-muted/50"><p className="text-xs text-muted-foreground">Chain</p><p className="text-sm font-semibold capitalize">{dexProjectInfo.project_info.chain}</p></div>
+                        <div className="p-3 rounded-lg bg-muted/50"><p className="text-xs text-muted-foreground">DEX</p><p className="text-sm font-semibold">{dexProjectInfo.project_info.dex_id || "unknown"}</p></div>
+                        <div className="p-3 rounded-lg bg-muted/50"><p className="text-xs text-muted-foreground">Liquidity</p><p className="text-sm font-semibold">${Number(dexProjectInfo.project_info.liquidity_usd || 0).toLocaleString()}</p></div>
+                        <div className="p-3 rounded-lg bg-muted/50"><p className="text-xs text-muted-foreground">Market Cap</p><p className="text-sm font-semibold">${Number(dexProjectInfo.project_info.market_cap_usd || 0).toLocaleString()}</p></div>
+                      </div>
+                    </div>
+                  )}
+
+                  {devIntel && !('error' in (devIntel as any)) && (
+                    <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div className="p-3 rounded-lg bg-muted/50">
                       <p className="text-xs text-muted-foreground">Rug Dev Flag</p>
@@ -368,6 +399,8 @@ export default function RugShield() {
                       ))}
                     </div>
                   </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             )}

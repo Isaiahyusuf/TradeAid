@@ -20,6 +20,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { User, Shield, LogOut, Activity, TrendingUp, Camera, Save } from "lucide-react";
+import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
 
 export default function Account() {
   const { user, logout, updateProfile } = useAuth();
@@ -29,6 +30,7 @@ export default function Account() {
   const [avatarUrl, setAvatarUrl] = useState("");
   const [telemetryOptIn, setTelemetryOptIn] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [profileSettingsOpen, setProfileSettingsOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const compressImageToDataUrl = (file: File): Promise<string> => {
@@ -120,6 +122,7 @@ export default function Account() {
         avatar_url: avatarUrl.trim(),
         telemetry_opt_in: telemetryOptIn,
       });
+      setProfileSettingsOpen(false);
       toast({ title: "Profile updated", description: "Your profile changes were saved." });
     } catch (error) {
       toast({
@@ -186,14 +189,13 @@ export default function Account() {
           </CardContent>
         </Card>
 
-        <Card className="solana-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <User className="h-4 w-4" />
-              Edit Profile
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <SettingsMenuCard
+          title="Profile Settings"
+          description="Update account details and privacy preferences."
+          open={profileSettingsOpen}
+          onToggle={() => setProfileSettingsOpen((prev) => !prev)}
+        >
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="profile-username">Username</Label>
               <Input id="profile-username" value={username} onChange={(e) => setUsername(e.target.value)} data-testid="input-profile-username" />
@@ -256,8 +258,8 @@ export default function Account() {
                 {isSaving ? "Saving..." : "Save Changes"}
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </SettingsMenuCard>
 
         <Card className="solana-card">
           <CardHeader className="pb-2">

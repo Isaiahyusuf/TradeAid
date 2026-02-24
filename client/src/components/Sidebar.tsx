@@ -19,7 +19,7 @@ const NAV_ITEMS = [
   { label: "DoctorTrade", href: "/doctortrade", icon: Bot },
   { label: "Wallet", href: "/wallet", icon: Wallet },
   { label: "Subscription", href: "/subscription", icon: Bell },
-  { label: "Account", href: "/account", icon: User },
+  { label: "Settings", href: "/account", icon: User },
 ];
 
 const getNavTestId = (label: string) => `nav-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;

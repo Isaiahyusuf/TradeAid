@@ -35,6 +35,7 @@ function AuthenticatedRouter() {
       <Route path="/doctorstrange" component={AssistantPage} />
       <Route path="/doctortrade" component={DoctorTradePage} />
       <Route path="/account" component={Account} />
+      <Route path="/settings" component={Account} />
       <Route path="/subscription" component={Subscription} />
       <Route component={NotFound} />
     </Switch>

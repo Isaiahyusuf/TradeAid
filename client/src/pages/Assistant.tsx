@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
 import {
   useAskAssistant,
   useAssistDecision,
@@ -24,6 +26,7 @@ export default function AssistantPage() {
   const [assistLiquidity, setAssistLiquidity] = useState("10000");
   const [assistConfidence, setAssistConfidence] = useState("55");
   const [assistRugRisk, setAssistRugRisk] = useState("35");
+  const [assistSettingsOpen, setAssistSettingsOpen] = useState(false);
 
   const contextQuery = useAssistantContextOverview(30);
   const askMutation = useAskAssistant();
@@ -77,6 +80,11 @@ export default function AssistantPage() {
     } catch (error) {
       toast({ title: "Assist failed", description: error instanceof Error ? error.message : "Could not run decision assist", variant: "destructive" });
     }
+  };
+
+  const applyAssistPresets = () => {
+    setAssistSettingsOpen(false);
+    toast({ title: "Presets applied", description: "Decision Assist settings updated." });
   };
 
   return (
@@ -182,13 +190,28 @@ export default function AssistantPage() {
               <CardTitle className="text-base flex items-center gap-2"><Sparkles className="w-4 h-4" />Decision Assist</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Input placeholder="Contract address (optional)" value={assistContract} onChange={(e) => setAssistContract(e.target.value)} />
-              <div className="grid grid-cols-2 gap-2">
-                <Input type="number" placeholder="1h Price %" value={assistPriceChange} onChange={(e) => setAssistPriceChange(e.target.value)} />
-                <Input type="number" placeholder="Liquidity USD" value={assistLiquidity} onChange={(e) => setAssistLiquidity(e.target.value)} />
-                <Input type="number" placeholder="Confidence 0-100" value={assistConfidence} onChange={(e) => setAssistConfidence(e.target.value)} />
-                <Input type="number" placeholder="Rug risk 0-100" value={assistRugRisk} onChange={(e) => setAssistRugRisk(e.target.value)} />
-              </div>
+              <SettingsMenuCard
+                title="Decision Assist Presets"
+                description="Set default market assumptions for assist decisions."
+                open={assistSettingsOpen}
+                onToggle={() => setAssistSettingsOpen((prev) => !prev)}
+              >
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="assist-contract">Contract address (optional)</Label>
+                    <Input id="assist-contract" placeholder="Contract address" value={assistContract} onChange={(e) => setAssistContract(e.target.value)} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input type="number" placeholder="1h Price %" value={assistPriceChange} onChange={(e) => setAssistPriceChange(e.target.value)} />
+                    <Input type="number" placeholder="Liquidity USD" value={assistLiquidity} onChange={(e) => setAssistLiquidity(e.target.value)} />
+                    <Input type="number" placeholder="Confidence 0-100" value={assistConfidence} onChange={(e) => setAssistConfidence(e.target.value)} />
+                    <Input type="number" placeholder="Rug risk 0-100" value={assistRugRisk} onChange={(e) => setAssistRugRisk(e.target.value)} />
+                  </div>
+                  <div className="flex justify-end">
+                    <Button variant="outline" onClick={applyAssistPresets}>Apply Presets</Button>
+                  </div>
+                </div>
+              </SettingsMenuCard>
               <Button onClick={runDecisionAssist} disabled={assistMutation.isPending}>
                 {assistMutation.isPending ? "Analyzing..." : "Run Assist"}
               </Button>

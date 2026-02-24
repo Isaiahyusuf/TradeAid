@@ -3,12 +3,13 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Bot, ShieldAlert, Power, Activity, Wallet, TrendingUp, BarChart3, Radio } from "lucide-react";
+import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio } from "lucide-react";
 import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
 
 function fmtUsd(value: number) {
   if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
@@ -45,6 +46,7 @@ export default function DoctorTrade() {
 
   useEffect(() => {
     if (!viewData?.trade_controls || settingsHydrated) return;
+    setIntervalInput(String(viewData.scan_interval_seconds ?? 20));
     setBuyAmountInput(String(viewData.trade_controls.buy_amount_sol ?? 0.1));
     setMaxTradesInput(String(viewData.trade_controls.max_trades_per_day ?? 12));
     setTpMultInput(String(viewData.trade_controls.take_profit_multiplier ?? 2.0));
@@ -75,6 +77,46 @@ export default function DoctorTrade() {
   );
 
   const scannerSuccessRate = Number(viewData?.scanner_health?.overall?.success_rate_pct || 0);
+  const autoSnipeReady = Boolean(viewData?.enabled && viewData?.trade_controls?.wallet_connected);
+  const tickerTokens = useMemo(
+    () => (viewData?.active_tokens || []).slice(0, 10),
+    [viewData?.active_tokens],
+  );
+
+  const saveRiskRules = () => {
+    const scanIntervalSeconds = Math.max(5, Math.trunc(Number.parseFloat(intervalInput) || 20));
+    const buyAmountSol = Math.max(0.1, Number.parseFloat(buyAmountInput) || 0.1);
+    const maxTradesPerDay = Math.max(1, Math.trunc(Number.parseFloat(maxTradesInput) || 12));
+    const takeProfitMultiplier = Math.max(1.01, Number.parseFloat(tpMultInput) || 2.0);
+    const minProfitPct = Math.max(0.1, Number.parseFloat(minProfitInput) || 12);
+    const stopLossPct = Math.max(0.1, Number.parseFloat(stopLossInput) || 6);
+    const trailingStopPct = Math.max(0.1, Number.parseFloat(trailInput) || 10);
+
+    configMutation.mutate(
+      {
+        scan_interval_seconds: scanIntervalSeconds,
+        buy_amount_sol: buyAmountSol,
+        max_trades_per_day: maxTradesPerDay,
+        take_profit_multiplier: takeProfitMultiplier,
+        min_profit_pct: minProfitPct,
+        stop_loss_pct: stopLossPct,
+        trailing_stop_pct: trailingStopPct,
+      },
+      {
+        onSuccess: () => {
+          setSettingsOpen(false);
+          toast({ title: "Risk rules saved", description: "DoctorTrade settings updated." });
+        },
+        onError: (error) => {
+          toast({
+            title: "Save failed",
+            description: error instanceof Error ? error.message : "Unable to save settings",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
 
   const handleConnectWallet = () => {
     connectWalletMutation.mutate(
@@ -148,102 +190,77 @@ export default function DoctorTrade() {
             >
               <Wallet className="w-4 h-4 mr-2" /> Connect Existing Wallet
             </Button>
-            <div className="flex items-center gap-2 ml-auto">
-              <Input className="w-28" value={intervalInput} onChange={(e) => setIntervalInput(e.target.value)} placeholder="20" />
+          </div>
+        </Card>
+
+        <SettingsMenuCard
+          title="DoctorTrade Settings"
+          description="Configure scan interval, buy size, daily limit, take-profit and stop-loss."
+          open={settingsOpen}
+          onToggle={() => setSettingsOpen((prev) => !prev)}
+        >
+          <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 items-end">
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Scan Interval (sec)</p>
+              <Input value={intervalInput} onChange={(e) => setIntervalInput(e.target.value)} placeholder="20" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Buy Amount (SOL, min 0.1)</p>
+              <Input value={buyAmountInput} onChange={(e) => setBuyAmountInput(e.target.value)} placeholder="0.1" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Trades / 24h</p>
+              <Input value={maxTradesInput} onChange={(e) => setMaxTradesInput(e.target.value)} placeholder="12" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Take Profit Multiplier</p>
+              <Input value={tpMultInput} onChange={(e) => setTpMultInput(e.target.value)} placeholder="2.0" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Min Profit Sell %</p>
+              <Input value={minProfitInput} onChange={(e) => setMinProfitInput(e.target.value)} placeholder="12" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Stop Loss %</p>
+              <Input value={stopLossInput} onChange={(e) => setStopLossInput(e.target.value)} placeholder="6" />
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <p className="text-xs text-muted-foreground mb-1">Trailing Stop %</p>
+                <Input value={trailInput} onChange={(e) => setTrailInput(e.target.value)} placeholder="10" />
+              </div>
               <Button
                 variant="outline"
-                onClick={() => configMutation.mutate({ scan_interval_seconds: Number(intervalInput) || 20, kill_switch: false })}
+                className="self-end"
+                onClick={saveRiskRules}
                 disabled={configMutation.isPending}
               >
-                Set Interval
+                Save
               </Button>
             </div>
           </div>
-        </Card>
+        </SettingsMenuCard>
 
-        <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold">Settings</p>
-              <p className="text-xs text-muted-foreground">Configure buy size, daily limit, take-profit and stop-loss.</p>
-            </div>
-            <Button variant="outline" onClick={() => setSettingsOpen((prev) => !prev)}>
-              {settingsOpen ? "Close" : "Open Settings"}
-            </Button>
+        <Card className="p-3 bg-card/70 backdrop-blur-sm border-border/60">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <p className="text-xs font-semibold">Live Ticker</p>
+            <Badge variant="outline" className={autoSnipeReady ? "border-green-500/40 text-green-400" : "border-yellow-500/40 text-yellow-400"}>
+              {autoSnipeReady ? "Auto-Snipe Ready" : "Auto-Snipe Not Ready"}
+            </Badge>
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {tickerTokens.map((token) => (
+              <div key={token.address} className="min-w-[180px] border rounded-md px-2 py-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold">{token.symbol}</p>
+                  <p className="text-[10px] text-muted-foreground">S {Math.round(token.score)}</p>
+                </div>
+                <p className="text-[10px] text-muted-foreground">{fmtUsd(token.liquidity)} · {fmtUsd(token.volume_5m)}</p>
+              </div>
+            ))}
+            {!tickerTokens.length && <p className="text-xs text-muted-foreground">Waiting for live tokens…</p>}
           </div>
         </Card>
-
-        {settingsOpen && (
-          <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60">
-            <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 items-end">
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Buy Amount (SOL, min 0.1)</p>
-                <Input value={buyAmountInput} onChange={(e) => setBuyAmountInput(e.target.value)} placeholder="0.1" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Trades / 24h</p>
-                <Input value={maxTradesInput} onChange={(e) => setMaxTradesInput(e.target.value)} placeholder="12" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Take Profit Multiplier</p>
-                <Input value={tpMultInput} onChange={(e) => setTpMultInput(e.target.value)} placeholder="2.0" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Min Profit Sell %</p>
-                <Input value={minProfitInput} onChange={(e) => setMinProfitInput(e.target.value)} placeholder="12" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Stop Loss %</p>
-                <Input value={stopLossInput} onChange={(e) => setStopLossInput(e.target.value)} placeholder="6" />
-              </div>
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <p className="text-xs text-muted-foreground mb-1">Trailing Stop %</p>
-                  <Input value={trailInput} onChange={(e) => setTrailInput(e.target.value)} placeholder="10" />
-                </div>
-                <Button
-                  variant="outline"
-                  className="self-end"
-                  onClick={() => {
-                    const buyAmountSol = Math.max(0.1, Number.parseFloat(buyAmountInput) || 0.1);
-                    const maxTradesPerDay = Math.max(1, Math.trunc(Number.parseFloat(maxTradesInput) || 12));
-                    const takeProfitMultiplier = Math.max(1.01, Number.parseFloat(tpMultInput) || 2.0);
-                    const minProfitPct = Math.max(0.1, Number.parseFloat(minProfitInput) || 12);
-                    const stopLossPct = Math.max(0.1, Number.parseFloat(stopLossInput) || 6);
-                    const trailingStopPct = Math.max(0.1, Number.parseFloat(trailInput) || 10);
-
-                    configMutation.mutate(
-                      {
-                        buy_amount_sol: buyAmountSol,
-                        max_trades_per_day: maxTradesPerDay,
-                        take_profit_multiplier: takeProfitMultiplier,
-                        min_profit_pct: minProfitPct,
-                        stop_loss_pct: stopLossPct,
-                        trailing_stop_pct: trailingStopPct,
-                      },
-                      {
-                        onSuccess: () => {
-                          setSettingsOpen(false);
-                          toast({ title: "Risk rules saved", description: "DoctorTrade settings updated." });
-                        },
-                        onError: (error) => {
-                          toast({
-                            title: "Save failed",
-                            description: error instanceof Error ? error.message : "Unable to save settings",
-                            variant: "destructive",
-                          });
-                        },
-                      },
-                    );
-                  }}
-                  disabled={configMutation.isPending}
-                >
-                  Save Risk Rules
-                </Button>
-              </div>
-            </div>
-          </Card>
-        )}
 
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
           <Card className="p-4 xl:col-span-3">
@@ -332,6 +349,48 @@ export default function DoctorTrade() {
                 <div className="flex justify-between"><span className="text-muted-foreground">Stop Loss</span><span>{(viewData?.trade_controls?.stop_loss_pct || 6).toFixed(1)}%</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Target</span><span>{(viewData?.trade_controls?.take_profit_multiplier || 2).toFixed(2)}x</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Scanner Health</span><span>{scannerSuccessRate.toFixed(1)}%</span></div>
+              </div>
+            </Card>
+
+            <Card className="p-4">
+              <h2 className="text-sm font-semibold mb-3">Order Ticket</h2>
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-md border p-2">
+                    <p className="text-muted-foreground">Buy SOL</p>
+                    <p className="font-semibold">{(viewData?.trade_controls?.buy_amount_sol || 0.1).toFixed(3)}</p>
+                  </div>
+                  <div className="rounded-md border p-2">
+                    <p className="text-muted-foreground">Trades/24h</p>
+                    <p className="font-semibold">{viewData?.trade_controls?.max_trades_per_day || 12}</p>
+                  </div>
+                  <div className="rounded-md border p-2">
+                    <p className="text-muted-foreground">TP Multiplier</p>
+                    <p className="font-semibold">{(viewData?.trade_controls?.take_profit_multiplier || 2).toFixed(2)}x</p>
+                  </div>
+                  <div className="rounded-md border p-2">
+                    <p className="text-muted-foreground">SL %</p>
+                    <p className="font-semibold">{(viewData?.trade_controls?.stop_loss_pct || 6).toFixed(1)}%</p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button className="flex-1" variant="outline" onClick={() => setSettingsOpen(true)}>
+                    Open Settings
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    variant={viewData?.enabled ? "destructive" : "default"}
+                    onClick={() => controlMutation.mutate(!viewData?.enabled)}
+                    disabled={controlMutation.isPending}
+                  >
+                    {viewData?.enabled ? "Disarm" : "Arm Sniper"}
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {autoSnipeReady
+                    ? "Sniper is armed and can auto-trade approved fresh tokens."
+                    : "Sniper needs engine ON and connected wallet."}
+                </p>
               </div>
             </Card>
 

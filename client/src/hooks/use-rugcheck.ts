@@ -75,6 +75,53 @@ export type DevIntelResult = {
   }>;
 };
 
+export type DexProjectInfoResult = {
+  status: "ok" | "indexing";
+  message?: string;
+  project_info?: {
+    symbol: string;
+    name: string;
+    chain: string;
+    dex_id: string;
+    pair_address: string;
+    price_usd: number;
+    liquidity_usd: number;
+    market_cap_usd: number;
+    fdv: number;
+    volume_24h: number;
+    price_change_24h: number;
+    pair_url?: string | null;
+    websites?: string[];
+    social_links?: {
+      x?: string | null;
+      telegram?: string | null;
+      discord?: string | null;
+    };
+    community_checker?: {
+      activity_score: number;
+      overall_status: "active" | "moderate" | "low";
+      active_platforms: number;
+      available_platforms: number;
+      summary: string;
+      signals: {
+        volume_1h: number;
+        trades_5m: number;
+        trades_1h: number;
+        price_change_1h: number;
+      };
+      platforms: Array<{
+        platform: "x" | "telegram" | "discord";
+        url?: string | null;
+        available: boolean;
+        reachable: boolean;
+        is_active: boolean;
+        status: "active" | "inactive" | "unavailable" | "unreachable";
+        status_code?: number | null;
+      }>;
+    };
+  };
+};
+
 export function useScanToken() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -126,6 +173,17 @@ export function useDevIntel(contractAddress?: string, chain: string = "solana") 
   return useQuery({
     queryKey: ["dev-intel", normalizedChain, contractAddress],
     queryFn: () => apiGet<DevIntelResult>(`/api/wallets/dev-intel/${contractAddress}?chain=${normalizedChain}`),
+    enabled: !!contractAddress && normalizedChain === "solana",
+    staleTime: 20000,
+    retry: 1,
+  });
+}
+
+export function useDexProjectInfo(contractAddress?: string, chain: string = "solana") {
+  const normalizedChain = chain;
+  return useQuery({
+    queryKey: ["dex-project-info", normalizedChain, contractAddress],
+    queryFn: () => apiGet<DexProjectInfoResult>(`/api/tokens/project-info/${normalizedChain}/${contractAddress}`),
     enabled: !!contractAddress,
     staleTime: 20000,
     retry: 1,

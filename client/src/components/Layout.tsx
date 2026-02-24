@@ -14,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bot, LogOut, User } from "lucide-react";
+import { Bot, LogOut, Settings2 } from "lucide-react";
 import { AnimatePresence, motion, useMotionValue } from "framer-motion";
 
 const DOCTORTRADE_POSITION_KEY = "doctortrade-launcher-position-v1";
@@ -121,8 +121,8 @@ export function Layout({ children }: { children: ReactNode }) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44" data-testid="menu-profile-dropdown">
                 <DropdownMenuItem onClick={() => setLocation("/account")} data-testid="menu-item-account">
-                  <User className="h-4 w-4 mr-2" />
-                  Account
+                  <Settings2 className="h-4 w-4 mr-2" />
+                  Settings
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

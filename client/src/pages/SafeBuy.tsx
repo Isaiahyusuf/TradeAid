@@ -9,9 +9,11 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { useSafeBuy } from "@/hooks/use-safe-buy";
 import { useScannerStream } from "@/hooks/use-scanner-stream";
 import { useChain, SUPPORTED_CHAINS, type AppChain } from "@/hooks/use-chain";
+import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
 
 function formatNumber(n: number) {
   if (n >= 1000000) return `$${(n / 1000000).toFixed(2)}M`;
@@ -22,8 +24,11 @@ function formatNumber(n: number) {
 export default function SafeBuy() {
   const { chain, setChain } = useChain();
   const queryClient = useQueryClient();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [chainFilter, setChainFilter] = useState<string>(chain);
   const [customChains, setCustomChains] = useState("solana,ethereum");
+  const [draftChainFilter, setDraftChainFilter] = useState<string>(chain);
+  const [draftCustomChains, setDraftCustomChains] = useState("solana,ethereum");
   const parsedCustomChains = customChains
     .split(",")
     .map((item) => item.trim().toLowerCase())
@@ -50,7 +55,17 @@ export default function SafeBuy() {
 
   useEffect(() => {
     setChainFilter(chain);
+    setDraftChainFilter(chain);
   }, [chain]);
+
+  const applySafeBuySettings = () => {
+    setChainFilter(draftChainFilter);
+    setCustomChains(draftCustomChains);
+    if ((SUPPORTED_CHAINS as readonly string[]).includes(draftChainFilter)) {
+      setChain(draftChainFilter as AppChain);
+    }
+    setSettingsOpen(false);
+  };
 
   return (
     <Layout>
@@ -73,16 +88,16 @@ export default function SafeBuy() {
           </div>
         </div>
 
-        <Card className="p-4 solana-card bg-card/70 backdrop-blur-sm border-border/60">
+        <SettingsMenuCard
+          title="Safe Buy Settings"
+          description="Adjust chain scope and custom chain presets."
+          open={settingsOpen}
+          onToggle={() => setSettingsOpen((prev) => !prev)}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Select
-              value={chainFilter}
-              onValueChange={(value) => {
-                setChainFilter(value);
-                if ((SUPPORTED_CHAINS as readonly string[]).includes(value)) {
-                  setChain(value as AppChain);
-                }
-              }}
+              value={draftChainFilter}
+              onValueChange={(value) => setDraftChainFilter(value)}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select chain scope" />
@@ -100,13 +115,16 @@ export default function SafeBuy() {
               </SelectContent>
             </Select>
             <Input
-              value={customChains}
-              onChange={(event) => setCustomChains(event.target.value)}
+              value={draftCustomChains}
+              onChange={(event) => setDraftCustomChains(event.target.value)}
               placeholder="solana,ethereum,bsc"
-              disabled={chainFilter !== "custom"}
+              disabled={draftChainFilter !== "custom"}
             />
           </div>
-        </Card>
+          <div className="mt-3 flex justify-end">
+            <Button variant="outline" onClick={applySafeBuySettings}>Apply Settings</Button>
+          </div>
+        </SettingsMenuCard>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="p-4 solana-card animate-fade-in-up bg-card/70 backdrop-blur-sm border-border/60">

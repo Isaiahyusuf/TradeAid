@@ -26,6 +26,35 @@ class DoctorConfigRequest(BaseModel):
     min_profit_pct: float | None = None
     stop_loss_pct: float | None = None
     trailing_stop_pct: float | None = None
+    min_liquidity_usd: float | None = None
+    max_slippage_pct: float | None = None
+    max_spread_pct: float | None = None
+    daily_loss_limit_usd: float | None = None
+    max_consecutive_losses: int | None = None
+    strong_move_threshold_pct: float | None = None
+    max_hold_minutes: int | None = None
+    min_momentum_profit_pct: float | None = None
+    quality_min_volume_spike_pct: float | None = None
+    quality_max_top_holder_pct: float | None = None
+
+
+@router.get("/health")
+async def doctor_health(user: User = Depends(get_current_user)) -> dict[str, Any]:
+    _ = user
+    return {
+        "ok": True,
+        "service": "doctortrade",
+        "version": "2026-02-24",
+        "features": {
+            "execution_safety_lock": True,
+            "weighted_sizing": True,
+            "session_risk_autopause": True,
+            "signal_quality_filter": True,
+            "advanced_exits": True,
+            "decision_journal": True,
+            "presets": True,
+        },
+    }
 
 
 class DoctorWalletConnectRequest(BaseModel):
@@ -71,6 +100,26 @@ async def doctor_config(req: DoctorConfigRequest, user: User = Depends(get_curre
         doctor_controller.stop_loss_pct = max(0.1, min(95.0, float(req.stop_loss_pct)))
     if req.trailing_stop_pct is not None:
         doctor_controller.trailing_stop_pct = max(0.1, min(95.0, float(req.trailing_stop_pct)))
+    if req.min_liquidity_usd is not None:
+        doctor_controller.min_liquidity_usd = max(1000.0, min(20000000.0, float(req.min_liquidity_usd)))
+    if req.max_slippage_pct is not None:
+        doctor_controller.max_slippage_pct = max(0.1, min(50.0, float(req.max_slippage_pct)))
+    if req.max_spread_pct is not None:
+        doctor_controller.max_spread_pct = max(0.1, min(50.0, float(req.max_spread_pct)))
+    if req.daily_loss_limit_usd is not None:
+        doctor_controller.daily_loss_limit_usd = max(10.0, min(500000.0, float(req.daily_loss_limit_usd)))
+    if req.max_consecutive_losses is not None:
+        doctor_controller.max_consecutive_losses = max(1, min(20, int(req.max_consecutive_losses)))
+    if req.strong_move_threshold_pct is not None:
+        doctor_controller.strong_move_threshold_pct = max(5.0, min(500.0, float(req.strong_move_threshold_pct)))
+    if req.max_hold_minutes is not None:
+        doctor_controller.max_hold_minutes = max(5, min(10080, int(req.max_hold_minutes)))
+    if req.min_momentum_profit_pct is not None:
+        doctor_controller.min_momentum_profit_pct = max(0.0, min(100.0, float(req.min_momentum_profit_pct)))
+    if req.quality_min_volume_spike_pct is not None:
+        doctor_controller.quality_min_volume_spike_pct = max(0.0, min(500.0, float(req.quality_min_volume_spike_pct)))
+    if req.quality_max_top_holder_pct is not None:
+        doctor_controller.quality_max_top_holder_pct = max(1.0, min(95.0, float(req.quality_max_top_holder_pct)))
     return await doctor_controller.status()
 
 
