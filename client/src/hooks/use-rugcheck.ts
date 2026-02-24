@@ -129,6 +129,20 @@ export type DexProjectInfoResult = {
   };
 };
 
+export type ScannerHealthResult = {
+  running: boolean;
+  inFlight: boolean;
+  lastScanAt: string | null;
+  lastDurationMs: number;
+  candidatesDiscovered: number;
+  candidatesProcessed: number;
+  successfulScans: number;
+  newTokensSaved: number;
+  liquidityPositiveCount: number;
+  liquidityPositiveRatePct: number;
+  cycleCount: number;
+};
+
 export function useScanToken() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -193,6 +207,16 @@ export function useDexProjectInfo(contractAddress?: string, chain: string = "sol
     queryFn: () => apiGet<DexProjectInfoResult>(`/api/tokens/project-info/${normalizedChain}/${contractAddress}`),
     enabled: !!contractAddress,
     staleTime: 20000,
+    retry: 1,
+  });
+}
+
+export function useScannerHealth() {
+  return useQuery({
+    queryKey: ["scanner-health"],
+    queryFn: () => apiGet<ScannerHealthResult>("/api/scanner/health"),
+    staleTime: 5000,
+    refetchInterval: 10000,
     retry: 1,
   });
 }

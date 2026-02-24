@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Layout } from "@/components/Layout";
-import { useDexProjectInfo, useDevIntel, useScanToken, type ScoreResult } from "@/hooks/use-rugcheck";
+import { useDexProjectInfo, useDevIntel, useScanToken, useScannerHealth, type ScoreResult } from "@/hooks/use-rugcheck";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +40,7 @@ export default function RugShield() {
   const { mutate: scanToken, isPending, data: result } = useScanToken();
   const { data: devIntel } = useDevIntel(scannedAddress || undefined, chain);
   const { data: dexProjectInfo } = useDexProjectInfo(scannedAddress || undefined, chain);
+  const scannerHealth = useScannerHealth();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -196,6 +197,36 @@ export default function RugShield() {
               </Button>
             )}
           </div>
+        </Card>
+
+        <Card className="p-4 solana-card bg-card/70 backdrop-blur-sm border-border/60">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <p className="text-sm font-semibold">Scanner Health</p>
+            <Badge variant="outline" className={scannerHealth.data?.running ? "border-green-500/40 text-green-400" : "border-yellow-500/40 text-yellow-300"}>
+              {scannerHealth.data?.running ? "Running" : "Idle"}
+            </Badge>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+            <div className="rounded-md border p-2">
+              <p className="text-muted-foreground">New Pairs Found</p>
+              <p className="font-semibold">{scannerHealth.data?.candidatesDiscovered ?? 0}</p>
+            </div>
+            <div className="rounded-md border p-2">
+              <p className="text-muted-foreground">Processed</p>
+              <p className="font-semibold">{scannerHealth.data?.candidatesProcessed ?? 0}</p>
+            </div>
+            <div className="rounded-md border p-2">
+              <p className="text-muted-foreground">Liquidity &gt; 0</p>
+              <p className="font-semibold">{scannerHealth.data?.liquidityPositiveRatePct?.toFixed(1) ?? "0.0"}%</p>
+            </div>
+            <div className="rounded-md border p-2">
+              <p className="text-muted-foreground">Last Dex Sync</p>
+              <p className="font-semibold">{scannerHealth.data?.lastScanAt ? new Date(scannerHealth.data.lastScanAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "-"}</p>
+            </div>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Successful scans: {scannerHealth.data?.successfulScans ?? 0} · New tokens saved: {scannerHealth.data?.newTokensSaved ?? 0} · Cycle: {scannerHealth.data?.cycleCount ?? 0}
+          </p>
         </Card>
 
         {result && (

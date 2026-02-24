@@ -195,21 +195,32 @@ export class MultichainLaunchpadScanner {
         
         const tokens: LaunchpadToken[] = [];
         for (const token of chainTokens) {
+          const pairsResponse = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${token.tokenAddress}`);
+          let bestPair: any = null;
+          if (pairsResponse.ok) {
+            const pairsPayload = await pairsResponse.json();
+            const chainPairs = ((pairsPayload?.pairs || []) as any[]).filter((pair) => String(pair.chainId || "") === chain);
+            bestPair = chainPairs.sort((left, right) => Number(right?.liquidity?.usd || 0) - Number(left?.liquidity?.usd || 0))[0] || null;
+          }
           const holderAnalysis = await this.analyzeHolders(token.tokenAddress, chain);
+          if (!bestPair) {
+            continue;
+          }
           tokens.push({
             address: token.tokenAddress,
-            symbol: "???",
-            name: token.description?.slice(0, 50) || "Unknown",
+            symbol: String(bestPair?.baseToken?.symbol || "???"),
+            name: String(bestPair?.baseToken?.name || token.description?.slice(0, 50) || "Unknown"),
             chain,
-            launchpad: "dexscreener",
-            priceUsd: "0",
-            liquidity: 0,
-            marketCap: 0,
-            volume24h: 0,
+            launchpad: String(bestPair?.dexId || "dexscreener"),
+            priceUsd: String(bestPair?.priceUsd || "0"),
+            liquidity: Number(bestPair?.liquidity?.usd || 0),
+            marketCap: Number(bestPair?.marketCap || bestPair?.fdv || 0),
+            volume24h: Number(bestPair?.volume?.h24 || 0),
             topHoldersPercentage: holderAnalysis.topHoldersPercentage,
             devWalletPercentage: holderAnalysis.devWalletPercentage,
-            createdAt: new Date(),
+            createdAt: bestPair?.pairCreatedAt ? new Date(bestPair.pairCreatedAt) : new Date(),
           });
+          await new Promise((resolve) => setTimeout(resolve, 80));
         }
         return tokens;
       }
@@ -218,6 +229,9 @@ export class MultichainLaunchpadScanner {
       const tokens: LaunchpadToken[] = [];
 
       for (const pair of (data.pairs || []).slice(0, 20)) {
+        if (Number(pair?.liquidity?.usd || 0) <= 0) {
+          continue;
+        }
         const holderAnalysis = await this.analyzeHolders(pair.baseToken?.address, chain);
         
         tokens.push({

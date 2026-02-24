@@ -1,7 +1,7 @@
 import { db } from "../db";
 import { scannedTokens, tokenSignals, userAlerts } from "@shared/schema";
 import { eq, desc, and, gte } from "drizzle-orm";
-import { discoverHotTokens, getTokenPairs, pairToTokenData, type DexPair } from "./dexscreener";
+import { discoverHotTokens, getNewPairs, getTokenPairs, pairToTokenData, pickBestPair, type DexPair } from "./dexscreener";
 import { analyzeTokenSafety, calculateSignal } from "./safety-analyzer";
 import { analyzeTokenWithAI, generateQuickInsight } from "./ai-analyzer";
 
@@ -11,12 +11,40 @@ export interface ScanResult {
   signal: typeof tokenSignals.$inferSelect | null;
 }
 
+type ScannerHealthSnapshot = {
+  running: boolean;
+  inFlight: boolean;
+  lastScanAt: string | null;
+  lastDurationMs: number;
+  candidatesDiscovered: number;
+  candidatesProcessed: number;
+  successfulScans: number;
+  newTokensSaved: number;
+  liquidityPositiveCount: number;
+  liquidityPositiveRatePct: number;
+  cycleCount: number;
+};
+
+const scannerHealth: ScannerHealthSnapshot = {
+  running: false,
+  inFlight: false,
+  lastScanAt: null,
+  lastDurationMs: 0,
+  candidatesDiscovered: 0,
+  candidatesProcessed: 0,
+  successfulScans: 0,
+  newTokensSaved: 0,
+  liquidityPositiveCount: 0,
+  liquidityPositiveRatePct: 0,
+  cycleCount: 0,
+};
+
 export async function scanAndAnalyzeToken(tokenAddress: string, chain: string = "solana"): Promise<ScanResult | null> {
   try {
     const pairs = await getTokenPairs(tokenAddress);
     if (!pairs.length) return null;
 
-    const pair = pairs.find(p => p.chainId === chain) || pairs[0];
+    const pair = pickBestPair(pairs, chain) || pairs[0];
     const safety = await analyzeTokenSafety(pair);
     const basicSignal = calculateSignal(safety, pair);
     
@@ -28,9 +56,16 @@ export async function scanAndAnalyzeToken(tokenAddress: string, chain: string = 
     let isNew = false;
 
     if (existing.length > 0) {
+      const previous = existing[0];
+      const safeTokenData = {
+        ...tokenData,
+        liquidity: Number(tokenData.liquidity || 0) > 0 ? tokenData.liquidity : previous.liquidity,
+        marketCap: Number(tokenData.marketCap || 0) > 0 ? tokenData.marketCap : previous.marketCap,
+        volume24h: Number(tokenData.volume24h || 0) > 0 ? tokenData.volume24h : previous.volume24h,
+      };
       const [updated] = await db.update(scannedTokens)
         .set({
-          ...tokenData,
+          ...safeTokenData,
           safetyScore: safety.score,
           isHoneypot: safety.isHoneypot,
           isLiquidityLocked: safety.isLiquidityLocked,
@@ -88,22 +123,62 @@ export async function scanAndAnalyzeToken(tokenAddress: string, chain: string = 
 }
 
 export async function scanHotTokens(chain: string = "solana"): Promise<ScanResult[]> {
+  const startedAt = Date.now();
   console.log(`[Scanner] Discovering hot tokens on ${chain}...`);
-  const hotPairs = await discoverHotTokens(chain);
-  console.log(`[Scanner] Found ${hotPairs.length} hot tokens`);
+  const [hotPairs, newPairs] = await Promise.all([
+    discoverHotTokens(chain),
+    getNewPairs(chain, 6),
+  ]);
+
+  const mergedMap = new Map<string, DexPair>();
+  for (const pair of [...newPairs, ...hotPairs]) {
+    const address = String(pair.baseToken?.address || "").trim();
+    if (!address) continue;
+    const existingPair = mergedMap.get(address);
+    if (!existingPair) {
+      mergedMap.set(address, pair);
+      continue;
+    }
+    const existingLiquidity = Number(existingPair.liquidity?.usd || 0);
+    const nextLiquidity = Number(pair.liquidity?.usd || 0);
+    if (nextLiquidity >= existingLiquidity) {
+      mergedMap.set(address, pair);
+    }
+  }
+  const candidatePairs = Array.from(mergedMap.values());
+  const positiveLiquidityPairs = candidatePairs.filter((pair) => Number(pair.liquidity?.usd || 0) > 0);
+  scannerHealth.candidatesDiscovered = candidatePairs.length;
+  scannerHealth.liquidityPositiveCount = positiveLiquidityPairs.length;
+  scannerHealth.liquidityPositiveRatePct = candidatePairs.length > 0
+    ? Number(((positiveLiquidityPairs.length / candidatePairs.length) * 100).toFixed(2))
+    : 0;
+  console.log(`[Scanner] Found ${candidatePairs.length} hot/new token candidates`);
   
   const results: ScanResult[] = [];
+  let processed = 0;
+  let successful = 0;
+  let newSaved = 0;
   
-  for (const pair of hotPairs.slice(0, 20)) {
+  for (const pair of candidatePairs.slice(0, 35)) {
+    processed += 1;
     const result = await scanAndAnalyzeToken(pair.baseToken.address, chain);
     if (result) {
       results.push(result);
+      successful += 1;
       if (result.isNew) {
+        newSaved += 1;
         console.log(`[Scanner] New token: ${pair.baseToken.symbol} (Score: ${result.token.safetyScore})`);
       }
     }
     await new Promise(r => setTimeout(r, 200));
   }
+
+  scannerHealth.lastScanAt = new Date().toISOString();
+  scannerHealth.lastDurationMs = Date.now() - startedAt;
+  scannerHealth.candidatesProcessed = processed;
+  scannerHealth.successfulScans = successful;
+  scannerHealth.newTokensSaved = newSaved;
+  scannerHealth.cycleCount += 1;
   
   return results;
 }
@@ -175,6 +250,7 @@ export async function performDeepAnalysis(tokenAddress: string): Promise<{
 }
 
 let scanInterval: NodeJS.Timeout | null = null;
+let scanInFlight = false;
 
 export function startBackgroundScanner(intervalMs: number = 60 * 1000): void {
   if (scanInterval) {
@@ -183,22 +259,44 @@ export function startBackgroundScanner(intervalMs: number = 60 * 1000): void {
   }
 
   console.log(`[Scanner] Starting background scanner (interval: ${intervalMs / 1000}s)`);
+  scannerHealth.running = true;
   
-  scanInterval = setInterval(async () => {
+  const runScan = async () => {
+    if (scanInFlight) {
+      console.log("[Scanner] Previous scan still running, skipping tick");
+      return;
+    }
+    scanInFlight = true;
+    scannerHealth.inFlight = true;
     try {
       await scanHotTokens("solana");
     } catch (error) {
       console.error("[Scanner] Background scan error:", error);
+    } finally {
+      scanInFlight = false;
+      scannerHealth.inFlight = false;
     }
-  }, intervalMs);
+  };
 
-  scanHotTokens("solana").catch(console.error);
+  scanInterval = setInterval(runScan, intervalMs);
+
+  runScan().catch(console.error);
 }
 
 export function stopBackgroundScanner(): void {
   if (scanInterval) {
     clearInterval(scanInterval);
     scanInterval = null;
+    scannerHealth.running = false;
+    scannerHealth.inFlight = false;
     console.log("[Scanner] Stopped");
   }
+}
+
+export function getScannerHealthStatus(): ScannerHealthSnapshot {
+  return {
+    ...scannerHealth,
+    inFlight: Boolean(scanInFlight),
+    running: Boolean(scanInterval),
+  };
 }

@@ -10,6 +10,7 @@ import { setupAuth, registerAuthRoutes, isAuthenticated, authStorage } from "./r
 import { registerScannerRoutes } from "./routes/scanner";
 import { startBackgroundScanner, scanHotTokens } from "./services/token-scanner";
 import { multichainScanner } from "./services/multichain-scanner";
+import { getTokenPairs } from "./services/dexscreener";
 import { FREE_TIER_LIMITS, SUBSCRIPTION_PRICE_USD, SUPPORTED_PAYMENT_CHAINS } from "@shared/schema";
 import { cryptoPaymentService } from "./services/crypto-payment";
 import OpenAI from "openai";
@@ -40,6 +41,238 @@ export async function registerRoutes(
   
   // Register token scanner routes (new powerful scanner)
   registerScannerRoutes(app);
+
+  const pythonApiBase = String(
+    process.env.TRADE_AID_BACKEND_URL || process.env.BACKEND_URL || process.env.VITE_API_URL || "",
+  ).replace(/\/$/, "");
+
+  const normalizeDexChain = (chain: string) => {
+    const normalized = String(chain || "").toLowerCase().trim();
+    const map: Record<string, string> = {
+      eth: "ethereum",
+      bnb: "bsc",
+      avax: "avalanche",
+      matic: "polygon",
+    };
+    return map[normalized] || normalized;
+  };
+
+  const buildDexScoreFallback = async (contractAddress: string, chain: string) => {
+    const requestedChain = normalizeDexChain(chain || "all");
+    const pairs = await getTokenPairs(contractAddress);
+    const filtered = pairs.filter((pair) => {
+      const pairChain = normalizeDexChain(String(pair.chainId || ""));
+      return requestedChain === "all" ? true : pairChain === requestedChain;
+    });
+    const ranked = (filtered.length ? filtered : pairs).sort(
+      (a, b) => Number(b.liquidity?.usd || 0) - Number(a.liquidity?.usd || 0),
+    );
+    const pair = ranked[0];
+    if (!pair) {
+      return { error: "Token not found", eligible: false };
+    }
+
+    const liquidityUsd = Number(pair.liquidity?.usd || 0);
+    const volume5m = Number(pair.volume?.m5 || 0);
+    const volume1h = Number(pair.volume?.h1 || 0);
+    const buys = Number(pair.txns?.m5?.buys || 0);
+    const sells = Number(pair.txns?.m5?.sells || 0);
+    const buySellRatio = (buys + 1) / (sells + 1);
+    const slippageHint = Math.max(0, Math.min(10, (volume5m / Math.max(liquidityUsd, 1)) * 100));
+
+    let rug = 50;
+    const riskFlags: string[] = [];
+    if (liquidityUsd < 2000) {
+      rug += 25;
+      riskFlags.push("LOW_LIQUIDITY");
+    } else if (liquidityUsd < 10000) {
+      rug += 10;
+      riskFlags.push("THIN_LIQUIDITY");
+    }
+    if (buySellRatio < 0.9) {
+      rug += 8;
+      riskFlags.push("SELL_PRESSURE");
+    }
+    if (slippageHint > 3) {
+      rug += 8;
+      riskFlags.push("HIGH_SLIPPAGE");
+    }
+    rug = Math.max(5, Math.min(99, rug));
+
+    let opportunity = 30;
+    if (liquidityUsd > 10000) opportunity += 18;
+    if (volume1h > 0 && volume5m > volume1h / 12) opportunity += 18;
+    if (buySellRatio > 1.15) opportunity += 15;
+    opportunity = Math.max(0, Math.min(100, opportunity));
+    const confidence = Math.max(0, Math.min(100, opportunity - Math.max(0, (rug - 50) * 0.6)));
+
+    const resolvedChain = normalizeDexChain(String(pair.chainId || requestedChain || "solana"));
+    const eligible = rug <= 85 && liquidityUsd >= 2000;
+
+    return {
+      contract_address: contractAddress,
+      chain: resolvedChain,
+      symbol: String(pair.baseToken?.symbol || "UNKNOWN"),
+      name: String(pair.baseToken?.name || "DexScreener Token"),
+      eligible,
+      eligibility_reason: eligible ? null : rug > 85 ? "rug_risk_above_85" : "liquidity_below_2k",
+      risk_flags: riskFlags,
+      status: "dex_live",
+      scores: {
+        rug_probability: Number(rug.toFixed(2)),
+        liquidity_stability: Number(Math.max(0, Math.min(100, (liquidityUsd / 25000) * 100)).toFixed(2)),
+        holder_distribution: Number(Math.max(0, Math.min(100, 100 - Math.min(slippageHint * 10, 90))).toFixed(2)),
+        smart_wallet_signal: Number(Math.max(0, Math.min(100, buySellRatio * 40)).toFixed(2)),
+        trade_confidence_index: Number(confidence.toFixed(2)),
+        rug_risk_score: Number(rug.toFixed(2)),
+        opportunity_score: Number(opportunity.toFixed(2)),
+      },
+      market_data: {
+        market_cap_usd: Number(pair.marketCap || pair.fdv || 0),
+        liquidity_usd: liquidityUsd,
+        holder_count: 0,
+      },
+      source: {
+        provider: "dexscreener",
+        pair_address: String(pair.pairAddress || ""),
+        dex_id: String(pair.dexId || ""),
+        url: String(pair.url || ""),
+      },
+      scored_at: new Date().toISOString(),
+    };
+  };
+
+  const buildDexProjectInfoFallback = async (contractAddress: string, chain: string) => {
+    const requestedChain = normalizeDexChain(chain || "all");
+    const pairs = await getTokenPairs(contractAddress);
+    const filtered = pairs.filter((pair) => {
+      const pairChain = normalizeDexChain(String(pair.chainId || ""));
+      return requestedChain === "all" ? true : pairChain === requestedChain;
+    });
+    const ranked = (filtered.length ? filtered : pairs).sort(
+      (a, b) => Number(b.liquidity?.usd || 0) - Number(a.liquidity?.usd || 0),
+    );
+    const pair = ranked[0];
+    if (!pair) {
+      return { status: "indexing", message: "Indexing token..." };
+    }
+
+    const socials = pair.info?.socials || [];
+    const socialLinks = {
+      x: socials.find((item) => String(item.platform || "").toLowerCase().includes("twitter"))?.url || null,
+      telegram: socials.find((item) => String(item.platform || "").toLowerCase().includes("telegram"))?.url || null,
+      discord: socials.find((item) => String(item.platform || "").toLowerCase().includes("discord"))?.url || null,
+    };
+
+    return {
+      status: "ok",
+      project_info: {
+        symbol: String(pair.baseToken?.symbol || "UNKNOWN"),
+        name: String(pair.baseToken?.name || "Dex Token"),
+        chain: normalizeDexChain(String(pair.chainId || requestedChain || "solana")),
+        dex_id: String(pair.dexId || ""),
+        pair_address: String(pair.pairAddress || ""),
+        price_usd: Number(pair.priceUsd || 0),
+        liquidity_usd: Number(pair.liquidity?.usd || 0),
+        market_cap_usd: Number(pair.marketCap || 0),
+        fdv: Number(pair.fdv || 0),
+        volume_24h: Number(pair.volume?.h24 || 0),
+        price_change_24h: Number(pair.priceChange?.h24 || 0),
+        pair_url: String(pair.url || ""),
+        websites: (pair.info?.websites || []).map((item) => item.url).filter(Boolean),
+        social_links: socialLinks,
+      },
+    };
+  };
+
+  async function proxyToPythonApi(
+    req: any,
+    res: any,
+    targetPath: string,
+    fallback?: () => Promise<any>,
+  ) {
+    if (!pythonApiBase) {
+      if (fallback) {
+        return res.status(200).json(await fallback());
+      }
+      return res.status(503).json({
+        message: "Backend bridge is not configured. Set TRADE_AID_BACKEND_URL or VITE_API_URL.",
+      });
+    }
+
+    try {
+      const targetUrl = `${pythonApiBase}${targetPath}`;
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      const auth = String(req.headers.authorization || "").trim();
+      if (auth) {
+        headers.Authorization = auth;
+      }
+
+      const response = await fetch(targetUrl, {
+        method: req.method,
+        headers,
+        body: req.method === "GET" ? undefined : JSON.stringify(req.body || {}),
+      });
+
+      const text = await response.text();
+      let payload: any = null;
+      try {
+        payload = text ? JSON.parse(text) : null;
+      } catch {
+        payload = text;
+      }
+
+      if ((!response.ok || payload?.error) && fallback) {
+        const fallbackPayload = await fallback();
+        if (!fallbackPayload?.error) {
+          return res.status(200).json(fallbackPayload);
+        }
+      }
+
+      return res.status(response.status).json(payload ?? {});
+    } catch (error) {
+      if (fallback) {
+        try {
+          const fallbackPayload = await fallback();
+          return res.status(200).json(fallbackPayload);
+        } catch {
+        }
+      }
+      return res.status(502).json({
+        message: error instanceof Error ? error.message : "Proxy request failed",
+      });
+    }
+  }
+
+  app.get("/api/doctor/health", async (req, res) => proxyToPythonApi(req, res, "/api/doctor/health"));
+  app.get("/api/doctor/status", async (req, res) => proxyToPythonApi(req, res, "/api/doctor/status"));
+  app.post("/api/doctor/control", async (req, res) => proxyToPythonApi(req, res, "/api/doctor/control"));
+  app.post("/api/doctor/config", async (req, res) => proxyToPythonApi(req, res, "/api/doctor/config"));
+  app.post("/api/doctor/connect-wallet", async (req, res) => proxyToPythonApi(req, res, "/api/doctor/connect-wallet"));
+  app.post("/api/doctor/run-once", async (req, res) => proxyToPythonApi(req, res, "/api/doctor/run-once"));
+
+  app.post("/api/scoring/score-token", async (req, res) =>
+    proxyToPythonApi(req, res, "/api/scoring/score-token", async () => {
+      const body = req.body || {};
+      const contractAddress = String(body.contract_address || body.address || "").trim();
+      const chain = String(body.chain || "all").trim().toLowerCase();
+      if (!contractAddress) {
+        return { error: "Contract address required", eligible: false };
+      }
+      return buildDexScoreFallback(contractAddress, chain);
+    }),
+  );
+  app.get("/api/tokens/project-info/:chain/:contract_address", async (req, res) => {
+    const { chain, contract_address } = req.params;
+    return proxyToPythonApi(
+      req,
+      res,
+      `/api/tokens/project-info/${encodeURIComponent(chain)}/${encodeURIComponent(contract_address)}`,
+      async () => buildDexProjectInfoFallback(contract_address, chain),
+    );
+  });
   
   // Start background token scanner (scans every 60 seconds for fresh tokens)
   startBackgroundScanner(60 * 1000);

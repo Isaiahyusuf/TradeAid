@@ -12,7 +12,8 @@ import {
   getHotSignals,
   performDeepAnalysis,
   startBackgroundScanner,
-  stopBackgroundScanner
+  stopBackgroundScanner,
+  getScannerHealthStatus,
 } from "../services/token-scanner";
 import { searchTokens, getTokenPairs } from "../services/dexscreener";
 import { multichainScanner } from "../services/multichain-scanner";
@@ -207,6 +208,16 @@ export function registerScannerRoutes(app: Express): void {
     } catch (error) {
       console.error("Error triggering scan:", error);
       res.status(500).json({ error: "Failed to trigger scan" });
+    }
+  });
+
+  app.get("/api/scanner/health", async (_req: Request, res: Response) => {
+    try {
+      const health = getScannerHealthStatus();
+      res.json(health);
+    } catch (error) {
+      console.error("Error fetching scanner health:", error);
+      res.status(500).json({ error: "Failed to fetch scanner health" });
     }
   });
 

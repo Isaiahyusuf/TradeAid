@@ -2,6 +2,11 @@ import type { InsertScannedToken } from "@shared/schema";
 
 const DEX_API_BASE = "https://api.dexscreener.com";
 
+function toNumber(value: unknown, fallback = 0): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 export interface DexPair {
   chainId: string;
   dexId: string;
@@ -82,6 +87,33 @@ export async function getTokenPairs(tokenAddress: string): Promise<DexPair[]> {
   return data?.pairs || [];
 }
 
+export function pickBestPair(pairs: DexPair[], preferredChain?: string): DexPair | null {
+  const normalizedPreferred = String(preferredChain || "").toLowerCase().trim();
+  const chainPairs = normalizedPreferred ? pairs.filter((pair) => String(pair.chainId || "").toLowerCase() === normalizedPreferred) : pairs;
+  const source = chainPairs.length ? chainPairs : pairs;
+  if (!source.length) {
+    return null;
+  }
+
+  const ranked = [...source].sort((left, right) => {
+    const leftLiquidity = toNumber(left.liquidity?.usd, 0);
+    const rightLiquidity = toNumber(right.liquidity?.usd, 0);
+    if (rightLiquidity !== leftLiquidity) {
+      return rightLiquidity - leftLiquidity;
+    }
+    const leftVolume = toNumber(left.volume?.h24, 0);
+    const rightVolume = toNumber(right.volume?.h24, 0);
+    if (rightVolume !== leftVolume) {
+      return rightVolume - leftVolume;
+    }
+    const leftRecency = toNumber(left.pairCreatedAt, 0);
+    const rightRecency = toNumber(right.pairCreatedAt, 0);
+    return rightRecency - leftRecency;
+  });
+
+  return ranked[0] || null;
+}
+
 export async function getPairsByChain(chainId: string, pairAddress: string): Promise<DexPair | null> {
   const data = await fetchWithRetry<{ pair: DexPair }>(`${DEX_API_BASE}/latest/dex/pairs/${chainId}/${pairAddress}`);
   return data?.pair || null;
@@ -124,8 +156,8 @@ export async function discoverHotTokens(chain: string = "solana"): Promise<DexPa
   for (const profile of chainProfiles.slice(0, 30)) {
     const pairs = await getTokenPairs(profile.tokenAddress);
     if (pairs.length > 0) {
-      const bestPair = pairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
-      if (bestPair && (bestPair.liquidity?.usd || 0) > 1000) {
+      const bestPair = pickBestPair(pairs, chain);
+      if (bestPair && toNumber(bestPair.liquidity?.usd, 0) > 1000) {
         hotPairs.push(bestPair);
       }
     }
@@ -150,13 +182,13 @@ export function pairToTokenData(pair: DexPair): Partial<InsertScannedToken> {
     pairAddress: pair.pairAddress,
     priceUsd: pair.priceUsd,
     priceNative: pair.priceNative,
-    liquidity: pair.liquidity?.usd || 0,
-    marketCap: pair.marketCap || pair.fdv || 0,
-    volume24h: pair.volume?.h24 || 0,
-    priceChange1h: pair.priceChange?.h1 || 0,
-    priceChange24h: pair.priceChange?.h24 || 0,
-    buys24h: pair.txns?.h24?.buys || 0,
-    sells24h: pair.txns?.h24?.sells || 0,
+    liquidity: toNumber(pair.liquidity?.usd, 0),
+    marketCap: toNumber(pair.marketCap ?? pair.fdv, 0),
+    volume24h: toNumber(pair.volume?.h24, 0),
+    priceChange1h: toNumber(pair.priceChange?.h1, 0),
+    priceChange24h: toNumber(pair.priceChange?.h24, 0),
+    buys24h: Math.trunc(toNumber(pair.txns?.h24?.buys, 0)),
+    sells24h: Math.trunc(toNumber(pair.txns?.h24?.sells, 0)),
     socialLinks: { twitter, telegram, website },
     pairCreatedAt: pair.pairCreatedAt ? new Date(pair.pairCreatedAt) : undefined,
   };
