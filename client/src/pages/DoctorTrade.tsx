@@ -86,7 +86,13 @@ export default function DoctorTrade() {
         onError: (error) => {
           const message = error instanceof Error ? error.message : "Wallet connect failed";
           const lower = message.toLowerCase();
-          if (lower.includes("no wallet found") || lower.includes("wallet data missing") || lower.includes("wallet not created")) {
+          if (
+            lower.includes("wallet_setup_required_open_wallet_tab") ||
+            lower.includes("no wallet found") ||
+            lower.includes("wallet data missing") ||
+            lower.includes("wallet not created") ||
+            lower.includes("wallet")
+          ) {
             setLocation("/wallet?action=connect&returnTo=%2Fdoctortrade");
             return;
           }
@@ -197,29 +203,38 @@ export default function DoctorTrade() {
               <Button
                 variant="outline"
                 className="self-end"
-                onClick={() => configMutation.mutate(
-                  {
-                    buy_amount_sol: Math.max(0.1, Number(buyAmountInput) || 0.1),
-                    max_trades_per_day: Number(maxTradesInput) || 12,
-                    take_profit_multiplier: Number(tpMultInput) || 2.0,
-                    min_profit_pct: Number(minProfitInput) || 12,
-                    stop_loss_pct: Number(stopLossInput) || 6,
-                    trailing_stop_pct: Number(trailInput) || 10,
-                  },
-                  {
-                    onSuccess: () => {
-                      setSettingsOpen(false);
-                      toast({ title: "Risk rules saved", description: "DoctorTrade settings updated." });
+                onClick={() => {
+                  const buyAmountSol = Math.max(0.1, Number.parseFloat(buyAmountInput) || 0.1);
+                  const maxTradesPerDay = Math.max(1, Math.trunc(Number.parseFloat(maxTradesInput) || 12));
+                  const takeProfitMultiplier = Math.max(1.01, Number.parseFloat(tpMultInput) || 2.0);
+                  const minProfitPct = Math.max(0.1, Number.parseFloat(minProfitInput) || 12);
+                  const stopLossPct = Math.max(0.1, Number.parseFloat(stopLossInput) || 6);
+                  const trailingStopPct = Math.max(0.1, Number.parseFloat(trailInput) || 10);
+
+                  configMutation.mutate(
+                    {
+                      buy_amount_sol: buyAmountSol,
+                      max_trades_per_day: maxTradesPerDay,
+                      take_profit_multiplier: takeProfitMultiplier,
+                      min_profit_pct: minProfitPct,
+                      stop_loss_pct: stopLossPct,
+                      trailing_stop_pct: trailingStopPct,
                     },
-                    onError: (error) => {
-                      toast({
-                        title: "Save failed",
-                        description: error instanceof Error ? error.message : "Unable to save settings",
-                        variant: "destructive",
-                      });
+                    {
+                      onSuccess: () => {
+                        setSettingsOpen(false);
+                        toast({ title: "Risk rules saved", description: "DoctorTrade settings updated." });
+                      },
+                      onError: (error) => {
+                        toast({
+                          title: "Save failed",
+                          description: error instanceof Error ? error.message : "Unable to save settings",
+                          variant: "destructive",
+                        });
+                      },
                     },
-                  },
-                )}
+                  );
+                }}
                 disabled={configMutation.isPending}
               >
                 Save Risk Rules
