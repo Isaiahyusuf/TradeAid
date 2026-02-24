@@ -16,7 +16,7 @@ const NAV_ITEMS = [
   { label: "WhaleWatch", href: "/whalewatch", icon: Eye },
   { label: "Safe Buy", href: "/safebuy", icon: Lock },
   { label: "Tokens", href: "/memetrend", icon: TrendingUp },
-  { label: "DoctorTrade", href: "/assistant", icon: Bot },
+  { label: "DoctorTrade", href: "/doctortrade", icon: Bot },
   { label: "Wallet", href: "/wallet", icon: Wallet },
   { label: "Subscription", href: "/subscription", icon: Bell },
   { label: "Account", href: "/account", icon: User },
@@ -39,7 +39,7 @@ export function Sidebar() {
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = location === item.href;
-          const isDoctorStrange = item.href === "/assistant";
+          const isDoctorStrange = item.href === "/doctortrade";
           
           return (
             <button
@@ -100,7 +100,7 @@ export function MobileNav() {
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = location === item.href;
-          const isDoctorStrange = item.href === "/assistant";
+          const isDoctorStrange = item.href === "/doctortrade";
           const mobileLabel = isDoctorStrange ? "Doctor" : item.label;
           
           return (

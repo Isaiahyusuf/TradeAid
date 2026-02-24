@@ -1,34 +1,45 @@
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.models import LiquidityEvent, ScoringHistory, Token
+from app.models.models import Alert, LiquidityEvent, ScoringHistory, Token
 from app.services.ai_safety_engine import score_safe_buy_with_ai
 from app.utils.redis_client import cache_get, cache_set, publish_event
 
 
 class SafeBuyService:
-    SAFE_BUY_MIN_SCORE = 50.0
-    NEAR_MISS_MIN_SCORE = 40.0
+    SAFE_BUY_MIN_SCORE = 20.0
+    NEAR_MISS_MIN_SCORE = 15.0
+    PROJECT_TTL_HOURS = 24
+    MIN_LIQUIDITY_USD = 1_000.0
+    MIN_ACTIVE_VOLUME_5M = 150.0
+    MIN_ACTIVE_VOLUME_1H = 1_000.0
 
     def _compute_dynamic_thresholds(self, scores: list[float]) -> tuple[float, float]:
-        if not scores:
-            return self.SAFE_BUY_MIN_SCORE, self.NEAR_MISS_MIN_SCORE
+        return self.SAFE_BUY_MIN_SCORE, self.NEAR_MISS_MIN_SCORE
 
-        ordered = sorted(float(score or 0) for score in scores)
-        max_score = ordered[-1]
-        mid = len(ordered) // 2
-        median_score = ordered[mid] if len(ordered) % 2 == 1 else (ordered[mid - 1] + ordered[mid]) / 2
+    async def purge_expired_projects(self, db: AsyncSession) -> int:
+        now = datetime.utcnow()
+        cutoff = now - timedelta(hours=self.PROJECT_TTL_HOURS)
+        launch_ts = func.coalesce(Token.liquidity_created_at, Token.created_at)
 
-        # Adaptive gate: keep below current top score and close to live market distribution.
-        adaptive_safe = min(
-            self.SAFE_BUY_MIN_SCORE,
-            max(32.0, min(58.0, max_score - 6.0, median_score + 6.0)),
+        stale_ids_result = await db.execute(
+            select(Token.id)
+            .where(launch_ts < cutoff)
+            .limit(5000)
         )
-        adaptive_near = max(24.0, adaptive_safe - 8.0)
-        return round(adaptive_safe, 2), round(adaptive_near, 2)
+        stale_ids = list(stale_ids_result.scalars().all())
+        if not stale_ids:
+            return 0
+
+        await db.execute(delete(ScoringHistory).where(ScoringHistory.token_id.in_(stale_ids)))
+        await db.execute(delete(LiquidityEvent).where(LiquidityEvent.token_id.in_(stale_ids)))
+        await db.execute(delete(Alert).where(Alert.token_id.in_(stale_ids)))
+        await db.execute(delete(Token).where(Token.id.in_(stale_ids)))
+        await db.flush()
+        return len(stale_ids)
 
     def _estimate_top_holders_pct(self, token: Token, latest_score: ScoringHistory | None) -> float:
         extra = token.extra_data or {}
@@ -101,12 +112,18 @@ class SafeBuyService:
         chains: list[str] | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         now = datetime.utcnow()
-        launch_cutoff = now - timedelta(hours=24)
+        launch_cutoff = now - timedelta(hours=self.PROJECT_TTL_HOURS)
+        launch_ts = func.coalesce(Token.liquidity_created_at, Token.created_at)
+
+        await self.purge_expired_projects(db)
 
         query = (
             select(Token)
-            .where(Token.created_at >= launch_cutoff)
-            .order_by(Token.created_at.desc())
+            .where(
+                launch_ts >= launch_cutoff,
+                Token.liquidity_usd >= self.MIN_LIQUIDITY_USD,
+            )
+            .order_by(launch_ts.desc())
             .limit(450)
         )
         if chains:
@@ -151,6 +168,13 @@ class SafeBuyService:
             new_wallets_count = int(extra.get("new_wallets_count", 0) or 0)
 
             if market_cap < 10000 or market_cap > 750000:
+                continue
+
+            if liquidity < self.MIN_LIQUIDITY_USD:
+                continue
+
+            has_active_volume = volume_5m >= self.MIN_ACTIVE_VOLUME_5M or volume_1h >= self.MIN_ACTIVE_VOLUME_1H
+            if not has_active_volume:
                 continue
 
             liq_ratio = (liquidity / market_cap) if market_cap > 0 else 0
@@ -337,6 +361,9 @@ class SafeBuyService:
             "thresholds": {
                 "safe_buy_min_score": dynamic_safe_min,
                 "near_miss_min_score": dynamic_near_min,
+            },
+            "retention": {
+                "max_project_age_hours": self.PROJECT_TTL_HOURS,
             },
         }
 

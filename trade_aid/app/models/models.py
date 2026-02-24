@@ -243,3 +243,67 @@ class AssistantTrade(Base):
     __table_args__ = (
         Index("ix_assistant_trades_user_created", "user_id", "created_at"),
     )
+
+
+class DoctorTradeLog(Base):
+    __tablename__ = "doctor_trade_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    symbol = Column(String(64), nullable=True)
+    contract_address = Column(String(128), nullable=False, index=True)
+    chain = Column(String(20), nullable=False, default="solana", index=True)
+    action = Column(String(12), nullable=False)
+    status = Column(String(24), nullable=False, default="executed")
+    strategy_mode = Column(String(24), nullable=False, default="trending")
+    entry_price = Column(Float, nullable=True)
+    current_price = Column(Float, nullable=True)
+    liquidity_usd = Column(Float, nullable=True)
+    volume_5m = Column(Float, nullable=True)
+    confidence = Column(Integer, nullable=True)
+    position_size_pct = Column(Float, nullable=True)
+    pnl_usd = Column(Float, nullable=False, default=0.0)
+    reason = Column(String(256), nullable=True)
+    tx_signature = Column(String(128), nullable=True)
+    extra_data = Column("metadata", JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_doctor_trade_logs_created", "created_at"),
+        Index("ix_doctor_trade_logs_contract_created", "contract_address", "created_at"),
+    )
+
+
+class DoctorEventLog(Base):
+    __tablename__ = "doctor_event_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_type = Column(String(64), nullable=False, index=True)
+    severity = Column(String(16), nullable=False, default="info")
+    message = Column(String(512), nullable=True)
+    contract_address = Column(String(128), nullable=True, index=True)
+    strategy_mode = Column(String(24), nullable=False, default="trending")
+    extra_data = Column("metadata", JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_doctor_event_logs_type_created", "event_type", "created_at"),
+    )
+
+
+class DoctorPerformanceSnapshot(Base):
+    __tablename__ = "doctor_performance_snapshots"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    trades_evaluated = Column(Integer, nullable=False, default=0)
+    win_rate = Column(Float, nullable=False, default=0.0)
+    previous_win_rate = Column(Float, nullable=False, default=0.0)
+    drawdown_pct = Column(Float, nullable=False, default=0.0)
+    daily_pnl_usd = Column(Float, nullable=False, default=0.0)
+    high_watermark_usd = Column(Float, nullable=False, default=0.0)
+    degraded = Column(Boolean, nullable=False, default=False)
+    tuning_suggestion = Column(String(512), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_doctor_perf_created", "created_at"),
+    )

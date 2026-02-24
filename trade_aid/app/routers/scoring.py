@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
+from app.config import get_enabled_chains
 from app.models.models import ScoringHistory, Token, User
 from app.services.auth_service import get_current_user
 from app.scoring.scoring_service import scoring_service
@@ -26,17 +27,30 @@ async def score_token(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if req.chain.lower() != "solana":
-        raise HTTPException(status_code=400, detail="Only Solana integration is supported")
+    enabled_chains = get_enabled_chains()
+    requested_chain = (req.chain or "").strip().lower()
+    if requested_chain and requested_chain != "all" and requested_chain not in enabled_chains:
+        raise HTTPException(status_code=400, detail=f"Unsupported chain '{requested_chain}'")
 
-    result = await scoring_service.score_token(db, req.contract_address, req.chain)
+    if requested_chain == "all":
+        result = {"error": "Token not found on enabled chains"}
+        for chain_name in enabled_chains:
+            candidate = await scoring_service.score_token(db, req.contract_address, chain_name)
+            if not candidate.get("error"):
+                result = candidate
+                requested_chain = chain_name
+                break
+    else:
+        target_chain = requested_chain or "solana"
+        result = await scoring_service.score_token(db, req.contract_address, target_chain)
+        requested_chain = target_chain
 
     metadata = user.alert_preferences or {}
     privacy = metadata.get("privacy", {})
     telemetry_opt_in = bool(privacy.get("telemetry_opt_in", False))
     if telemetry_opt_in:
         token_result = await db.execute(
-            select(Token).where(Token.chain == "solana", Token.contract_address == req.contract_address)
+            select(Token).where(Token.chain == requested_chain, Token.contract_address == req.contract_address)
         )
         token = token_result.scalar_one_or_none()
         if token:
@@ -62,10 +76,14 @@ async def score_token_async(
     req: ScoreRequest,
     user: User = Depends(get_current_user),
 ):
-    if req.chain.lower() != "solana":
-        raise HTTPException(status_code=400, detail="Only Solana integration is supported")
+    enabled_chains = get_enabled_chains()
+    requested_chain = (req.chain or "").strip().lower()
+    if requested_chain == "all":
+        raise HTTPException(status_code=400, detail="Async scoring requires explicit chain")
+    if requested_chain and requested_chain not in enabled_chains:
+        raise HTTPException(status_code=400, detail=f"Unsupported chain '{requested_chain}'")
 
-    task = score_token_task.delay(req.contract_address, req.chain)
+    task = score_token_task.delay(req.contract_address, requested_chain or "solana")
     return {"task_id": task.id, "status": "queued"}
 
 
@@ -77,13 +95,15 @@ async def scoring_history(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if chain.lower() != "solana":
-        raise HTTPException(status_code=400, detail="Only Solana integration is supported")
+    normalized_chain = (chain or "").strip().lower()
+    enabled_chains = get_enabled_chains()
+    if normalized_chain not in enabled_chains:
+        raise HTTPException(status_code=400, detail=f"Unsupported chain '{normalized_chain}'")
 
     result = await db.execute(
         select(ScoringHistory)
         .where(
-            ScoringHistory.chain == chain,
+            ScoringHistory.chain == normalized_chain,
             ScoringHistory.contract_address == contract_address,
         )
         .order_by(ScoringHistory.scored_at.desc())
@@ -115,11 +135,13 @@ async def scoring_insight(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if chain.lower() != "solana":
-        raise HTTPException(status_code=400, detail="Only Solana integration is supported")
+    normalized_chain = (chain or "").strip().lower()
+    enabled_chains = get_enabled_chains()
+    if normalized_chain not in enabled_chains:
+        raise HTTPException(status_code=400, detail=f"Unsupported chain '{normalized_chain}'")
 
     token_result = await db.execute(
-        select(Token).where(Token.chain == "solana", Token.contract_address == contract_address)
+        select(Token).where(Token.chain == normalized_chain, Token.contract_address == contract_address)
     )
     token = token_result.scalar_one_or_none()
     if not token:

@@ -8,6 +8,7 @@ from app.database import get_db
 from app.config import get_enabled_chains
 from app.models.models import Token, LiquidityEvent, ScoringHistory, User
 from app.services.auth_service import get_current_user
+from app.services.safe_buy_service import safe_buy_service
 from app.scoring.scoring_service import scoring_service
 
 router = APIRouter(prefix="/api/tokens", tags=["Tokens"])
@@ -27,6 +28,8 @@ async def list_tokens(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    await safe_buy_service.purge_expired_projects(db)
+
     enabled_chains = get_enabled_chains()
     selected_chain = (chain or "").lower().strip()
     if selected_chain and selected_chain not in enabled_chains:
@@ -46,6 +49,12 @@ async def list_tokens(
 
     now = datetime.utcnow()
     launch_timestamp = func.coalesce(Token.liquidity_created_at, Token.created_at)
+    freshness_cutoff = now - timedelta(hours=24)
+
+    query = query.where(
+        launch_timestamp >= freshness_cutoff,
+        Token.liquidity_usd >= safe_buy_service.MIN_LIQUIDITY_USD,
+    )
 
     if min_age_minutes is not None:
         newer_than = now - timedelta(minutes=min_age_minutes)
@@ -65,6 +74,14 @@ async def list_tokens(
 
     result = await db.execute(query)
     tokens = result.scalars().all()
+    tokens = [
+        token
+        for token in tokens
+        if (
+            float((token.extra_data or {}).get("volume_5m", 0) or 0) >= safe_buy_service.MIN_ACTIVE_VOLUME_5M
+            or float((token.extra_data or {}).get("volume_1h", 0) or 0) >= safe_buy_service.MIN_ACTIVE_VOLUME_1H
+        )
+    ]
 
     if prioritize_pump_fun:
         major_launchpads = {"pump.fun", "raydium", "moonshot", "meteora", "bonkswap"}
@@ -219,6 +236,8 @@ async def get_token(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    await safe_buy_service.purge_expired_projects(db)
+
     normalized_chain = chain.lower().strip()
     enabled_chains = get_enabled_chains()
     if normalized_chain not in enabled_chains:
@@ -235,6 +254,18 @@ async def get_token(
     )
     token = result.scalar_one_or_none()
     if not token:
+        return {"error": "Token not found"}
+
+    launch_at = token.liquidity_created_at or token.created_at
+    if launch_at < (datetime.utcnow() - timedelta(hours=24)):
+        return {"error": "Token not found"}
+
+    extra = token.extra_data or {}
+    volume_5m = float(extra.get("volume_5m", 0) or 0)
+    volume_1h = float(extra.get("volume_1h", 0) or 0)
+    if float(token.liquidity_usd or 0) < safe_buy_service.MIN_LIQUIDITY_USD:
+        return {"error": "Token not found"}
+    if volume_5m < safe_buy_service.MIN_ACTIVE_VOLUME_5M and volume_1h < safe_buy_service.MIN_ACTIVE_VOLUME_1H:
         return {"error": "Token not found"}
 
     events_result = await db.execute(

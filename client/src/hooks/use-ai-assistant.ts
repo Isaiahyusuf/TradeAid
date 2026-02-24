@@ -59,6 +59,22 @@ export type AssistantWalletPortfolio = {
   updated_at: string;
 };
 
+export type AssistantWalletTransaction = {
+  id: string;
+  chain: string;
+  side: string;
+  status: string;
+  contract_address: string;
+  notional_usd: number;
+  quantity?: number | null;
+  asset?: string;
+  tx_hash?: string;
+  explorer_url?: string;
+  from_address?: string;
+  to_address?: string;
+  created_at?: string | null;
+};
+
 export type AssistantContextOverview = {
   window_days: number;
   summary: {
@@ -139,6 +155,17 @@ export function useAssistantWalletPortfolio() {
   });
 }
 
+export function useAssistantWalletTransactions(limit: number = 25) {
+  const { hasToken } = useAuth();
+  return useQuery({
+    queryKey: ["ai-wallet-transactions", limit],
+    queryFn: () => apiGet<{ transactions: AssistantWalletTransaction[]; count: number }>(`/api/ai/wallets/transactions?limit=${limit}`),
+    enabled: hasToken,
+    retry: 1,
+    refetchInterval: 20_000,
+  });
+}
+
 export function useCreateAssistantWallet() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -201,6 +228,19 @@ export function useExportAssistantWalletKey() {
   return useMutation({
     mutationFn: async (payload: { chain: string; confirmation_text: string }) =>
       apiPost<{ wallet_key: AssistantWalletKeyExport }>("/api/ai/wallets/export-key", payload),
+  });
+}
+
+export function useTransferAssistantWallet() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { chain: string; recipient_address: string; amount: number; asset: string }) =>
+      apiPost<{ transfer: { transaction_id: string; tx_hash: string; explorer_url: string; status: string } }>("/api/ai/wallets/transfer", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-portfolio"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-context-overview"] });
+    },
   });
 }
 

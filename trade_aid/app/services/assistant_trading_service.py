@@ -1,14 +1,16 @@
 import secrets
 from datetime import datetime, timedelta
+from collections import deque
 from typing import Any
 
+import httpx
 from bip_utils import Bip39MnemonicGenerator, Bip39MnemonicValidator, Bip39SeedGenerator, Bip39WordsNum, Bip44, Bip44Changes, Bip44Coins
 from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_enabled_chains
-from app.models.models import AssistantTrade, User
+from app.config import get_enabled_chains, get_settings
+from app.models.models import AssistantTrade, ScoringHistory, Token, User
 from app.utils.security import decrypt_api_key, encrypt_api_key
 
 
@@ -25,6 +27,8 @@ CHAIN_COIN_NAME_CANDIDATES: dict[str, list[str]] = {
     "polygon": ["POLYGON", "ETHEREUM"],
 }
 EVM_CHAINS = {"ethereum", "bsc", "base", "arbitrum", "avalanche", "polygon"}
+SOLANA_LAMPORTS_PER_SOL = 1_000_000_000
+_OPENCLOW_CALL_WINDOW: deque[float] = deque(maxlen=600)
 
 
 def _metadata(user: User) -> dict[str, Any]:
@@ -51,8 +55,192 @@ def _set_wallet_config(user: User, config: dict[str, Any]) -> None:
     user.alert_preferences = metadata
 
 
+def _get_auto_config(user: User) -> dict[str, Any]:
+    cfg = _get_trading_config(user)
+    auto_cfg = dict(cfg.get("automation") or {})
+    return {
+        "enabled": bool(auto_cfg.get("enabled", True)),
+        "take_profit_pct": float(auto_cfg.get("take_profit_pct", 18.0) or 18.0),
+        "stop_loss_pct": float(auto_cfg.get("stop_loss_pct", 8.0) or 8.0),
+        "max_open_positions": int(auto_cfg.get("max_open_positions", 3) or 3),
+        "entry_notional_usd": float(auto_cfg.get("entry_notional_usd", 35.0) or 35.0),
+        "min_confidence": float(auto_cfg.get("min_confidence", 52.0) or 52.0),
+        "max_rug_probability": float(auto_cfg.get("max_rug_probability", 62.0) or 62.0),
+        "open_positions": list(auto_cfg.get("open_positions") or []),
+        "last_run_at": auto_cfg.get("last_run_at"),
+        "last_action": auto_cfg.get("last_action"),
+    }
+
+
+def _set_auto_config(user: User, auto_config: dict[str, Any]) -> None:
+    trading_cfg = _get_trading_config(user)
+    trading_cfg["automation"] = auto_config
+    _set_trading_config(user, trading_cfg)
+
+
 def _utcnow() -> datetime:
     return datetime.utcnow()
+
+
+def _rate_limit_openclaw(limit_per_minute: int) -> None:
+    now_ts = _utcnow().timestamp()
+    while _OPENCLOW_CALL_WINDOW and (now_ts - _OPENCLOW_CALL_WINDOW[0]) > 60.0:
+        _OPENCLOW_CALL_WINDOW.popleft()
+    if len(_OPENCLOW_CALL_WINDOW) >= max(10, int(limit_per_minute or 120)):
+        raise HTTPException(status_code=429, detail="OpenClaw advisor rate limit reached")
+    _OPENCLOW_CALL_WINDOW.append(now_ts)
+
+
+async def _collect_performance_snapshot(db: AsyncSession, user: User) -> dict[str, Any]:
+    recent_q = await db.execute(
+        select(AssistantTrade)
+        .where(AssistantTrade.user_id == user.id)
+        .order_by(AssistantTrade.created_at.desc())
+        .limit(100)
+    )
+    recent = recent_q.scalars().all()
+    if not recent:
+        return {
+            "trades_count": 0,
+            "win_rate": 0.0,
+            "previous_win_rate": 0.0,
+            "drawdown_pct": 0.0,
+            "consecutive_losses": 0,
+            "daily_pnl": 0.0,
+        }
+
+    pnl_series = [float(row.pnl_usd or 0.0) for row in reversed(recent)]
+    cumulative = 0.0
+    peak = 0.0
+    max_drawdown = 0.0
+    for pnl in pnl_series:
+        cumulative += pnl
+        peak = max(peak, cumulative)
+        if peak > 0:
+            drawdown = ((peak - cumulative) / peak) * 100.0
+            max_drawdown = max(max_drawdown, drawdown)
+
+    wins = len([row for row in recent if float(row.pnl_usd or 0.0) > 0])
+    win_rate = wins / len(recent)
+
+    prior_slice = recent[50:100]
+    if prior_slice:
+        prior_wins = len([row for row in prior_slice if float(row.pnl_usd or 0.0) > 0])
+        previous_win_rate = prior_wins / len(prior_slice)
+    else:
+        previous_win_rate = win_rate
+
+    consecutive_losses = 0
+    for row in recent:
+        if float(row.pnl_usd or 0.0) < 0:
+            consecutive_losses += 1
+        else:
+            break
+
+    day_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    pnl_today_q = await db.execute(
+        select(func.coalesce(func.sum(AssistantTrade.pnl_usd), 0.0)).where(
+            AssistantTrade.user_id == user.id,
+            AssistantTrade.created_at >= day_start,
+        )
+    )
+    daily_pnl = float(pnl_today_q.scalar() or 0.0)
+
+    return {
+        "trades_count": len(recent),
+        "win_rate": float(win_rate),
+        "previous_win_rate": float(previous_win_rate),
+        "drawdown_pct": float(max_drawdown),
+        "consecutive_losses": int(consecutive_losses),
+        "daily_pnl": float(daily_pnl),
+    }
+
+
+async def _openclaw_validate_trade(
+    db: AsyncSession,
+    user: User,
+    *,
+    chain: str,
+    contract_address: str,
+    side: str,
+    entry: float,
+    stop_loss: float,
+    take_profit: float,
+    volatility: float,
+    market_sentiment: float,
+) -> dict[str, Any]:
+    settings = get_settings()
+    _rate_limit_openclaw(settings.OPENCLOW_RATE_LIMIT_PER_MINUTE)
+
+    perf = await _collect_performance_snapshot(db, user)
+    pair_symbol = f"{(contract_address or 'TOKEN')[:8]}/USDT"
+    payload = {
+        "pair": pair_symbol,
+        "entry": float(entry),
+        "stop_loss": float(stop_loss),
+        "take_profit": float(take_profit),
+        "volatility": float(max(volatility, 0.0)),
+        "market_sentiment": float(min(max(market_sentiment, 0.0), 1.0)),
+        "daily_pnl": float(perf["daily_pnl"]),
+        "drawdown_pct": float(perf["drawdown_pct"]),
+        "consecutive_losses": int(perf["consecutive_losses"]),
+        "trades_count": int(perf["trades_count"]),
+        "win_rate": float(perf["win_rate"]),
+    }
+
+    headers = {"Content-Type": "application/json"}
+    if settings.OPENCLOW_API_KEY:
+        headers["X-OpenClaw-API-Key"] = settings.OPENCLOW_API_KEY
+
+    validate_url = f"{settings.OPENCLOW_SERVICE_URL.rstrip('/')}/ai/validate-trade"
+    perf_url = f"{settings.OPENCLOW_SERVICE_URL.rstrip('/')}/ai/performance-check"
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            validate_resp = await client.post(validate_url, json=payload, headers=headers)
+            validate_resp.raise_for_status()
+            validate_data = dict(validate_resp.json() or {})
+
+            performance_data: dict[str, Any] = {}
+            if int(perf.get("trades_count", 0)) > 0 and int(perf.get("trades_count", 0)) % 50 == 0:
+                perf_payload = {
+                    "trades_count": int(perf["trades_count"]),
+                    "win_rate": float(perf["win_rate"]),
+                    "previous_win_rate": float(perf["previous_win_rate"]),
+                    "drawdown_pct": float(perf["drawdown_pct"]),
+                    "consecutive_losses": int(perf["consecutive_losses"]),
+                    "volatility": float(max(volatility, 0.0)),
+                }
+                perf_resp = await client.post(perf_url, json=perf_payload, headers=headers)
+                perf_resp.raise_for_status()
+                performance_data = dict(perf_resp.json() or {})
+
+            return {
+                "advisor": validate_data,
+                "performance": performance_data,
+                "input": payload,
+                "metadata": {
+                    "side": side,
+                    "chain": chain,
+                    "contract_address": contract_address,
+                },
+            }
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=503, detail="OpenClaw advisor unavailable; trade blocked by execution guard")
+
+
+async def _fetch_sol_price_usd() -> float:
+    url = "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd"
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            payload = response.json() or {}
+            return float((payload.get("solana") or {}).get("usd") or 0.0)
+    except Exception:
+        return 0.0
 
 
 def _resolve_coin(chain_name: str):
@@ -371,6 +559,7 @@ def remove_wallet_chain(user: User, chain: str) -> dict[str, Any]:
 def trading_status(user: User) -> dict[str, Any]:
     cfg = _get_trading_config(user)
     enabled_chains = get_enabled_chains()
+    auto_cfg = _get_auto_config(user)
     return {
         "enabled": bool(cfg.get("enabled", False)),
         "pending_approval": bool(cfg.get("pending_approval", False)),
@@ -382,7 +571,319 @@ def trading_status(user: User) -> dict[str, Any]:
         "wallets_by_chain": cfg.get("wallets_by_chain", {}),
         "enabled_chains": enabled_chains,
         "risk_limits": cfg.get("risk_limits", {}),
+        "automation": {
+            "enabled": bool(auto_cfg.get("enabled", False)),
+            "take_profit_pct": float(auto_cfg.get("take_profit_pct", 18.0) or 18.0),
+            "stop_loss_pct": float(auto_cfg.get("stop_loss_pct", 8.0) or 8.0),
+            "max_open_positions": int(auto_cfg.get("max_open_positions", 3) or 3),
+            "entry_notional_usd": float(auto_cfg.get("entry_notional_usd", 35.0) or 35.0),
+            "min_confidence": float(auto_cfg.get("min_confidence", 52.0) or 52.0),
+            "max_rug_probability": float(auto_cfg.get("max_rug_probability", 62.0) or 62.0),
+            "open_positions": list(auto_cfg.get("open_positions") or []),
+            "last_run_at": auto_cfg.get("last_run_at"),
+            "last_action": auto_cfg.get("last_action"),
+        },
         "last_revoked_at": cfg.get("last_revoked_at"),
+    }
+
+
+def configure_auto_trading(
+    user: User,
+    *,
+    enabled: bool | None = None,
+    take_profit_pct: float | None = None,
+    stop_loss_pct: float | None = None,
+    max_open_positions: int | None = None,
+    entry_notional_usd: float | None = None,
+    min_confidence: float | None = None,
+    max_rug_probability: float | None = None,
+) -> dict[str, Any]:
+    auto_cfg = _get_auto_config(user)
+    if enabled is not None:
+        auto_cfg["enabled"] = bool(enabled)
+    if take_profit_pct is not None:
+        auto_cfg["take_profit_pct"] = max(1.0, min(80.0, float(take_profit_pct)))
+    if stop_loss_pct is not None:
+        auto_cfg["stop_loss_pct"] = max(1.0, min(40.0, float(stop_loss_pct)))
+    if max_open_positions is not None:
+        auto_cfg["max_open_positions"] = max(1, min(10, int(max_open_positions)))
+    if entry_notional_usd is not None:
+        auto_cfg["entry_notional_usd"] = max(5.0, min(500.0, float(entry_notional_usd)))
+    if min_confidence is not None:
+        auto_cfg["min_confidence"] = max(30.0, min(95.0, float(min_confidence)))
+    if max_rug_probability is not None:
+        auto_cfg["max_rug_probability"] = max(5.0, min(95.0, float(max_rug_probability)))
+
+    auto_cfg["last_action"] = "configuration_updated"
+    _set_auto_config(user, auto_cfg)
+    return trading_status(user)
+
+
+async def _load_candidate_tokens(db: AsyncSession, chains: list[str], limit: int = 180) -> tuple[list[Token], dict[str, ScoringHistory]]:
+    since = _utcnow() - timedelta(hours=24)
+    token_result = await db.execute(
+        select(Token)
+        .where(Token.chain.in_(chains), func.coalesce(Token.liquidity_created_at, Token.created_at) >= since)
+        .order_by(func.coalesce(Token.liquidity_created_at, Token.created_at).desc())
+        .limit(max(20, min(limit, 500)))
+    )
+    tokens = token_result.scalars().all()
+
+    token_ids = [token.id for token in tokens]
+    latest_scores: dict[str, ScoringHistory] = {}
+    if token_ids:
+        score_result = await db.execute(
+            select(ScoringHistory)
+            .where(ScoringHistory.token_id.in_(token_ids))
+            .order_by(ScoringHistory.token_id, ScoringHistory.scored_at.desc())
+        )
+        for row in score_result.scalars().all():
+            key = str(row.token_id)
+            if key not in latest_scores:
+                latest_scores[key] = row
+
+    return tokens, latest_scores
+
+
+def _candidate_score(token: Token, score: ScoringHistory | None) -> float:
+    extra = token.extra_data or {}
+    confidence = float(score.trade_confidence_index if score else 0.0)
+    rug = float(score.rug_probability if score else 100.0)
+    momentum = float(extra.get("price_change_1h", 0) or 0)
+    volume = float(extra.get("volume_1h", 0) or 0)
+    liquidity = float(token.liquidity_usd or 0)
+    pump_bonus = 4.0 if bool(extra.get("is_pump_fun", False)) else 0.0
+    return (confidence * 0.62) + ((100.0 - rug) * 0.28) + (min(max(momentum, -12.0), 18.0) * 0.4) + min(volume / 40000.0, 8.0) + min(liquidity / 50000.0, 6.0) + pump_bonus
+
+
+async def run_auto_trading_cycle(db: AsyncSession, user: User) -> dict[str, Any]:
+    cfg = _get_trading_config(user)
+    if not cfg.get("enabled"):
+        raise HTTPException(status_code=403, detail="Assistant trading permission is not enabled")
+
+    auto_cfg = _get_auto_config(user)
+    if not auto_cfg.get("enabled", False):
+        return {
+            "executed": False,
+            "message": "Automation is disabled",
+            "trading": trading_status(user),
+        }
+
+    now = _utcnow()
+    open_positions = list(auto_cfg.get("open_positions") or [])
+    enabled_chains = [chain_name for chain_name in get_enabled_chains() if chain_name in {"solana", "ethereum", "bsc", "base", "arbitrum", "avalanche", "polygon"}]
+    tokens, latest_scores = await _load_candidate_tokens(db, enabled_chains)
+    token_by_contract = {str(token.contract_address): token for token in tokens}
+
+    actions: list[dict[str, Any]] = []
+    remaining_positions: list[dict[str, Any]] = []
+
+    for pos in open_positions:
+        contract = str(pos.get("contract_address") or "")
+        chain_name = str(pos.get("chain") or "").lower()
+        entry_price = float(pos.get("entry_price_usd") or 0.0)
+        qty = float(pos.get("quantity") or 0.0)
+        token = token_by_contract.get(contract)
+        current_price = float((token.extra_data or {}).get("price_usd", 0) or 0) if token else 0.0
+        if chain_name != "solana" or entry_price <= 0 or current_price <= 0 or qty <= 0:
+            remaining_positions.append(pos)
+            continue
+
+        pnl_pct = ((current_price - entry_price) / entry_price) * 100
+        take_profit = float(auto_cfg.get("take_profit_pct", 18.0) or 18.0)
+        stop_loss = float(auto_cfg.get("stop_loss_pct", 8.0) or 8.0)
+
+        if pnl_pct >= take_profit or pnl_pct <= (-1.0 * stop_loss):
+            openclaw = await _openclaw_validate_trade(
+                db,
+                user,
+                chain=chain_name,
+                contract_address=contract,
+                side="sell",
+                entry=float(entry_price),
+                stop_loss=float(entry_price * (1.0 - (stop_loss / 100.0))),
+                take_profit=float(entry_price * (1.0 + (take_profit / 100.0))),
+                volatility=float(abs((token.extra_data or {}).get("price_change_1h", 0) or 0) / 100.0) if token else 0.0,
+                market_sentiment=float(max(0.0, min(1.0, 1.0 - max(float((latest_scores.get(str(token.id)).rug_probability if token and latest_scores.get(str(token.id)) else 50.0) or 50.0), 0.0) / 100.0))),
+            )
+            advisor = dict(openclaw.get("advisor") or {})
+            if bool(advisor.get("should_pause", False)):
+                cfg["enabled"] = False
+                cfg["paused_at"] = _utcnow().isoformat()
+                cfg["pause_reason"] = str(advisor.get("pause_reason") or "openclaw_pause")
+                _set_trading_config(user, cfg)
+                raise HTTPException(status_code=400, detail=f"Trading paused by OpenClaw: {cfg['pause_reason']}")
+            if not bool(advisor.get("approved", False)):
+                remaining_positions.append(pos)
+                continue
+
+            notional = current_price * qty
+            trade = AssistantTrade(
+                user_id=user.id,
+                chain=chain_name,
+                contract_address=contract,
+                side="sell",
+                mode=str(cfg.get("mode") or "paper"),
+                status="filled",
+                notional_usd=notional,
+                quantity=qty,
+                price_usd=current_price,
+                fees_usd=round(notional * 0.001, 6),
+                pnl_usd=round((current_price - entry_price) * qty, 6),
+                external_order_id=f"auto-sell-{secrets.token_hex(6)}",
+                decision_context={
+                    "auto": True,
+                    "openclaw": openclaw,
+                    "trigger": "take_profit" if pnl_pct >= take_profit else "stop_loss",
+                    "entry_price_usd": entry_price,
+                    "exit_price_usd": current_price,
+                    "pnl_pct": round(pnl_pct, 4),
+                },
+                risk_snapshot={
+                    "auto": True,
+                    "openclaw_approval": True,
+                    "openclaw_confidence": int(advisor.get("confidence", 0) or 0),
+                },
+            )
+            db.add(trade)
+            actions.append(
+                {
+                    "action": "sell",
+                    "chain": chain_name,
+                    "contract_address": contract,
+                    "reason": "take_profit" if pnl_pct >= take_profit else "stop_loss",
+                    "pnl_pct": round(pnl_pct, 4),
+                }
+            )
+        else:
+            pos["last_price_usd"] = current_price
+            pos["unrealized_pnl_pct"] = round(pnl_pct, 4)
+            remaining_positions.append(pos)
+
+    open_positions = remaining_positions
+
+    max_positions = int(auto_cfg.get("max_open_positions", 3) or 3)
+    if len(open_positions) < max_positions:
+        min_conf = float(auto_cfg.get("min_confidence", 52.0) or 52.0)
+        max_rug = float(auto_cfg.get("max_rug_probability", 62.0) or 62.0)
+        already_open = {str(pos.get("contract_address") or "") for pos in open_positions}
+
+        ranked: list[tuple[float, Token, ScoringHistory | None]] = []
+        for token in tokens:
+            if token.contract_address in already_open:
+                continue
+            score_row = latest_scores.get(str(token.id))
+            if not score_row:
+                continue
+            conf = float(score_row.trade_confidence_index or 0.0)
+            rug = float(score_row.rug_probability or 100.0)
+            if conf < min_conf or rug > max_rug:
+                continue
+            extra = token.extra_data or {}
+            if float(token.liquidity_usd or 0.0) < 8000:
+                continue
+            if float(extra.get("volume_1h", 0) or 0) < 1500:
+                continue
+            ranked.append((_candidate_score(token, score_row), token, score_row))
+
+        ranked.sort(key=lambda row: row[0], reverse=True)
+        slots = max(0, max_positions - len(open_positions))
+
+        for _, token, score_row in ranked[:slots]:
+            price = float((token.extra_data or {}).get("price_usd", 0) or 0)
+            if price <= 0:
+                continue
+            entry_notional = min(
+                float(auto_cfg.get("entry_notional_usd", 35.0) or 35.0),
+                float((cfg.get("risk_limits") or {}).get("max_notional_usd_per_trade", 50.0) or 50.0),
+            )
+
+            openclaw = await _openclaw_validate_trade(
+                db,
+                user,
+                chain=token.chain,
+                contract_address=token.contract_address,
+                side="buy",
+                entry=float(price),
+                stop_loss=float(price * (1.0 - (float(auto_cfg.get("stop_loss_pct", 8.0) or 8.0) / 100.0))),
+                take_profit=float(price * (1.0 + (float(auto_cfg.get("take_profit_pct", 18.0) or 18.0) / 100.0))),
+                volatility=float(abs((token.extra_data or {}).get("price_change_1h", 0) or 0) / 100.0),
+                market_sentiment=float(max(0.0, min(1.0, 1.0 - (float(score_row.rug_probability or 50.0) / 100.0)))),
+            )
+            advisor = dict(openclaw.get("advisor") or {})
+            if bool(advisor.get("should_pause", False)):
+                cfg["enabled"] = False
+                cfg["paused_at"] = _utcnow().isoformat()
+                cfg["pause_reason"] = str(advisor.get("pause_reason") or "openclaw_pause")
+                _set_trading_config(user, cfg)
+                raise HTTPException(status_code=400, detail=f"Trading paused by OpenClaw: {cfg['pause_reason']}")
+            if not bool(advisor.get("approved", False)):
+                continue
+
+            qty = entry_notional / price
+
+            trade = AssistantTrade(
+                user_id=user.id,
+                chain=token.chain,
+                contract_address=token.contract_address,
+                side="buy",
+                mode=str(cfg.get("mode") or "paper"),
+                status="filled",
+                notional_usd=entry_notional,
+                quantity=qty,
+                price_usd=price,
+                fees_usd=round(entry_notional * 0.001, 6),
+                pnl_usd=0.0,
+                external_order_id=f"auto-buy-{secrets.token_hex(6)}",
+                decision_context={
+                    "auto": True,
+                    "openclaw": openclaw,
+                    "confidence": float(score_row.trade_confidence_index or 0.0),
+                    "rug_probability": float(score_row.rug_probability or 0.0),
+                    "symbol": token.symbol,
+                    "name": token.name,
+                },
+                risk_snapshot={
+                    "auto": True,
+                    "openclaw_approval": True,
+                    "openclaw_confidence": int(advisor.get("confidence", 0) or 0),
+                },
+            )
+            db.add(trade)
+
+            open_positions.append(
+                {
+                    "chain": token.chain,
+                    "contract_address": token.contract_address,
+                    "entry_price_usd": price,
+                    "quantity": qty,
+                    "entry_notional_usd": entry_notional,
+                    "opened_at": now.isoformat(),
+                    "symbol": token.symbol,
+                }
+            )
+            actions.append(
+                {
+                    "action": "buy",
+                    "chain": token.chain,
+                    "contract_address": token.contract_address,
+                    "symbol": token.symbol,
+                    "confidence": float(score_row.trade_confidence_index or 0.0),
+                    "rug_probability": float(score_row.rug_probability or 0.0),
+                }
+            )
+
+    auto_cfg["open_positions"] = open_positions
+    auto_cfg["last_run_at"] = now.isoformat()
+    auto_cfg["last_action"] = actions[0]["action"] if actions else "hold"
+    _set_auto_config(user, auto_cfg)
+
+    await db.flush()
+    return {
+        "executed": True,
+        "actions": actions,
+        "open_positions": open_positions,
+        "trading": trading_status(user),
     }
 
 
@@ -567,6 +1068,9 @@ async def execute_assistant_trade(
     if mode not in {"paper", "live"}:
         raise HTTPException(status_code=400, detail="mode must be paper or live")
 
+    if isinstance(decision_context, dict) and decision_context.get("core_signal") is False:
+        raise HTTPException(status_code=400, detail="Trade blocked by execution guard: core signal is false")
+
     risk_snapshot = await _enforce_risk_limits(db, user, float(notional_usd), cfg)
 
     normalized_chain = (chain or "").strip().lower()
@@ -584,6 +1088,50 @@ async def execute_assistant_trade(
     market = (decision_context or {}).get("market", {}) if isinstance(decision_context, dict) else {}
     market_price = float(market.get("current_price_usd", 0) or market.get("price_usd", 0) or 0)
     quantity = (float(notional_usd) / market_price) if market_price > 0 else None
+
+    inferred_entry = market_price if market_price > 0 else max(float(notional_usd), 1.0)
+    inferred_stop_loss = float((decision_context or {}).get("stop_loss") or (inferred_entry * 0.98))
+    inferred_take_profit = float((decision_context or {}).get("take_profit") or (inferred_entry * 1.04))
+    inferred_volatility = float(market.get("volatility", 0) or market.get("volatility_1h", 0) or 0)
+    if inferred_volatility <= 0:
+        inferred_volatility = abs(float(market.get("price_change_1h", 0) or 0)) / 100.0
+    inferred_sentiment = float(market.get("market_sentiment", 0.5) or 0.5)
+
+    openclaw = await _openclaw_validate_trade(
+        db,
+        user,
+        chain=normalized_chain,
+        contract_address=normalized_contract,
+        side=normalized_side,
+        entry=float(inferred_entry),
+        stop_loss=float(inferred_stop_loss),
+        take_profit=float(inferred_take_profit),
+        volatility=float(inferred_volatility),
+        market_sentiment=float(inferred_sentiment),
+    )
+    advisor = dict(openclaw.get("advisor") or {})
+    performance = dict(openclaw.get("performance") or {})
+
+    if bool(advisor.get("should_pause", False)):
+        cfg["enabled"] = False
+        cfg["paused_at"] = _utcnow().isoformat()
+        cfg["pause_reason"] = str(advisor.get("pause_reason") or "openclaw_pause")
+        _set_trading_config(user, cfg)
+        raise HTTPException(status_code=400, detail=f"Trading paused by OpenClaw: {cfg['pause_reason']}")
+
+    if bool(performance.get("should_pause", False)):
+        cfg["enabled"] = False
+        cfg["paused_at"] = _utcnow().isoformat()
+        cfg["pause_reason"] = str(performance.get("reason") or "openclaw_performance_pause")
+        _set_trading_config(user, cfg)
+        raise HTTPException(status_code=400, detail=f"Trading paused by OpenClaw performance monitor: {cfg['pause_reason']}")
+
+    if not bool(advisor.get("approved", False)):
+        raise HTTPException(status_code=400, detail="Trade blocked by execution guard: OpenClaw did not approve")
+
+    context_payload = dict(decision_context or {})
+    context_payload["openclaw"] = openclaw
+    context_payload.setdefault("risk_engine_pass", True)
 
     status = "filled"
     external_order_id = None
@@ -611,8 +1159,15 @@ async def execute_assistant_trade(
         fees_usd=round(float(notional_usd) * 0.001, 6),
         pnl_usd=0.0,
         external_order_id=external_order_id,
-        decision_context=decision_context or {},
-        risk_snapshot=risk_snapshot,
+        decision_context=context_payload,
+        risk_snapshot={
+            **risk_snapshot,
+            "openclaw_approval": bool(advisor.get("approved", False)),
+            "openclaw_confidence": int(advisor.get("confidence", 0) or 0),
+            "openclaw_risk_recommendation": advisor.get("risk_recommendation"),
+            "openclaw_adjusted_sl": advisor.get("adjusted_sl"),
+            "openclaw_adjusted_tp": advisor.get("adjusted_tp"),
+        },
     )
     db.add(trade)
     await db.flush()
@@ -630,5 +1185,203 @@ async def execute_assistant_trade(
         "fees_usd": trade.fees_usd,
         "external_order_id": trade.external_order_id,
         "wallet_address_used": configured_wallet,
-        "risk_snapshot": risk_snapshot,
+        "risk_snapshot": {
+            **risk_snapshot,
+            "openclaw_approval": bool(advisor.get("approved", False)),
+            "openclaw_confidence": int(advisor.get("confidence", 0) or 0),
+            "openclaw_risk_recommendation": advisor.get("risk_recommendation"),
+            "openclaw_adjusted_sl": advisor.get("adjusted_sl"),
+            "openclaw_adjusted_tp": advisor.get("adjusted_tp"),
+        },
+        "openclaw": openclaw,
     }
+
+
+async def execute_wallet_transfer(
+    db: AsyncSession,
+    user: User,
+    *,
+    chain: str,
+    recipient_address: str,
+    amount: float,
+    asset: str,
+) -> dict[str, Any]:
+    normalized_chain = (chain or "").strip().lower()
+    if normalized_chain != "solana":
+        raise HTTPException(status_code=400, detail="Real transfer is currently supported for Solana only")
+
+    normalized_asset = (asset or "SOL").strip().upper()
+    if normalized_asset != "SOL":
+        raise HTTPException(status_code=400, detail="Only SOL native transfer is currently supported")
+
+    transfer_amount = float(amount or 0.0)
+    if transfer_amount <= 0:
+        raise HTTPException(status_code=400, detail="amount must be greater than zero")
+
+    wallet_cfg = _get_wallet_config(user)
+    chains = dict(wallet_cfg.get("chains") or {})
+    chain_cfg = chains.get("solana")
+    if not isinstance(chain_cfg, dict):
+        raise HTTPException(status_code=400, detail="No Solana wallet configured")
+
+    sender_address = str(chain_cfg.get("address") or "").strip()
+    encrypted_pk = str(chain_cfg.get("private_key_encrypted") or "").strip()
+    if not sender_address or not encrypted_pk:
+        raise HTTPException(status_code=400, detail="Stored Solana wallet is incomplete")
+
+    try:
+        private_key_hex = decrypt_api_key(encrypted_pk)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Stored Solana wallet key is invalid")
+
+    try:
+        seed_bytes = bytes.fromhex(str(private_key_hex).strip())
+    except Exception:
+        raise HTTPException(status_code=500, detail="Stored Solana private key is malformed")
+
+    if len(seed_bytes) < 32:
+        raise HTTPException(status_code=500, detail="Stored Solana private key has invalid length")
+
+    settings = get_settings()
+
+    try:
+        from solana.rpc.async_api import AsyncClient
+        from solana.rpc.types import TxOpts
+        from solders.keypair import Keypair
+        from solders.pubkey import Pubkey
+        from solders.system_program import TransferParams, transfer
+        from solders.transaction import Transaction
+    except Exception:
+        raise HTTPException(status_code=500, detail="Solana transfer dependencies are not installed on server")
+
+    sender_keypair = Keypair.from_seed(seed_bytes[:32])
+
+    try:
+        sender_pubkey = Pubkey.from_string(sender_address)
+        recipient_pubkey = Pubkey.from_string((recipient_address or "").strip())
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid recipient or sender Solana address")
+
+    lamports = int(round(transfer_amount * SOLANA_LAMPORTS_PER_SOL))
+    if lamports <= 0:
+        raise HTTPException(status_code=400, detail="amount is too small")
+
+    async with AsyncClient(settings.SOLANA_RPC_URL) as client:
+        try:
+            balance_resp = await client.get_balance(sender_pubkey)
+            current_lamports = int(balance_resp.value or 0)
+        except Exception:
+            raise HTTPException(status_code=503, detail="Unable to read on-chain balance from Solana RPC")
+
+        fee_buffer = 15_000
+        if current_lamports < (lamports + fee_buffer):
+            raise HTTPException(status_code=400, detail="Insufficient SOL balance for transfer + network fee")
+
+        try:
+            blockhash_resp = await client.get_latest_blockhash()
+            recent_blockhash = blockhash_resp.value.blockhash
+            instruction = transfer(
+                TransferParams(
+                    from_pubkey=sender_pubkey,
+                    to_pubkey=recipient_pubkey,
+                    lamports=lamports,
+                )
+            )
+            transaction = Transaction.new_signed_with_payer(
+                [instruction],
+                sender_pubkey,
+                [sender_keypair],
+                recent_blockhash,
+            )
+            send_resp = await client.send_transaction(
+                transaction,
+                opts=TxOpts(skip_preflight=False, preflight_commitment="confirmed"),
+            )
+            tx_hash = str(send_resp.value)
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=503, detail="Solana transfer submission failed")
+
+    sol_price = await _fetch_sol_price_usd()
+    notional_usd = transfer_amount * sol_price if sol_price > 0 else 0.0
+
+    transfer_row = AssistantTrade(
+        user_id=user.id,
+        chain="solana",
+        contract_address=str(recipient_pubkey),
+        side="transfer",
+        mode="live",
+        status="submitted",
+        notional_usd=notional_usd,
+        quantity=transfer_amount,
+        price_usd=sol_price if sol_price > 0 else None,
+        fees_usd=0.0,
+        pnl_usd=0.0,
+        external_order_id=tx_hash,
+        decision_context={
+            "tx_type": "wallet_transfer",
+            "asset": "SOL",
+            "from_address": sender_address,
+            "to_address": str(recipient_pubkey),
+            "tx_hash": tx_hash,
+            "explorer_url": f"https://solscan.io/tx/{tx_hash}",
+        },
+        risk_snapshot={
+            "transfer": True,
+            "asset": "SOL",
+        },
+    )
+    db.add(transfer_row)
+    await db.flush()
+
+    return {
+        "transaction_id": str(transfer_row.id),
+        "chain": "solana",
+        "asset": "SOL",
+        "amount": transfer_amount,
+        "notional_usd": round(notional_usd, 6),
+        "from_address": sender_address,
+        "to_address": str(recipient_pubkey),
+        "tx_hash": tx_hash,
+        "explorer_url": f"https://solscan.io/tx/{tx_hash}",
+        "status": "submitted",
+    }
+
+
+async def list_wallet_transactions(
+    db: AsyncSession,
+    user: User,
+    *,
+    limit: int = 25,
+) -> list[dict[str, Any]]:
+    rows_result = await db.execute(
+        select(AssistantTrade)
+        .where(AssistantTrade.user_id == user.id)
+        .order_by(AssistantTrade.created_at.desc())
+        .limit(max(1, min(limit, 200)))
+    )
+    rows = rows_result.scalars().all()
+
+    payload: list[dict[str, Any]] = []
+    for row in rows:
+        ctx = row.decision_context or {}
+        payload.append(
+            {
+                "id": str(row.id),
+                "chain": row.chain,
+                "side": row.side,
+                "status": row.status,
+                "contract_address": row.contract_address,
+                "notional_usd": float(row.notional_usd or 0.0),
+                "quantity": float(row.quantity or 0.0) if row.quantity is not None else None,
+                "asset": str(ctx.get("asset") or ""),
+                "tx_hash": str(ctx.get("tx_hash") or row.external_order_id or ""),
+                "explorer_url": str(ctx.get("explorer_url") or ""),
+                "from_address": str(ctx.get("from_address") or ""),
+                "to_address": str(ctx.get("to_address") or ""),
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+        )
+
+    return payload

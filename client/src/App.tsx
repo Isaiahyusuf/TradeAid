@@ -13,6 +13,7 @@ import WhaleWatch from "@/pages/WhaleWatch";
 import MemeTrend from "@/pages/MemeTrend";
 import SafeBuy from "@/pages/SafeBuy";
 import AssistantPage from "@/pages/Assistant";
+import DoctorTradePage from "@/pages/DoctorTrade";
 import WalletPage from "@/pages/Wallet";
 import Account from "@/pages/Account";
 import Subscription from "@/pages/Subscription";
@@ -32,7 +33,7 @@ function AuthenticatedRouter() {
       <Route path="/assistant" component={AssistantPage} />
       <Route path="/wallet" component={WalletPage} />
       <Route path="/doctorstrange" component={AssistantPage} />
-      <Route path="/doctortrade" component={AssistantPage} />
+      <Route path="/doctortrade" component={DoctorTradePage} />
       <Route path="/account" component={Account} />
       <Route path="/subscription" component={Subscription} />
       <Route component={NotFound} />

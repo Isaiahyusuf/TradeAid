@@ -31,6 +31,25 @@ services:
       timeout: 5s
       retries: 5
 
+  openclaw:
+    build:
+      context: .
+      dockerfile: openclaw_service/Dockerfile
+    container_name: tradeaid_openclaw
+    environment:
+      OPENCLOW_API_KEY: ${OPENCLOW_API_KEY:-}
+      OPENCLOW_VOLATILITY_PAUSE_THRESHOLD: ${OPENCLOW_VOLATILITY_PAUSE_THRESHOLD:-0.09}
+    expose:
+      - "8088"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:

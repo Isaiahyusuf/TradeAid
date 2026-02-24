@@ -432,6 +432,7 @@ export default function Dashboard() {
                           )}
                         </div>
                         <p className="text-sm text-muted-foreground truncate">{token.contract_address.slice(0, 12)}...</p>
+                        <p className="text-xs text-muted-foreground truncate">Liq {formatNumber(token.liquidity_usd || 0)} · Vol 1h {formatNumber(token.volume_1h || 0)}</p>
                       </div>
                       <div className="text-right shrink-0">
                         <p className="font-mono text-sm">{formatNumber(token.market_cap_usd)}</p>

@@ -16,6 +16,7 @@ import { SUPPORTED_CHAINS } from "@/hooks/use-chain";
 import {
   useApproveAssistantConsent,
   useAssistantContextOverview,
+  useAssistantWalletTransactions,
   useAssistantWalletPortfolio,
   useAssistantTradingStatus,
   useAssistantWalletStatus,
@@ -28,15 +29,19 @@ import {
   useRequestAssistantConsent,
   useRevealAssistantWallet,
   useRevokeAssistantConsent,
+  useTransferAssistantWallet,
 } from "@/hooks/use-ai-assistant";
+
+type SupportedWalletChain = Exclude<(typeof SUPPORTED_CHAINS)[number], "all">;
 
 export default function WalletPage() {
   const { toast } = useToast();
-  const enabledChains = SUPPORTED_CHAINS.filter((item) => item !== "all");
+  const enabledChains = SUPPORTED_CHAINS.filter((item) => item !== "all") as SupportedWalletChain[];
 
   const tradingStatusQuery = useAssistantTradingStatus();
   const walletStatusQuery = useAssistantWalletStatus();
   const walletPortfolioQuery = useAssistantWalletPortfolio();
+  const walletTransactionsQuery = useAssistantWalletTransactions(50);
   const contextOverviewQuery = useAssistantContextOverview(30);
 
   const requestConsent = useRequestAssistantConsent();
@@ -50,6 +55,7 @@ export default function WalletPage() {
   const revealWallet = useRevealAssistantWallet();
   const removeWalletChain = useRemoveAssistantWalletChain();
   const exportWalletKey = useExportAssistantWalletKey();
+  const transferWallet = useTransferAssistantWallet();
 
   const trading = tradingStatusQuery.data?.trading;
   const wallet = walletStatusQuery.data?.wallet;
@@ -58,7 +64,7 @@ export default function WalletPage() {
   const [assistantMode, setAssistantMode] = useState<"paper" | "live">("paper");
   const [confirmationText, setConfirmationText] = useState("I_APPROVE_ASSISTANT_TRADING");
 
-  const [tradeChain, setTradeChain] = useState(enabledChains[0] || "solana");
+  const [tradeChain, setTradeChain] = useState<SupportedWalletChain>(enabledChains[0] || "solana");
   const [tradeContract, setTradeContract] = useState("");
   const [tradeSide, setTradeSide] = useState<"buy" | "sell">("buy");
   const [tradeNotional, setTradeNotional] = useState("25");
@@ -73,14 +79,14 @@ export default function WalletPage() {
   const [walletSettingsOpen, setWalletSettingsOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
 
-  const [sendChain, setSendChain] = useState(enabledChains[0] || "solana");
-  const [receiveChain, setReceiveChain] = useState(enabledChains[0] || "solana");
-  const [exportChain, setExportChain] = useState(enabledChains[0] || "solana");
-  const [settingsChain, setSettingsChain] = useState(enabledChains[0] || "solana");
+  const [sendChain, setSendChain] = useState<SupportedWalletChain>(enabledChains[0] || "solana");
+  const [receiveChain, setReceiveChain] = useState<SupportedWalletChain>(enabledChains[0] || "solana");
+  const [exportChain, setExportChain] = useState<SupportedWalletChain>(enabledChains[0] || "solana");
+  const [settingsChain, setSettingsChain] = useState<SupportedWalletChain>(enabledChains[0] || "solana");
 
   const [sendRecipient, setSendRecipient] = useState("");
   const [sendAmount, setSendAmount] = useState("");
-  const [sendAsset, setSendAsset] = useState("USDC");
+  const [sendAsset, setSendAsset] = useState("SOL");
 
   const [exportedKey, setExportedKey] = useState<{ chain: string; address: string; private_key: string; warning: string } | null>(null);
 
@@ -168,25 +174,48 @@ export default function WalletPage() {
   };
 
   const handleOpenExportKey = (chainName: string) => {
-    setExportChain(chainName);
+    setExportChain(chainName as SupportedWalletChain);
     setExportedKey(null);
     setExportOpen(true);
   };
 
   const handleOpenWalletSettings = (chainName: string) => {
-    setSettingsChain(chainName);
+    setSettingsChain(chainName as SupportedWalletChain);
     setWalletSettingsOpen(true);
   };
 
-  const handleSendSubmit = () => {
+  const handleSendSubmit = async () => {
     if (!sendRecipient.trim() || !sendAmount.trim()) {
       toast({ title: "Missing fields", description: "Enter recipient and amount.", variant: "destructive" });
       return;
     }
-    toast({ title: "Transfer queued", description: `Prepared ${sendAmount} ${sendAsset} on ${sendChain}.` });
-    setSendOpen(false);
-    setSendRecipient("");
-    setSendAmount("");
+    const amountNumber = Number(sendAmount);
+    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+      toast({ title: "Invalid amount", description: "Enter a valid transfer amount.", variant: "destructive" });
+      return;
+    }
+    if (sendAsset.toUpperCase() !== "SOL") {
+      toast({ title: "Unsupported asset", description: "Live transfer currently supports SOL only.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const result = await transferWallet.mutateAsync({
+        chain: sendChain,
+        recipient_address: sendRecipient.trim(),
+        amount: amountNumber,
+        asset: sendAsset.toUpperCase(),
+      });
+      toast({ title: "Transfer submitted", description: `Tx: ${result.transfer.tx_hash.slice(0, 10)}...` });
+      if (result.transfer.explorer_url) {
+        window.open(result.transfer.explorer_url, "_blank");
+      }
+      setSendOpen(false);
+      setSendRecipient("");
+      setSendAmount("");
+    } catch (error) {
+      toast({ title: "Transfer failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
   };
 
   const handleCreateWallet = async (overwrite: boolean) => {
@@ -443,18 +472,23 @@ export default function WalletPage() {
                 <CardTitle className="text-base flex items-center gap-2"><History className="w-4 h-4" />Transaction History</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {(context?.recent_trades || []).length === 0 ? (
+                {(walletTransactionsQuery.data?.transactions || []).length === 0 ? (
                   <p className="text-sm text-muted-foreground">No transactions yet. Real transfers and assistant trades will appear here when executed.</p>
                 ) : (
-                  (context?.recent_trades || []).slice(0, 10).map((trade) => (
+                  (walletTransactionsQuery.data?.transactions || []).slice(0, 20).map((trade) => (
                     <div key={trade.id} className="rounded-lg border border-border/60 px-3 py-2 bg-muted/20 flex items-center justify-between">
                       <div>
                         <p className="text-sm font-medium uppercase">{trade.side} · {trade.chain}</p>
-                        <p className="text-xs text-muted-foreground break-all">{shortAddress(trade.contract_address)}</p>
+                        <p className="text-xs text-muted-foreground break-all">{shortAddress(trade.to_address || trade.contract_address)}</p>
+                        {trade.tx_hash && <p className="text-xs text-muted-foreground break-all">Tx: {shortAddress(trade.tx_hash)}</p>}
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-semibold">${Number(trade.notional_usd || 0).toLocaleString()}</p>
+                      <div className="text-right space-y-1">
+                        <p className="text-sm font-semibold">{Number(trade.quantity || 0).toLocaleString(undefined, { maximumFractionDigits: 6 })} {trade.asset || ""}</p>
+                        <p className="text-xs text-muted-foreground">${Number(trade.notional_usd || 0).toLocaleString()}</p>
                         <p className="text-xs text-muted-foreground">{trade.status}</p>
+                        {trade.explorer_url && (
+                          <Button size="sm" variant="outline" onClick={() => window.open(trade.explorer_url, "_blank")}>View Tx</Button>
+                        )}
                       </div>
                     </div>
                   ))
@@ -548,7 +582,7 @@ export default function WalletPage() {
             </SheetHeader>
             <div className="space-y-3 mt-4">
               <Label>Chain</Label>
-              <select value={sendChain} onChange={(e) => setSendChain(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+              <select value={sendChain} onChange={(e) => setSendChain(e.target.value as SupportedWalletChain)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
                 {enabledChains.map((chainName) => <option key={chainName} value={chainName}>{chainName}</option>)}
               </select>
 
@@ -566,11 +600,13 @@ export default function WalletPage() {
                 </div>
               </div>
 
+              <p className="text-xs text-muted-foreground">Live transfers currently support `SOL` on `solana` chain.</p>
+
               <p className="text-xs text-muted-foreground">From: {shortAddress(addressesByChain[sendChain] || "")}</p>
             </div>
             <SheetFooter className="mt-6">
               <Button variant="outline" onClick={() => setSendOpen(false)}>Cancel</Button>
-              <Button onClick={handleSendSubmit}>Send</Button>
+              <Button onClick={handleSendSubmit} disabled={transferWallet.isPending}>{transferWallet.isPending ? "Sending..." : "Send"}</Button>
             </SheetFooter>
           </SheetContent>
         </Sheet>
@@ -583,7 +619,7 @@ export default function WalletPage() {
             </SheetHeader>
             <div className="space-y-3 mt-4">
               <Label>Chain</Label>
-              <select value={receiveChain} onChange={(e) => setReceiveChain(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+              <select value={receiveChain} onChange={(e) => setReceiveChain(e.target.value as SupportedWalletChain)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
                 {enabledChains.map((chainName) => <option key={chainName} value={chainName}>{chainName}</option>)}
               </select>
 
@@ -604,7 +640,7 @@ export default function WalletPage() {
             </SheetHeader>
             <div className="space-y-3 mt-4">
               <Label>Chain</Label>
-              <select value={exportChain} onChange={(e) => setExportChain(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+              <select value={exportChain} onChange={(e) => setExportChain(e.target.value as SupportedWalletChain)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
                 {enabledChains.map((chainName) => <option key={chainName} value={chainName}>{chainName}</option>)}
               </select>
 
@@ -635,7 +671,7 @@ export default function WalletPage() {
             </SheetHeader>
             <div className="space-y-3 mt-4">
               <Label>Chain</Label>
-              <select value={settingsChain} onChange={(e) => setSettingsChain(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+              <select value={settingsChain} onChange={(e) => setSettingsChain(e.target.value as SupportedWalletChain)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
                 {enabledChains.map((chainName) => <option key={chainName} value={chainName}>{chainName}</option>)}
               </select>
 
@@ -684,7 +720,7 @@ export default function WalletPage() {
               <div className="rounded-lg border border-border/60 p-3 space-y-3">
                 <p className="text-sm font-medium flex items-center gap-2"><KeyRound className="w-4 h-4" />Execute Trade</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <select value={tradeChain} onChange={(e) => setTradeChain(e.target.value)} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
+                  <select value={tradeChain} onChange={(e) => setTradeChain(e.target.value as SupportedWalletChain)} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
                     {enabledChains.map((chainName) => <option key={chainName} value={chainName}>{chainName}</option>)}
                   </select>
                   <select value={tradeSide} onChange={(e) => setTradeSide(e.target.value as "buy" | "sell")} className="h-10 rounded-md border border-input bg-background px-3 text-sm">

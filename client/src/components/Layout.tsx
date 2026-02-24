@@ -63,7 +63,7 @@ export function Layout({ children }: { children: ReactNode }) {
     setParallax({ x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) });
   };
 
-  const onDoctorTradePage = location === "/assistant" || location === "/doctorstrange" || location === "/doctortrade";
+  const onDoctorTradePage = location === "/doctortrade";
 
   return (
     <div className="min-h-screen bg-background text-foreground flex solana-shell">
@@ -161,7 +161,7 @@ export function Layout({ children }: { children: ReactNode }) {
         >
           <Button
             type="button"
-            onClick={() => setLocation("/assistant")}
+            onClick={() => setLocation("/doctortrade")}
             className="gap-2 doctorstrange-font bg-gradient-to-r from-accent/90 to-primary/90 text-white border border-primary/40 shadow-[0_0_24px_rgba(153,69,255,0.35)] hover:from-accent hover:to-primary"
             data-testid="button-floating-doctorstrange"
           >

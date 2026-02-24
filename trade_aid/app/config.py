@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     DATABASE_URL: str = ""
+    DOCTOR_DATABASE_URL: str = ""
 
     REDIS_URL: str = "redis://localhost:6379/0"
 
@@ -35,6 +36,10 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
 
     AI_SERVICE_URL: str = "http://ai_service:8001"
+    OPENCLOW_SERVICE_URL: str = "http://openclaw:8088"
+    OPENCLOW_API_KEY: str = ""
+    OPENCLOW_RATE_LIMIT_PER_MINUTE: int = 120
+    OPENCLOW_VOLATILITY_PAUSE_THRESHOLD: float = 0.09
     OPENAI_API_KEY: str = ""
     AI_INTEGRATIONS_OPENAI_API_KEY: str = ""
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
@@ -71,6 +76,25 @@ class Settings(BaseSettings):
     ENABLED_CHAINS: str = "solana,ethereum,bsc,base,arbitrum,avalanche,polygon"
 
     SOLANA_RPC_URL: str = "https://api.mainnet-beta.solana.com"
+    COINGECKO_API_KEY: str = ""
+    SOLSCAN_API_KEY: str = ""
+    BITQUERY_API_KEY: str = ""
+    HELIUS_API_KEY: str = ""
+    WALLETBOT_KEY: str = ""
+    COVALENT_API_KEY: str = ""
+    THE_GRAPH_ENDPOINT: str = ""
+
+    DOCTOR_MIN_LIQUIDITY_USD: float = 20000.0
+    DOCTOR_MIN_VOLUME_24H_USD: float = 5000.0
+    DOCTOR_MIN_AGE_MINUTES: int = 5
+    DOCTOR_MAX_AGE_MINUTES: int = 1440
+
+    DOCTOR_SOLANA_PRIVATE_KEY: str = ""
+    DOCTOR_SOLANA_WALLET_ADDRESS: str = ""
+    DOCTOR_MAX_SLIPPAGE_PCT: float = 2.0
+    DOCTOR_VOLATILITY_SPIKE_THRESHOLD: float = 6.0
+    DOCTOR_EXECUTION_MODE: str = "paper"
+    DOCTOR_API_ERROR_PAUSE_THRESHOLD: int = 3
     ETHEREUM_RPC_URL: str = "https://rpc.ankr.com/eth"
     BSC_RPC_URL: str = "https://bsc-dataseed.binance.org/"
     BASE_RPC_URL: str = "https://mainnet.base.org"

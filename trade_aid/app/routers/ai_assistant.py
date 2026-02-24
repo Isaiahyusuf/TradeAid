@@ -11,12 +11,16 @@ from app.services.auth_service import get_current_user
 from app.services.assistant_context_service import build_user_trading_context
 from app.services.assistant_trading_service import (
     approve_consent,
+    configure_auto_trading,
     confirm_wallet_backup,
     create_user_wallet_bundle,
+    execute_wallet_transfer,
     execute_assistant_trade,
     export_wallet_private_key,
     import_user_wallet_bundle,
+    list_wallet_transactions,
     remove_wallet_chain,
+    run_auto_trading_cycle,
     request_consent,
     reveal_wallet_bundle,
     revoke_consent,
@@ -99,12 +103,37 @@ class WalletExportKeyRequest(BaseModel):
     confirmation_text: str
 
 
+class WalletTransferRequest(BaseModel):
+    chain: str
+    recipient_address: str
+    amount: float
+    asset: str = "SOL"
+
+
+class AutoTradingConfigRequest(BaseModel):
+    enabled: bool | None = None
+    take_profit_pct: float | None = None
+    stop_loss_pct: float | None = None
+    max_open_positions: int | None = None
+    entry_notional_usd: float | None = None
+    min_confidence: float | None = None
+    max_rug_probability: float | None = None
+
+
 @router.post("/assist")
 async def assist_decision(
     req: AssistRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    try:
+        await run_auto_trading_cycle(db, user)
+        await db.flush()
+    except HTTPException:
+        pass
+    except Exception:
+        pass
+
     risk = req.risk.model_dump() if req.risk else {
         "max_risk_per_trade_pct": 1.0,
         "max_daily_loss_pct": 4.0,
@@ -144,9 +173,19 @@ async def ask_assistant(
     if not question:
         raise HTTPException(status_code=400, detail="question is required")
 
+    try:
+        await run_auto_trading_cycle(db, user)
+        await db.flush()
+    except HTTPException:
+        pass
+    except Exception:
+        pass
+
     auto_context = await build_user_trading_context(db, user.id)
     merged_context = dict(req.context or {})
     merged_context["history_context"] = auto_context
+    merged_context["live_trading"] = trading_status(user)
+    merged_context["live_wallet"] = wallet_status(user)
 
     answer = await answer_user_question(question, merged_context)
     return {
@@ -335,6 +374,38 @@ async def export_wallet_key_route(
     }
 
 
+@router.post("/wallets/transfer")
+async def transfer_wallet_asset_route(
+    req: WalletTransferRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    transfer = await execute_wallet_transfer(
+        db,
+        user,
+        chain=req.chain,
+        recipient_address=req.recipient_address,
+        amount=req.amount,
+        asset=req.asset,
+    )
+    return {
+        "transfer": transfer,
+    }
+
+
+@router.get("/wallets/transactions")
+async def get_wallet_transactions_route(
+    limit: int = 25,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    transactions = await list_wallet_transactions(db, user, limit=limit)
+    return {
+        "transactions": transactions,
+        "count": len(transactions),
+    }
+
+
 @router.post("/trading/consent/request")
 async def create_trading_consent(
     req: ConsentRequest,
@@ -363,12 +434,60 @@ async def approve_trading_consent(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    status_payload = approve_consent(user, req.consent_id, req.confirmation_text)
+    approve_consent(user, req.consent_id, req.confirmation_text)
+    configure_auto_trading(
+        user,
+        enabled=True,
+        take_profit_pct=18.0,
+        stop_loss_pct=8.0,
+        max_open_positions=3,
+        entry_notional_usd=35.0,
+        min_confidence=52.0,
+        max_rug_probability=62.0,
+    )
     await db.flush()
     return {
         "message": "Assistant trading enabled.",
+        "trading": trading_status(user),
+    }
+
+
+@router.get("/trading/auto/status")
+async def get_auto_trading_status(user: User = Depends(get_current_user)):
+    return {"automation": trading_status(user).get("automation", {})}
+
+
+@router.post("/trading/auto/config")
+async def set_auto_trading_config(
+    req: AutoTradingConfigRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    status_payload = configure_auto_trading(
+        user,
+        enabled=req.enabled,
+        take_profit_pct=req.take_profit_pct,
+        stop_loss_pct=req.stop_loss_pct,
+        max_open_positions=req.max_open_positions,
+        entry_notional_usd=req.entry_notional_usd,
+        min_confidence=req.min_confidence,
+        max_rug_probability=req.max_rug_probability,
+    )
+    await db.flush()
+    return {
+        "message": "Autonomous trading configuration updated.",
         "trading": status_payload,
     }
+
+
+@router.post("/trading/auto/run")
+async def run_auto_trading_now(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await run_auto_trading_cycle(db, user)
+    await db.flush()
+    return result
 
 
 @router.post("/trading/consent/revoke")

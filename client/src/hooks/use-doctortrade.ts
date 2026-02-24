@@ -1,0 +1,96 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiGet, apiPost } from "@/lib/api";
+import { useAuth } from "@/hooks/use-auth";
+
+export type DoctorToken = {
+  symbol: string;
+  address: string;
+  liquidity: number;
+  volume_5m: number;
+  score: number;
+  price_usd?: number;
+};
+
+export type DoctorPosition = {
+  symbol: string;
+  address: string;
+  entry_price: number;
+  current_price: number;
+  liquidity: number;
+  confidence: number;
+  size_pct: number;
+  risk_status: string;
+};
+
+export type DoctorStatus = {
+  enabled: boolean;
+  kill_switch: boolean;
+  last_run_at?: string | null;
+  last_error?: string | null;
+  risk_state: {
+    drawdown_pct: number;
+    daily_realized_pnl_usd: number;
+    high_watermark_usd: number;
+    open_positions: number;
+    open_exposure_pct: number;
+    consecutive_losses: number;
+    paused: boolean;
+    permanent_lock: boolean;
+    pause_reason?: string | null;
+  };
+  wallet: {
+    address: string;
+    balance_sol: number;
+    separate_wallet_enforced: boolean;
+  };
+  active_tokens: DoctorToken[];
+  positions: DoctorPosition[];
+  recent_trades: Array<Record<string, any>>;
+  performance?: Array<Record<string, any>>;
+  tuning_suggestion?: string | null;
+  strategy_mode?: string;
+  safety?: {
+    api_error_count: number;
+    paused: boolean;
+    pause_reason?: string | null;
+  };
+  self_evolution?: {
+    cycles: number;
+    last_updated_at?: string | null;
+  };
+};
+
+export function useDoctorStatus() {
+  const { hasToken } = useAuth();
+  return useQuery({
+    queryKey: ["doctortrade", "status"],
+    queryFn: () => apiGet<DoctorStatus>("/api/doctor/status"),
+    enabled: hasToken,
+    staleTime: 2000,
+    refetchInterval: 5000,
+  });
+}
+
+export function useDoctorControl() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) => apiPost<DoctorStatus>("/api/doctor/control", { enabled }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade"] }),
+  });
+}
+
+export function useDoctorConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { scan_interval_seconds?: number; kill_switch?: boolean }) => apiPost<DoctorStatus>("/api/doctor/config", payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade"] }),
+  });
+}
+
+export function useDoctorRunOnce() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost("/api/doctor/run-once", {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade"] }),
+  });
+}

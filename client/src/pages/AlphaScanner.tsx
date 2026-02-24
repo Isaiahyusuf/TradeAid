@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTokens, type TokenItem } from "@/hooks/use-memetrend";
-import { useScanHistory } from "@/hooks/use-rugcheck";
 import { useAlerts } from "@/hooks/use-alerts";
 import { useAIInsight } from "@/hooks/use-ai-insight";
 import { useScannerStream, type ScannerStreamEvent } from "@/hooks/use-scanner-stream";
@@ -19,7 +18,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { AIScoreBadgePanel } from "@/components/scanner/AIScoreBadgePanel";
-import { AIScoreHistoryChart } from "@/components/scanner/AIScoreHistoryChart";
 import { MetricLabel } from "@/components/scanner/MetricLabel";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -158,7 +156,6 @@ export default function AlphaScanner() {
   }, [filteredTokens, selectedTokenId]);
 
   const aiInsightQuery = useAIInsight(selectedToken?.chain || null, selectedToken?.contract_address || null);
-  const historyQuery = useScanHistory(selectedToken?.chain, selectedToken?.contract_address);
   const aiInsight = aiInsightQuery.data?.insight || buildAiInsightFallback(selectedToken);
 
   const onStreamEvent = useCallback((event: ScannerStreamEvent) => {
@@ -208,9 +205,6 @@ export default function AlphaScanner() {
         selectedToken?.contract_address
           ? queryClient.refetchQueries({ queryKey: ["ai-insight", selectedToken.chain, selectedToken.contract_address], type: "all" })
           : Promise.resolve(),
-        selectedToken?.contract_address
-          ? queryClient.refetchQueries({ queryKey: ["scoring-history", selectedToken.chain, selectedToken.contract_address], type: "all" })
-          : Promise.resolve(),
         refetch(),
         refetchAgeWindow(),
       ]);
@@ -245,7 +239,6 @@ export default function AlphaScanner() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="outline">{chainDisplay}</Badge>
-            <Badge variant="outline" className={cn("transition-all", streamConnected && "animate-pulse")}>Stream {streamConnected ? "Live" : "Offline"}</Badge>
             <Button variant="outline" onClick={handleRefresh} disabled={isRefreshing} data-testid="button-refresh">
               <RefreshCw className={cn("w-4 h-4 mr-2", isRefreshing && "animate-spin")} />
               {isRefreshing ? "Refreshing..." : "Refresh"}
@@ -487,7 +480,6 @@ export default function AlphaScanner() {
 
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                       <AIScoreBadgePanel token={token} />
-                      <AIScoreHistoryChart history={historyQuery.data?.history || []} isLoading={historyQuery.isLoading} />
                     </div>
                   </div>
                 )}

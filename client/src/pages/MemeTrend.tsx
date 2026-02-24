@@ -278,9 +278,10 @@ export default function MemeTrend() {
                     )}
                     <div className="mt-1 grid grid-cols-2 sm:grid-cols-4 gap-1 text-[11px] text-muted-foreground">
                       <span>Price ${Number(token.current_price_usd || 0).toLocaleString()}</span>
+                      <span>Liq {formatNumber(token.liquidity_usd || 0)}</span>
+                      <span>Vol 1h {formatNumber(token.volume_1h || 0)}</span>
                       <span>1h {normalizePct(token.price_change_1h).toFixed(2)}%</span>
                       <span>Buys {token.buys_1h}</span>
-                      <span>Sells {token.sells_1h}</span>
                     </div>
                   </div>
                   <div className="text-right shrink-0">
