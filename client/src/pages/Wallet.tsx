@@ -15,6 +15,7 @@ import { SUPPORTED_CHAINS } from "@/hooks/use-chain";
 import {
   useApproveAssistantConsent,
   useAssistantContextOverview,
+  useAssistantWalletPortfolio,
   useAssistantTradingStatus,
   useAssistantWalletStatus,
   useConfirmAssistantWalletBackup,
@@ -28,24 +29,13 @@ import {
   useRevokeAssistantConsent,
 } from "@/hooks/use-ai-assistant";
 
-const CHAIN_PRICE_ID_MAP: Record<string, string> = {
-  solana: "solana",
-  ethereum: "ethereum",
-  bsc: "binancecoin",
-  base: "ethereum",
-  arbitrum: "ethereum",
-  avalanche: "avalanche-2",
-  polygon: "matic-network",
-};
-
-type ChainPrices = Record<string, number>;
-
 export default function WalletPage() {
   const { toast } = useToast();
   const enabledChains = SUPPORTED_CHAINS.filter((item) => item !== "all");
 
   const tradingStatusQuery = useAssistantTradingStatus();
   const walletStatusQuery = useAssistantWalletStatus();
+  const walletPortfolioQuery = useAssistantWalletPortfolio();
   const contextOverviewQuery = useAssistantContextOverview(30);
 
   const requestConsent = useRequestAssistantConsent();
@@ -88,7 +78,6 @@ export default function WalletPage() {
   const [sendAmount, setSendAmount] = useState("");
   const [sendAsset, setSendAsset] = useState("USDC");
 
-  const [chainPrices, setChainPrices] = useState<ChainPrices>({});
   const [exportedKey, setExportedKey] = useState<{ chain: string; address: string; private_key: string; warning: string } | null>(null);
 
   const [latestBundle, setLatestBundle] = useState<{ mnemonic?: string; addresses_by_chain: Record<string, string>; private_keys_by_chain?: Record<string, string>; warning: string; } | null>(null);
@@ -99,34 +88,6 @@ export default function WalletPage() {
     }
   }, [trading?.mode]);
 
-  useEffect(() => {
-    const fetchPrices = async () => {
-      const ids = Array.from(new Set(enabledChains.map((chainName) => CHAIN_PRICE_ID_MAP[chainName]).filter(Boolean))).join(",");
-      if (!ids) return;
-
-      try {
-        const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`, {
-          method: "GET",
-        });
-        if (!response.ok) return;
-        const json = (await response.json()) as Record<string, { usd?: number }>;
-
-        const mapped: ChainPrices = {};
-        for (const chainName of enabledChains) {
-          const id = CHAIN_PRICE_ID_MAP[chainName];
-          const usd = Number(json?.[id]?.usd || 0);
-          mapped[chainName] = Number.isFinite(usd) ? usd : 0;
-        }
-        setChainPrices(mapped);
-      } catch {
-      }
-    };
-
-    fetchPrices();
-    const timer = setInterval(fetchPrices, 60_000);
-    return () => clearInterval(timer);
-  }, [enabledChains]);
-
   const addressesByChain = useMemo(() => {
     const incoming = trading?.wallets_by_chain || wallet?.addresses_by_chain || {};
     const normalized: Record<string, string> = {};
@@ -136,30 +97,37 @@ export default function WalletPage() {
     return normalized;
   }, [enabledChains, trading?.wallets_by_chain, wallet?.addresses_by_chain]);
 
+  const portfolio = walletPortfolioQuery.data?.portfolio;
+  const portfolioChains = portfolio?.chains || {};
+
   const activeChainsCount = Object.values(addressesByChain).filter(Boolean).length;
 
   const chainBalances = useMemo(() => {
     const rows: Record<string, number> = {};
     for (const chainName of enabledChains) {
-      const seed = chainName.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-      rows[chainName] = addressesByChain[chainName] ? Math.round(((seed % 7) * 13.17) * 100) / 100 : 0;
+      const balance = Number(portfolioChains[chainName]?.native_balance ?? 0);
+      rows[chainName] = Number.isFinite(balance) ? balance : 0;
     }
     return rows;
-  }, [enabledChains, addressesByChain]);
+  }, [enabledChains, portfolioChains]);
+
+  const chainPrices = useMemo(() => {
+    const rows: Record<string, number> = {};
+    for (const chainName of enabledChains) {
+      const price = Number(portfolioChains[chainName]?.price_usd ?? 0);
+      rows[chainName] = Number.isFinite(price) ? price : 0;
+    }
+    return rows;
+  }, [enabledChains, portfolioChains]);
 
   const estimatedUsdBalance = useMemo(() => {
-    let total = 0;
-    for (const chainName of enabledChains) {
-      const qty = chainBalances[chainName] || 0;
-      const px = chainPrices[chainName] || 0;
-      total += qty * px;
-    }
-    if (total > 0) {
-      return Math.round(total * 100) / 100;
+    const reportedTotal = Number(portfolio?.total_usd || 0);
+    if (reportedTotal > 0) {
+      return Math.round(reportedTotal * 100) / 100;
     }
     const recentNotional = context?.recent_trades?.slice(0, 8).reduce((sum, item) => sum + Number(item.notional_usd || 0), 0) || 0;
     return Math.max(0, Math.round(recentNotional * 0.18 * 100) / 100);
-  }, [enabledChains, chainBalances, chainPrices, context?.recent_trades]);
+  }, [portfolio?.total_usd, context?.recent_trades]);
 
   const shortAddress = (address?: string) => {
     if (!address) return "Not generated";
@@ -413,6 +381,7 @@ export default function WalletPage() {
                   const balance = chainBalances[chainName] || 0;
                   const chainUsdPrice = Number(chainPrices[chainName] || 0);
                   const chainUsdValue = balance * chainUsdPrice;
+                  const dataStatus = String(portfolioChains[chainName]?.data_status || "not_configured");
 
                   return (
                     <div key={chainName} className="rounded-lg border border-border/60 px-3 py-3 bg-muted/20 space-y-2">
@@ -423,10 +392,11 @@ export default function WalletPage() {
                             {address ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" /> : <Shield className="w-3.5 h-3.5 text-muted-foreground" />}
                           </p>
                           <p className="text-xs text-muted-foreground">{shortAddress(address)}</p>
-                          <p className="text-xs text-muted-foreground mt-1">Price: {chainUsdPrice > 0 ? `$${chainUsdPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}` : "Loading..."}</p>
+                          <p className="text-xs text-muted-foreground mt-1">Price: {chainUsdPrice > 0 ? `$${chainUsdPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}` : "Unavailable"}</p>
+                          <p className="text-xs text-muted-foreground mt-1">Data: {dataStatus === "ok" ? "Live" : dataStatus === "rpc_unavailable" ? "RPC unavailable" : dataStatus === "unsupported" ? "Balance not integrated" : "No wallet"}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-semibold">{balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                          <p className="text-sm font-semibold">{balance.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 6 })}</p>
                           <p className="text-xs text-muted-foreground">$ {chainUsdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                         </div>
                       </div>

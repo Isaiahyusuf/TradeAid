@@ -44,6 +44,21 @@ export type AssistantWalletKeyExport = {
   warning: string;
 };
 
+export type AssistantWalletPortfolioChain = {
+  address: string;
+  native_symbol: string;
+  native_balance: number | null;
+  price_usd: number;
+  value_usd: number;
+  data_status: "ok" | "rpc_unavailable" | "unsupported" | "not_configured";
+};
+
+export type AssistantWalletPortfolio = {
+  chains: Record<string, AssistantWalletPortfolioChain>;
+  total_usd: number;
+  updated_at: string;
+};
+
 export type AssistantContextOverview = {
   window_days: number;
   summary: {
@@ -113,6 +128,17 @@ export function useAssistantWalletStatus() {
   });
 }
 
+export function useAssistantWalletPortfolio() {
+  const { hasToken } = useAuth();
+  return useQuery({
+    queryKey: ["ai-wallet-portfolio"],
+    queryFn: () => apiGet<{ wallet: AssistantWalletStatus; portfolio: AssistantWalletPortfolio }>("/api/ai/wallets/portfolio"),
+    enabled: hasToken,
+    retry: 1,
+    refetchInterval: 30_000,
+  });
+}
+
 export function useCreateAssistantWallet() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -121,6 +147,7 @@ export function useCreateAssistantWallet() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ai-wallet-status"] });
       queryClient.invalidateQueries({ queryKey: ["ai-trading-status"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-portfolio"] });
     },
   });
 }
@@ -132,6 +159,7 @@ export function useConfirmAssistantWalletBackup() {
       apiPost<{ wallet: AssistantWalletStatus }>("/api/ai/wallets/confirm-backup", payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ai-wallet-status"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-portfolio"] });
     },
   });
 }
@@ -151,6 +179,7 @@ export function useImportAssistantWallet() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ai-wallet-status"] });
       queryClient.invalidateQueries({ queryKey: ["ai-trading-status"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-portfolio"] });
     },
   });
 }
@@ -163,6 +192,7 @@ export function useRemoveAssistantWalletChain() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ai-wallet-status"] });
       queryClient.invalidateQueries({ queryKey: ["ai-trading-status"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-portfolio"] });
     },
   });
 }

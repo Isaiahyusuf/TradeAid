@@ -24,6 +24,7 @@ from app.services.assistant_trading_service import (
     wallet_status,
 )
 from app.services.openai_assistant_service import answer_user_question, generate_trade_assist
+from app.services.wallet_portfolio_service import get_wallet_portfolio_snapshot
 
 router = APIRouter(prefix="/api/ai", tags=["AI Assistant"])
 
@@ -244,6 +245,16 @@ async def get_trading_status(user: User = Depends(get_current_user)):
 @router.get("/wallets/status")
 async def get_wallet_status(user: User = Depends(get_current_user)):
     return {"wallet": wallet_status(user)}
+
+
+@router.get("/wallets/portfolio")
+async def get_wallet_portfolio(user: User = Depends(get_current_user)):
+    status_payload = wallet_status(user)
+    portfolio = await get_wallet_portfolio_snapshot(status_payload.get("addresses_by_chain") or {})
+    return {
+        "wallet": status_payload,
+        "portfolio": portfolio,
+    }
 
 
 @router.post("/wallets/create")
