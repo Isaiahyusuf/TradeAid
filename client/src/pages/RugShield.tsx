@@ -58,8 +58,9 @@ export default function RugShield() {
     setAddress(prefilledAddress);
     if (auto) {
       setScannedAddress(prefilledAddress);
+      const scanChain = ((SUPPORTED_CHAINS as readonly string[]).includes(prefilledChain) ? prefilledChain : chain) === "all" ? "solana" : ((SUPPORTED_CHAINS as readonly string[]).includes(prefilledChain) ? prefilledChain : chain);
       scanToken(
-        { address: prefilledAddress, chain: ((SUPPORTED_CHAINS as readonly string[]).includes(prefilledChain) ? prefilledChain : chain) },
+        { address: prefilledAddress, chain: scanChain },
         {
           onError: (error) => {
             const message = error instanceof Error ? error.message : "Unable to score token";
@@ -82,8 +83,9 @@ export default function RugShield() {
       return;
     }
     setScannedAddress(address.trim());
+    const scanChain = chain === "all" ? "solana" : chain;
     scanToken(
-      { address, chain },
+      { address, chain: scanChain },
       {
         onError: (error) => {
           const message = error instanceof Error ? error.message : "Unable to score token";

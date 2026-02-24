@@ -330,6 +330,34 @@ def wallet_status(user: User) -> dict[str, Any]:
     }
 
 
+def get_wallet_chain_credentials(user: User, chain: str) -> dict[str, str]:
+    normalized_chain = (chain or "").strip().lower()
+    if not normalized_chain:
+        raise HTTPException(status_code=400, detail="chain is required")
+
+    cfg = _get_wallet_config(user)
+    chains = dict(cfg.get("chains") or {})
+    chain_cfg = chains.get(normalized_chain)
+    if not isinstance(chain_cfg, dict):
+        raise HTTPException(status_code=404, detail=f"No wallet found for chain '{normalized_chain}'")
+
+    address = str(chain_cfg.get("address") or "").strip()
+    encrypted_pk = str(chain_cfg.get("private_key_encrypted") or "").strip()
+    if not address or not encrypted_pk:
+        raise HTTPException(status_code=404, detail=f"Wallet data missing for chain '{normalized_chain}'")
+
+    try:
+        private_key = decrypt_api_key(encrypted_pk)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Stored wallet key is invalid")
+
+    return {
+        "chain": normalized_chain,
+        "address": address,
+        "private_key": private_key,
+    }
+
+
 def create_user_wallet_bundle(user: User, *, overwrite: bool = False) -> dict[str, Any]:
     existing = _get_wallet_config(user)
     if existing.get("mnemonic_encrypted") and not overwrite:

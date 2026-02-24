@@ -14,7 +14,7 @@ class DoctorExecutionEngine:
         self.jupiter = JupiterService(jupiter_api_key)
         self._sol_mint = "So11111111111111111111111111111111111111112"
 
-    async def execute(self, token: dict[str, Any], signal: dict[str, Any], size_pct: float) -> dict[str, Any]:
+    async def execute(self, token: dict[str, Any], signal: dict[str, Any], size_pct: float, buy_amount_sol: float = 0.1) -> dict[str, Any]:
         slippage_pct = float(token.get("estimated_slippage_pct") or 1.0)
         liquidity_guard = self.wallet.reject_if_sudden_liquidity_drop(
             token_address=str(token.get("address") or ""),
@@ -37,7 +37,8 @@ class DoctorExecutionEngine:
         if not output_mint:
             return {"executed": False, "reason": "missing_output_mint"}
 
-        amount_lamports = max(1_000_000, int(max(float(size_pct), 0.1) / 100.0 * 1_000_000_000))
+        normalized_buy_amount_sol = max(0.1, float(buy_amount_sol or 0.1))
+        amount_lamports = int(normalized_buy_amount_sol * 1_000_000_000)
         slippage_bps = max(50, int(slippage_pct * 100.0))
         simulation = await self.jupiter.simulate_trade(
             input_mint=self._sol_mint,

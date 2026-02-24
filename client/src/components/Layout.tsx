@@ -151,24 +151,26 @@ export function Layout({ children }: { children: ReactNode }) {
           </motion.div>
         </AnimatePresence>
 
-        <motion.div
-          drag
-          dragMomentum={false}
-          whileTap={{ scale: 1.03 }}
-          style={{ x: launcherX, y: launcherY }}
-          onDragEnd={persistLauncherPosition}
-          className="fixed right-4 md:right-6 bottom-28 md:bottom-6 z-[70] cursor-grab active:cursor-grabbing"
-        >
-          <Button
-            type="button"
-            onClick={() => setLocation("/doctortrade")}
-            className="gap-2 doctorstrange-font bg-gradient-to-r from-accent/90 to-primary/90 text-white border border-primary/40 shadow-[0_0_24px_rgba(153,69,255,0.35)] hover:from-accent hover:to-primary"
-            data-testid="button-floating-doctorstrange"
+        {!onDoctorTradePage && (
+          <motion.div
+            drag
+            dragMomentum={false}
+            whileTap={{ scale: 1.03 }}
+            style={{ x: launcherX, y: launcherY }}
+            onDragEnd={persistLauncherPosition}
+            className="fixed right-4 md:right-6 bottom-28 md:bottom-6 z-[70] cursor-grab active:cursor-grabbing"
           >
-            <Bot className="h-4 w-4 doctorstrange-sigil" />
-            <span>{onDoctorTradePage ? "DoctorTrade Active" : "Open DoctorTrade"}</span>
-          </Button>
-        </motion.div>
+            <Button
+              type="button"
+              onClick={() => setLocation("/doctortrade")}
+              className="gap-2 doctorstrange-font bg-gradient-to-r from-accent/90 to-primary/90 text-white border border-primary/40 shadow-[0_0_24px_rgba(153,69,255,0.35)] hover:from-accent hover:to-primary"
+              data-testid="button-floating-doctorstrange"
+            >
+              <Bot className="h-4 w-4 doctorstrange-sigil" />
+              <span>Open DoctorTrade</span>
+            </Button>
+          </motion.div>
+        )}
       </main>
       <MobileNav />
     </div>

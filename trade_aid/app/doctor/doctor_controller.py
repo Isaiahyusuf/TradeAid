@@ -25,6 +25,15 @@ class DoctorTradeController:
         self.enabled = False
         self.loop_task: asyncio.Task | None = None
         self.scan_interval_seconds = 20
+        self.max_trades_per_day = 12
+        self.min_buy_amount_sol = 0.1
+        self.buy_amount_sol = 0.1
+        self.take_profit_multiplier = 2.0
+        self.min_profit_pct = 12.0
+        self.stop_loss_pct = 6.0
+        self.trailing_stop_pct = 10.0
+        self._trade_day: str = ""
+        self._trades_today: int = 0
         self.current_tokens: list[dict[str, Any]] = []
         self.positions: list[dict[str, Any]] = []
         self.trade_log: list[dict[str, Any]] = []
@@ -55,6 +64,91 @@ class DoctorTradeController:
             mode=str(getattr(self.settings, "DOCTOR_EXECUTION_MODE", "paper") or "paper"),
             jupiter_api_key=str(getattr(self.settings, "JUPITER_API_KEY", "") or ""),
         )
+
+    def configure_wallet(self, *, private_key: str, public_address: str) -> None:
+        self.wallet.private_key = str(private_key or "").strip()
+        self.wallet.public_address = str(public_address or "").strip()
+
+    def _roll_trade_day(self) -> None:
+        today = datetime.utcnow().date().isoformat()
+        if self._trade_day != today:
+            self._trade_day = today
+            self._trades_today = 0
+
+    def _register_trade_count(self) -> None:
+        self._roll_trade_day()
+        self._trades_today += 1
+
+    def _can_open_trade(self) -> bool:
+        self._roll_trade_day()
+        return self._trades_today < int(max(1, self.max_trades_per_day))
+
+    async def _process_position_exits(self, memes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        by_address = {str(row.get("address") or "").strip(): row for row in memes}
+        exits: list[dict[str, Any]] = []
+        remaining: list[dict[str, Any]] = []
+
+        for position in self.positions:
+            address = str(position.get("address") or "").strip()
+            token = by_address.get(address)
+            current_price = float((token or {}).get("price_usd") or position.get("current_price") or 0.0)
+            entry_price = float(position.get("entry_price") or 0.0)
+            if entry_price <= 0 or current_price <= 0:
+                remaining.append(position)
+                continue
+
+            peak_price = max(float(position.get("peak_price") or entry_price), current_price)
+            position["peak_price"] = peak_price
+            position["current_price"] = current_price
+
+            pnl_pct = ((current_price - entry_price) / entry_price) * 100.0
+            take_profit_hit = current_price >= (entry_price * max(1.1, float(self.take_profit_multiplier or 2.0)))
+            min_profit_hit = pnl_pct >= float(self.min_profit_pct or 0.0)
+            stop_loss_hit = current_price <= (entry_price * (1.0 - (float(self.stop_loss_pct or 0.0) / 100.0)))
+            trailing_stop_hit = current_price <= (peak_price * (1.0 - (float(self.trailing_stop_pct or 0.0) / 100.0))) and pnl_pct > 0
+
+            exit_reason = None
+            if take_profit_hit:
+                exit_reason = "take_profit_2x"
+            elif min_profit_hit:
+                exit_reason = "profit_secured"
+            elif trailing_stop_hit:
+                exit_reason = "trailing_stop"
+            elif stop_loss_hit:
+                exit_reason = "stop_loss"
+
+            if not exit_reason:
+                remaining.append(position)
+                continue
+
+            notional_usd = float(position.get("notional_usd") or ((self.risk_state.equity_usd * float(position.get("size_pct") or 0.0)) / 100.0))
+            pnl_usd = (pnl_pct / 100.0) * max(notional_usd, 0.0)
+
+            close_row = {
+                "token": position.get("symbol"),
+                "address": address,
+                "action": "SELL",
+                "status": "executed",
+                "reason": exit_reason,
+                "confidence": int(position.get("confidence") or 0),
+                "liquidity": float((token or {}).get("liquidity") or position.get("liquidity") or 0.0),
+                "volume_5m": float((token or {}).get("volume_5m") or 0.0),
+                "entry_price": entry_price,
+                "current_price": current_price,
+                "size_pct": float(position.get("size_pct") or 0.0),
+                "strategy_mode": str(position.get("strategy_mode") or self.strategy_mode),
+                "timestamp": datetime.utcnow().isoformat(),
+                "pnl_usd": round(pnl_usd, 4),
+            }
+            exits.append(close_row)
+            self.trade_log.insert(0, close_row)
+            self.trade_log = self.trade_log[:200]
+            await self._log_trade(close_row)
+            self.risk.register_close(self.risk_state, pnl_usd=float(close_row.get("pnl_usd") or 0.0), released_exposure_pct=float(position.get("size_pct") or 0.0))
+            self._register_trade_count()
+
+        self.positions = remaining
+        return exits
 
     async def _log_event(self, event_type: str, severity: str, message: str, *, contract_address: str | None = None, extra: dict[str, Any] | None = None) -> None:
         async with doctor_db_session() as db:
@@ -158,6 +252,9 @@ class DoctorTradeController:
         if not self.enabled or self.kill_switch:
             return {"executed": False, "reason": "disabled"}
 
+        configured_buy_sol = max(float(self.min_buy_amount_sol or 0.1), float(self.buy_amount_sol or 0.1))
+        self.buy_amount_sol = configured_buy_sol
+
         memes = await self.scanner.scan_all_sources(limit=18)
         intelligence_rows = self.scanner.drain_recent_intelligence() if hasattr(self.scanner, "drain_recent_intelligence") else []
         for row in intelligence_rows[:60]:
@@ -170,6 +267,9 @@ class DoctorTradeController:
             )
         self.current_tokens = memes
         actions: list[dict[str, Any]] = []
+        exit_actions = await self._process_position_exits(memes)
+        if exit_actions:
+            actions.extend(exit_actions)
         self.self_evolution["cycles"] = int(self.self_evolution.get("cycles") or 0) + 1
         self.self_evolution["last_updated_at"] = datetime.utcnow().isoformat()
 
@@ -221,7 +321,36 @@ class DoctorTradeController:
             if signal.get("action") != "BUY":
                 continue
 
-            execution = await self.execution.execute(token, signal, float(risk_result.get("position_size_pct") or 0.0))
+            if not self._can_open_trade():
+                actions.append({
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "action": "BUY",
+                    "status": "blocked",
+                    "reason": "max_trades_24h_reached",
+                })
+                continue
+
+            try:
+                balance_sol = await self.wallet.get_balance_sol()
+            except Exception:
+                balance_sol = 0.0
+            if balance_sol < configured_buy_sol:
+                actions.append({
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "action": "BUY",
+                    "status": "blocked",
+                    "reason": f"insufficient_sol_balance_min_{configured_buy_sol:.3f}",
+                })
+                continue
+
+            execution = await self.execution.execute(
+                token,
+                signal,
+                float(risk_result.get("position_size_pct") or 0.0),
+                buy_amount_sol=configured_buy_sol,
+            )
             if not execution.get("executed"):
                 rejected = {
                     "token": token.get("symbol"),
@@ -243,17 +372,20 @@ class DoctorTradeController:
                 "liquidity": float(token.get("liquidity") or 0.0),
                 "confidence": int(signal.get("confidence") or 0),
                 "size_pct": float(risk_result.get("position_size_pct") or 0.0),
-                "stop_loss": round(float(signal.get("entry_price") or token.get("price_usd") or 0.0) * 0.8, 8),
-                "take_profit": round(float(signal.get("entry_price") or token.get("price_usd") or 0.0) * 1.5, 8),
-                "trailing_stop_pct": 12.0,
+                "stop_loss": round(float(signal.get("entry_price") or token.get("price_usd") or 0.0) * (1.0 - (float(self.stop_loss_pct) / 100.0)), 8),
+                "take_profit": round(float(signal.get("entry_price") or token.get("price_usd") or 0.0) * float(self.take_profit_multiplier), 8),
+                "trailing_stop_pct": float(self.trailing_stop_pct),
                 "opened_at": datetime.utcnow().isoformat(),
                 "signature": execution.get("signature"),
                 "risk_status": "active",
                 "strategy_mode": self.strategy_mode,
+                "peak_price": float(token.get("price_usd") or signal.get("entry_price") or 0.0),
+                "notional_usd": float(self.risk_state.equity_usd * (float(risk_result.get("position_size_pct") or 0.0) / 100.0)),
             }
             self.positions.append(position)
-            self.positions = self.positions[:2]
+            self.positions = self.positions[: int(getattr(self.risk, "MAX_OPEN_POSITIONS", 3) or 3)]
             self.risk.register_open(self.risk_state, float(position["size_pct"]))
+            self._register_trade_count()
 
             trade_row = {
                 "token": token.get("symbol"),
@@ -336,6 +468,17 @@ class DoctorTradeController:
                 "address": self.wallet.public_address,
                 "balance_sol": balance_sol,
                 "separate_wallet_enforced": True,
+            },
+            "trade_controls": {
+                "max_trades_per_day": int(self.max_trades_per_day),
+                "trades_today": int(self._trades_today),
+                "min_buy_amount_sol": float(self.min_buy_amount_sol),
+                "buy_amount_sol": float(self.buy_amount_sol),
+                "take_profit_multiplier": float(self.take_profit_multiplier),
+                "min_profit_pct": float(self.min_profit_pct),
+                "stop_loss_pct": float(self.stop_loss_pct),
+                "trailing_stop_pct": float(self.trailing_stop_pct),
+                "wallet_connected": bool(str(self.wallet.public_address or "").strip() and str(self.wallet.private_key or "").strip()),
             },
             "active_tokens": self.current_tokens,
             "positions": self.positions,

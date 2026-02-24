@@ -28,6 +28,7 @@ from app.services.assistant_trading_service import (
     wallet_status,
 )
 from app.services.openai_assistant_service import answer_user_question, generate_trade_assist
+from app.services.token_resolver_service import resolver_service
 from app.services.wallet_portfolio_service import get_wallet_portfolio_snapshot
 
 router = APIRouter(prefix="/api/ai", tags=["AI Assistant"])
@@ -212,8 +213,21 @@ async def assist_for_token(
         )
     )
     token = token_result.scalar_one_or_none()
+    if not token and normalized_chain == "solana":
+        resolved = await resolver_service.resolve_token(db, contract_address)
+        if resolved.get("invalid"):
+            raise HTTPException(status_code=400, detail=str(resolved.get("error") or "Invalid Solana mint"))
+        token = resolved.get("token")
     if not token:
-        raise HTTPException(status_code=404, detail="Token not found")
+        return {
+            "status": "indexing",
+            "message": "Indexing token...",
+            "token": {
+                "contract_address": contract_address,
+                "chain": normalized_chain,
+                "symbol": "UNKNOWN",
+            },
+        }
 
     score_result = await db.execute(
         select(ScoringHistory)

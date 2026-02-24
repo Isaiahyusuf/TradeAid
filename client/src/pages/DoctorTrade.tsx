@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Bot, ShieldAlert, Power, Activity, Wallet, TrendingUp, BarChart3, Radio } from "lucide-react";
-import { useDoctorConfig, useDoctorControl, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
-import { useEffect, useState } from "react";
+import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
+import { useMemo, useState } from "react";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 function fmtUsd(value: number) {
@@ -23,31 +23,38 @@ function fmtTs(value?: string) {
 }
 
 export default function DoctorTrade() {
-  const { data, isLoading } = useDoctorStatus();
+  const { data } = useDoctorStatus();
   const controlMutation = useDoctorControl();
   const configMutation = useDoctorConfig();
+  const connectWalletMutation = useDoctorConnectWallet();
   const runMutation = useDoctorRunOnce();
   const [intervalInput, setIntervalInput] = useState("20");
-  const [stableData, setStableData] = useState<typeof data | null>(null);
+  const [buyAmountInput, setBuyAmountInput] = useState("0.1");
+  const [maxTradesInput, setMaxTradesInput] = useState("12");
+  const [tpMultInput, setTpMultInput] = useState("2.0");
+  const [minProfitInput, setMinProfitInput] = useState("12");
+  const [stopLossInput, setStopLossInput] = useState("6");
+  const [trailInput, setTrailInput] = useState("10");
+  const viewData = data;
+  const performanceSeries = useMemo(
+    () =>
+      (viewData?.performance || []).slice(0, 12).reverse().map((row, index) => ({
+        name: String(index + 1),
+        winRate: Number((row?.latest_win_rate ?? row?.win_rate ?? 0) || 0) * 100,
+        drawdown: Number((viewData?.risk_state.drawdown_pct ?? 0) || 0),
+      })),
+    [viewData?.performance, viewData?.risk_state.drawdown_pct],
+  );
 
-  useEffect(() => {
-    if (data) {
-      setStableData(data);
-    }
-  }, [data]);
-
-  const viewData = data || stableData;
-  const performanceSeries = (viewData?.performance || []).slice(0, 12).reverse().map((row, index) => ({
-    name: String(index + 1),
-    winRate: Number((row?.latest_win_rate ?? row?.win_rate ?? 0) || 0) * 100,
-    drawdown: Number((viewData?.risk_state.drawdown_pct ?? 0) || 0),
-  }));
-
-  const tradeSeries = (viewData?.recent_trades || []).slice(0, 16).reverse().map((row, index) => ({
-    name: String(index + 1),
-    confidence: Number(row?.confidence || 0),
-    size: Number(row?.size_pct || 0),
-  }));
+  const tradeSeries = useMemo(
+    () =>
+      (viewData?.recent_trades || []).slice(0, 16).reverse().map((row, index) => ({
+        name: String(index + 1),
+        confidence: Number(row?.confidence || 0),
+        size: Number(row?.size_pct || 0),
+      })),
+    [viewData?.recent_trades],
+  );
 
   const scannerSuccessRate = Number(viewData?.scanner_health?.overall?.success_rate_pct || 0);
 
@@ -89,6 +96,13 @@ export default function DoctorTrade() {
             >
               <ShieldAlert className="w-4 h-4 mr-2" /> Kill Switch
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => connectWalletMutation.mutate({ use_existing_wallet: true })}
+              disabled={connectWalletMutation.isPending}
+            >
+              <Wallet className="w-4 h-4 mr-2" /> Connect Existing Wallet
+            </Button>
             <div className="flex items-center gap-2 ml-auto">
               <Input className="w-28" value={intervalInput} onChange={(e) => setIntervalInput(e.target.value)} placeholder="20" />
               <Button
@@ -102,7 +116,53 @@ export default function DoctorTrade() {
           </div>
         </Card>
 
-        {!viewData && isLoading ? (
+        <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60">
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 items-end">
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Buy Amount (SOL, min 0.1)</p>
+              <Input value={buyAmountInput} onChange={(e) => setBuyAmountInput(e.target.value)} placeholder="0.1" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Trades / 24h</p>
+              <Input value={maxTradesInput} onChange={(e) => setMaxTradesInput(e.target.value)} placeholder="12" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Take Profit Multiplier</p>
+              <Input value={tpMultInput} onChange={(e) => setTpMultInput(e.target.value)} placeholder="2.0" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Min Profit Sell %</p>
+              <Input value={minProfitInput} onChange={(e) => setMinProfitInput(e.target.value)} placeholder="12" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Stop Loss %</p>
+              <Input value={stopLossInput} onChange={(e) => setStopLossInput(e.target.value)} placeholder="6" />
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <p className="text-xs text-muted-foreground mb-1">Trailing Stop %</p>
+                <Input value={trailInput} onChange={(e) => setTrailInput(e.target.value)} placeholder="10" />
+              </div>
+              <Button
+                variant="outline"
+                className="self-end"
+                onClick={() => configMutation.mutate({
+                  buy_amount_sol: Math.max(0.1, Number(buyAmountInput) || 0.1),
+                  max_trades_per_day: Number(maxTradesInput) || 12,
+                  take_profit_multiplier: Number(tpMultInput) || 2.0,
+                  min_profit_pct: Number(minProfitInput) || 12,
+                  stop_loss_pct: Number(stopLossInput) || 6,
+                  trailing_stop_pct: Number(trailInput) || 10,
+                })}
+                disabled={configMutation.isPending}
+              >
+                Save Risk Rules
+              </Button>
+            </div>
+          </div>
+        </Card>
+
+        {!viewData ? (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-32 w-full" />)}
           </div>
@@ -115,6 +175,16 @@ export default function DoctorTrade() {
               <Card className="p-4"><p className="text-sm text-muted-foreground">Open Positions</p><p className="text-2xl font-bold">{viewData?.risk_state.open_positions || 0}</p></Card>
               <Card className="p-4"><p className="text-sm text-muted-foreground">Exposure %</p><p className="text-2xl font-bold">{(viewData?.risk_state.open_exposure_pct || 0).toFixed(2)}%</p></Card>
               <Card className="p-4"><p className="text-sm text-muted-foreground">Drawdown %</p><p className="text-2xl font-bold">{viewData?.risk_state.drawdown_pct.toFixed(2) || "0.00"}%</p></Card>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+              <Card className="p-4"><p className="text-sm text-muted-foreground">Wallet Link</p><p className="text-2xl font-bold">{viewData?.trade_controls?.wallet_connected ? "Connected" : "Missing"}</p></Card>
+              <Card className="p-4"><p className="text-sm text-muted-foreground">Buy Amount</p><p className="text-2xl font-bold">{(viewData?.trade_controls?.buy_amount_sol || 0.1).toFixed(3)} SOL</p></Card>
+              <Card className="p-4"><p className="text-sm text-muted-foreground">Trades Today</p><p className="text-2xl font-bold">{viewData?.trade_controls?.trades_today || 0}</p></Card>
+              <Card className="p-4"><p className="text-sm text-muted-foreground">Daily Trade Cap</p><p className="text-2xl font-bold">{viewData?.trade_controls?.max_trades_per_day || 12}</p></Card>
+              <Card className="p-4"><p className="text-sm text-muted-foreground">2x Target</p><p className="text-2xl font-bold">{(viewData?.trade_controls?.take_profit_multiplier || 2).toFixed(2)}x</p></Card>
+              <Card className="p-4"><p className="text-sm text-muted-foreground">Fallback Profit</p><p className="text-2xl font-bold">{(viewData?.trade_controls?.min_profit_pct || 12).toFixed(1)}%</p></Card>
+              <Card className="p-4"><p className="text-sm text-muted-foreground">Stop Loss</p><p className="text-2xl font-bold">{(viewData?.trade_controls?.stop_loss_pct || 6).toFixed(1)}%</p></Card>
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -138,8 +208,8 @@ export default function DoctorTrade() {
                       <XAxis dataKey="name" />
                       <YAxis />
                       <Tooltip />
-                      <Area type="monotone" dataKey="winRate" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.2)" />
-                      <Line type="monotone" dataKey="drawdown" stroke="hsl(var(--destructive))" dot={false} />
+                      <Area isAnimationActive={false} type="monotone" dataKey="winRate" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.2)" />
+                      <Line isAnimationActive={false} type="monotone" dataKey="drawdown" stroke="hsl(var(--destructive))" dot={false} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
@@ -171,8 +241,8 @@ export default function DoctorTrade() {
                       <XAxis dataKey="name" />
                       <YAxis />
                       <Tooltip />
-                      <Line type="monotone" dataKey="confidence" stroke="hsl(var(--chart-2, var(--primary)))" dot={false} />
-                      <Line type="monotone" dataKey="size" stroke="hsl(var(--chart-4, var(--accent)))" dot={false} />
+                      <Line isAnimationActive={false} type="monotone" dataKey="confidence" stroke="hsl(var(--chart-2, var(--primary)))" dot={false} />
+                      <Line isAnimationActive={false} type="monotone" dataKey="size" stroke="hsl(var(--chart-4, var(--accent)))" dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>

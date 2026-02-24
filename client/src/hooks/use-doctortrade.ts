@@ -57,6 +57,17 @@ export type DoctorStatus = {
     balance_sol: number;
     separate_wallet_enforced: boolean;
   };
+  trade_controls?: {
+    max_trades_per_day: number;
+    trades_today: number;
+    min_buy_amount_sol: number;
+    buy_amount_sol: number;
+    take_profit_multiplier: number;
+    min_profit_pct: number;
+    stop_loss_pct: number;
+    trailing_stop_pct: number;
+    wallet_connected: boolean;
+  };
   active_tokens: DoctorToken[];
   positions: DoctorPosition[];
   recent_trades: DoctorRecentTrade[];
@@ -96,10 +107,11 @@ export function useDoctorStatus() {
     queryFn: () => apiGet<DoctorStatus>("/api/doctor/status"),
     enabled: hasToken,
     placeholderData: (previousData) => previousData,
-    staleTime: 2000,
-    refetchInterval: 5000,
+    staleTime: 8000,
+    refetchInterval: 8000,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: false,
+    notifyOnChangeProps: ["data", "error"],
     retry: 1,
   });
 }
@@ -115,7 +127,25 @@ export function useDoctorControl() {
 export function useDoctorConfig() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { scan_interval_seconds?: number; kill_switch?: boolean }) => apiPost<DoctorStatus>("/api/doctor/config", payload),
+    mutationFn: (payload: {
+      scan_interval_seconds?: number;
+      kill_switch?: boolean;
+      buy_amount_sol?: number;
+      max_trades_per_day?: number;
+      take_profit_multiplier?: number;
+      min_profit_pct?: number;
+      stop_loss_pct?: number;
+      trailing_stop_pct?: number;
+    }) => apiPost<DoctorStatus>("/api/doctor/config", payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade"] }),
+  });
+}
+
+export function useDoctorConnectWallet() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload?: { private_key?: string; public_address?: string; use_existing_wallet?: boolean }) =>
+      apiPost<DoctorStatus>("/api/doctor/connect-wallet", payload || { use_existing_wallet: true }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade"] }),
   });
 }

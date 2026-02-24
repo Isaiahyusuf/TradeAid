@@ -35,7 +35,15 @@ async def score_token(
 
     if requested_chain == "all":
         result = {"error": "Token not found on enabled chains"}
-        for chain_name in enabled_chains:
+        chain_candidates = list(enabled_chains)
+        if "solana" in chain_candidates:
+            chain_candidates = ["solana", *[name for name in chain_candidates if name != "solana"]]
+
+        for chain_name in chain_candidates:
+            if chain_name == "solana":
+                resolved = await resolver_service.resolve_token(db, req.contract_address)
+                if resolved.get("invalid"):
+                    continue
             candidate = await scoring_service.score_token(db, req.contract_address, chain_name)
             if not candidate.get("error"):
                 result = candidate
@@ -105,6 +113,12 @@ async def scoring_history(
     if normalized_chain not in enabled_chains:
         raise HTTPException(status_code=400, detail=f"Unsupported chain '{normalized_chain}'")
 
+    if normalized_chain == "solana":
+        resolved = await resolver_service.resolve_token(db, contract_address)
+        if resolved.get("invalid"):
+            raise HTTPException(status_code=400, detail=str(resolved.get("error") or "Invalid Solana mint"))
+        await db.flush()
+
     result = await db.execute(
         select(ScoringHistory)
         .where(
@@ -149,8 +163,31 @@ async def scoring_insight(
         select(Token).where(Token.chain == normalized_chain, Token.contract_address == contract_address)
     )
     token = token_result.scalar_one_or_none()
+    if not token and normalized_chain == "solana":
+        resolved = await resolver_service.resolve_token(db, contract_address)
+        if resolved.get("invalid"):
+            raise HTTPException(status_code=400, detail=str(resolved.get("error") or "Invalid Solana mint"))
+        token = resolved.get("token")
     if not token:
-        raise HTTPException(status_code=404, detail="Token not found")
+        return {
+            "status": "indexing",
+            "message": "Indexing token...",
+            "token": {
+                "contract_address": contract_address,
+                "symbol": "UNKNOWN",
+                "chain": normalized_chain,
+            },
+            "insight": {
+                "summary": "Token is being indexed from external sources.",
+                "key_points": ["Retry in a few seconds", "Live data is being fetched"],
+            },
+        }
+
+    if normalized_chain == "solana":
+        try:
+            await scoring_service.score_token(db, contract_address, normalized_chain)
+        except Exception:
+            pass
 
     score_result = await db.execute(
         select(ScoringHistory)

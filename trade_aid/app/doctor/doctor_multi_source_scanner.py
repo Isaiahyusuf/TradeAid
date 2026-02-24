@@ -461,6 +461,8 @@ class DoctorMultiSourceScanner:
         liquidity = self._safe_float((pair.get("liquidity") or {}).get("usd"), 0.0)
         if liquidity <= 0:
             liquidity = self._safe_float(solscan.get("liquidity"), 0.0)
+        if liquidity <= 0:
+            return None
 
         volume_24h = self._safe_float(volume.get("h24"), 0.0)
         if volume_24h <= 0:
@@ -714,7 +716,8 @@ class DoctorMultiSourceScanner:
             ),
             reverse=True,
         )
-        return candidates[: max(1, min(limit, 30))]
+        filtered = [row for row in candidates if float(row.get("liquidity") or 0.0) > 0.0]
+        return filtered[: max(1, min(limit, 30))]
 
     async def scan_all_sources(self, limit: int = 16) -> list[dict[str, Any]]:
         return await self.aggregate_tokens(limit=limit)
