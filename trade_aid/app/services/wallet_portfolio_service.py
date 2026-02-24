@@ -28,6 +28,22 @@ CHAIN_PRICE_ID_MAP: dict[str, str] = {
     "polygon": "matic-network",
 }
 
+EVM_CHAINS = {"ethereum", "bsc", "base", "arbitrum", "avalanche", "polygon"}
+
+
+def _chain_rpc_url(chain_name: str) -> str:
+    settings = get_settings()
+    rpc_urls = {
+        "solana": settings.SOLANA_RPC_URL,
+        "ethereum": settings.ETHEREUM_RPC_URL,
+        "bsc": settings.BSC_RPC_URL,
+        "base": settings.BASE_RPC_URL,
+        "arbitrum": settings.ARBITRUM_RPC_URL,
+        "avalanche": settings.AVALANCHE_RPC_URL,
+        "polygon": settings.POLYGON_RPC_URL,
+    }
+    return str(rpc_urls.get(chain_name, "") or "").strip()
+
 
 async def _fetch_prices_usd(chains: list[str]) -> dict[str, float]:
     ids = sorted({CHAIN_PRICE_ID_MAP.get(chain_name) for chain_name in chains if CHAIN_PRICE_ID_MAP.get(chain_name)})
@@ -81,6 +97,33 @@ async def _fetch_solana_balance(address: str) -> float | None:
         return None
 
 
+async def _fetch_evm_balance(rpc_url: str, address: str) -> float | None:
+    if not rpc_url or not address:
+        return None
+
+    payload: dict[str, Any] = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getBalance",
+        "params": [address, "latest"],
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.post(rpc_url, json=payload)
+            response.raise_for_status()
+            body = response.json() or {}
+    except Exception:
+        return None
+
+    try:
+        raw_hex = str((body.get("result") or "0x0")).strip()
+        wei = int(raw_hex, 16)
+        return wei / 1_000_000_000_000_000_000
+    except Exception:
+        return None
+
+
 async def get_wallet_portfolio_snapshot(addresses_by_chain: dict[str, str]) -> dict[str, Any]:
     normalized_addresses = {str(chain).lower(): str(addr or "").strip() for chain, addr in (addresses_by_chain or {}).items()}
     chains = sorted(normalized_addresses.keys())
@@ -93,14 +136,26 @@ async def get_wallet_portfolio_snapshot(addresses_by_chain: dict[str, str]) -> d
         address = normalized_addresses.get(chain_name, "")
         symbol = CHAIN_NATIVE_SYMBOL.get(chain_name, chain_name.upper())
         price_usd = float(prices.get(chain_name) or 0.0)
+        rpc_url = _chain_rpc_url(chain_name)
 
         native_balance: float | None = None
         data_status = "unsupported"
         if not address:
             data_status = "not_configured"
         elif chain_name == "solana":
-            native_balance = await _fetch_solana_balance(address)
-            data_status = "ok" if native_balance is not None else "rpc_unavailable"
+            if not rpc_url:
+                data_status = "rpc_not_configured"
+            else:
+                native_balance = await _fetch_solana_balance(address)
+                data_status = "ok" if native_balance is not None else "rpc_unavailable"
+        elif chain_name in EVM_CHAINS:
+            if not rpc_url:
+                data_status = "rpc_not_configured"
+            elif not address.lower().startswith("0x"):
+                data_status = "invalid_address"
+            else:
+                native_balance = await _fetch_evm_balance(rpc_url, address)
+                data_status = "ok" if native_balance is not None else "rpc_unavailable"
 
         value_usd = (native_balance or 0.0) * price_usd if native_balance is not None else 0.0
         total_usd += value_usd

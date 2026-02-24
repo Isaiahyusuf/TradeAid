@@ -99,6 +99,7 @@ export default function WalletPage() {
 
   const portfolio = walletPortfolioQuery.data?.portfolio;
   const portfolioChains = portfolio?.chains || {};
+  const portfolioUpdatedAt = portfolio?.updated_at ? new Date(portfolio.updated_at).toLocaleString() : "-";
 
   const activeChainsCount = Object.values(addressesByChain).filter(Boolean).length;
 
@@ -343,6 +344,7 @@ export default function WalletPage() {
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Total Portfolio Balance</p>
                 <p className="text-4xl font-bold mt-1">${estimatedUsdBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 <p className="text-xs text-muted-foreground mt-1">Synced chains: {activeChainsCount}/{enabledChains.length}</p>
+                <p className="text-xs text-muted-foreground mt-1">Portfolio updated: {portfolioUpdatedAt}</p>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant={wallet?.has_wallet ? "default" : "outline"}>{wallet?.has_wallet ? "Wallet Active" : "Wallet Not Created"}</Badge>
@@ -393,10 +395,10 @@ export default function WalletPage() {
                           </p>
                           <p className="text-xs text-muted-foreground">{shortAddress(address)}</p>
                           <p className="text-xs text-muted-foreground mt-1">Price: {chainUsdPrice > 0 ? `$${chainUsdPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}` : "Unavailable"}</p>
-                          <p className="text-xs text-muted-foreground mt-1">Data: {dataStatus === "ok" ? "Live" : dataStatus === "rpc_unavailable" ? "RPC unavailable" : dataStatus === "unsupported" ? "Balance not integrated" : "No wallet"}</p>
+                          <p className="text-xs text-muted-foreground mt-1">Data: {dataStatus === "ok" ? "Live" : dataStatus === "rpc_unavailable" ? "RPC unavailable" : dataStatus === "rpc_not_configured" ? "RPC not configured" : dataStatus === "invalid_address" ? "Invalid address" : dataStatus === "unsupported" ? "Balance not integrated" : "No wallet"}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-semibold">{balance.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 6 })}</p>
+                          <p className="text-sm font-semibold">{balance.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 6 })} {portfolioChains[chainName]?.native_symbol || ""}</p>
                           <p className="text-xs text-muted-foreground">$ {chainUsdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                         </div>
                       </div>

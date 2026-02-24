@@ -50,7 +50,7 @@ export type AssistantWalletPortfolioChain = {
   native_balance: number | null;
   price_usd: number;
   value_usd: number;
-  data_status: "ok" | "rpc_unavailable" | "unsupported" | "not_configured";
+  data_status: "ok" | "rpc_unavailable" | "unsupported" | "not_configured" | "rpc_not_configured" | "invalid_address";
 };
 
 export type AssistantWalletPortfolio = {

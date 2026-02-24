@@ -71,10 +71,10 @@ class Settings(BaseSettings):
     ENABLED_CHAINS: str = "solana,ethereum,bsc,base,arbitrum,avalanche,polygon"
 
     SOLANA_RPC_URL: str = "https://api.mainnet-beta.solana.com"
-    ETHEREUM_RPC_URL: str = ""
+    ETHEREUM_RPC_URL: str = "https://rpc.ankr.com/eth"
     BSC_RPC_URL: str = "https://bsc-dataseed.binance.org/"
-    BASE_RPC_URL: str = ""
-    ARBITRUM_RPC_URL: str = ""
+    BASE_RPC_URL: str = "https://mainnet.base.org"
+    ARBITRUM_RPC_URL: str = "https://arb1.arbitrum.io/rpc"
     AVALANCHE_RPC_URL: str = "https://api.avax.network/ext/bc/C/rpc"
     POLYGON_RPC_URL: str = "https://polygon-rpc.com/"
 
