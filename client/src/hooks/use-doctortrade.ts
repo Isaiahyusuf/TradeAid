@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 
+const DOCTOR_STATUS_CACHE_KEY = "doctortrade:status:snapshot:v1";
+
 export type DoctorToken = {
   symbol: string;
   address: string;
@@ -102,17 +104,39 @@ export type DoctorStatus = {
 
 export function useDoctorStatus() {
   const { hasToken } = useAuth();
+
+  const readCached = (): DoctorStatus | undefined => {
+    if (typeof window === "undefined") return undefined;
+    try {
+      const raw = window.localStorage.getItem(DOCTOR_STATUS_CACHE_KEY);
+      if (!raw) return undefined;
+      return JSON.parse(raw) as DoctorStatus;
+    } catch {
+      return undefined;
+    }
+  };
+
   return useQuery({
     queryKey: ["doctortrade", "status"],
-    queryFn: () => apiGet<DoctorStatus>("/api/doctor/status"),
+    queryFn: async () => {
+      const payload = await apiGet<DoctorStatus>("/api/doctor/status");
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem(DOCTOR_STATUS_CACHE_KEY, JSON.stringify(payload));
+        } catch {
+        }
+      }
+      return payload;
+    },
+    initialData: readCached,
     enabled: hasToken,
     placeholderData: (previousData) => previousData,
-    staleTime: 8000,
-    refetchInterval: 8000,
+    staleTime: 5000,
+    refetchInterval: 5000,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: false,
     notifyOnChangeProps: ["data", "error"],
-    retry: 1,
+    retry: 2,
   });
 }
 

@@ -45,6 +45,8 @@ class DoctorTradeController:
         self.last_run_at: str | None = None
         self.last_error: str | None = None
         self.self_evolution: dict[str, Any] = {"cycles": 0, "last_updated_at": None}
+        self._last_balance_sol: float = 0.0
+        self._last_balance_checked_ts: float = 0.0
 
         self.safety_systems = DoctorSafetySystems(
             api_error_threshold=int(getattr(self.settings, "DOCTOR_API_ERROR_PAUSE_THRESHOLD", 3) or 3),
@@ -439,12 +441,23 @@ class DoctorTradeController:
         }
 
     async def status(self) -> dict[str, Any]:
-        balance_sol = 0.0
+        balance_sol = float(self._last_balance_sol or 0.0)
+        now_ts = datetime.utcnow().timestamp()
+        refresh_interval_seconds = 20.0
+        balance_stale = True
         if self.wallet.public_address:
-            try:
-                balance_sol = await self.wallet.get_balance_sol()
-            except Exception:
-                balance_sol = 0.0
+            should_refresh = (now_ts - float(self._last_balance_checked_ts or 0.0)) >= refresh_interval_seconds
+            if should_refresh:
+                try:
+                    live_balance = await asyncio.wait_for(self.wallet.get_balance_sol(), timeout=1.2)
+                    balance_sol = float(live_balance or 0.0)
+                    self._last_balance_sol = balance_sol
+                    self._last_balance_checked_ts = now_ts
+                    balance_stale = False
+                except Exception:
+                    balance_stale = True
+            else:
+                balance_stale = False
 
         return {
             "enabled": self.enabled,
@@ -468,6 +481,8 @@ class DoctorTradeController:
                 "address": self.wallet.public_address,
                 "balance_sol": balance_sol,
                 "separate_wallet_enforced": True,
+                "balance_stale": bool(balance_stale),
+                "last_balance_checked_ts": float(self._last_balance_checked_ts or 0.0),
             },
             "trade_controls": {
                 "max_trades_per_day": int(self.max_trades_per_day),
