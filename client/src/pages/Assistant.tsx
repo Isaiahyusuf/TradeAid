@@ -210,7 +210,16 @@ export default function AssistantPage() {
             <CardTitle className="text-base">Cross-Chain History Context</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {sortedChains.length === 0 ? (
+            {contextQuery.isFetching && !context ? (
+              <p className="text-sm text-muted-foreground">Loading context…</p>
+            ) : contextQuery.isError ? (
+              <div className="space-y-2">
+                <p className="text-sm text-red-400">Context failed to load.</p>
+                <Button variant="outline" size="sm" onClick={() => contextQuery.refetch()}>
+                  Retry
+                </Button>
+              </div>
+            ) : sortedChains.length === 0 ? (
               <p className="text-sm text-muted-foreground">No trade history yet. DoctorTrade will learn as trading data accumulates.</p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

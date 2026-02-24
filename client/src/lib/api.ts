@@ -3,6 +3,7 @@ const ACCESS_TOKEN_KEY = "trade_aid_token";
 const REFRESH_TOKEN_KEY = "trade_aid_refresh_token";
 
 let refreshInFlight: Promise<string | null> | null = null;
+const API_TIMEOUT_MS = 20000;
 
 function getToken(): string | null {
   return localStorage.getItem(ACCESS_TOKEN_KEY);
@@ -88,13 +89,22 @@ export async function apiFetch<T = any>(
   }
 
   let res: Response;
+  const timeoutController = new AbortController();
+  const timeoutId = window.setTimeout(() => timeoutController.abort(), API_TIMEOUT_MS);
+  const mergedSignal = options.signal ?? timeoutController.signal;
   try {
     res = await fetch(`${API_URL}${path}`, {
       ...options,
       headers,
+      signal: mergedSignal,
     });
-  } catch {
+  } catch (error) {
+    if ((error as Error)?.name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
+    }
     throw new Error("Network error. Please try again.");
+  } finally {
+    window.clearTimeout(timeoutId);
   }
 
   if ((res.status === 401 || res.status === 403) && shouldRetry && path !== "/api/auth/refresh") {
