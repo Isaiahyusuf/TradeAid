@@ -502,13 +502,26 @@ class DoctorMultiSourceScanner:
         tx_count, bitquery_trade_usd = self._bitquery_activity(bitquery)
         volume_24h = max(volume_24h, bitquery_trade_usd)
 
-        if liquidity < self.min_liquidity_usd:
+        is_fresh_approved = bool((seed or {}).get("_fresh_approved", False))
+
+        min_liquidity_required = float(self.min_liquidity_usd)
+        if is_fresh_approved:
+            min_liquidity_required = max(5000.0, min_liquidity_required * 0.4)
+
+        min_volume_required = float(self.min_volume_24h_usd)
+        if is_fresh_approved:
+            min_volume_required = max(3000.0, min_volume_required * 0.4)
+
+        if liquidity < min_liquidity_required:
             return None
-        if volume_24h < self.min_volume_24h_usd:
+        if volume_24h < min_volume_required:
             return None
-        if age_minutes < self.min_age_minutes:
+        if age_minutes < self.min_age_minutes and not is_fresh_approved:
             return None
-        if age_minutes < self._strict_fresh_age_minutes and volume_24h < (self.min_volume_24h_usd * 3.0):
+        if (
+            age_minutes < self._strict_fresh_age_minutes
+            and volume_24h < (self.min_volume_24h_usd * (1.8 if is_fresh_approved else 3.0))
+        ):
             return None
         if self.max_age_minutes > 0 and age_minutes > self.max_age_minutes:
             return None
@@ -717,6 +730,17 @@ class DoctorMultiSourceScanner:
             reverse=True,
         )
         filtered = [row for row in candidates if float(row.get("liquidity") or 0.0) > 0.0]
+        if not filtered and candidates:
+            relaxed = sorted(
+                [row for row in candidates if float(row.get("liquidity") or 0.0) >= 1500.0],
+                key=lambda row: (
+                    float(row.get("volume_5m") or 0.0),
+                    float(row.get("liquidity") or 0.0),
+                ),
+                reverse=True,
+            )
+            if relaxed:
+                filtered = relaxed
         return filtered[: max(1, min(limit, 30))]
 
     async def scan_all_sources(self, limit: int = 16) -> list[dict[str, Any]]:
