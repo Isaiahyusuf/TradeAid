@@ -10,7 +10,7 @@ from app.utils.redis_client import cache_get, cache_set, publish_event
 
 
 class SafeBuyService:
-    SAFE_BUY_MIN_SCORE = 20.0
+    SAFE_BUY_MIN_SCORE = 30.0
     NEAR_MISS_MIN_SCORE = 15.0
     PROJECT_TTL_HOURS = 2
     MIN_LIQUIDITY_USD = 1_000.0
@@ -185,8 +185,7 @@ class SafeBuyService:
             new_wallets_count = int(extra.get("new_wallets_count", 0) or 0)
             trades_1h = buys_1h + sells_1h
 
-            if market_cap < 10000 or market_cap > 750000:
-                continue
+            # Removed market cap filtering to show all pairs regardless of MC
 
             if liquidity < self.MIN_LIQUIDITY_USD:
                 continue
