@@ -46,8 +46,14 @@ export default function SafeBuy() {
     }
   });
 
-  const safeTokens = data?.tokens || [];
-  const nearMissTokens = data?.near_miss_tokens || [];
+  const now = Date.now();
+  const filterRecent = (tokens = []) => tokens.filter(token => {
+    if (!token.created_at) return false;
+    const ageMinutes = (now - new Date(token.created_at).getTime()) / 60000;
+    return ageMinutes < 1440;
+  });
+  const safeTokens = filterRecent(data?.tokens || []);
+  const nearMissTokens = filterRecent(data?.near_miss_tokens || []);
 
   const avgSafety = useMemo(() => {
     if (!safeTokens.length) return 0;

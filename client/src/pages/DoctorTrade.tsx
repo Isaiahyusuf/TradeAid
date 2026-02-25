@@ -25,6 +25,8 @@ function fmtTs(value?: string) {
 }
 
 export default function DoctorTrade() {
+    // Only show new launches on Solana (created within 24h and chain is solana)
+    // (Declarations moved below after viewData is defined)
   const { data } = useDoctorStatus();
   const doctorHealth = useDoctorHealth();
   const { toast } = useToast();
@@ -55,6 +57,21 @@ export default function DoctorTrade() {
   const [qualityMaxHolderInput, setQualityMaxHolderInput] = useState("35");
   const viewData = data;
   const hasData = Boolean(viewData);
+  // Only show new launches on Solana (created within 24h and chain is solana)
+  const now = Date.now();
+  const filterRecentSolana = (tokens: any[] = []) => tokens.filter((token: any) => {
+    if (!token.created_at || !token.chain) return false;
+    const ageMinutes = (now - new Date(token.created_at).getTime()) / 60000;
+    return ageMinutes < 1440 && String(token.chain).toLowerCase() === "solana";
+  });
+  const tickerTokens = useMemo(
+    () => filterRecentSolana(viewData?.active_tokens || []).slice(0, 10),
+    [viewData?.active_tokens],
+  );
+  const recentActiveTokens = useMemo(
+    () => filterRecentSolana(viewData?.active_tokens || []).slice(0, 18),
+    [viewData?.active_tokens],
+  );
   const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
   const autoAction = String(searchParams.get("action") || "").trim().toLowerCase();
   const autoBuyContract = String(searchParams.get("contract") || "").trim();
@@ -146,10 +163,6 @@ export default function DoctorTrade() {
 
   const scannerSuccessRate = Number(viewData?.scanner_health?.overall?.success_rate_pct || 0);
   const autoSnipeReady = Boolean(viewData?.enabled && viewData?.trade_controls?.wallet_connected);
-  const tickerTokens = useMemo(
-    () => (viewData?.active_tokens || []).slice(0, 10),
-    [viewData?.active_tokens],
-  );
 
   const saveRiskRules = () => {
     const scanIntervalSeconds = Math.max(5, Math.trunc(Number.parseFloat(intervalInput) || 20));
@@ -450,7 +463,7 @@ export default function DoctorTrade() {
                 <p className="text-[10px] text-muted-foreground">{fmtUsd(token.liquidity)} · {fmtUsd(token.volume_5m)}</p>
               </div>
             ))}
-            {!tickerTokens.length && <p className="text-xs text-muted-foreground">Waiting for live tokens…</p>}
+            {!tickerTokens.length && <p className="text-xs text-muted-foreground">No new Solana launches to snipe (last 24h).</p>}
           </div>
         </Card>
 
@@ -458,7 +471,7 @@ export default function DoctorTrade() {
           <Card className="p-4 xl:col-span-3">
             <h2 className="text-sm font-semibold mb-3">Watchlist</h2>
             <div className="space-y-2 max-h-[640px] overflow-auto">
-              {(viewData?.active_tokens || []).slice(0, 18).map((token) => (
+              {recentActiveTokens.map((token) => (
                 <div key={token.address} className="border rounded-md p-2">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-semibold">{token.symbol}</p>
@@ -468,7 +481,7 @@ export default function DoctorTrade() {
                   <p className="text-[11px] text-muted-foreground truncate">{token.address}</p>
                 </div>
               ))}
-              {!viewData?.active_tokens?.length && <p className="text-sm text-muted-foreground">Waiting for scanner feed…</p>}
+              {recentActiveTokens.length === 0 && <p className="text-sm text-muted-foreground">No new Solana launches to snipe (last 24h).</p>}
             </div>
           </Card>
 

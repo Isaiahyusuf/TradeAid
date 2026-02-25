@@ -95,7 +95,16 @@ export default function Dashboard() {
   const { data: alertData, isLoading: alertsLoading, error: alertsError } = useAlerts();
   const { data: safeBuyData, isLoading: safeBuyLoading } = useSafeBuy(5);
   const hasError = tokensError || statsError || alertsError;
-  const displayTokens = tokenTab === "all" ? (tokenData?.tokens || []) : (ageWindowData?.tokens || []).slice(0, 20);
+  // Filter out tokens older than 24 hours (1440 minutes) in all cases
+  const now = Date.now();
+  const filterRecent = (tokens: any[] = []) => tokens.filter(token => {
+    if (!token.created_at) return false;
+    const ageMinutes = (now - new Date(token.created_at).getTime()) / 60000;
+    return ageMinutes < 1440;
+  });
+  const displayTokens = tokenTab === "all"
+    ? filterRecent(tokenData?.tokens || [])
+    : filterRecent(ageWindowData?.tokens || []).slice(0, 20);
   const dedupedAlerts = useMemo(() => {
     const rows = alertData?.alerts || [];
     const seen = new Set<string>();
@@ -119,7 +128,13 @@ export default function Dashboard() {
     return displayTokens.find((token) => token.id === selectedTokenId) || null;
   }, [displayTokens, selectedTokenId]);
   const intelligenceMetrics = useMemo(() => {
-    const allTokens = tokenData?.tokens || [];
+    // Only consider tokens from the last 24 hours for all stats
+    const now = Date.now();
+    const allTokens = (tokenData?.tokens || []).filter(token => {
+      if (!token.created_at) return false;
+      const ageMinutes = (now - new Date(token.created_at).getTime()) / 60000;
+      return ageMinutes < 1440;
+    });
     const scored = allTokens.filter((token) => token.latest_score);
     const lowRisk = scored.filter((token) => normalizePct(token.latest_score!.rug_probability) <= 35).length;
     const mediumRisk = scored.filter((token) => {
@@ -141,8 +156,9 @@ export default function Dashboard() {
       const min = index === 0 ? 0 : bucketMinutes[index - 1];
       const max = bucketMinutes[index];
       const count = allTokens.filter((token) => {
-        const ageMinutes = (Date.now() - new Date(token.created_at).getTime()) / 60000;
-        return ageMinutes >= min && ageMinutes < max;
+        if (!token.created_at) return false;
+        const ageMinutes = (now - new Date(token.created_at).getTime()) / 60000;
+        return ageMinutes >= min && ageMinutes < max && ageMinutes < 1440;
       }).length;
       return { label, count };
     });
