@@ -90,14 +90,14 @@ export default function SafeBuy() {
         </div>
 
         <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-          <DialogContent className="max-w-lg w-full">
+          <DialogContent className="max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <SettingsMenuCard
               title="Safe Buy Settings"
               description="Adjust chain scope and custom chain presets. Assistant Trade is only for Solana tokens. Other chains require manual buy."
               open={settingsOpen}
               onToggle={() => setSettingsOpen(false)}
             >
-              <div className="max-h-72 overflow-y-auto pr-2">
+              <div className="min-h-[120px] max-h-[60vh] overflow-y-auto pr-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <Select
                     value={draftChainFilter}

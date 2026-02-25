@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/use-auth";
 import { useTokens, useTokenStats } from "@/hooks/use-memetrend";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAlerts } from "@/hooks/use-alerts";
 import { useSafeBuy } from "@/hooks/use-safe-buy";
 import { 
@@ -53,6 +54,7 @@ export default function Dashboard() {
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
   const [selectedAlert, setSelectedAlert] = useState<any>(null);
   const [tokenTab, setTokenTab] = useState<"all" | "5m" | "20m" | "40m" | "1h" | "5h" | "12h" | "24h">("all");
+  const [chainFilter, setChainFilter] = useState<string>("solana");
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -72,14 +74,14 @@ export default function Dashboard() {
   ];
 
   const selectedAgeTab = ageTabs.find((tab) => tab.key === tokenTab);
-  const { data: tokenData, isLoading: tokensLoading, error: tokensError } = useTokens(undefined, {
+  const { data: tokenData, isLoading: tokensLoading, error: tokensError } = useTokens(chainFilter, {
     newOnly: true,
     maxAgeHours: 24,
     prioritizePumpFun: true,
     limit: 100,
   });
   const { data: ageWindowData, isLoading: ageWindowLoading } = useTokens(
-    undefined,
+    chainFilter,
     selectedAgeTab
       ? {
           newOnly: true,
@@ -345,6 +347,24 @@ export default function Dashboard() {
           </Card>
         )}
 
+        <div className="flex items-center gap-3 mb-2">
+          <span className="font-medium">Chain:</span>
+          <Select value={chainFilter} onValueChange={setChainFilter}>
+            <SelectTrigger className="w-32">
+              <SelectValue placeholder="Select chain" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="solana">Solana</SelectItem>
+              <SelectItem value="ethereum">Ethereum</SelectItem>
+              <SelectItem value="bsc">BSC</SelectItem>
+              <SelectItem value="base">Base</SelectItem>
+              <SelectItem value="arbitrum">Arbitrum</SelectItem>
+              <SelectItem value="avalanche">Avalanche</SelectItem>
+              <SelectItem value="polygon">Polygon</SelectItem>
+              <SelectItem value="all">All Chains</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {selectedAlert && (
             <Card className="lg:col-span-2 p-4 solana-card">

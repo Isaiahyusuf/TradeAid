@@ -344,12 +344,12 @@ export default function DoctorTrade() {
           open={settingsOpen}
           onToggle={() => setSettingsOpen((prev) => !prev)}
         >
-          <div className="flex flex-wrap gap-2 mb-3">
+          <div className="flex flex-wrap gap-2 mb-3" style={{overflowX: 'auto'}}>
             <Button variant="outline" size="sm" onClick={() => applyPreset("conservative")}>Conservative</Button>
             <Button variant="outline" size="sm" onClick={() => applyPreset("balanced")}>Balanced</Button>
             <Button variant="outline" size="sm" onClick={() => applyPreset("aggressive")}>Aggressive</Button>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 items-end">
+          <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 items-end max-h-[60vh] overflow-y-auto pr-2">
             <div>
               <p className="text-xs text-muted-foreground mb-1">Scan Interval (sec)</p>
               <Input value={intervalInput} onChange={(e) => setIntervalInput(e.target.value)} placeholder="20" />

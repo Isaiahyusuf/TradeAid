@@ -135,11 +135,11 @@ export function useDoctorStatus() {
       if (!raw) return undefined;
       const parsed = JSON.parse(raw) as Partial<DoctorStatus>;
       if (!parsed || typeof parsed !== "object") {
-        window.localStorage.removeItem(DOCTOR_STATUS_CACHE_KEY);
+        // Ignore corrupted cache, do not remove
         return undefined;
       }
       if (typeof parsed.enabled !== "boolean") {
-        window.localStorage.removeItem(DOCTOR_STATUS_CACHE_KEY);
+        // Ignore corrupted cache, do not remove
         return undefined;
       }
       const tradeControls =
@@ -272,6 +272,8 @@ export function useDoctorStatus() {
       return undefined;
     }
   };
+    // Cloud sync: always fetch from backend, no localStorage fallback
+    const readCached = (): DoctorStatus | undefined => undefined;
 
   return useQuery({
     queryKey: ["doctortrade", "status"],
