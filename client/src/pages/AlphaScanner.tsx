@@ -160,6 +160,7 @@ export default function AlphaScanner() {
 
   const aiInsightQuery = useAIInsight(selectedToken?.chain || null, selectedToken?.contract_address || null);
   const aiInsight = aiInsightQuery.data?.insight || buildAiInsightFallback(selectedToken);
+  const aiRiskLabel = "riskLevel" in aiInsight ? aiInsight.riskLevel : aiInsight.risk_level;
 
   const onStreamEvent = useCallback((event: ScannerStreamEvent) => {
     if (chain !== "all" && event.chain && String(event.chain).toLowerCase() !== chain) return;
@@ -507,7 +508,7 @@ export default function AlphaScanner() {
 
                     <div className="space-y-2">
                       <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <Badge variant="outline">{aiInsight.riskLevel || aiInsight.risk_level || "Unknown"} Risk</Badge>
+                        <Badge variant="outline">{aiRiskLabel || "Unknown"} Risk</Badge>
                         <div className="flex flex-wrap gap-2">
                           <Button size="sm" onClick={() => openDirectBuyChooser(token)}>Direct Buy</Button>
                           <Button size="sm" variant="outline" className="transition-all duration-300 hover:scale-105" onClick={() => window.open(token.buy_urls?.pump_fun || `https://pump.fun/coin/${token.contract_address}`, "_blank")}>Pump.fun <ExternalLink className="w-3 h-3 ml-1" /></Button>

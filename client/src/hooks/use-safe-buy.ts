@@ -21,6 +21,11 @@ export type SafeBuyItem = {
   confidence_score: number;
   trend: "up" | "down" | "flat";
   recently_added: boolean;
+  buy_sell_ratio?: number;
+  top_holders_pct?: number;
+  dev_wallet_pct?: number;
+  wallet_growth_rate?: number;
+  source_platform?: string | null;
   logo_url?: string | null;
   buy_links: {
     pump_fun?: string;

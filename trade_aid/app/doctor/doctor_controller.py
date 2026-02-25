@@ -13,6 +13,7 @@ from app.doctor.safety_systems import DoctorSafetySystems
 from app.doctor.doctor_solana_wallet import DoctorSolanaWallet
 from app.doctor.storage import doctor_db_session
 from app.models.models import DoctorEventLog, DoctorPerformanceSnapshot, DoctorTradeLog
+from app.utils.solana_rpc import solana_rpc_endpoints
 
 
 class DoctorTradeController:
@@ -72,6 +73,7 @@ class DoctorTradeController:
             private_key=doctor_pk,
             public_address=doctor_wallet,
             max_slippage_pct=float(getattr(self.settings, "DOCTOR_MAX_SLIPPAGE_PCT", 2.0) or 2.0),
+            rpc_urls=solana_rpc_endpoints(self.settings),
         )
         self.execution = DoctorExecutionEngine(
             self.wallet,

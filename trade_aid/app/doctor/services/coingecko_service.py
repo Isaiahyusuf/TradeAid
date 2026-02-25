@@ -14,25 +14,27 @@ class CoinGeckoService(BaseDoctorApiService):
     async def get_token_market(self, token_address: str) -> dict[str, Any]:
         if not token_address:
             return {}
-        url = "https://pro-api.coingecko.com/api/v3/simple/price"
-        params = {
-            "ids": "",
-            "vs_currencies": "usd",
-            "contract_addresses": token_address,
-            "include_24hr_vol": "true",
-            "include_market_cap": "true",
-        }
-        headers = {"x-cg-pro-api-key": self._api_key}
-        data = await self._request_json("GET", url, params=params, headers=headers, source="coingecko")
+        headers: dict[str, str] = {}
+        if self._api_key:
+            headers["x-cg-pro-api-key"] = self._api_key
+
+        primary_url = f"https://pro-api.coingecko.com/api/v3/coins/solana/contract/{token_address}"
+        data = await self._request_json("GET", primary_url, headers=headers, source="coingecko")
+
         if not isinstance(data, dict):
+            fallback_url = f"https://api.coingecko.com/api/v3/coins/solana/contract/{token_address}"
+            data = await self._request_json("GET", fallback_url, source="coingecko")
+            if not isinstance(data, dict):
+                return {}
+
+        market_data = data.get("market_data") or {}
+        if not isinstance(market_data, dict):
             return {}
-        token_row = data.get(token_address.lower()) or data.get(token_address) or {}
-        if not isinstance(token_row, dict):
-            return {}
+
         return {
-            "price_usd": float(token_row.get("usd") or 0.0),
-            "volume_24h": float(token_row.get("usd_24h_vol") or 0.0),
-            "market_cap": float(token_row.get("usd_market_cap") or 0.0),
+            "price_usd": float(((market_data.get("current_price") or {}).get("usd") or 0.0)),
+            "volume_24h": float(((market_data.get("total_volume") or {}).get("usd") or 0.0)),
+            "market_cap": float(((market_data.get("market_cap") or {}).get("usd") or 0.0)),
         }
 
     def validate_volume(self, volume_24h: float) -> bool:

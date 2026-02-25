@@ -7,8 +7,9 @@ import httpx
 
 
 class DoctorSolanaWallet:
-    def __init__(self, rpc_url: str, private_key: str, public_address: str, max_slippage_pct: float = 2.0) -> None:
+    def __init__(self, rpc_url: str, private_key: str, public_address: str, max_slippage_pct: float = 2.0, rpc_urls: list[str] | None = None) -> None:
         self.rpc_url = rpc_url
+        self.rpc_urls = [url for url in [*(rpc_urls or []), rpc_url] if str(url or "").strip()]
         self.private_key = private_key
         self.public_address = public_address
         self.max_slippage_pct = max_slippage_pct
@@ -22,11 +23,20 @@ class DoctorSolanaWallet:
             "method": "getBalance",
             "params": [self.public_address],
         }
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            response = await client.post(self.rpc_url, json=payload)
-            response.raise_for_status()
-            lamports = float((((response.json() or {}).get("result") or {}).get("value") or 0))
-            return lamports / 1_000_000_000
+        last_exc: Exception | None = None
+        async with httpx.AsyncClient(timeout=8.0, trust_env=False) as client:
+            for rpc_url in self.rpc_urls:
+                try:
+                    response = await client.post(rpc_url, json=payload)
+                    response.raise_for_status()
+                    lamports = float((((response.json() or {}).get("result") or {}).get("value") or 0))
+                    return lamports / 1_000_000_000
+                except Exception as exc:
+                    last_exc = exc
+                    continue
+        if last_exc:
+            raise last_exc
+        return 0.0
 
     def _dedupe_key(self, token_address: str, side: str, size_pct: float) -> str:
         raw = f"{token_address}:{side}:{size_pct:.6f}"
@@ -68,9 +78,15 @@ class DoctorSolanaWallet:
             "method": "getSignatureStatuses",
             "params": [[signature]],
         }
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            response = await client.post(self.rpc_url, json=payload)
-            response.raise_for_status()
-            value = ((((response.json() or {}).get("result") or {}).get("value") or [None])[0] or {})
-            confirmation_status = str(value.get("confirmationStatus") or "")
-            return confirmation_status in {"confirmed", "finalized"}
+        async with httpx.AsyncClient(timeout=8.0, trust_env=False) as client:
+            for rpc_url in self.rpc_urls:
+                try:
+                    response = await client.post(rpc_url, json=payload)
+                    response.raise_for_status()
+                    value = ((((response.json() or {}).get("result") or {}).get("value") or [None])[0] or {})
+                    confirmation_status = str(value.get("confirmationStatus") or "")
+                    if confirmation_status in {"confirmed", "finalized"}:
+                        return True
+                except Exception:
+                    continue
+        return False

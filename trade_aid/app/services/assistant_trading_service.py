@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_enabled_chains, get_settings
 from app.models.models import AssistantTrade, ScoringHistory, Token, User
+from app.utils.solana_rpc import solana_rpc_endpoints
 from app.utils.security import decrypt_api_key, encrypt_api_key
 
 
@@ -1294,42 +1295,47 @@ async def execute_wallet_transfer(
     if lamports <= 0:
         raise HTTPException(status_code=400, detail="amount is too small")
 
-    async with AsyncClient(settings.SOLANA_RPC_URL) as client:
-        try:
-            balance_resp = await client.get_balance(sender_pubkey)
-            current_lamports = int(balance_resp.value or 0)
-        except Exception:
-            raise HTTPException(status_code=503, detail="Unable to read on-chain balance from Solana RPC")
+    tx_hash: str | None = None
+    rpc_urls = solana_rpc_endpoints(settings)
+    for rpc_url in rpc_urls:
+        async with AsyncClient(rpc_url) as client:
+            try:
+                balance_resp = await client.get_balance(sender_pubkey)
+                current_lamports = int(balance_resp.value or 0)
+            except Exception:
+                continue
 
-        fee_buffer = 15_000
-        if current_lamports < (lamports + fee_buffer):
-            raise HTTPException(status_code=400, detail="Insufficient SOL balance for transfer + network fee")
+            fee_buffer = 15_000
+            if current_lamports < (lamports + fee_buffer):
+                raise HTTPException(status_code=400, detail="Insufficient SOL balance for transfer + network fee")
 
-        try:
-            blockhash_resp = await client.get_latest_blockhash()
-            recent_blockhash = blockhash_resp.value.blockhash
-            instruction = transfer(
-                TransferParams(
-                    from_pubkey=sender_pubkey,
-                    to_pubkey=recipient_pubkey,
-                    lamports=lamports,
+            try:
+                blockhash_resp = await client.get_latest_blockhash()
+                recent_blockhash = blockhash_resp.value.blockhash
+                instruction = transfer(
+                    TransferParams(
+                        from_pubkey=sender_pubkey,
+                        to_pubkey=recipient_pubkey,
+                        lamports=lamports,
+                    )
                 )
-            )
-            transaction = Transaction.new_signed_with_payer(
-                [instruction],
-                sender_pubkey,
-                [sender_keypair],
-                recent_blockhash,
-            )
-            send_resp = await client.send_transaction(
-                transaction,
-                opts=TxOpts(skip_preflight=False, preflight_commitment="confirmed"),
-            )
-            tx_hash = str(send_resp.value)
-        except HTTPException:
-            raise
-        except Exception:
-            raise HTTPException(status_code=503, detail="Solana transfer submission failed")
+                transaction = Transaction.new_signed_with_payer(
+                    [instruction],
+                    sender_pubkey,
+                    [sender_keypair],
+                    recent_blockhash,
+                )
+                send_resp = await client.send_transaction(
+                    transaction,
+                    opts=TxOpts(skip_preflight=False, preflight_commitment="confirmed"),
+                )
+                tx_hash = str(send_resp.value)
+                break
+            except Exception:
+                continue
+
+    if not tx_hash:
+        raise HTTPException(status_code=503, detail="Solana transfer submission failed across RPC endpoints")
 
     sol_price = await _fetch_sol_price_usd()
     notional_usd = transfer_amount * sol_price if sol_price > 0 else 0.0

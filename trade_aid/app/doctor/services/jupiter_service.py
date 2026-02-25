@@ -9,11 +9,20 @@ class JupiterService(BaseDoctorApiService):
     def __init__(self, api_key: str) -> None:
         super().__init__()
         self._api_key = (api_key or "").strip()
-        self._quote_url = "https://quote-api.jup.ag/v6/quote"
-        self._swap_url = "https://quote-api.jup.ag/v6/swap"
+        self._quote_urls = [
+            "https://quote-api.jup.ag/v6/quote",
+            "https://lite-api.jup.ag/swap/v1/quote",
+        ]
+        self._swap_urls = [
+            "https://quote-api.jup.ag/v6/swap",
+            "https://lite-api.jup.ag/swap/v1/swap",
+        ]
 
     def _headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+        return headers
 
     async def get_best_route(self, input_mint: str, output_mint: str, amount_lamports: int, slippage_bps: int = 200) -> dict[str, Any]:
         params = {
@@ -23,8 +32,11 @@ class JupiterService(BaseDoctorApiService):
             "slippageBps": str(max(1, int(slippage_bps))),
             "onlyDirectRoutes": "false",
         }
-        data = await self._request_json("GET", self._quote_url, params=params, headers=self._headers(), source="jupiter")
-        return data if isinstance(data, dict) else {}
+        for quote_url in self._quote_urls:
+            data = await self._request_json("GET", quote_url, params=params, headers=self._headers(), source="jupiter")
+            if isinstance(data, dict) and (data.get("outAmount") is not None or data.get("routePlan") is not None):
+                return data
+        return {}
 
     async def simulate_trade(self, input_mint: str, output_mint: str, amount_lamports: int, slippage_bps: int = 200) -> dict[str, Any]:
         route = await self.get_best_route(input_mint, output_mint, amount_lamports, slippage_bps=slippage_bps)
@@ -49,5 +61,8 @@ class JupiterService(BaseDoctorApiService):
             "userPublicKey": wallet_pubkey,
             "wrapAndUnwrapSol": bool(wrap_unwrap_sol),
         }
-        data = await self._request_json("POST", self._swap_url, json=payload, headers=self._headers(), source="jupiter")
-        return data if isinstance(data, dict) else {}
+        for swap_url in self._swap_urls:
+            data = await self._request_json("POST", swap_url, json=payload, headers=self._headers(), source="jupiter")
+            if isinstance(data, dict) and data:
+                return data
+        return {}

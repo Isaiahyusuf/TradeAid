@@ -26,7 +26,7 @@ class BaseDoctorApiService:
         last_error: str | None = None
         for attempt in range(1, self._retries + 1):
             try:
-                async with httpx.AsyncClient(timeout=self._timeout) as client:
+                async with httpx.AsyncClient(timeout=self._timeout, trust_env=False) as client:
                     response = await client.request(method.upper(), url, headers=headers, params=params, json=json)
                 response.raise_for_status()
                 payload = response.json()

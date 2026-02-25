@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
+from app.utils.solana_rpc import solana_rpc_endpoints
 
 
 CHAIN_NATIVE_SYMBOL: dict[str, str] = {
@@ -82,19 +83,21 @@ async def _fetch_solana_balance(address: str) -> float | None:
         "params": [address, {"commitment": "confirmed"}],
     }
 
+    rpc_urls = solana_rpc_endpoints(settings)
     try:
         async with httpx.AsyncClient(timeout=8.0, trust_env=False) as client:
-            response = await client.post(settings.SOLANA_RPC_URL, json=payload)
-            response.raise_for_status()
-            body = response.json() or {}
+            for rpc_url in rpc_urls:
+                try:
+                    response = await client.post(rpc_url, json=payload)
+                    response.raise_for_status()
+                    body = response.json() or {}
+                    lamports = float((body.get("result") or {}).get("value") or 0)
+                    return lamports / 1_000_000_000
+                except Exception:
+                    continue
     except Exception:
         return None
-
-    try:
-        lamports = float((body.get("result") or {}).get("value") or 0)
-        return lamports / 1_000_000_000
-    except Exception:
-        return None
+    return None
 
 
 async def _fetch_evm_balance(rpc_url: str, address: str) -> float | None:

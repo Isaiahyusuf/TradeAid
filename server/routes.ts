@@ -453,10 +453,6 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Only Solana payments are supported" });
       }
 
-      if (!SUPPORTED_PAYMENT_CHAINS.includes(normalizedChain.toUpperCase())) {
-        return res.status(400).json({ message: "Unsupported chain" });
-      }
-
       const existingPayment = await storage.getPaymentByTxHash(txHash);
       if (existingPayment) {
         return res.status(400).json({ 

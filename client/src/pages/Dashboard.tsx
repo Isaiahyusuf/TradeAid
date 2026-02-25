@@ -513,7 +513,7 @@ export default function Dashboard() {
                     )}
                     data-testid={`alert-row-${alert.id}`}
                     onClick={() => {
-                      setSelectedAlert((prev) => (prev?.id === alert.id ? null : alert));
+                      setSelectedAlert((prev: any) => (prev?.id === alert.id ? null : alert));
                       setSelectedTokenId(null);
                     }}
                   >

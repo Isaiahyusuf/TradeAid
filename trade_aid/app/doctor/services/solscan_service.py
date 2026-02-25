@@ -15,10 +15,17 @@ class SolscanService(BaseDoctorApiService):
         if not token_address:
             return {}
         url = "https://pro-api.solscan.io/v1.0/token/meta"
-        headers = {"token": self._api_key, "accept": "application/json"}
+        headers = {"accept": "application/json"}
+        if self._api_key:
+            headers["token"] = self._api_key
         params = {"tokenAddress": token_address}
         data = await self._request_json("GET", url, headers=headers, params=params, source="solscan")
-        return data if isinstance(data, dict) else {}
+        if isinstance(data, dict):
+            return data
+
+        fallback_url = "https://public-api.solscan.io/token/meta"
+        fallback = await self._request_json("GET", fallback_url, headers={"accept": "application/json"}, params=params, source="solscan")
+        return fallback if isinstance(fallback, dict) else {}
 
     async def validate_holder_risk(self, token_address: str) -> dict[str, Any]:
         data = await self.get_token_meta(token_address)

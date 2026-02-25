@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models.models import Token
 from app.services.dexscreener_client import get_token_pairs
+from app.utils.solana_rpc import solana_rpc_endpoints
 
 
 _BASE58_ALPHABET = set("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
@@ -36,52 +37,57 @@ class TokenResolverService:
             return default
 
     async def _fetch_helius(self, mint_address: str) -> dict[str, Any]:
-        api_key = str(self.settings.HELIUS_API_KEY or "").strip()
-        if not api_key:
+        rpc_urls = solana_rpc_endpoints(self.settings)
+        if not rpc_urls:
             return {}
-        rpc_url = f"https://mainnet.helius-rpc.com/?api-key={api_key}"
 
         supply_payload = {"jsonrpc": "2.0", "id": 1, "method": "getTokenSupply", "params": [mint_address]}
         largest_payload = {"jsonrpc": "2.0", "id": 1, "method": "getTokenLargestAccounts", "params": [mint_address]}
         sigs_payload = {"jsonrpc": "2.0", "id": 1, "method": "getSignaturesForAddress", "params": [mint_address, {"limit": 25}]}
 
         out: dict[str, Any] = {}
-        try:
-            supply_resp = await self._client.post(rpc_url, json=supply_payload)
-            if supply_resp.status_code < 400:
-                supply_data = supply_resp.json() or {}
-                out["total_supply"] = self._safe_float((((supply_data.get("result") or {}).get("value") or {}).get("uiAmount")), 0.0)
-        except Exception:
-            pass
+        for rpc_url in rpc_urls:
+            try:
+                supply_resp = await self._client.post(rpc_url, json=supply_payload)
+                if supply_resp.status_code < 400:
+                    supply_data = supply_resp.json() or {}
+                    out["total_supply"] = self._safe_float((((supply_data.get("result") or {}).get("value") or {}).get("uiAmount")), 0.0)
+                    break
+            except Exception:
+                continue
 
-        try:
-            holders_resp = await self._client.post(rpc_url, json=largest_payload)
-            if holders_resp.status_code < 400:
-                holders_data = holders_resp.json() or {}
-                rows = (((holders_data.get("result") or {}).get("value") or []) if isinstance(holders_data, dict) else [])
-                amounts = [self._safe_float((row or {}).get("uiAmount"), 0.0) for row in rows[:10]]
-                total = sum(amounts)
-                top10 = (sum(amounts[:10]) / total * 100.0) if total > 0 else 0.0
-                top3 = (sum(amounts[:3]) / total * 100.0) if total > 0 else 0.0
-                out["holder_count_estimate"] = len(rows)
-                out["top10_percent"] = round(top10, 4)
-                out["top3_percent"] = round(top3, 4)
-        except Exception:
-            pass
+        for rpc_url in rpc_urls:
+            try:
+                holders_resp = await self._client.post(rpc_url, json=largest_payload)
+                if holders_resp.status_code < 400:
+                    holders_data = holders_resp.json() or {}
+                    rows = (((holders_data.get("result") or {}).get("value") or []) if isinstance(holders_data, dict) else [])
+                    amounts = [self._safe_float((row or {}).get("uiAmount"), 0.0) for row in rows[:10]]
+                    total = sum(amounts)
+                    top10 = (sum(amounts[:10]) / total * 100.0) if total > 0 else 0.0
+                    top3 = (sum(amounts[:3]) / total * 100.0) if total > 0 else 0.0
+                    out["holder_count_estimate"] = len(rows)
+                    out["top10_percent"] = round(top10, 4)
+                    out["top3_percent"] = round(top3, 4)
+                    break
+            except Exception:
+                continue
 
-        try:
-            sigs_resp = await self._client.post(rpc_url, json=sigs_payload)
-            if sigs_resp.status_code < 400:
-                sigs_data = sigs_resp.json() or {}
-                rows = ((sigs_data.get("result") or []) if isinstance(sigs_data, dict) else [])
-                block_times = [int((row or {}).get("blockTime") or 0) for row in rows if (row or {}).get("blockTime")]
-                if block_times:
-                    first_seen = min(block_times)
-                    out["creation_slot"] = first_seen
-                    age_minutes = (datetime.utcnow() - datetime.utcfromtimestamp(first_seen)).total_seconds() / 60.0
-                    out["age_minutes"] = max(0.0, age_minutes)
-        except Exception:
-            pass
+        for rpc_url in rpc_urls:
+            try:
+                sigs_resp = await self._client.post(rpc_url, json=sigs_payload)
+                if sigs_resp.status_code < 400:
+                    sigs_data = sigs_resp.json() or {}
+                    rows = ((sigs_data.get("result") or []) if isinstance(sigs_data, dict) else [])
+                    block_times = [int((row or {}).get("blockTime") or 0) for row in rows if (row or {}).get("blockTime")]
+                    if block_times:
+                        first_seen = min(block_times)
+                        out["creation_slot"] = first_seen
+                        age_minutes = (datetime.utcnow() - datetime.utcfromtimestamp(first_seen)).total_seconds() / 60.0
+                        out["age_minutes"] = max(0.0, age_minutes)
+                        break
+            except Exception:
+                continue
 
         return out
 

@@ -134,6 +134,16 @@ export default function AuthPage() {
       return;
     }
 
+    if (!oauthAccessToken) {
+      toast({
+        title: "Authentication issue",
+        description: "Missing OAuth access token.",
+        variant: "destructive",
+      });
+      clearParams();
+      return;
+    }
+
     consumeOAuthTokens(oauthAccessToken, oauthRefreshToken)
       .then(() => {
         toast({ title: "Signed in", description: "You're securely signed in." });
