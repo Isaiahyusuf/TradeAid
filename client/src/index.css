@@ -425,9 +425,8 @@
   .safe-area-bottom {
     padding-bottom: env(safe-area-inset-bottom);
   }
-}
 
-@media (orientation: landscape) and (max-height: 900px) {
+  @media (orientation: landscape) and (max-height: 900px) {
   .safe-area-bottom {
     padding-bottom: max(env(safe-area-inset-bottom), 0.75rem);
   }
@@ -529,6 +528,8 @@
     transform: scale(1.06);
     opacity: 0.86;
   }
+}
+
 }
 
 /* Custom scrollbar */
