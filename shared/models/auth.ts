@@ -6,9 +6,9 @@ import { index, jsonb, pgTable, timestamp, varchar, boolean } from "drizzle-orm/
 export const sessions = pgTable(
   "sessions",
   {
-    sid: varchar("sid").primaryKey(),
+    sid: varchar("sid", { length: 255 }).primaryKey(),
     sess: jsonb("sess").notNull(),
-    expire: timestamp("expire").notNull(),
+    expire: timestamp("expire", { mode: "date" }).notNull(),
   },
   (table) => [index("IDX_session_expire").on(table.expire)]
 );
