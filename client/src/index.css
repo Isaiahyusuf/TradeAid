@@ -1,64 +1,130 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: 240 10% 4%;
+  /* Modern Dark Theme - Enhanced */
+  --background: 240 10% 3%;
   --foreground: 0 0% 98%;
 
   --card: 240 10% 6%;
   --card-foreground: 0 0% 98%;
 
-  --popover: 240 10% 6%;
+  --popover: 240 10% 8%;
   --popover-foreground: 0 0% 98%;
 
   --primary: 142 71% 45%;
   --primary-foreground: 144 100% 10%;
 
-  --secondary: 240 4% 16%;
+  --secondary: 240 4% 18%;
   --secondary-foreground: 0 0% 98%;
 
-  --muted: 240 4% 16%;
-  --muted-foreground: 240 5% 65%;
+  --muted: 240 4% 20%;
+  --muted-foreground: 240 5% 70%;
 
   --accent: 262 83% 58%;
-  --accent-foreground: 210 40% 98%;
+  --accent-foreground: 0 0% 10%;
 
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 98%;
 
-  --border: 240 4% 16%;
-  --input: 240 4% 16%;
+  --border: 240 4% 18%;
+  --input: 240 4% 18%;
   --ring: 142 71% 45%;
 
   --radius: 0.75rem;
 
   --sidebar-width: 280px;
+  
+  /* Modern spacing system */
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+  --spacing-2xl: 3rem;
 }
 
 @layer base {
   body {
     @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: 'Poppins', 'Space Grotesk', sans-serif;
     background-image:
-      radial-gradient(circle at 12% 8%, rgba(153,69,255,0.16), transparent 36%),
-      radial-gradient(circle at 86% 16%, rgba(20,184,166,0.14), transparent 34%),
-      radial-gradient(circle at 52% 86%, rgba(34,197,94,0.12), transparent 40%);
+      radial-gradient(circle at 12% 8%, rgba(153,69,255,0.12), transparent 40%),
+      radial-gradient(circle at 86% 16%, rgba(20,184,166,0.1), transparent 38%),
+      radial-gradient(circle at 52% 86%, rgba(34,197,94,0.08), transparent 45%);
     background-attachment: fixed;
+    transition: background-color 0.3s ease;
   }
   
   h1, h2, h3, h4, h5, h6 {
     @apply font-bold tracking-tight;
+    font-family: 'Poppins', sans-serif;
   }
+
+  h1 { @apply text-3xl md:text-4xl lg:text-5xl; }
+  h2 { @apply text-2xl md:text-3xl; }
+  h3 { @apply text-xl md:text-2xl; }
+  h4 { @apply text-lg md:text-xl; }
+  h5 { @apply text-base md:text-lg; }
+  h6 { @apply text-sm md:text-base; }
 
   code, pre {
     font-family: 'JetBrains Mono', monospace;
   }
+
+  /* Smooth scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(34, 197, 94, 0.3);
+    border-radius: 4px;
+    transition: background 0.2s;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(34, 197, 94, 0.5);
+  }
 }
 
 @layer utilities {
+  /* Modern card glass effect */
+  .glass-effect {
+    @apply backdrop-blur-xl bg-card/50 border border-white/10;
+  }
+
+  .glass-effect-strong {
+    @apply backdrop-blur-2xl bg-card/70 border border-white/20;
+  }
+
+  /* Modern button styles */
+  .btn-primary {
+    @apply px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-gradient-to-r from-primary to-accent hover:shadow-[0_0_20px_rgba(34,197,94,0.4)] active:scale-95;
+  }
+
+  .btn-secondary {
+    @apply px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 bg-secondary hover:bg-secondary/80 active:scale-95;
+  }
+
+  /* Smooth gradient text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent;
+  }
+
+  .gradient-text-right {
+    @apply bg-gradient-to-r from-accent to-primary bg-clip-text text-transparent;
+  }
+
+  /* Enhanced app scroll */
   .app-scroll {
     scrollbar-gutter: stable;
     -webkit-overflow-scrolling: touch;
@@ -66,9 +132,62 @@
     touch-action: pan-y;
   }
 
+  /* Card elevation effects */
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-[0_10px_40px_rgba(34,197,94,0.15)] hover:border-primary/30;
+  }
+
+  .card-base {
+    @apply bg-card/60 backdrop-blur-sm border border-white/10 rounded-xl transition-all duration-300;
+  }
+
+  .card-interactive {
+    @apply card-base card-hover cursor-pointer;
+  }
+
+  /* Modern input styles */
+  .input-modern {
+    @apply bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:bg-white/10 focus:ring-2 focus:ring-primary/20 transition-all duration-200;
+  }
+
+  /* Badge styles */
+  .badge-modern {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20;
+  }
+
+  .badge-success {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-500/10 text-green-400 border border-green-500/20;
+  }
+
+  .badge-warning {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-yellow-500/10 text-yellow-400 border border-yellow-500/20;
+  }
+
+  .badge-danger {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/20;
+  }
+
+  /* Status indicators */
+  .status-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+
+  .status-online {
+    @apply status-dot bg-green-500 animate-pulse;
+  }
+
+  .status-offline {
+    @apply status-dot bg-gray-500;
+  }
+
+  .status-away {
+    @apply status-dot bg-yellow-500 animate-pulse;
+  }
+
+  /* DoctorTrade font */
   .doctorstrange-font {
-    font-family: 'Playfair Display', 'Space Grotesk', serif;
-    letter-spacing: 0.01em;
+    font-family: 'Playfair Display', 'Poppins', serif;
+    letter-spacing: 0.02em;
     font-weight: 700;
   }
 
@@ -76,6 +195,7 @@
     animation: doctorstrange-sigil-pulse 2.4s ease-in-out infinite;
   }
 
+  /* Utility effects */
   .wow-shell {
     isolation: isolate;
   }
@@ -99,6 +219,79 @@
     );
     transition: background-position 120ms ease;
   }
+
+  /* Animations */
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideInRight {
+    from {
+      opacity: 0;
+      transform: translateX(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes pulse-soft {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.7;
+    }
+  }
+
+  .animate-fade-in-up {
+    animation: fadeInUp 0.5s ease-out;
+  }
+
+  .animate-slide-in-right {
+    animation: slideInRight 0.3s ease-out;
+  }
+
+  .animate-pulse-soft {
+    animation: pulse-soft 2s ease-in-out infinite;
+  }
+
+  /* Responsive utilities */
+  .safe-area-bottom {
+    padding-bottom: max(env(safe-area-inset-bottom), 0.75rem);
+  }
+
+  /* Focus utilities for accessibility */
+  .focus-visible-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+
+  /* Modern transition utilities */
+  .transition-smooth {
+    @apply transition-all duration-300 ease-out;
+  }
+
+  .transition-bounce {
+    @apply transition-all duration-300 cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  /* Text utilities */
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .tracking-tight-custom {
+    letter-spacing: -0.02em;
+  }
+}
 
   .wow-orb {
     animation: wow-orbital 10s ease-in-out infinite;
