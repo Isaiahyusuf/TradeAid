@@ -1,12 +1,14 @@
 [phases.setup]
 nixPkgs = ['nodejs-18_x']
-workDir = 'client'
 
 [phases.install]
-cmds = ['cd client && npm install']
+workDir = 'client'
+cmds = ['npm install']
 
 [phases.build]
-cmds = ['cd client && npm run build']
+workDir = 'client'
+cmds = ['npm run build']
 
 [start]
-cmd = 'cd client && npm run start'
+workDir = 'client'
+cmd = 'npm run start'
