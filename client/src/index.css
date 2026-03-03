@@ -425,7 +425,6 @@
   .safe-area-bottom {
     padding-bottom: env(safe-area-inset-bottom);
   }
-}
 
 @media (orientation: landscape) and (max-height: 900px) {
   .safe-area-bottom {
