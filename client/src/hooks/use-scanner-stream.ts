@@ -8,6 +8,10 @@ export type ScannerStreamEvent = {
   [key: string]: unknown;
 };
 
+type ViteMeta = ImportMeta & {
+  env?: Record<string, string | undefined>;
+};
+
 function toWsUrl(apiBase: string) {
   if (!apiBase) return null;
   const withProtocol = apiBase.startsWith("http") ? apiBase : `https://${apiBase}`;
@@ -15,9 +19,27 @@ function toWsUrl(apiBase: string) {
   return `${wsBase}/ws/alerts`;
 }
 
+function normalizeApiUrl(rawValue: unknown): string {
+  const raw = String(rawValue ?? "").trim();
+  if (!raw) return "";
+
+  const unquoted = raw.replace(/^['\"]+|['\"]+$/g, "").trim();
+  if (!unquoted) return "";
+
+  if (!/^https?:\/\//i.test(unquoted)) {
+    return "";
+  }
+
+  try {
+    return new URL(unquoted).origin;
+  } catch {
+    return "";
+  }
+}
+
 export function useScannerStream(onEvent: (event: ScannerStreamEvent) => void) {
   const [connected, setConnected] = useState(false);
-  const apiBase = import.meta.env.VITE_API_URL || "";
+  const apiBase = normalizeApiUrl((import.meta as ViteMeta).env?.VITE_API_URL);
   const wsUrl = useMemo(() => toWsUrl(apiBase), [apiBase]);
 
   useEffect(() => {

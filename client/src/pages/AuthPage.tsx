@@ -15,7 +15,7 @@ const USERNAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{2,19}$/;
 
 function getPasswordErrors(value: string): string[] {
   const errors: string[] = [];
-  if (value.length < 6) errors.push("At least 6 characters");
+  if (value.length < 8) errors.push("At least 8 characters");
   if (!/[A-Z]/.test(value)) errors.push("At least 1 uppercase letter");
   if (!/[0-9]/.test(value)) errors.push("At least 1 number");
   if (!SPECIAL_PATTERN.test(value)) errors.push("At least 1 special character");
@@ -178,7 +178,7 @@ export default function AuthPage() {
       }
 
       if (mode === "register" && registerPasswordErrors.length > 0) {
-        throw new Error("Your password must include an uppercase letter, a number, a special character, and be at least 6 characters.");
+        throw new Error("Your password must include an uppercase letter, a number, a special character, and be at least 8 characters.");
       }
 
       if (mode === "register" && password !== registerConfirmPassword) {
@@ -186,7 +186,7 @@ export default function AuthPage() {
       }
 
       if (mode === "reset" && resetPasswordErrors.length > 0) {
-        throw new Error("Your new password must include an uppercase letter, a number, a special character, and be at least 6 characters.");
+        throw new Error("Your new password must include an uppercase letter, a number, a special character, and be at least 8 characters.");
       }
 
       if (mode === "reset" && newPassword !== resetConfirmPassword) {
@@ -227,9 +227,15 @@ export default function AuthPage() {
     } catch (err: any) {
       const rawMessage = String(err?.message || "").trim();
       const normalized = rawMessage.toLowerCase();
+      const isConnectionIssue =
+        normalized.includes("network") ||
+        normalized.includes("load failed") ||
+        normalized.includes("failed to fetch") ||
+        normalized.includes("did not match the expected pattern") ||
+        normalized.includes("request timed out");
       const friendlyMessage =
-        mode === "register" && (normalized.includes("network") || normalized.includes("load failed") || normalized.includes("failed to fetch"))
-          ? "We couldn't create your account right now. Please check your connection and try again."
+        isConnectionIssue
+          ? "We couldn't reach the server. Please check your connection and try again."
           : rawMessage || "We couldn't complete your request. Please try again.";
 
       toast({

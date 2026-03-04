@@ -37,8 +37,8 @@ def _validate_email_or_raise(email: str):
 
 
 def _validate_password_or_raise(password: str):
-    if not password or len(password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    if not password or len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
     if not any(char.isupper() for char in password):
         raise HTTPException(status_code=400, detail="Password must include at least one uppercase letter")
     if not any(char.isdigit() for char in password):

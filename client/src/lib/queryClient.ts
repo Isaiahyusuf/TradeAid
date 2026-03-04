@@ -1,6 +1,24 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-const API_URL = import.meta.env.VITE_API_URL || "";
+function normalizeApiUrl(rawValue: unknown): string {
+  const raw = String(rawValue ?? "").trim();
+  if (!raw) return "";
+
+  const unquoted = raw.replace(/^['\"]+|['\"]+$/g, "").trim();
+  if (!unquoted) return "";
+
+  if (!/^https?:\/\//i.test(unquoted)) {
+    return "";
+  }
+
+  try {
+    return new URL(unquoted).origin;
+  } catch {
+    return "";
+  }
+}
+
+const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL);
 
 function getToken(): string | null {
   return localStorage.getItem("trade_aid_token");

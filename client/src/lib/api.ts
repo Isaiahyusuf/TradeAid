@@ -1,4 +1,23 @@
-const API_URL = import.meta.env.VITE_API_URL || "";
+function normalizeApiUrl(rawValue: unknown): string {
+  const raw = String(rawValue ?? "").trim();
+  if (!raw) return "";
+
+  const unquoted = raw.replace(/^['\"]+|['\"]+$/g, "").trim();
+  if (!unquoted) return "";
+
+  if (!/^https?:\/\//i.test(unquoted)) {
+    return "";
+  }
+
+  try {
+    const url = new URL(unquoted);
+    return url.origin;
+  } catch {
+    return "";
+  }
+}
+
+const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL);
 const ACCESS_TOKEN_KEY = "trade_aid_token";
 const REFRESH_TOKEN_KEY = "trade_aid_refresh_token";
 
@@ -93,7 +112,8 @@ export async function apiFetch<T = any>(
   const timeoutId = window.setTimeout(() => timeoutController.abort(), API_TIMEOUT_MS);
   const mergedSignal = options.signal ?? timeoutController.signal;
   try {
-    res = await fetch(`${API_URL}${path}`, {
+    const target = API_URL ? `${API_URL}${path}` : path;
+    res = await fetch(target, {
       ...options,
       headers,
       signal: mergedSignal,
