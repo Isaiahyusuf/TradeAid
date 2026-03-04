@@ -6,6 +6,25 @@ import { createServer } from "http";
 const app = express();
 const httpServer = createServer(app);
 
+const allowedOrigins = new Set<string>();
+
+for (const entry of String(process.env.CORS_ORIGINS || "").split(",")) {
+  const value = entry.trim();
+  if (value) allowedOrigins.add(value);
+}
+
+const frontendUrl = String(process.env.FRONTEND_URL || "").trim();
+if (frontendUrl) {
+  allowedOrigins.add(frontendUrl);
+}
+
+const railwayPublicDomain = String(process.env.RAILWAY_PUBLIC_DOMAIN || "").trim();
+if (railwayPublicDomain) {
+  allowedOrigins.add(`https://${railwayPublicDomain}`);
+}
+
+allowedOrigins.add("https://tradeaid.ink");
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
@@ -21,6 +40,27 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+app.use((req, res, next) => {
+  const origin = String(req.headers.origin || "").trim();
+  const allowAny = allowedOrigins.has("*");
+  const isAllowedOrigin = !!origin && (allowAny || allowedOrigins.has(origin));
+
+  if (isAllowedOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  }
+
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+
+  next();
+});
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
