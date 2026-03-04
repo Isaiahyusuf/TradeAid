@@ -157,3 +157,82 @@ export async function apiPatch<T = any>(path: string, data?: unknown): Promise<T
     body: data ? JSON.stringify(data) : undefined,
   });
 }
+
+// AI Scoring API functions
+export interface TokenScore {
+  contract_address: string;
+  chain: string;
+  symbol: string;
+  name: string;
+  eligible: boolean;
+  eligibility_reason?: string | null;
+  risk_flags: string[];
+  status: string;
+  scores: {
+    rug_probability: number;
+    liquidity_stability: number;
+    holder_distribution: number;
+    smart_wallet_signal: number;
+    trade_confidence_index: number;
+    rug_risk_score: number;
+    opportunity_score: number;
+  };
+  market_data: {
+    market_cap_usd: number;
+    liquidity_usd: number;
+    holder_count: number;
+  };
+  scored_at: string;
+}
+
+export interface TokenInsight {
+  status: string;
+  token: {
+    contract_address: string;
+    symbol: string;
+    chain: string;
+  };
+  score: TokenScore['scores'];
+  insight: {
+    summary: string;
+    key_points: string[];
+  };
+}
+
+export const scoringApi = {
+  // Score a token using AI
+  scoreToken: async (contractAddress: string, chain: string = 'solana'): Promise<TokenScore> => {
+    return apiPost<TokenScore>('/api/scoring/score-token', {
+      contract_address: contractAddress,
+      chain,
+    });
+  },
+
+  // Get AI insight for a token
+  getInsight: async (chain: string, contractAddress: string): Promise<TokenInsight> => {
+    return apiGet<TokenInsight>(`/api/scoring/insight/${chain}/${contractAddress}`);
+  },
+};
+
+export const tokensApi = {
+  // Get token list with scores
+  getTokens: async (params?: {
+    chain?: string;
+    offset?: number;
+    limit?: number;
+    age?: string;
+  }): Promise<{ tokens: any[]; total: number }> => {
+    const query = new URLSearchParams();
+    if (params?.chain) query.append('chain', params.chain);
+    if (params?.offset) query.append('offset', String(params.offset));
+    if (params?.limit) query.append('limit', String(params.limit));
+    if (params?.age) query.append('age', params.age);
+    
+    return apiGet(`/api/tokens?${query.toString()}`);
+  },
+
+  // Get project info
+  getProjectInfo: async (chain: string, contractAddress: string) => {
+    return apiGet(`/api/tokens/project-info/${chain}/${contractAddress}`);
+  },
+};

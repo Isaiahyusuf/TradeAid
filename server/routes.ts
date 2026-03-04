@@ -264,6 +264,44 @@ export async function registerRoutes(
       return buildDexScoreFallback(contractAddress, chain);
     }),
   );
+
+  // AI Scoring Insight Endpoint
+  app.get("/api/scoring/insight/:chain/:contract_address", isAuthenticated, async (req, res) =>
+    proxyToPythonApi(
+      req,
+      res,
+      `/api/scoring/insight/${encodeURIComponent(req.params.chain)}/${encodeURIComponent(req.params.contract_address)}`,
+      async () => {
+        const score = await buildDexScoreFallback(req.params.contract_address, req.params.chain);
+        return {
+          status: "ok",
+          token: {
+            contract_address: score.contract_address,
+            symbol: score.symbol,
+            chain: score.chain,
+          },
+          score: score.scores,
+          insight: {
+            summary: `${score.symbol} is ${score.eligible ? 'eligible' : 'not eligible'} for trading with a rug risk of ${score.scores.rug_probability}%.`,
+            key_points: [
+              `Rug Risk: ${score.scores.rug_probability}%`,
+              `Confidence Index: ${score.scores.trade_confidence_index}%`,
+              `Liquidity: $${score.market_data.liquidity_usd.toLocaleString()}`,
+            ],
+          },
+        };
+      },
+    ),
+  );
+
+  // Get token list with AI scores
+  app.get("/api/tokens", isAuthenticated, async (req, res) =>
+    proxyToPythonApi(req, res, "/api/tokens", async () => {
+      // Fallback: return empty list or fetch from DexScreener
+      return { tokens: [], total: 0 };
+    }),
+  );
+
   app.get("/api/tokens/project-info/:chain/:contract_address", async (req, res) => {
     const { chain, contract_address } = req.params;
     return proxyToPythonApi(
