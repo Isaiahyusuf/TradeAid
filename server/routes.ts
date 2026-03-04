@@ -2,6 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
+import type { TokenFeedItem, TokenFeedResponse } from "@shared/token-contract";
 import { z } from "zod";
 import { normalizeChain } from "./utils/chain";
 import { registerChatRoutes } from "./replit_integrations/chat";
@@ -692,8 +693,36 @@ export async function registerRoutes(
     });
   });
 
+  app.get("/api/system/health", async (_req, res) => {
+    const tokens = await storage.getScannedTokens();
+    const autoTradeConfig = getAutoTradeConfig();
+    const bridgeConfigured = Boolean(pythonApiBase);
+
+    res.json({
+      ok: true,
+      service: "tradeaid-node-backend",
+      time: new Date().toISOString(),
+      uptime_seconds: Math.round(process.uptime()),
+      token_feed: {
+        scanned_count: tokens.length,
+        fresh_apify_configured: Boolean(String(process.env.APIFY_TOKEN || "").trim()),
+      },
+      bridge: {
+        configured: bridgeConfigured,
+        target: bridgeConfigured ? pythonApiBase : null,
+      },
+      doctortrade: {
+        local_fallback_enabled: true,
+      },
+      auto_trade: {
+        enabled: autoTradeConfig.enabled,
+        score_threshold: autoTradeConfig.scoreThreshold,
+      },
+    });
+  });
+
   app.get("/api/tokens", isAuthenticated, async (req, res) => {
-    const buildLocalTokenPayload = async () => {
+    const buildLocalTokenPayload = async (): Promise<TokenFeedResponse> => {
       const all = await storage.getScannedTokens();
       const now = Date.now();
 
@@ -771,7 +800,7 @@ export async function registerRoutes(
         return true;
       });
 
-      const tokens = filtered
+      const tokens: TokenFeedItem[] = filtered
         .sort((a, b) => {
           const bScore = Number(b.safetyScore || 0);
           const aScore = Number(a.safetyScore || 0);
@@ -835,7 +864,7 @@ export async function registerRoutes(
             deployer_wallet: null,
             total_supply: null,
             created_at: createdAtIso,
-          };
+          } satisfies TokenFeedItem;
         });
 
       return { tokens, count: tokens.length, total: tokens.length };
