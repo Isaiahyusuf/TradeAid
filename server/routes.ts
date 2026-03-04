@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import type { Server } from "http";
+import { randomUUID } from "crypto";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import type { TokenFeedItem, TokenFeedResponse } from "@shared/token-contract";
@@ -37,6 +38,53 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  const serviceStartedAt = Date.now();
+  const observability = {
+    requestsTotal: 0,
+    apiRequests: 0,
+    api4xx: 0,
+    api5xx: 0,
+    lastRequestAt: null as string | null,
+    lastErrorAt: null as string | null,
+    bridgeFallbacks: 0,
+    bridgeEmptyResponses: 0,
+    bridgeErrors: 0,
+  };
+
+  app.use((req, res, next) => {
+    const incomingRequestId = String(req.headers["x-request-id"] || "").trim();
+    const requestId = incomingRequestId || randomUUID();
+    res.setHeader("x-request-id", requestId);
+    (res.locals as Record<string, unknown>).requestId = requestId;
+
+    const startedAt = Date.now();
+    res.on("finish", () => {
+      observability.requestsTotal += 1;
+      observability.lastRequestAt = new Date().toISOString();
+
+      if (!req.path.startsWith("/api")) {
+        return;
+      }
+
+      observability.apiRequests += 1;
+      if (res.statusCode >= 500) {
+        observability.api5xx += 1;
+        observability.lastErrorAt = new Date().toISOString();
+        logStructured("error", "api.request_failed", {
+          requestId,
+          method: req.method,
+          path: req.path,
+          status: res.statusCode,
+          durationMs: Date.now() - startedAt,
+        });
+      } else if (res.statusCode >= 400) {
+        observability.api4xx += 1;
+      }
+    });
+
+    next();
+  });
+
   // Setup auth FIRST (required before other routes)
   await setupAuth(app);
   registerAuthRoutes(app);
@@ -697,19 +745,31 @@ export async function registerRoutes(
     const tokens = await storage.getScannedTokens();
     const autoTradeConfig = getAutoTradeConfig();
     const bridgeConfigured = Boolean(pythonApiBase);
+    const uptimeSeconds = Math.round((Date.now() - serviceStartedAt) / 1000);
 
     res.json({
       ok: true,
       service: "tradeaid-node-backend",
       time: new Date().toISOString(),
-      uptime_seconds: Math.round(process.uptime()),
+      uptime_seconds: uptimeSeconds,
       token_feed: {
         scanned_count: tokens.length,
         fresh_apify_configured: Boolean(String(process.env.APIFY_TOKEN || "").trim()),
       },
+      api_metrics: {
+        requests_total: observability.requestsTotal,
+        api_requests: observability.apiRequests,
+        api_4xx: observability.api4xx,
+        api_5xx: observability.api5xx,
+        last_request_at: observability.lastRequestAt,
+        last_error_at: observability.lastErrorAt,
+      },
       bridge: {
         configured: bridgeConfigured,
         target: bridgeConfigured ? pythonApiBase : null,
+        fallback_count: observability.bridgeFallbacks,
+        empty_response_count: observability.bridgeEmptyResponses,
+        error_count: observability.bridgeErrors,
       },
       doctortrade: {
         local_fallback_enabled: true,
@@ -871,6 +931,7 @@ export async function registerRoutes(
     };
 
     if (!pythonApiBase) {
+      observability.bridgeFallbacks += 1;
       return res.json(await buildLocalTokenPayload());
     }
 
@@ -890,10 +951,59 @@ export async function registerRoutes(
         return res.status(response.status).json(payload);
       }
 
+      if (response.ok) {
+        observability.bridgeEmptyResponses += 1;
+      } else {
+        observability.bridgeErrors += 1;
+      }
+      observability.bridgeFallbacks += 1;
       return res.json(await buildLocalTokenPayload());
     } catch {
+      observability.bridgeErrors += 1;
+      observability.bridgeFallbacks += 1;
       return res.json(await buildLocalTokenPayload());
     }
+  });
+
+  app.get("/api/growth/summary", async (_req, res) => {
+    const tokens = await storage.getScannedTokens();
+    const ranked = [...tokens]
+      .sort((a, b) => Number(b.safetyScore || 0) - Number(a.safetyScore || 0))
+      .slice(0, 8)
+      .map((token) => ({
+        symbol: token.symbol,
+        address: token.address,
+        chain: token.chain,
+        safety_score: Number(token.safetyScore || 0),
+        liquidity_usd: Number(token.liquidity || 0),
+        rationale:
+          Number(token.safetyScore || 0) >= 80
+            ? "High safety signal with favorable liquidity"
+            : "Watchlist candidate; monitor score and liquidity trend",
+      }));
+
+    const riskMix = tokens.reduce(
+      (acc, token) => {
+        const score = Number(token.safetyScore || 0);
+        if (score >= 80) acc.low += 1;
+        else if (score >= 55) acc.medium += 1;
+        else acc.high += 1;
+        return acc;
+      },
+      { low: 0, medium: 0, high: 0 },
+    );
+
+    res.json({
+      ok: true,
+      generated_at: new Date().toISOString(),
+      candidates: ranked,
+      risk_mix: riskMix,
+      recommendations: [
+        "Increase scanner coverage when low-risk candidates are below 5",
+        "Prioritize tokens with safety >= 80 and liquidity >= 20k",
+        "Avoid high-risk bucket entries unless manually reviewed",
+      ],
+    });
   });
 
   app.get("/api/tokens/project-info/:chain/:contract_address", async (req, res) => {

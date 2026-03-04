@@ -29,6 +29,12 @@ const checks = [
     expect: [200],
   },
   {
+    name: "Growth summary",
+    path: "/api/growth/summary",
+    method: "GET",
+    expect: [200],
+  },
+  {
     name: "Tokens feed",
     path: "/api/tokens?limit=5",
     method: "GET",
