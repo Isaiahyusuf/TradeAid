@@ -81,6 +81,9 @@ export default function Dashboard() {
     prioritizePumpFun: true,
     limit: 100,
   });
+  const { data: tokenDataFallback, isLoading: tokensFallbackLoading } = useTokens(chainFilter, {
+    limit: 100,
+  });
   const { data: ageWindowData, isLoading: ageWindowLoading } = useTokens(
     chainFilter,
     selectedAgeTab
@@ -105,9 +108,12 @@ export default function Dashboard() {
     if (!Number.isFinite(ageMinutes)) return true;
     return ageMinutes < 1440;
   });
+  const primaryRecentTokens = filterRecent(tokenData?.tokens || []);
+  const fallbackTokens = tokenDataFallback?.tokens || [];
+  const ageWindowTokens = filterRecent(ageWindowData?.tokens || []).slice(0, 20);
   const displayTokens = tokenTab === "all"
-    ? filterRecent(tokenData?.tokens || [])
-    : filterRecent(ageWindowData?.tokens || []).slice(0, 20);
+    ? (primaryRecentTokens.length > 0 ? primaryRecentTokens : fallbackTokens)
+    : (ageWindowTokens.length > 0 ? ageWindowTokens : (primaryRecentTokens.length > 0 ? primaryRecentTokens.slice(0, 20) : fallbackTokens.slice(0, 20)));
   const dedupedAlerts = useMemo(() => {
     const rows = alertData?.alerts || [];
     const seen = new Set<string>();
@@ -133,7 +139,8 @@ export default function Dashboard() {
   const intelligenceMetrics = useMemo(() => {
     // Only consider tokens from the last 24 hours for all stats
     const now = Date.now();
-    const allTokens = (tokenData?.tokens || []).filter((token) => {
+    const sourceTokens = tokenData?.tokens?.length ? tokenData.tokens : (tokenDataFallback?.tokens || []);
+    const allTokens = sourceTokens.filter((token) => {
       if (!token.created_at) return true;
       const ageMinutes = (now - new Date(token.created_at).getTime()) / 60000;
       if (!Number.isFinite(ageMinutes)) return true;
@@ -176,7 +183,7 @@ export default function Dashboard() {
       bestWindow,
       scoredCount: scored.length,
     };
-  }, [tokenData?.tokens]);
+  }, [tokenData?.tokens, tokenDataFallback?.tokens]);
 
   const retryAll = () => {
     qc.refetchQueries({ queryKey: ["tokens"] });
@@ -217,7 +224,7 @@ export default function Dashboard() {
             </h1>
             <p className="text-muted-foreground">Your trading command center</p>
             <div className="flex items-center gap-2 mt-3 flex-wrap">
-              <Badge variant="outline" className="solana-badge">All Chains Pulse</Badge>
+              <Badge variant="outline" className="solana-badge">Solana Early Pulse</Badge>
               <Badge variant="outline" className="border-accent/30 text-accent">Live Intelligence</Badge>
             </div>
           </div>
@@ -265,9 +272,9 @@ export default function Dashboard() {
                 <Eye className="w-5 h-5 text-blue-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Chains</p>
+                <p className="text-sm text-muted-foreground">Network</p>
                 <p className="text-2xl font-bold" data-testid="text-chains">
-                  {statsLoading ? <Skeleton className="h-7 w-12" /> : Object.keys(stats?.by_chain || {}).length}
+                  {statsLoading ? <Skeleton className="h-7 w-12" /> : "SOL"}
                 </p>
               </div>
             </div>
@@ -495,7 +502,7 @@ export default function Dashboard() {
               </Tabs>
             </div>
             <div className="divide-y divide-border">
-              {(tokenTab === "all" ? tokensLoading : ageWindowLoading) ? (
+              {(tokenTab === "all" ? (tokensLoading && tokensFallbackLoading) : ageWindowLoading) ? (
                 Array(5).fill(0).map((_, i) => (
                   <div key={i} className="p-4 flex items-center gap-4">
                     <Skeleton className="w-10 h-10 rounded-full" />
@@ -584,7 +591,7 @@ export default function Dashboard() {
                   </div>
                 ))
               )}
-              {!(tokenTab === "all" ? tokensLoading : ageWindowLoading) && displayTokens.length === 0 && (
+              {!(tokenTab === "all" ? (tokensLoading && tokensFallbackLoading) : ageWindowLoading) && displayTokens.length === 0 && (
                 <div className="p-8 text-center text-muted-foreground">
                   {tokenTab === "all" ? "No tokens found yet. Start scanning!" : "No projects found in this exact age window yet."}
                 </div>

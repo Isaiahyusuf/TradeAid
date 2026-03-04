@@ -90,6 +90,8 @@ export type DoctorStatus = {
     min_momentum_profit_pct?: number;
     quality_min_volume_spike_pct?: number;
     quality_max_top_holder_pct?: number;
+    live_sell_fraction_pct?: number;
+    max_sell_notional_usd?: number;
     wallet_connected: boolean;
   };
   active_tokens: DoctorToken[];
@@ -185,6 +187,8 @@ export function useDoctorConfig() {
       min_momentum_profit_pct?: number;
       quality_min_volume_spike_pct?: number;
       quality_max_top_holder_pct?: number;
+      live_sell_fraction_pct?: number;
+      max_sell_notional_usd?: number;
     }) => apiPost<DoctorStatus>("/api/doctor/config", payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade"] }),
   });

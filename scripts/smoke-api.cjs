@@ -50,7 +50,7 @@ const checks = [
     name: "Tokens feed",
     path: "/api/tokens?limit=5",
     method: "GET",
-    expect: bearerToken ? [200] : [200, 401, 403],
+    expect: [200],
   },
 ];
 

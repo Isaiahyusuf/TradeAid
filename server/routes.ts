@@ -1,6 +1,10 @@
 import type { Express } from "express";
 import type { Server } from "http";
-import { randomUUID } from "crypto";
+import { randomBytes, randomUUID } from "crypto";
+import { mkdir, readFile, writeFile } from "fs/promises";
+import { resolve } from "path";
+import { Connection, Keypair, PublicKey, VersionedTransaction } from "@solana/web3.js";
+import bs58 from "bs58";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import type { TokenFeedItem, TokenFeedResponse } from "@shared/token-contract";
@@ -370,6 +374,11 @@ export async function registerRoutes(
     controls: {
       max_trades_per_day: 12,
       trades_today: 0,
+      max_open_positions: 5,
+      cooldown_minutes_per_mint: 30,
+      min_wallet_fee_buffer_sol: 0.02,
+      live_sell_fraction_pct: 50,
+      max_sell_notional_usd: 300,
       min_buy_amount_sol: 0.1,
       buy_amount_sol: 0.1,
       take_profit_multiplier: 2,
@@ -387,35 +396,1253 @@ export async function registerRoutes(
       quality_min_volume_spike_pct: 12,
       quality_max_top_holder_pct: 35,
     },
+    execution: {
+      mode: "paper" as "paper" | "live",
+    },
+    executionAudit: [] as Array<Record<string, any>>,
+    positions: [] as Array<Record<string, any>>,
     recentTrades: [] as Array<Record<string, any>>,
     decisionJournal: [] as Array<Record<string, any>>,
     performance: [] as Array<Record<string, any>>,
+    lastDecision: null as Record<string, any> | null,
     lastRunAt: null as string | null,
     lastError: null as string | null,
   };
 
-  const buildDoctorStatus = async () => {
-    const tokens = await storage.getScannedTokens();
-    const activeTokens = tokens
+  const doctorStateDir = resolve(process.cwd(), "server", "state");
+  const doctorStateFile = resolve(doctorStateDir, "doctortrade.runtime.json");
+
+  const persistDoctorRuntime = async () => {
+    try {
+      await mkdir(doctorStateDir, { recursive: true });
+      await writeFile(doctorStateFile, JSON.stringify(doctorRuntime, null, 2), "utf8");
+    } catch {
+    }
+  };
+
+  const loadDoctorRuntime = async () => {
+    try {
+      const text = await readFile(doctorStateFile, "utf8");
+      const loaded = JSON.parse(text) as Record<string, any>;
+
+      if (typeof loaded.enabled === "boolean") {
+        doctorRuntime.enabled = loaded.enabled;
+      }
+      if (typeof loaded.killSwitch === "boolean") {
+        doctorRuntime.killSwitch = loaded.killSwitch;
+      }
+      if (Number.isFinite(Number(loaded.scanIntervalSeconds))) {
+        doctorRuntime.scanIntervalSeconds = Math.max(5, Math.trunc(Number(loaded.scanIntervalSeconds)));
+      }
+
+      const wallet = loaded.wallet as Record<string, any> | undefined;
+      if (wallet && typeof wallet === "object") {
+        if (typeof wallet.address === "string") {
+          doctorRuntime.wallet.address = wallet.address;
+        }
+        if (Number.isFinite(Number(wallet.balanceSol))) {
+          doctorRuntime.wallet.balanceSol = Number(wallet.balanceSol);
+        }
+        if (typeof wallet.separateWalletEnforced === "boolean") {
+          doctorRuntime.wallet.separateWalletEnforced = wallet.separateWalletEnforced;
+        }
+      }
+
+      const controls = loaded.controls as Record<string, any> | undefined;
+      if (controls && typeof controls === "object") {
+        for (const key of Object.keys(doctorRuntime.controls) as Array<keyof typeof doctorRuntime.controls>) {
+          if (Number.isFinite(Number(controls[key]))) {
+            (doctorRuntime.controls as any)[key] = Number(controls[key]);
+          }
+        }
+      }
+
+      if (Array.isArray(loaded.recentTrades)) {
+        doctorRuntime.recentTrades = loaded.recentTrades.slice(0, 50);
+      }
+      if (Array.isArray(loaded.positions)) {
+        doctorRuntime.positions = loaded.positions.slice(0, 30);
+      }
+      if (Array.isArray(loaded.decisionJournal)) {
+        doctorRuntime.decisionJournal = loaded.decisionJournal.slice(0, 80);
+      }
+      if (Array.isArray(loaded.performance)) {
+        doctorRuntime.performance = loaded.performance.slice(0, 40);
+      }
+      if (loaded.execution && typeof loaded.execution === "object") {
+        const mode = String((loaded.execution as Record<string, any>).mode || "paper").toLowerCase();
+        doctorRuntime.execution.mode = mode === "live" ? "live" : "paper";
+      }
+      if (Array.isArray(loaded.executionAudit)) {
+        doctorRuntime.executionAudit = loaded.executionAudit.slice(0, 200);
+      }
+      if (loaded.lastDecision && typeof loaded.lastDecision === "object") {
+        doctorRuntime.lastDecision = loaded.lastDecision as Record<string, any>;
+      }
+
+      doctorRuntime.lastRunAt = typeof loaded.lastRunAt === "string" ? loaded.lastRunAt : null;
+      doctorRuntime.lastError = typeof loaded.lastError === "string" ? loaded.lastError : null;
+
+      doctorRuntime.controls.min_buy_amount_sol = Math.max(0.05, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
+      if (doctorRuntime.killSwitch) {
+        doctorRuntime.enabled = false;
+      }
+    } catch {
+    }
+  };
+
+  await loadDoctorRuntime();
+
+  let doctorCycleRunning = false;
+  let doctorCycleTimer: NodeJS.Timeout | null = null;
+  let doctorEarlyScoredCache: { at: number; tokens: Array<Record<string, any>> } | null = null;
+
+  const getSolanaEarlyScoredTokens = async (windowMinutes = 120, limit = 200) => {
+    const nowMs = Date.now();
+    const windowSeconds = Math.max(60, Math.trunc(windowMinutes * 60));
+    const cappedLimit = Math.max(1, Math.min(500, Math.trunc(limit)));
+
+    if (doctorEarlyScoredCache && nowMs - doctorEarlyScoredCache.at < 20_000) {
+      return doctorEarlyScoredCache.tokens
+        .filter((token) => Number(token.age_seconds || 0) <= windowSeconds)
+        .slice(0, cappedLimit);
+    }
+
+    const scanned = await storage.getScannedTokens();
+    const scannedTokens = scanned
+      .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
       .map((token) => {
-        const liquidity = Number(token.liquidity || 0);
-        const volume24h = Number(token.volume24h || 0);
-        const volume5m = Number((volume24h / 288).toFixed(2));
-        const score = Number(token.safetyScore || 0);
+        const createdAt = token.createdAt ? new Date(token.createdAt) : new Date();
+        const firstSeenAt = Number.isNaN(createdAt.getTime()) ? nowIso() : createdAt.toISOString();
         return {
+          mint: String(token.address || "").trim(),
           symbol: String(token.symbol || "UNKNOWN"),
-          address: String(token.address || ""),
-          liquidity,
-          volume_5m: volume5m,
-          score,
+          name: String(token.name || token.symbol || "Unknown"),
+          source: "scanner",
+          first_seen_at: firstSeenAt,
+          liquidity_usd: Number(token.liquidity || 0),
+          market_cap_usd: Number(token.marketCap || 0),
+          volume_5m: Number((Number(token.volume24h || 0) / 288).toFixed(2)),
+          holders_count: Number((token as any).holdersCount || (token as any).holders || 0),
+          top_holder_pct: Number((token as any).topHoldersPercentage || (token as any).topHolderPct || 0),
+          price_change_1h: Number(token.priceChange1h || 0),
           price_usd: Number(token.priceUsd || 0),
-          chain: String(token.chain || "solana"),
-          created_at: token.createdAt ? new Date(token.createdAt).toISOString() : null,
         };
       })
-      .filter((token) => token.liquidity >= Number(doctorRuntime.controls.min_liquidity_usd || 0))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 30);
+      .filter((token) => token.mint);
+
+    const apifyTokens = await (async () => {
+      try {
+        const rows = await fetchFreshPumpfunTokens(80);
+        return rows
+          .map((token) => {
+            const raw = (token.raw || {}) as Record<string, unknown>;
+            const createdAtRaw = String(raw.discoveredAt || raw.created_at || raw.createdAt || raw.timestamp || "").trim();
+            const createdAt = createdAtRaw ? new Date(createdAtRaw) : new Date();
+            const firstSeenAt = Number.isNaN(createdAt.getTime()) ? nowIso() : createdAt.toISOString();
+            const volume24h = Number(raw.volume24h || raw.volume_24h || 0);
+            return {
+              mint: String(token.mintAddress || "").trim(),
+              symbol: String(token.symbol || token.name || "UNKNOWN"),
+              name: String(token.name || token.symbol || "Unknown"),
+              source: "apify",
+              first_seen_at: firstSeenAt,
+              liquidity_usd: Number(token.liquidityUsd || raw.liquidityUsd || raw.liquidity_usd || raw.liquidity || 0),
+              market_cap_usd: Number(raw.marketCapUsd || raw.market_cap_usd || raw.marketCap || 0),
+              volume_5m: Number((volume24h / 288).toFixed(2)),
+              holders_count: Number(raw.holdersCount || raw.holder_count || 0),
+              top_holder_pct: Number(raw.topHoldersPercentage || raw.top_holder_pct || 0),
+              price_change_1h: Number(raw.priceChange1h || raw.price_change_1h || 0),
+              price_usd: Number(raw.priceUsd || raw.price_usd || raw.usdPrice || 0),
+            };
+          })
+          .filter((token) => token.mint);
+      } catch {
+        return [] as Array<Record<string, any>>;
+      }
+    })();
+
+    const byMint = new Map<string, Record<string, any>>();
+    for (const token of [...scannedTokens, ...apifyTokens]) {
+      const mint = String(token.mint || "").trim();
+      if (!mint) continue;
+      const prev = byMint.get(mint);
+      if (!prev) {
+        byMint.set(mint, token);
+        continue;
+      }
+      const prevSeen = new Date(String(prev.first_seen_at || "")).getTime();
+      const nextSeen = new Date(String(token.first_seen_at || "")).getTime();
+      byMint.set(mint, {
+        ...prev,
+        ...token,
+        first_seen_at: prevSeen > 0 && nextSeen > 0 ? new Date(Math.min(prevSeen, nextSeen)).toISOString() : prev.first_seen_at,
+        liquidity_usd: Math.max(Number(prev.liquidity_usd || 0), Number(token.liquidity_usd || 0)),
+        market_cap_usd: Math.max(Number(prev.market_cap_usd || 0), Number(token.market_cap_usd || 0)),
+        volume_5m: Math.max(Number(prev.volume_5m || 0), Number(token.volume_5m || 0)),
+        holders_count: Math.max(Number(prev.holders_count || 0), Number(token.holders_count || 0)),
+        top_holder_pct: Number(token.top_holder_pct || prev.top_holder_pct || 0),
+        source: prev.source === "apify" || token.source === "apify" ? "apify+scanner" : prev.source,
+      });
+    }
+
+    const scored = Array.from(byMint.values())
+      .map((token) => {
+        const firstSeenMs = new Date(String(token.first_seen_at || "")).getTime();
+        const ageSeconds = Number.isFinite(firstSeenMs) && firstSeenMs > 0 ? Math.max(0, Math.trunc((nowMs - firstSeenMs) / 1000)) : 0;
+        const liquidityUsd = Number(token.liquidity_usd || 0);
+        const volume5m = Number(token.volume_5m || 0);
+        const holdersCount = Number(token.holders_count || 0);
+        const topHolderPct = Number(token.top_holder_pct || 0);
+        const priceChange1h = Number(token.price_change_1h || 0);
+
+        const freshnessScore = Math.max(0, 40 * (1 - Math.min(ageSeconds, windowSeconds) / Math.max(1, windowSeconds)));
+        const liquidityScore = Math.max(0, Math.min(25, (liquidityUsd / 25_000) * 25));
+        const holderScore = Math.max(0, Math.min(15, (holdersCount / 500) * 15));
+        const concentrationScore = topHolderPct > 0 ? Math.max(0, Math.min(10, ((45 - topHolderPct) / 45) * 10)) : 5;
+        const momentumScore = Math.max(0, Math.min(10, ((volume5m / 2500) * 5) + (priceChange1h > 0 ? Math.min(5, priceChange1h / 2) : 0)));
+        const confidenceScore = Number((freshnessScore + liquidityScore + holderScore + concentrationScore + momentumScore).toFixed(2));
+
+        const rejectReasons: string[] = [];
+        if (ageSeconds > windowSeconds) rejectReasons.push("outside_window");
+        if (liquidityUsd < 2000) rejectReasons.push("low_liquidity");
+        if (topHolderPct > 45) rejectReasons.push("holder_concentration_high");
+        if (confidenceScore < 55) rejectReasons.push("confidence_below_threshold");
+
+        return {
+          ...token,
+          chain: "solana",
+          age_seconds: ageSeconds,
+          confidence_score: confidenceScore,
+          eligible: rejectReasons.length === 0,
+          reject_reasons: rejectReasons,
+        };
+      })
+      .sort((a, b) => {
+        if (a.eligible !== b.eligible) return a.eligible ? -1 : 1;
+        if (b.confidence_score !== a.confidence_score) return b.confidence_score - a.confidence_score;
+        return a.age_seconds - b.age_seconds;
+      });
+
+    doctorEarlyScoredCache = { at: nowMs, tokens: scored };
+    return scored.filter((token) => Number(token.age_seconds || 0) <= windowSeconds).slice(0, cappedLimit);
+  };
+
+  const getDoctorActiveTokens = async () => {
+    const early = await getSolanaEarlyScoredTokens(120, 220);
+    return early
+      .filter((token) => Boolean(token.eligible))
+      .filter((token) => Number(token.liquidity_usd || 0) >= Number(doctorRuntime.controls.min_liquidity_usd || 0))
+      .map((token: any) => {
+        const score = Number(token.confidence_score || 0);
+        return {
+          symbol: String(token.symbol || "UNKNOWN"),
+          address: String(token.mint || ""),
+          liquidity: Number(token.liquidity_usd || 0),
+          volume_5m: Number(token.volume_5m || 0),
+          score,
+          price_usd: Number((token as any).price_usd || 0),
+          chain: "solana",
+          created_at: String(token.first_seen_at || nowIso()),
+          holders_count: Number(token.holders_count || 0),
+          top_holder_pct: Number(token.top_holder_pct || 0),
+          risk_level: score >= 70 ? "SAFE" : score >= 45 ? "MEDIUM" : "HIGH RISK",
+          source: String(token.source || "solana_early"),
+          reject_reasons: token.reject_reasons || [],
+        };
+      })
+      .slice(0, 40);
+  };
+
+  const resolveCurrentPriceUsd = (token: Record<string, any>, fallbackPriceUsd: number) => {
+    const tokenPrice = Number(token?.price_usd || 0);
+    if (Number.isFinite(tokenPrice) && tokenPrice > 0) return tokenPrice;
+    return Number(fallbackPriceUsd || 0);
+  };
+
+  const computeDoctorRiskMetrics = (nowMs = Date.now()) => {
+    const todaysSellTrades = doctorRuntime.recentTrades.filter((trade) => {
+      if (String(trade.action || "").toUpperCase() !== "SELL") return false;
+      const ts = new Date(String(trade.timestamp || "")).getTime();
+      if (!Number.isFinite(ts) || ts <= 0) return false;
+      return new Date(ts).toDateString() === new Date(nowMs).toDateString();
+    });
+
+    const dailyRealizedPnlUsd = Number(
+      todaysSellTrades.reduce((sum, trade) => sum + Number(trade.pnl_usd || 0), 0).toFixed(2),
+    );
+
+    const recentSellTrades = doctorRuntime.recentTrades
+      .filter((trade) => String(trade.action || "").toUpperCase() === "SELL")
+      .slice(0, 20);
+
+    let consecutiveLosses = 0;
+    for (const trade of recentSellTrades) {
+      const pnlUsd = Number(trade.pnl_usd || 0);
+      if (pnlUsd < 0) {
+        consecutiveLosses += 1;
+      } else {
+        break;
+      }
+    }
+
+    return {
+      dailyRealizedPnlUsd,
+      consecutiveLosses,
+    };
+  };
+
+  const appendDoctorExecutionAudit = (entry: Record<string, any>) => {
+    doctorRuntime.executionAudit.unshift({
+      id: `exec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      at: nowIso(),
+      mode: doctorRuntime.execution.mode,
+      ...entry,
+    });
+    doctorRuntime.executionAudit = doctorRuntime.executionAudit.slice(0, 200);
+  };
+
+  const SOL_MINT = "So11111111111111111111111111111111111111112";
+
+  const fetchJupiterQuote = async (params: {
+    inputMint: string;
+    outputMint: string;
+    amountAtomic: number | string;
+    slippageBps: number;
+  }) => {
+    const query = new URLSearchParams({
+      inputMint: params.inputMint,
+      outputMint: params.outputMint,
+      amount: String(params.amountAtomic),
+      slippageBps: String(params.slippageBps),
+      restrictIntermediateTokens: "true",
+      onlyDirectRoutes: "false",
+    });
+
+    const response = await fetch(`https://quote-api.jup.ag/v6/quote?${query.toString()}`);
+    if (!response.ok) {
+      throw new Error(`jupiter_quote_failed_${response.status}`);
+    }
+    return (await response.json()) as Record<string, any>;
+  };
+
+  const fetchJupiterSwapPayload = async (params: {
+    quoteResponse: Record<string, any>;
+    userPublicKey: string;
+  }) => {
+    const response = await fetch("https://quote-api.jup.ag/v6/swap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        quoteResponse: params.quoteResponse,
+        userPublicKey: params.userPublicKey,
+        wrapAndUnwrapSol: true,
+        dynamicComputeUnitLimit: true,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`jupiter_swap_failed_${response.status}`);
+    }
+    return (await response.json()) as Record<string, any>;
+  };
+
+  const parseSolanaSecretKey = (value: string): Uint8Array | null => {
+    const trimmed = String(value || "").trim();
+    if (!trimmed) return null;
+
+    try {
+      if (trimmed.startsWith("[")) {
+        const parsed = JSON.parse(trimmed) as number[];
+        if (Array.isArray(parsed) && parsed.length >= 32) {
+          return Uint8Array.from(parsed.map((item) => Number(item) & 0xff));
+        }
+      }
+    } catch {
+    }
+
+    try {
+      const decoded = bs58.decode(trimmed);
+      if (decoded.length >= 32) return decoded;
+    } catch {
+    }
+
+    try {
+      const decoded = Buffer.from(trimmed, "base64");
+      if (decoded.length >= 32) return new Uint8Array(decoded);
+    } catch {
+    }
+
+    return null;
+  };
+
+  const executeDoctorOrder = async (params: {
+    action: "buy" | "sell";
+    symbol: string;
+    mint: string;
+    amountSol: number;
+    expectedPriceUsd: number;
+    reason: string;
+    trigger: "manual" | "auto";
+  }) => {
+    const liveEnabled = String(process.env.DOCTORTRADE_LIVE_TRADING_ENABLED || "").toLowerCase() === "true";
+    const mode = doctorRuntime.execution.mode;
+
+    if (mode === "live") {
+      if (!liveEnabled) {
+        appendDoctorExecutionAudit({
+          action: params.action,
+          symbol: params.symbol,
+          mint: params.mint,
+          amount_sol: params.amountSol,
+          expected_price_usd: params.expectedPriceUsd,
+          expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+          trigger: params.trigger,
+          reason: params.reason,
+          status: "blocked",
+          block_reason: "live_mode_not_enabled",
+        });
+        return {
+          executed: false,
+          status: "blocked",
+          reason: "live_mode_not_enabled",
+        } as const;
+      }
+
+      const walletPublicKey = String(process.env.DOCTORTRADE_LIVE_WALLET_PUBLIC_KEY || "").trim();
+      const walletPrivateKey = String(process.env.DOCTORTRADE_LIVE_WALLET_PRIVATE_KEY || "").trim();
+      const slippageBps = Math.max(25, Math.trunc(Number(doctorRuntime.controls.max_slippage_pct || 1) * 100));
+      const amountLamports = Math.max(1, Math.trunc(params.amountSol * 1_000_000_000));
+      const solanaRpcUrl = String(process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com").trim();
+
+      if (params.action === "sell") {
+        if (!walletPublicKey) {
+          appendDoctorExecutionAudit({
+            action: params.action,
+            symbol: params.symbol,
+            mint: params.mint,
+            amount_sol: params.amountSol,
+            expected_price_usd: params.expectedPriceUsd,
+            expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+            trigger: params.trigger,
+            reason: params.reason,
+            status: "blocked",
+            block_reason: "live_wallet_public_key_missing",
+            router: "jupiter",
+          });
+          return {
+            executed: false,
+            status: "blocked",
+            reason: "live_wallet_public_key_missing",
+          } as const;
+        }
+
+        if (!walletPrivateKey) {
+          appendDoctorExecutionAudit({
+            action: params.action,
+            symbol: params.symbol,
+            mint: params.mint,
+            amount_sol: params.amountSol,
+            expected_price_usd: params.expectedPriceUsd,
+            expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+            trigger: params.trigger,
+            reason: params.reason,
+            status: "blocked",
+            block_reason: "live_wallet_private_key_missing",
+            router: "jupiter",
+          });
+          return {
+            executed: false,
+            status: "blocked",
+            reason: "live_wallet_private_key_missing",
+          } as const;
+        }
+
+        const secretKey = parseSolanaSecretKey(walletPrivateKey);
+        if (!secretKey) {
+          appendDoctorExecutionAudit({
+            action: params.action,
+            symbol: params.symbol,
+            mint: params.mint,
+            amount_sol: params.amountSol,
+            expected_price_usd: params.expectedPriceUsd,
+            expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+            trigger: params.trigger,
+            reason: params.reason,
+            status: "blocked",
+            block_reason: "live_wallet_private_key_invalid",
+            router: "jupiter",
+          });
+          return {
+            executed: false,
+            status: "blocked",
+            reason: "live_wallet_private_key_invalid",
+          } as const;
+        }
+
+        try {
+          const connection = new Connection(solanaRpcUrl, "confirmed");
+          const ownerPk = new PublicKey(walletPublicKey);
+          const mintPk = new PublicKey(params.mint);
+          const accounts = await connection.getParsedTokenAccountsByOwner(ownerPk, { mint: mintPk }, "confirmed");
+
+          const tokenAmounts = accounts.value.map((entry) => {
+            const tokenAmount = (entry.account.data as any)?.parsed?.info?.tokenAmount;
+            return {
+              raw: String(tokenAmount?.amount || "0"),
+              decimals: Number(tokenAmount?.decimals || 0),
+            };
+          });
+          const decimals = Number(tokenAmounts[0]?.decimals || 0);
+          const totalRaw = tokenAmounts.reduce((sum, item) => {
+            try {
+              return sum + BigInt(item.raw || "0");
+            } catch {
+              return sum;
+            }
+          }, BigInt(0));
+
+          if (totalRaw <= BigInt(0)) {
+            appendDoctorExecutionAudit({
+              action: params.action,
+              symbol: params.symbol,
+              mint: params.mint,
+              amount_sol: params.amountSol,
+              expected_price_usd: params.expectedPriceUsd,
+              expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+              trigger: params.trigger,
+              reason: params.reason,
+              status: "blocked",
+              block_reason: "live_sell_balance_zero",
+              router: "jupiter",
+            });
+            return {
+              executed: false,
+              status: "blocked",
+              reason: "live_sell_balance_zero",
+            } as const;
+          }
+
+          const configuredSellFraction = Math.max(1, Math.min(100, Number(doctorRuntime.controls.live_sell_fraction_pct || 100)));
+          const maxSellNotionalUsd = Math.max(1, Number(doctorRuntime.controls.max_sell_notional_usd || Number.POSITIVE_INFINITY));
+          const expectedNotionalUsd = Math.max(0, Number(params.amountSol * params.expectedPriceUsd || 0));
+          const notionalFractionCap = Number.isFinite(maxSellNotionalUsd) && expectedNotionalUsd > 0
+            ? Math.min(1, maxSellNotionalUsd / expectedNotionalUsd)
+            : 1;
+          const sellFraction = Math.max(0.01, Math.min(1, (configuredSellFraction / 100) * notionalFractionCap));
+          const scale = BigInt(1_000_000);
+          const scaledFraction = BigInt(Math.max(1, Math.floor(sellFraction * 1_000_000)));
+          let sellRawAmount = (totalRaw * scaledFraction) / scale;
+          if (sellRawAmount <= BigInt(0)) {
+            sellRawAmount = BigInt(1);
+          }
+          if (sellRawAmount > totalRaw) {
+            sellRawAmount = totalRaw;
+          }
+          const sellRawAmountString = sellRawAmount.toString();
+          const executedAmountSol = Number((params.amountSol * Number(scaledFraction) / 1_000_000).toFixed(9));
+
+          const quote = await fetchJupiterQuote({
+            inputMint: params.mint,
+            outputMint: SOL_MINT,
+            amountAtomic: sellRawAmountString,
+            slippageBps,
+          });
+
+          const routePlan = Array.isArray(quote?.routePlan) ? quote.routePlan : [];
+          const outAmount = Number(quote?.outAmount || 0);
+          const priceImpactPct = Number(quote?.priceImpactPct || 0);
+
+          const swapPayload = await fetchJupiterSwapPayload({
+            quoteResponse: quote,
+            userPublicKey: walletPublicKey,
+          });
+
+          if (!swapPayload?.swapTransaction) {
+            appendDoctorExecutionAudit({
+              action: params.action,
+              symbol: params.symbol,
+              mint: params.mint,
+              amount_sol: params.amountSol,
+              expected_price_usd: params.expectedPriceUsd,
+              expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+              trigger: params.trigger,
+              reason: params.reason,
+              status: "blocked",
+              block_reason: "live_swap_transaction_missing",
+              router: "jupiter",
+            });
+            return {
+              executed: false,
+              status: "blocked",
+              reason: "live_swap_transaction_missing",
+            } as const;
+          }
+
+          const keypair = Keypair.fromSecretKey(secretKey);
+          const derivedPublicKey = keypair.publicKey.toBase58();
+          if (walletPublicKey && derivedPublicKey !== walletPublicKey) {
+            appendDoctorExecutionAudit({
+              action: params.action,
+              symbol: params.symbol,
+              mint: params.mint,
+              amount_sol: params.amountSol,
+              expected_price_usd: params.expectedPriceUsd,
+              expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+              trigger: params.trigger,
+              reason: params.reason,
+              status: "blocked",
+              block_reason: "live_wallet_public_key_mismatch",
+              router: "jupiter",
+              configured_public_key: walletPublicKey,
+              derived_public_key: derivedPublicKey,
+            });
+            return {
+              executed: false,
+              status: "blocked",
+              reason: "live_wallet_public_key_mismatch",
+            } as const;
+          }
+
+          const swapTxBytes = Buffer.from(String(swapPayload.swapTransaction), "base64");
+          const versioned = VersionedTransaction.deserialize(swapTxBytes);
+          versioned.sign([keypair]);
+
+          const signature = await connection.sendRawTransaction(versioned.serialize(), {
+            skipPreflight: false,
+            maxRetries: 3,
+          });
+          const latestBlockhash = await connection.getLatestBlockhash("confirmed");
+          await connection.confirmTransaction(
+            {
+              signature,
+              blockhash: latestBlockhash.blockhash,
+              lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+            },
+            "confirmed",
+          );
+
+          appendDoctorExecutionAudit({
+            action: params.action,
+            symbol: params.symbol,
+            mint: params.mint,
+            amount_sol: params.amountSol,
+            expected_price_usd: params.expectedPriceUsd,
+            expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+            trigger: params.trigger,
+            reason: params.reason,
+            status: "executed",
+            router: "jupiter",
+            tx_hash: signature,
+            explorer_url: `https://solscan.io/tx/${signature}`,
+            quote_out_amount: outAmount,
+            quote_price_impact_pct: priceImpactPct,
+            route_hops: routePlan.length,
+            sell_amount_raw: sellRawAmountString,
+            sell_amount_decimals: decimals,
+            sell_fraction_pct: Number(((Number(scaledFraction) / 1_000_000) * 100).toFixed(2)),
+            max_sell_notional_usd: Number.isFinite(maxSellNotionalUsd) ? maxSellNotionalUsd : null,
+          });
+
+          return {
+            executed: true,
+            status: "executed",
+            txHash: signature,
+            executedAmountSol,
+          } as const;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "jupiter_live_sell_failed";
+          appendDoctorExecutionAudit({
+            action: params.action,
+            symbol: params.symbol,
+            mint: params.mint,
+            amount_sol: params.amountSol,
+            expected_price_usd: params.expectedPriceUsd,
+            expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+            trigger: params.trigger,
+            reason: params.reason,
+            status: "blocked",
+            block_reason: message,
+            router: "jupiter",
+          });
+          return {
+            executed: false,
+            status: "blocked",
+            reason: message,
+          } as const;
+        }
+      }
+
+      try {
+        const quote = await fetchJupiterQuote({
+          inputMint: SOL_MINT,
+          outputMint: params.mint,
+          amountAtomic: amountLamports,
+          slippageBps,
+        });
+
+        const routePlan = Array.isArray(quote?.routePlan) ? quote.routePlan : [];
+        const outAmount = Number(quote?.outAmount || 0);
+        const priceImpactPct = Number(quote?.priceImpactPct || 0);
+
+        if (!walletPublicKey) {
+          appendDoctorExecutionAudit({
+            action: params.action,
+            symbol: params.symbol,
+            mint: params.mint,
+            amount_sol: params.amountSol,
+            expected_price_usd: params.expectedPriceUsd,
+            expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+            trigger: params.trigger,
+            reason: params.reason,
+            status: "blocked",
+            block_reason: "live_wallet_public_key_missing",
+            router: "jupiter",
+            quote_out_amount: outAmount,
+            quote_price_impact_pct: priceImpactPct,
+            route_hops: routePlan.length,
+          });
+          return {
+            executed: false,
+            status: "blocked",
+            reason: "live_wallet_public_key_missing",
+          } as const;
+        }
+
+        const swapPayload = await fetchJupiterSwapPayload({
+          quoteResponse: quote,
+          userPublicKey: walletPublicKey,
+        });
+
+        if (!walletPrivateKey) {
+          appendDoctorExecutionAudit({
+            action: params.action,
+            symbol: params.symbol,
+            mint: params.mint,
+            amount_sol: params.amountSol,
+            expected_price_usd: params.expectedPriceUsd,
+            expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+            trigger: params.trigger,
+            reason: params.reason,
+            status: "blocked",
+            block_reason: "live_wallet_private_key_missing",
+            router: "jupiter",
+            quote_out_amount: outAmount,
+            quote_price_impact_pct: priceImpactPct,
+            route_hops: routePlan.length,
+            swap_tx_present: Boolean(swapPayload?.swapTransaction),
+          });
+          return {
+            executed: false,
+            status: "blocked",
+            reason: "live_wallet_private_key_missing",
+          } as const;
+        }
+
+        const secretKey = parseSolanaSecretKey(walletPrivateKey);
+        if (!secretKey) {
+          appendDoctorExecutionAudit({
+            action: params.action,
+            symbol: params.symbol,
+            mint: params.mint,
+            amount_sol: params.amountSol,
+            expected_price_usd: params.expectedPriceUsd,
+            expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+            trigger: params.trigger,
+            reason: params.reason,
+            status: "blocked",
+            block_reason: "live_wallet_private_key_invalid",
+            router: "jupiter",
+            quote_out_amount: outAmount,
+            quote_price_impact_pct: priceImpactPct,
+            route_hops: routePlan.length,
+            swap_tx_present: Boolean(swapPayload?.swapTransaction),
+          });
+          return {
+            executed: false,
+            status: "blocked",
+            reason: "live_wallet_private_key_invalid",
+          } as const;
+        }
+
+        if (!swapPayload?.swapTransaction) {
+          appendDoctorExecutionAudit({
+            action: params.action,
+            symbol: params.symbol,
+            mint: params.mint,
+            amount_sol: params.amountSol,
+            expected_price_usd: params.expectedPriceUsd,
+            expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+            trigger: params.trigger,
+            reason: params.reason,
+            status: "blocked",
+            block_reason: "live_swap_transaction_missing",
+            router: "jupiter",
+          });
+          return {
+            executed: false,
+            status: "blocked",
+            reason: "live_swap_transaction_missing",
+          } as const;
+        }
+
+        const keypair = Keypair.fromSecretKey(secretKey);
+        const derivedPublicKey = keypair.publicKey.toBase58();
+        if (walletPublicKey && derivedPublicKey !== walletPublicKey) {
+          appendDoctorExecutionAudit({
+            action: params.action,
+            symbol: params.symbol,
+            mint: params.mint,
+            amount_sol: params.amountSol,
+            expected_price_usd: params.expectedPriceUsd,
+            expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+            trigger: params.trigger,
+            reason: params.reason,
+            status: "blocked",
+            block_reason: "live_wallet_public_key_mismatch",
+            router: "jupiter",
+            configured_public_key: walletPublicKey,
+            derived_public_key: derivedPublicKey,
+          });
+          return {
+            executed: false,
+            status: "blocked",
+            reason: "live_wallet_public_key_mismatch",
+          } as const;
+        }
+
+        const connection = new Connection(solanaRpcUrl, "confirmed");
+        const swapTxBytes = Buffer.from(String(swapPayload.swapTransaction), "base64");
+        const versioned = VersionedTransaction.deserialize(swapTxBytes);
+        versioned.sign([keypair]);
+
+        const signature = await connection.sendRawTransaction(versioned.serialize(), {
+          skipPreflight: false,
+          maxRetries: 3,
+        });
+        const latestBlockhash = await connection.getLatestBlockhash("confirmed");
+        await connection.confirmTransaction(
+          {
+            signature,
+            blockhash: latestBlockhash.blockhash,
+            lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+          },
+          "confirmed",
+        );
+
+        appendDoctorExecutionAudit({
+          action: params.action,
+          symbol: params.symbol,
+          mint: params.mint,
+          amount_sol: params.amountSol,
+          expected_price_usd: params.expectedPriceUsd,
+          expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+          trigger: params.trigger,
+          reason: params.reason,
+          status: "executed",
+          router: "jupiter",
+          tx_hash: signature,
+          explorer_url: `https://solscan.io/tx/${signature}`,
+          quote_out_amount: outAmount,
+          quote_price_impact_pct: priceImpactPct,
+          route_hops: routePlan.length,
+        });
+        return {
+          executed: true,
+          status: "executed",
+          txHash: signature,
+        } as const;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "jupiter_live_preflight_failed";
+        appendDoctorExecutionAudit({
+          action: params.action,
+          symbol: params.symbol,
+          mint: params.mint,
+          amount_sol: params.amountSol,
+          expected_price_usd: params.expectedPriceUsd,
+          expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+          trigger: params.trigger,
+          reason: params.reason,
+          status: "blocked",
+          block_reason: message,
+          router: "jupiter",
+        });
+        return {
+          executed: false,
+          status: "blocked",
+          reason: message,
+          executedAmountSol: 0,
+        } as const;
+      }
+    }
+
+    const txHash = `paper_${params.action}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    appendDoctorExecutionAudit({
+      action: params.action,
+      symbol: params.symbol,
+      mint: params.mint,
+      amount_sol: params.amountSol,
+      expected_price_usd: params.expectedPriceUsd,
+      expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+      trigger: params.trigger,
+      reason: params.reason,
+      status: "executed",
+      tx_hash: txHash,
+    });
+
+    return {
+      executed: true,
+      status: "executed",
+      txHash,
+      executedAmountSol: params.amountSol,
+    } as const;
+  };
+
+  const executeDoctorCycle = async (trigger: "manual" | "auto" = "manual") => {
+    doctorRuntime.lastRunAt = nowIso();
+
+    if (!doctorRuntime.enabled) {
+      doctorRuntime.lastDecision = { action: "skip", reason: "doctortrade_disabled", trigger, at: nowIso() };
+      return { executed: false, reason: "doctortrade_disabled", trigger };
+    }
+    if (doctorRuntime.killSwitch) {
+      doctorRuntime.lastDecision = { action: "skip", reason: "kill_switch_enabled", trigger, at: nowIso() };
+      return { executed: false, reason: "kill_switch_enabled", trigger };
+    }
+    if (!doctorRuntime.wallet.address) {
+      doctorRuntime.lastDecision = { action: "skip", reason: "wallet_not_connected", trigger, at: nowIso() };
+      return { executed: false, reason: "wallet_not_connected", trigger };
+    }
+
+    const activeTokens = await getDoctorActiveTokens();
+    const tokenMap = new Map(activeTokens.map((token) => [String(token.address || ""), token]));
+    const nowMs = Date.now();
+
+    const { dailyRealizedPnlUsd, consecutiveLosses } = computeDoctorRiskMetrics(nowMs);
+
+    let sellCount = 0;
+    const updatedPositions: Array<Record<string, any>> = [];
+    const takeProfitPct = Math.max(
+      Number(doctorRuntime.controls.min_profit_pct || 0),
+      (Math.max(1.01, Number(doctorRuntime.controls.take_profit_multiplier || 2)) - 1) * 100,
+    );
+
+    for (const position of doctorRuntime.positions) {
+      const market = tokenMap.get(String(position.address || "")) || null;
+      const entryPrice = Number(position.entry_price || 0);
+      const currentPrice = resolveCurrentPriceUsd(market || {}, entryPrice);
+      const peakPrice = Math.max(Number(position.peak_price || entryPrice || currentPrice || 0), currentPrice || 0);
+      const holdMinutes = Math.max(0, (nowMs - new Date(String(position.opened_at || nowIso())).getTime()) / 60000);
+      const pnlPct = entryPrice > 0 && currentPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0;
+      const drawdownFromPeakPct = peakPrice > 0 && currentPrice > 0 ? ((peakPrice - currentPrice) / peakPrice) * 100 : 0;
+      const marketVolume5m = Number(market?.volume_5m || 0);
+      const marketHolders = Number(market?.holders_count || 0);
+      const marketScore = Number(market?.score || 0);
+      const topHolderPct = Number(market?.top_holder_pct || 0);
+
+      let sellReason = "";
+      if (pnlPct >= takeProfitPct) {
+        sellReason = "take_profit_reached";
+      } else if (pnlPct <= -Math.max(0.1, Number(doctorRuntime.controls.stop_loss_pct || 0))) {
+        sellReason = "stop_loss_hit";
+      } else if (
+        pnlPct > 0 &&
+        drawdownFromPeakPct >= Math.max(0.1, Number(doctorRuntime.controls.trailing_stop_pct || 0))
+      ) {
+        sellReason = "trailing_stop_triggered";
+      } else if (
+        holdMinutes >= Math.max(5, Number(doctorRuntime.controls.max_hold_minutes || 0)) &&
+        pnlPct >= Math.max(0, Number(doctorRuntime.controls.min_momentum_profit_pct || 0))
+      ) {
+        sellReason = "max_hold_reached";
+      } else if (
+        pnlPct >= Math.max(0, Number(doctorRuntime.controls.min_momentum_profit_pct || 0)) &&
+        (
+          marketVolume5m <= 0 ||
+          marketScore < Math.max(1, Number(doctorRuntime.controls.strong_move_threshold_pct || 40)) * 0.7 ||
+          (marketHolders > 0 && marketHolders < 120) ||
+          (topHolderPct > 0 && topHolderPct > Math.max(1, Number(doctorRuntime.controls.quality_max_top_holder_pct || 35)))
+        )
+      ) {
+        sellReason = "momentum_or_holder_quality_drop";
+      }
+
+      if (!sellReason) {
+        updatedPositions.push({
+          ...position,
+          current_price: currentPrice,
+          peak_price: peakPrice,
+          last_seen_at: nowIso(),
+          pnl_pct: Number(pnlPct.toFixed(2)),
+        });
+        continue;
+      }
+
+      const amountSol = Number(position.amount_sol || 0);
+      const sellExecution = await executeDoctorOrder({
+        action: "sell",
+        symbol: String(position.symbol || "UNKNOWN"),
+        mint: String(position.address || ""),
+        amountSol,
+        expectedPriceUsd: currentPrice,
+        reason: sellReason,
+        trigger,
+      });
+      if (!sellExecution.executed) {
+        updatedPositions.push({
+          ...position,
+          current_price: currentPrice,
+          peak_price: peakPrice,
+          last_seen_at: nowIso(),
+          pnl_pct: Number(pnlPct.toFixed(2)),
+        });
+        doctorRuntime.lastDecision = {
+          action: "skip",
+          reason: sellExecution.reason,
+          trigger,
+          at: nowIso(),
+          token: String(position.symbol || "UNKNOWN"),
+          mint: String(position.address || ""),
+        };
+        continue;
+      }
+      const soldAmountSol = Math.max(0, Math.min(amountSol, Number((sellExecution as any).executedAmountSol || amountSol)));
+      const estimatedExitSol = entryPrice > 0 && currentPrice > 0 ? soldAmountSol * (currentPrice / entryPrice) : soldAmountSol;
+      doctorRuntime.wallet.balanceSol = Number((Number(doctorRuntime.wallet.balanceSol || 0) + Math.max(0, estimatedExitSol)).toFixed(6));
+      sellCount += 1;
+      const pnlUsd = Number(((soldAmountSol * currentPrice) - (soldAmountSol * entryPrice)).toFixed(2));
+      const remainingAmountSol = Number((amountSol - soldAmountSol).toFixed(9));
+
+      doctorRuntime.recentTrades.unshift({
+        token: position.symbol,
+        address: position.address,
+        action: "SELL",
+        status: "EXECUTED",
+        reason: sellReason,
+        confidence: Number(market?.score || position.confidence || 0),
+        liquidity: Number(market?.liquidity || position.liquidity || 0),
+        volume_5m: Number(market?.volume_5m || 0),
+        size_pct: Number(position.size_pct || 100) * (amountSol > 0 ? soldAmountSol / amountSol : 1),
+        notional_usd: Number((soldAmountSol * currentPrice).toFixed(2)),
+        pnl_pct: Number(pnlPct.toFixed(2)),
+        pnl_usd: pnlUsd,
+        execution_mode: doctorRuntime.execution.mode,
+        tx_hash: sellExecution.txHash,
+        timestamp: nowIso(),
+      });
+
+      doctorRuntime.decisionJournal.unshift({
+        token: position.symbol,
+        address: position.address,
+        decision: "sell",
+        reason: sellReason,
+        confidence: Number(market?.score || position.confidence || 0),
+        size_pct: Number(position.size_pct || 100) * (amountSol > 0 ? soldAmountSol / amountSol : 1),
+        strategy_mode: "autonomous",
+        timestamp: nowIso(),
+      });
+
+      if (remainingAmountSol > 0.000001) {
+        updatedPositions.push({
+          ...position,
+          amount_sol: remainingAmountSol,
+          current_price: currentPrice,
+          peak_price: peakPrice,
+          last_seen_at: nowIso(),
+          pnl_pct: Number(pnlPct.toFixed(2)),
+        });
+      }
+    }
+
+    doctorRuntime.positions = updatedPositions.slice(0, 30);
+
+    let buyCount = 0;
+    const maxTradesPerDay = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_trades_per_day || 1)));
+    const maxOpenPositions = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_open_positions || 5)));
+    const cooldownMinutes = Math.max(0, Number(doctorRuntime.controls.cooldown_minutes_per_mint || 0));
+    const feeBufferSol = Math.max(0, Number(doctorRuntime.controls.min_wallet_fee_buffer_sol || 0));
+    const buyAmountSol = Math.max(0.01, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
+    const openAddresses = new Set(doctorRuntime.positions.map((position) => String(position.address || "")));
+
+    const buyCandidate = activeTokens
+      .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
+      .filter((token) => !openAddresses.has(String(token.address || "")))
+      .filter((token) => Number(token.score || 0) >= Math.max(1, Number(doctorRuntime.controls.strong_move_threshold_pct || 40)))
+      .filter((token) => Number(token.liquidity || 0) >= Math.max(1000, Number(doctorRuntime.controls.min_liquidity_usd || 0)))
+      .filter((token) => {
+        const topHolderPct = Number(token.top_holder_pct || 0);
+        if (topHolderPct <= 0) return true;
+        return topHolderPct <= Math.max(1, Number(doctorRuntime.controls.quality_max_top_holder_pct || 35));
+      })
+      .sort((a, b) => {
+        const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        return Number(b.volume_5m || 0) - Number(a.volume_5m || 0);
+      })[0];
+
+    const evaluatePreTradeGuard = (candidate: Record<string, any> | undefined) => {
+      if (!candidate) {
+        return { allowed: false, reason: "no_eligible_candidate" };
+      }
+
+      if (doctorRuntime.positions.length >= maxOpenPositions) {
+        return { allowed: false, reason: "max_open_positions_reached" };
+      }
+
+      if (Number(doctorRuntime.controls.trades_today || 0) >= maxTradesPerDay) {
+        return { allowed: false, reason: "max_trades_reached" };
+      }
+
+      if (dailyRealizedPnlUsd <= -Math.abs(Number(doctorRuntime.controls.daily_loss_limit_usd || 0))) {
+        return { allowed: false, reason: "daily_loss_limit_reached" };
+      }
+
+      if (consecutiveLosses >= Math.max(1, Number(doctorRuntime.controls.max_consecutive_losses || 1))) {
+        return { allowed: false, reason: "max_consecutive_losses_reached" };
+      }
+
+      const recentSameMintBuy = doctorRuntime.recentTrades.find((trade) => {
+        if (String(trade.action || "").toUpperCase() !== "BUY") return false;
+        if (String(trade.address || "") !== String(candidate.address || "")) return false;
+        const ts = new Date(String(trade.timestamp || "")).getTime();
+        if (!Number.isFinite(ts) || ts <= 0) return false;
+        return nowMs - ts <= cooldownMinutes * 60_000;
+      });
+      if (recentSameMintBuy) {
+        return { allowed: false, reason: "mint_cooldown_active" };
+      }
+
+      const availableSol = Number(doctorRuntime.wallet.balanceSol || 0);
+      if (availableSol < buyAmountSol + feeBufferSol) {
+        return { allowed: false, reason: "insufficient_wallet_balance_with_fee_buffer" };
+      }
+
+      return { allowed: true, reason: "ok" };
+    };
+
+    const guard = evaluatePreTradeGuard(buyCandidate);
+    const canBuy = guard.allowed;
+
+    if (buyCandidate && canBuy) {
+      const tokenPriceUsd = resolveCurrentPriceUsd(buyCandidate, 0);
+      const buyExecution = await executeDoctorOrder({
+        action: "buy",
+        symbol: String(buyCandidate.symbol || "UNKNOWN"),
+        mint: String(buyCandidate.address || ""),
+        amountSol: buyAmountSol,
+        expectedPriceUsd: tokenPriceUsd,
+        reason: String(buyCandidate.source || "scanner_signal"),
+        trigger,
+      });
+      if (!buyExecution.executed) {
+        doctorRuntime.lastDecision = {
+          action: "skip",
+          reason: buyExecution.reason,
+          trigger,
+          at: nowIso(),
+          token: String(buyCandidate.symbol || "UNKNOWN"),
+          mint: String(buyCandidate.address || ""),
+        };
+      } else {
+      const position = {
+        symbol: String(buyCandidate.symbol || "UNKNOWN"),
+        address: String(buyCandidate.address || ""),
+        entry_price: tokenPriceUsd,
+        current_price: tokenPriceUsd,
+        peak_price: tokenPriceUsd,
+        liquidity: Number(buyCandidate.liquidity || 0),
+        confidence: Number(buyCandidate.score || 0),
+        size_pct: 100,
+        risk_status: String(buyCandidate.risk_level || "MEDIUM"),
+        trailing_stop_pct: Number(doctorRuntime.controls.trailing_stop_pct || 10),
+        amount_sol: buyAmountSol,
+        opened_at: nowIso(),
+        source: String(buyCandidate.source || "scanner"),
+      };
+      doctorRuntime.positions.unshift(position);
+      doctorRuntime.positions = doctorRuntime.positions.slice(0, 30);
+
+      doctorRuntime.wallet.balanceSol = Number((Number(doctorRuntime.wallet.balanceSol || 0) - buyAmountSol).toFixed(6));
+      doctorRuntime.controls.trades_today = Number(doctorRuntime.controls.trades_today || 0) + 1;
+      buyCount += 1;
+
+      doctorRuntime.recentTrades.unshift({
+        token: position.symbol,
+        address: position.address,
+        action: "BUY",
+        status: "EXECUTED",
+        reason: position.source === "apify" ? "apify_early_launch_signal" : "scanner_signal",
+        confidence: position.confidence,
+        liquidity: position.liquidity,
+        volume_5m: Number(buyCandidate.volume_5m || 0),
+        size_pct: 100,
+        notional_usd: Number((buyAmountSol * 160).toFixed(2)),
+        execution_mode: doctorRuntime.execution.mode,
+        tx_hash: buyExecution.txHash,
+        timestamp: nowIso(),
+      });
+
+      doctorRuntime.decisionJournal.unshift({
+        token: position.symbol,
+        address: position.address,
+        decision: "buy",
+        reason: position.source === "apify" ? "apify_early_launch_signal" : "scanner_signal",
+        confidence: position.confidence,
+        size_pct: 100,
+        strategy_mode: "autonomous",
+        timestamp: nowIso(),
+      });
+
+      doctorRuntime.lastDecision = {
+        action: "buy",
+        reason: position.source === "apify" ? "apify_early_launch_signal" : "scanner_signal",
+        trigger,
+        at: nowIso(),
+        token: position.symbol,
+        mint: position.address,
+        confidence: Number(position.confidence || 0),
+      };
+      }
+    } else {
+      doctorRuntime.lastDecision = { action: "skip", reason: guard.reason, trigger, at: nowIso() };
+    }
+
+    if (sellCount > 0) {
+      doctorRuntime.lastDecision = {
+        action: "sell",
+        reason: "position_exit_rule_triggered",
+        trigger,
+        at: nowIso(),
+        count: sellCount,
+      };
+    }
+
+    doctorRuntime.recentTrades = doctorRuntime.recentTrades.slice(0, 50);
+    doctorRuntime.decisionJournal = doctorRuntime.decisionJournal.slice(0, 80);
+    doctorRuntime.performance.unshift({
+      cycle: doctorRuntime.performance.length + 1,
+      latest_win_rate: 0.65,
+      weighted_trade_mass: Number((buyAmountSol * 100).toFixed(2)),
+      pnl_per_trade_usd: 0,
+      trigger,
+      buys: buyCount,
+      sells: sellCount,
+      updated_at: nowIso(),
+    });
+    doctorRuntime.performance = doctorRuntime.performance.slice(0, 40);
+    doctorRuntime.lastError = null;
+
+    await persistDoctorRuntime();
+
+    if (!buyCount && !sellCount) {
+      return { executed: false, reason: "no_eligible_action", trigger, buys: 0, sells: 0 };
+    }
+
+    return { executed: true, trigger, buys: buyCount, sells: sellCount };
+  };
+
+  const buildDoctorStatus = async () => {
+    const activeTokens = await getDoctorActiveTokens();
+    const { dailyRealizedPnlUsd, consecutiveLosses } = computeDoctorRiskMetrics();
 
     const paused = doctorRuntime.killSwitch;
     const safetyPaused = paused || !doctorRuntime.enabled;
@@ -428,14 +1655,20 @@ export async function registerRoutes(
       last_error: doctorRuntime.lastError,
       risk_state: {
         drawdown_pct: 0,
-        daily_realized_pnl_usd: 0,
+        daily_realized_pnl_usd: dailyRealizedPnlUsd,
         high_watermark_usd: 0,
-        open_positions: 0,
+        open_positions: doctorRuntime.positions.length,
         open_exposure_pct: 0,
-        consecutive_losses: 0,
+        consecutive_losses: consecutiveLosses,
         paused,
         permanent_lock: false,
-        pause_reason: paused ? "kill_switch_enabled" : null,
+        pause_reason: paused
+          ? "kill_switch_enabled"
+          : (dailyRealizedPnlUsd <= -Math.abs(Number(doctorRuntime.controls.daily_loss_limit_usd || 0))
+            ? "daily_loss_limit_reached"
+            : (consecutiveLosses >= Math.max(1, Number(doctorRuntime.controls.max_consecutive_losses || 1))
+              ? "max_consecutive_losses_reached"
+              : null)),
       },
       wallet: {
         address: doctorRuntime.wallet.address,
@@ -446,11 +1679,21 @@ export async function registerRoutes(
         ...doctorRuntime.controls,
         wallet_connected: Boolean(doctorRuntime.wallet.address),
       },
+      execution: {
+        mode: doctorRuntime.execution.mode,
+        live_capable:
+          String(process.env.DOCTORTRADE_LIVE_TRADING_ENABLED || "").toLowerCase() === "true" &&
+          Boolean(String(process.env.DOCTORTRADE_LIVE_WALLET_PUBLIC_KEY || "").trim()) &&
+          Boolean(String(process.env.DOCTORTRADE_LIVE_WALLET_PRIVATE_KEY || "").trim()),
+        jupiter_quote_enabled: true,
+      },
       active_tokens: activeTokens,
-      positions: [],
+      positions: doctorRuntime.positions.slice(0, 30),
       recent_trades: doctorRuntime.recentTrades.slice(0, 40),
       decision_journal: doctorRuntime.decisionJournal.slice(0, 60),
       performance: doctorRuntime.performance.slice(0, 30),
+      execution_audit: doctorRuntime.executionAudit.slice(0, 80),
+      last_decision: doctorRuntime.lastDecision,
       tuning_suggestion: activeTokens.length < 5 ? "Lower minimum liquidity or widen scanner scope to increase candidates." : null,
       strategy_mode: "balanced",
       safety: {
@@ -464,10 +1707,10 @@ export async function registerRoutes(
       },
       fresh_feed: {
         last_cycle_at: doctorRuntime.lastRunAt,
-        detected: tokens.length,
-        enriched: tokens.length,
+        detected: activeTokens.length,
+        enriched: activeTokens.length,
         approved: activeTokens.length,
-        rejected: Math.max(0, tokens.length - activeTokens.length),
+        rejected: 0,
       },
       scanner_health: {
         overall: {
@@ -503,11 +1746,34 @@ export async function registerRoutes(
     if (enabled && doctorRuntime.killSwitch) {
       doctorRuntime.lastError = "Cannot enable while kill switch is active";
     }
+    await persistDoctorRuntime();
+
+    if (doctorCycleTimer) {
+      clearInterval(doctorCycleTimer);
+      doctorCycleTimer = null;
+    }
+    if (doctorRuntime.enabled) {
+      doctorCycleTimer = setInterval(async () => {
+        if (doctorCycleRunning) return;
+        doctorCycleRunning = true;
+        try {
+          await executeDoctorCycle("auto");
+        } finally {
+          doctorCycleRunning = false;
+        }
+      }, Math.max(5, doctorRuntime.scanIntervalSeconds) * 1000);
+      doctorCycleTimer.unref?.();
+    }
+
     return res.json(await buildDoctorStatus());
   });
 
   app.post("/api/doctor/config", async (req, res) => {
     const payload = req.body || {};
+    if (typeof payload.execution_mode === "string") {
+      const mode = String(payload.execution_mode || "").toLowerCase();
+      doctorRuntime.execution.mode = mode === "live" ? "live" : "paper";
+    }
     if (typeof payload.kill_switch === "boolean") {
       doctorRuntime.killSwitch = payload.kill_switch;
       if (doctorRuntime.killSwitch) {
@@ -523,6 +1789,11 @@ export async function registerRoutes(
       "max_trades_per_day",
       "take_profit_multiplier",
       "min_profit_pct",
+      "max_open_positions",
+      "cooldown_minutes_per_mint",
+      "min_wallet_fee_buffer_sol",
+      "live_sell_fraction_pct",
+      "max_sell_notional_usd",
       "stop_loss_pct",
       "trailing_stop_pct",
       "min_liquidity_usd",
@@ -544,6 +1815,25 @@ export async function registerRoutes(
     }
 
     doctorRuntime.controls.min_buy_amount_sol = Math.max(0.05, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
+    await persistDoctorRuntime();
+
+    if (doctorCycleTimer) {
+      clearInterval(doctorCycleTimer);
+      doctorCycleTimer = null;
+    }
+    if (doctorRuntime.enabled) {
+      doctorCycleTimer = setInterval(async () => {
+        if (doctorCycleRunning) return;
+        doctorCycleRunning = true;
+        try {
+          await executeDoctorCycle("auto");
+        } finally {
+          doctorCycleRunning = false;
+        }
+      }, Math.max(5, doctorRuntime.scanIntervalSeconds) * 1000);
+      doctorCycleTimer.unref?.();
+    }
+
     return res.json(await buildDoctorStatus());
   });
 
@@ -559,76 +1849,13 @@ export async function registerRoutes(
     }
 
     doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 1.25);
+    await persistDoctorRuntime();
     return res.json(await buildDoctorStatus());
   });
 
   app.post("/api/doctor/run-once", async (_req, res) => {
-    const status = await buildDoctorStatus();
-    doctorRuntime.lastRunAt = new Date().toISOString();
-
-    if (!doctorRuntime.enabled) {
-      return res.json({ result: { executed: false, reason: "doctortrade_disabled" } });
-    }
-    if (doctorRuntime.killSwitch) {
-      return res.json({ result: { executed: false, reason: "kill_switch_enabled" } });
-    }
-    if (!doctorRuntime.wallet.address) {
-      return res.json({ result: { executed: false, reason: "wallet_not_connected" } });
-    }
-
-    const minScore = Math.max(1, Number(doctorRuntime.controls.strong_move_threshold_pct || 40));
-    const candidate = (status.active_tokens || []).find((token: any) => Number(token.score || 0) >= minScore);
-    if (!candidate) {
-      return res.json({ result: { executed: false, reason: "no_eligible_token" } });
-    }
-
-    const buyAmount = Number(doctorRuntime.controls.buy_amount_sol || 0.1);
-    const signature = `paper_${Date.now()}_${String(candidate.symbol || "token").toLowerCase()}`;
-    const now = new Date().toISOString();
-
-    doctorRuntime.controls.trades_today = Number(doctorRuntime.controls.trades_today || 0) + 1;
-    doctorRuntime.recentTrades.unshift({
-      token: candidate.symbol,
-      address: candidate.address,
-      action: "BUY",
-      status: "EXECUTED",
-      reason: "strong_move_signal",
-      confidence: candidate.score,
-      liquidity: candidate.liquidity,
-      volume_5m: candidate.volume_5m,
-      size_pct: 100,
-      notional_usd: Number((buyAmount * 160).toFixed(2)),
-      timestamp: now,
-    });
-    doctorRuntime.decisionJournal.unshift({
-      token: candidate.symbol,
-      address: candidate.address,
-      decision: "buy",
-      reason: "strong_move_signal",
-      confidence: candidate.score,
-      size_pct: 100,
-      strategy_mode: "balanced",
-      timestamp: now,
-    });
-    doctorRuntime.performance.unshift({
-      cycle: doctorRuntime.performance.length + 1,
-      latest_win_rate: 0.65,
-      weighted_trade_mass: Number((buyAmount * 100).toFixed(2)),
-      pnl_per_trade_usd: 0,
-      updated_at: now,
-    });
-
-    doctorRuntime.recentTrades = doctorRuntime.recentTrades.slice(0, 50);
-    doctorRuntime.decisionJournal = doctorRuntime.decisionJournal.slice(0, 80);
-    doctorRuntime.performance = doctorRuntime.performance.slice(0, 40);
-
-    return res.json({
-      result: {
-        executed: true,
-        signature,
-        buy_amount_sol: buyAmount,
-      },
-    });
+    const result = await executeDoctorCycle("manual");
+    return res.json({ result });
   });
 
   app.post("/api/doctor/direct-buy", async (req, res) => {
@@ -670,6 +1897,7 @@ export async function registerRoutes(
     });
     doctorRuntime.recentTrades = doctorRuntime.recentTrades.slice(0, 50);
     doctorRuntime.decisionJournal = doctorRuntime.decisionJournal.slice(0, 80);
+    await persistDoctorRuntime();
 
     return res.json({
       result: {
@@ -679,6 +1907,19 @@ export async function registerRoutes(
       },
     });
   });
+
+  if (doctorRuntime.enabled) {
+    doctorCycleTimer = setInterval(async () => {
+      if (doctorCycleRunning) return;
+      doctorCycleRunning = true;
+      try {
+        await executeDoctorCycle("auto");
+      } finally {
+        doctorCycleRunning = false;
+      }
+    }, Math.max(5, doctorRuntime.scanIntervalSeconds) * 1000);
+    doctorCycleTimer.unref?.();
+  }
 
   const assistantChains = ["solana", "ethereum", "bsc", "base", "arbitrum", "avalanche", "polygon"] as const;
   type AssistantChain = (typeof assistantChains)[number];
@@ -722,8 +1963,147 @@ export async function registerRoutes(
   const randomWord = () => wordBank[Math.floor(Math.random() * wordBank.length)];
   const generateMnemonic = () => Array.from({ length: 12 }, () => randomWord()).join(" ");
   const nowIso = () => new Date().toISOString();
-  const generateAddress = (chain: AssistantChain) => `${chain.slice(0, 3)}_${Math.random().toString(36).slice(2, 14)}`;
-  const generatePrivateKey = (chain: AssistantChain) => `${chain}_pk_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  const solanaAlphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  const randomBase58 = (length: number) => Array.from({ length }, () => solanaAlphabet[Math.floor(Math.random() * solanaAlphabet.length)]).join("");
+  const chainNativeSymbol = (chain: AssistantChain) => {
+    if (chain === "solana") return "SOL";
+    if (chain === "ethereum") return "ETH";
+    if (chain === "bsc") return "BNB";
+    if (chain === "avalanche") return "AVAX";
+    if (chain === "polygon") return "MATIC";
+    return "ETH";
+  };
+
+  const chainExplorerTxUrl = (chain: AssistantChain, txHash: string) => {
+    if (chain === "solana") return `https://explorer.solana.com/tx/${txHash}`;
+    if (chain === "ethereum") return `https://etherscan.io/tx/${txHash}`;
+    if (chain === "bsc") return `https://bscscan.com/tx/${txHash}`;
+    if (chain === "base") return `https://basescan.org/tx/${txHash}`;
+    if (chain === "arbitrum") return `https://arbiscan.io/tx/${txHash}`;
+    if (chain === "avalanche") return `https://snowtrace.io/tx/${txHash}`;
+    if (chain === "polygon") return `https://polygonscan.com/tx/${txHash}`;
+    return "";
+  };
+
+  const generateAddress = (chain: AssistantChain) => {
+    if (chain === "solana") {
+      return randomBase58(44);
+    }
+    return `0x${randomBytes(20).toString("hex")}`;
+  };
+
+  const generatePrivateKey = (chain: AssistantChain) => {
+    if (chain === "solana") {
+      return randomBase58(88);
+    }
+    return `0x${randomBytes(32).toString("hex")}`;
+  };
+
+  const validateAddressForChain = (chain: string, address: string) => {
+    const value = String(address || "").trim();
+    if (!value) return false;
+    if (chain === "solana") {
+      return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value);
+    }
+    return /^0x[a-fA-F0-9]{40}$/.test(value);
+  };
+
+  const defaultRpcUrls: Record<AssistantChain, string> = {
+    solana: "https://api.mainnet-beta.solana.com",
+    ethereum: "https://cloudflare-eth.com",
+    bsc: "https://bsc-dataseed.binance.org",
+    base: "https://mainnet.base.org",
+    arbitrum: "https://arb1.arbitrum.io/rpc",
+    avalanche: "https://api.avax.network/ext/bc/C/rpc",
+    polygon: "https://polygon-rpc.com",
+  };
+
+  const getRpcUrlForChain = (chain: AssistantChain) => {
+    const envMap: Record<AssistantChain, string> = {
+      solana: String(process.env.SOLANA_RPC_URL || process.env.HELIUS_RPC_URL || "").trim(),
+      ethereum: String(process.env.ETHEREUM_RPC_URL || process.env.EVM_RPC_URL_ETHEREUM || "").trim(),
+      bsc: String(process.env.BSC_RPC_URL || process.env.EVM_RPC_URL_BSC || "").trim(),
+      base: String(process.env.BASE_RPC_URL || process.env.EVM_RPC_URL_BASE || "").trim(),
+      arbitrum: String(process.env.ARBITRUM_RPC_URL || process.env.EVM_RPC_URL_ARBITRUM || "").trim(),
+      avalanche: String(process.env.AVALANCHE_RPC_URL || process.env.EVM_RPC_URL_AVALANCHE || "").trim(),
+      polygon: String(process.env.POLYGON_RPC_URL || process.env.EVM_RPC_URL_POLYGON || "").trim(),
+    };
+    return envMap[chain] || defaultRpcUrls[chain];
+  };
+
+  let priceCache: { ts: number; data: Record<AssistantChain, number> } | null = null;
+  const fetchChainPricesUsd = async (): Promise<Record<AssistantChain, number>> => {
+    if (priceCache && Date.now() - priceCache.ts < 60_000) {
+      return priceCache.data;
+    }
+
+    const fallback: Record<AssistantChain, number> = {
+      solana: 0,
+      ethereum: 0,
+      bsc: 0,
+      base: 0,
+      arbitrum: 0,
+      avalanche: 0,
+      polygon: 0,
+    };
+
+    try {
+      const response = await fetch(
+        "https://api.coingecko.com/api/v3/simple/price?ids=solana,ethereum,binancecoin,avalanche-2,matic-network&vs_currencies=usd",
+      );
+      const payload = (await response.json()) as Record<string, { usd?: number }>;
+      const eth = Number(payload?.ethereum?.usd || 0);
+      const prices: Record<AssistantChain, number> = {
+        solana: Number(payload?.solana?.usd || 0),
+        ethereum: eth,
+        bsc: Number(payload?.binancecoin?.usd || 0),
+        base: eth,
+        arbitrum: eth,
+        avalanche: Number(payload?.["avalanche-2"]?.usd || 0),
+        polygon: Number(payload?.["matic-network"]?.usd || 0),
+      };
+      priceCache = { ts: Date.now(), data: prices };
+      return prices;
+    } catch {
+      return fallback;
+    }
+  };
+
+  const fetchNativeBalance = async (chain: AssistantChain, address: string): Promise<number | null> => {
+    if (!validateAddressForChain(chain, address)) {
+      return null;
+    }
+
+    const rpcUrl = getRpcUrlForChain(chain);
+    if (!rpcUrl) {
+      return null;
+    }
+
+    try {
+      if (chain === "solana") {
+        const response = await fetch(rpcUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getBalance", params: [address] }),
+        });
+        const payload = (await response.json()) as { result?: { value?: number } };
+        const lamports = Number(payload?.result?.value || 0);
+        return Number((lamports / 1_000_000_000).toFixed(9));
+      }
+
+      const response = await fetch(rpcUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBalance", params: [address, "latest"] }),
+      });
+      const payload = (await response.json()) as { result?: string };
+      const weiHex = String(payload?.result || "0x0");
+      const wei = BigInt(weiHex);
+      return Number(wei) / 1e18;
+    } catch {
+      return null;
+    }
+  };
 
   const ensureWalletExists = () => assistantRuntime.wallet.has_wallet && Object.values(assistantRuntime.wallet.addresses_by_chain).some(Boolean);
 
@@ -758,23 +2138,73 @@ export async function registerRoutes(
     return res.json({ trading: assistantTradingStatus() });
   });
 
-  app.get("/api/ai/wallets/portfolio", (_req, res) => {
-    const chains = assistantChains.reduce<Record<string, any>>((acc, chain) => {
-      const address = assistantRuntime.wallet.addresses_by_chain[chain] || "";
-      const native_symbol = chain === "solana" ? "SOL" : chain === "ethereum" ? "ETH" : chain.toUpperCase();
-      const native_balance = address ? 0 : null;
-      const price_usd = chain === "solana" ? 160 : chain === "ethereum" ? 3200 : 1;
-      acc[chain] = {
-        address,
-        native_symbol,
-        native_balance,
-        price_usd,
-        value_usd: 0,
-        data_status: address ? "rpc_not_configured" : "not_configured",
-      };
-      return acc;
-    }, {});
+  app.get("/api/ai/wallets/portfolio", async (_req, res) => {
+    const prices = await fetchChainPricesUsd();
+    const entries = await Promise.all(
+      assistantChains.map(async (chain) => {
+        const address = assistantRuntime.wallet.addresses_by_chain[chain] || "";
+        const native_symbol = chainNativeSymbol(chain);
+        const price_usd = Number(prices[chain] || 0);
 
+        if (!address) {
+          return [
+            chain,
+            {
+              address,
+              native_symbol,
+              native_balance: null,
+              price_usd,
+              value_usd: 0,
+              data_status: "not_configured",
+            },
+          ] as const;
+        }
+
+        if (!validateAddressForChain(chain, address)) {
+          return [
+            chain,
+            {
+              address,
+              native_symbol,
+              native_balance: null,
+              price_usd,
+              value_usd: 0,
+              data_status: "invalid_address",
+            },
+          ] as const;
+        }
+
+        const balance = await fetchNativeBalance(chain, address);
+        if (balance === null) {
+          return [
+            chain,
+            {
+              address,
+              native_symbol,
+              native_balance: null,
+              price_usd,
+              value_usd: 0,
+              data_status: "rpc_not_configured",
+            },
+          ] as const;
+        }
+
+        const valueUsd = Number((balance * price_usd).toFixed(2));
+        return [
+          chain,
+          {
+            address,
+            native_symbol,
+            native_balance: Number(balance.toFixed(8)),
+            price_usd,
+            value_usd: valueUsd,
+            data_status: "ok",
+          },
+        ] as const;
+      }),
+    );
+
+    const chains = Object.fromEntries(entries);
     const total_usd = Object.values(chains).reduce((sum: number, item: any) => sum + Number(item.value_usd || 0), 0);
     return res.json({
       wallet: assistantWalletStatus(),
@@ -907,17 +2337,44 @@ export async function registerRoutes(
     });
   });
 
-  app.post("/api/ai/wallets/transfer", (req, res) => {
+  app.post("/api/ai/wallets/transfer", async (req, res) => {
     const chain = String(req.body?.chain || "").toLowerCase();
     const recipient = String(req.body?.recipient_address || "").trim();
     const amount = Number(req.body?.amount || 0);
-    const asset = String(req.body?.asset || "SOL").toUpperCase();
+    const asset = String(req.body?.asset || chainNativeSymbol((chain as AssistantChain) || "solana")).toUpperCase();
     if (!ensureWalletExists()) {
       return res.status(400).json({ message: "wallet not found" });
+    }
+    if (!assistantChains.includes(chain as AssistantChain)) {
+      return res.status(400).json({ message: "unsupported chain" });
     }
     if (!recipient || !Number.isFinite(amount) || amount <= 0) {
       return res.status(400).json({ message: "invalid transfer payload" });
     }
+    if (!validateAddressForChain(chain, recipient)) {
+      return res.status(400).json({ message: "recipient address does not match selected chain" });
+    }
+
+    const senderAddress = assistantRuntime.wallet.addresses_by_chain[chain] || "";
+    if (!senderAddress || !validateAddressForChain(chain, senderAddress)) {
+      return res.status(400).json({ message: "wallet address invalid for selected chain" });
+    }
+
+    const nativeSymbol = chainNativeSymbol(chain as AssistantChain);
+    if (asset !== nativeSymbol) {
+      return res.status(400).json({ message: `unsupported asset for ${chain}. use ${nativeSymbol}` });
+    }
+
+    const balance = await fetchNativeBalance(chain as AssistantChain, senderAddress);
+    if (balance === null) {
+      return res.status(503).json({ message: `unable to fetch ${chain} balance from rpc` });
+    }
+    if (amount > balance) {
+      return res.status(400).json({ message: `insufficient ${nativeSymbol} balance`, available_balance: balance });
+    }
+
+    const prices = await fetchChainPricesUsd();
+    const chainPrice = Number(prices[chain as AssistantChain] || 0);
     const txHash = `tx_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const transaction = {
       id: `transfer_${Date.now()}`,
@@ -925,12 +2382,12 @@ export async function registerRoutes(
       side: "transfer",
       status: "submitted",
       contract_address: asset,
-      notional_usd: Number((amount * (chain === "solana" ? 160 : 1)).toFixed(2)),
+      notional_usd: Number((amount * chainPrice).toFixed(2)),
       quantity: amount,
       asset,
       tx_hash: txHash,
-      explorer_url: `https://explorer.solana.com/tx/${txHash}`,
-      from_address: assistantRuntime.wallet.addresses_by_chain[chain] || assistantRuntime.wallet.addresses_by_chain.solana || "",
+      explorer_url: chainExplorerTxUrl(chain as AssistantChain, txHash),
+      from_address: senderAddress,
       to_address: recipient,
       created_at: nowIso(),
     };
@@ -1196,12 +2653,31 @@ export async function registerRoutes(
     });
   });
 
-  app.get("/api/tokens", isAuthenticated, async (req, res) => {
+  app.get("/api/tokens/solana/early", async (req, res) => {
+    const windowMinutesRaw = Number(req.query.window_minutes || 30);
+    const limitRaw = Number(req.query.limit || 100);
+    const windowMinutes = Number.isFinite(windowMinutesRaw) ? Math.max(1, Math.min(1440, Math.trunc(windowMinutesRaw))) : 30;
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(300, Math.trunc(limitRaw))) : 100;
+    const filtered = await getSolanaEarlyScoredTokens(windowMinutes, limit);
+
+    return res.json({
+      ok: true,
+      chain: "solana",
+      window_minutes: windowMinutes,
+      count: filtered.length,
+      total_candidates: filtered.length,
+      snapshot_at: new Date().toISOString(),
+      cached: doctorEarlyScoredCache ? Date.now() - doctorEarlyScoredCache.at < 20_000 : false,
+      tokens: filtered,
+    });
+  });
+
+  app.get("/api/tokens", async (req, res) => {
     const buildLocalTokenPayload = async (): Promise<TokenFeedResponse> => {
       const all = await storage.getScannedTokens();
       const now = Date.now();
 
-      const chainParam = String(req.query.chain || "all").toLowerCase();
+      const chainParam = String(req.query.chain || "solana").toLowerCase();
       const newOnly = String(req.query.new_only || "false").toLowerCase() === "true";
       const maxAgeHours = Number(req.query.max_age_hours || 0);
       const minAgeMinutes = Number(req.query.min_age_minutes || 0);
@@ -1209,57 +2685,72 @@ export async function registerRoutes(
       const limitRaw = Number(req.query.limit || 50);
       const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.trunc(limitRaw))) : 50;
 
-      const baseRows = all.length
-        ? all
-        : (await (async () => {
-            try {
-              const fresh = await fetchFreshPumpfunTokens(40);
-              return fresh.map((token, index) => {
-                const raw = (token.raw || {}) as Record<string, unknown>;
-                const sourcePlatform = String(raw.sourcePlatform || raw.source_platform || raw.platform || token.eventType || "pumpfun");
-                const priceUsd = Number(raw.priceUsd || raw.price_usd || raw.usdPrice || 0);
-                const marketCapUsd = Number(raw.marketCapUsd || raw.market_cap_usd || raw.marketCap || 0);
-                const createdAtRaw = String(raw.discoveredAt || raw.created_at || raw.createdAt || raw.timestamp || "").trim();
-                const createdAt = createdAtRaw ? new Date(createdAtRaw) : new Date();
-                const social = {
-                  twitter: String(raw.twitterUrl || raw.twitter || raw.x || "").trim() || undefined,
-                  telegram: String(raw.telegramUrl || raw.telegram || "").trim() || undefined,
-                  website: String(raw.websiteUrl || raw.website || "").trim() || undefined,
-                };
-                return {
-                  id: -(index + 1),
-                  address: token.mintAddress,
-                  symbol: token.symbol,
-                  name: token.name,
-                  chain: "solana",
-                  dexId: sourcePlatform || "pumpfun",
-                  pairAddress: null,
-                  priceUsd: String(priceUsd || 0),
-                  liquidity: Number(token.liquidityUsd || 0),
-                  marketCap: Number(marketCapUsd || 0),
-                  volume24h: 0,
-                  priceChange1h: 0,
-                  priceChange24h: 0,
-                  buys24h: 0,
-                  sells24h: 0,
-                  safetyScore: Number(scoreFreshToken({
-                    liquidityUsd: Number(token.liquidityUsd || 0),
-                    holdersCount: 0,
-                    mintAuthorityActive: true,
-                    freezeAuthorityActive: true,
-                  }).score || 0),
-                  mintAuthorityDisabled: false,
-                  topHoldersPercentage: 0,
-                  devWalletPercentage: 0,
-                  socialLinks: social,
-                  aiAnalysis: null,
-                  createdAt,
-                };
-              });
-            } catch {
-              return [];
-            }
-          })());
+      const freshRows = await (async () => {
+        try {
+          const fresh = await fetchFreshPumpfunTokens(60);
+          return fresh.map((token, index) => {
+            const raw = (token.raw || {}) as Record<string, unknown>;
+            const sourcePlatform = String(raw.sourcePlatform || raw.source_platform || raw.platform || token.eventType || "pumpfun");
+            const priceUsd = Number(raw.priceUsd || raw.price_usd || raw.usdPrice || 0);
+            const marketCapUsd = Number(raw.marketCapUsd || raw.market_cap_usd || raw.marketCap || 0);
+            const createdAtRaw = String(raw.discoveredAt || raw.created_at || raw.createdAt || raw.timestamp || "").trim();
+            const createdAt = createdAtRaw ? new Date(createdAtRaw) : new Date();
+            const social = {
+              twitter: String(raw.twitterUrl || raw.twitter || raw.x || "").trim() || undefined,
+              telegram: String(raw.telegramUrl || raw.telegram || "").trim() || undefined,
+              website: String(raw.websiteUrl || raw.website || "").trim() || undefined,
+            };
+            return {
+              id: -(index + 1),
+              address: token.mintAddress,
+              symbol: token.symbol,
+              name: token.name,
+              chain: "solana",
+              dexId: sourcePlatform || "pumpfun",
+              pairAddress: null,
+              priceUsd: String(priceUsd || 0),
+              liquidity: Number(token.liquidityUsd || 0),
+              marketCap: Number(marketCapUsd || 0),
+              volume24h: Number(raw.volume24h || raw.volume_24h || 0),
+              priceChange1h: Number(raw.priceChange1h || raw.price_change_1h || 0),
+              priceChange24h: Number(raw.priceChange24h || raw.price_change_24h || 0),
+              buys24h: Number(raw.buys24h || raw.buys_24h || 0),
+              sells24h: Number(raw.sells24h || raw.sells_24h || 0),
+              safetyScore: Number(scoreFreshToken({
+                liquidityUsd: Number(token.liquidityUsd || 0),
+                holdersCount: Number(raw.holdersCount || raw.holder_count || 0),
+                mintAuthorityActive: true,
+                freezeAuthorityActive: true,
+              }).score || 0),
+              mintAuthorityDisabled: false,
+              topHoldersPercentage: Number(raw.topHoldersPercentage || raw.top_holder_pct || 0),
+              devWalletPercentage: Number(raw.devWalletPercentage || raw.dev_wallet_pct || 0),
+              socialLinks: social,
+              aiAnalysis: null,
+              createdAt,
+            };
+          });
+        } catch {
+          return [];
+        }
+      })();
+
+      const mergedByAddress = new Map<string, any>();
+      for (const token of [...all, ...freshRows]) {
+        const key = String((token as any)?.address || "").trim();
+        if (!key) continue;
+        const previous = mergedByAddress.get(key);
+        if (!previous) {
+          mergedByAddress.set(key, token);
+          continue;
+        }
+        const prevCreated = previous?.createdAt ? new Date(previous.createdAt).getTime() : 0;
+        const nextCreated = (token as any)?.createdAt ? new Date((token as any).createdAt).getTime() : 0;
+        if (nextCreated >= prevCreated) {
+          mergedByAddress.set(key, { ...previous, ...(token as any) });
+        }
+      }
+      const baseRows = Array.from(mergedByAddress.values());
 
       const filtered = baseRows.filter((token) => {
         const tokenChain = String(token.chain || "solana").toLowerCase();

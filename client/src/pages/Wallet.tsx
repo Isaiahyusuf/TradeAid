@@ -105,6 +105,8 @@ export default function WalletPage() {
   const [maxSpreadInput, setMaxSpreadInput] = useState("3");
   const [dailyLossInput, setDailyLossInput] = useState("600");
   const [maxConsecutiveLossesInput, setMaxConsecutiveLossesInput] = useState("3");
+  const [liveSellFractionInput, setLiveSellFractionInput] = useState("50");
+  const [maxSellNotionalInput, setMaxSellNotionalInput] = useState("300");
 
   const [sendChain, setSendChain] = useState<SupportedWalletChain>(enabledChains[0] || "solana");
   const [receiveChain, setReceiveChain] = useState<SupportedWalletChain>(enabledChains[0] || "solana");
@@ -162,6 +164,8 @@ export default function WalletPage() {
     setMaxSpreadInput(String(controls.max_spread_pct ?? 3));
     setDailyLossInput(String(controls.daily_loss_limit_usd ?? 600));
     setMaxConsecutiveLossesInput(String(controls.max_consecutive_losses ?? 3));
+    setLiveSellFractionInput(String(controls.live_sell_fraction_pct ?? 50));
+    setMaxSellNotionalInput(String(controls.max_sell_notional_usd ?? 300));
     setAssistantSettingsHydrated(true);
   }, [assistantSettingsHydrated, doctorStatusQuery.data?.trade_controls]);
 
@@ -445,6 +449,8 @@ export default function WalletPage() {
       setMaxSpreadInput("1.8");
       setDailyLossInput("300");
       setMaxConsecutiveLossesInput("2");
+      setLiveSellFractionInput("35");
+      setMaxSellNotionalInput("180");
     }
     if (preset === "balanced") {
       setBuyAmountInput("0.15");
@@ -458,6 +464,8 @@ export default function WalletPage() {
       setMaxSpreadInput("3");
       setDailyLossInput("600");
       setMaxConsecutiveLossesInput("3");
+      setLiveSellFractionInput("50");
+      setMaxSellNotionalInput("300");
     }
     if (preset === "aggressive") {
       setBuyAmountInput("0.25");
@@ -471,6 +479,8 @@ export default function WalletPage() {
       setMaxSpreadInput("5");
       setDailyLossInput("1000");
       setMaxConsecutiveLossesInput("4");
+      setLiveSellFractionInput("75");
+      setMaxSellNotionalInput("650");
     }
     toast({ title: "Preset loaded", description: `${preset} profile applied. Save to sync DoctorTrade.` });
   };
@@ -489,6 +499,8 @@ export default function WalletPage() {
         max_spread_pct: Math.max(0.1, Number.parseFloat(maxSpreadInput) || 3),
         daily_loss_limit_usd: Math.max(10, Number.parseFloat(dailyLossInput) || 600),
         max_consecutive_losses: Math.max(1, Math.trunc(Number.parseFloat(maxConsecutiveLossesInput) || 3)),
+        live_sell_fraction_pct: Math.max(1, Math.min(100, Number.parseFloat(liveSellFractionInput) || 50)),
+        max_sell_notional_usd: Math.max(1, Number.parseFloat(maxSellNotionalInput) || 300),
       },
       {
         onSuccess: () => {
@@ -904,6 +916,8 @@ export default function WalletPage() {
                     <Input placeholder="Max Spread %" value={maxSpreadInput} onChange={(e) => setMaxSpreadInput(e.target.value)} />
                     <Input placeholder="Daily Loss Limit $" value={dailyLossInput} onChange={(e) => setDailyLossInput(e.target.value)} />
                     <Input placeholder="Max Consecutive Losses" value={maxConsecutiveLossesInput} onChange={(e) => setMaxConsecutiveLossesInput(e.target.value)} />
+                    <Input placeholder="Live Sell Fraction %" value={liveSellFractionInput} onChange={(e) => setLiveSellFractionInput(e.target.value)} />
+                    <Input placeholder="Max Sell Notional $" value={maxSellNotionalInput} onChange={(e) => setMaxSellNotionalInput(e.target.value)} />
                   </div>
                   <div className="flex justify-end">
                     <Button type="button" variant="outline" onClick={saveAssistantDoctorSettings} disabled={doctorConfigMutation.isPending}>

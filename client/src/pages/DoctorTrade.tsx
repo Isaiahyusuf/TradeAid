@@ -55,6 +55,8 @@ export default function DoctorTrade() {
   const [minMomentumInput, setMinMomentumInput] = useState("4");
   const [qualityMinSpikeInput, setQualityMinSpikeInput] = useState("12");
   const [qualityMaxHolderInput, setQualityMaxHolderInput] = useState("35");
+  const [liveSellFractionInput, setLiveSellFractionInput] = useState("50");
+  const [maxSellNotionalInput, setMaxSellNotionalInput] = useState("300");
   const viewData = data;
   const hasData = Boolean(viewData);
   // Only show new launches on Solana (created within 24h and chain is solana)
@@ -97,6 +99,8 @@ export default function DoctorTrade() {
     setMinMomentumInput(String(viewData.trade_controls.min_momentum_profit_pct ?? 4));
     setQualityMinSpikeInput(String(viewData.trade_controls.quality_min_volume_spike_pct ?? 12));
     setQualityMaxHolderInput(String(viewData.trade_controls.quality_max_top_holder_pct ?? 35));
+    setLiveSellFractionInput(String(viewData.trade_controls.live_sell_fraction_pct ?? 50));
+    setMaxSellNotionalInput(String(viewData.trade_controls.max_sell_notional_usd ?? 300));
     setSettingsHydrated(true);
   }, [settingsHydrated, viewData?.trade_controls]);
 
@@ -182,6 +186,8 @@ export default function DoctorTrade() {
     const minMomentumProfitPct = Math.max(0, Number.parseFloat(minMomentumInput) || 4);
     const qualityMinVolumeSpikePct = Math.max(0, Number.parseFloat(qualityMinSpikeInput) || 12);
     const qualityMaxTopHolderPct = Math.max(1, Number.parseFloat(qualityMaxHolderInput) || 35);
+    const liveSellFractionPct = Math.max(1, Math.min(100, Number.parseFloat(liveSellFractionInput) || 50));
+    const maxSellNotionalUsd = Math.max(1, Number.parseFloat(maxSellNotionalInput) || 300);
 
     configMutation.mutate(
       {
@@ -202,6 +208,8 @@ export default function DoctorTrade() {
         min_momentum_profit_pct: minMomentumProfitPct,
         quality_min_volume_spike_pct: qualityMinVolumeSpikePct,
         quality_max_top_holder_pct: qualityMaxTopHolderPct,
+        live_sell_fraction_pct: liveSellFractionPct,
+        max_sell_notional_usd: maxSellNotionalUsd,
       },
       {
         onSuccess: () => {
@@ -237,6 +245,8 @@ export default function DoctorTrade() {
       setMinMomentumInput("3");
       setQualityMinSpikeInput("18");
       setQualityMaxHolderInput("28");
+      setLiveSellFractionInput("35");
+      setMaxSellNotionalInput("180");
     }
     if (preset === "balanced") {
       setBuyAmountInput("0.15");
@@ -255,6 +265,8 @@ export default function DoctorTrade() {
       setMinMomentumInput("4");
       setQualityMinSpikeInput("12");
       setQualityMaxHolderInput("35");
+      setLiveSellFractionInput("50");
+      setMaxSellNotionalInput("300");
     }
     if (preset === "aggressive") {
       setBuyAmountInput("0.25");
@@ -273,6 +285,8 @@ export default function DoctorTrade() {
       setMinMomentumInput("5");
       setQualityMinSpikeInput("8");
       setQualityMaxHolderInput("40");
+      setLiveSellFractionInput("75");
+      setMaxSellNotionalInput("650");
     }
     toast({ title: "Preset loaded", description: `${preset} profile applied. Save to activate.` });
   };
@@ -402,7 +416,7 @@ export default function DoctorTrade() {
               </Button>
             </div>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 items-end mt-2">
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 items-end mt-2">
             <div>
               <p className="text-xs text-muted-foreground mb-1">Min Liquidity USD</p>
               <Input value={minLiquidityInput} onChange={(e) => setMinLiquidityInput(e.target.value)} placeholder="20000" />
@@ -442,6 +456,14 @@ export default function DoctorTrade() {
             <div>
               <p className="text-xs text-muted-foreground mb-1">Quality Max Holder %</p>
               <Input value={qualityMaxHolderInput} onChange={(e) => setQualityMaxHolderInput(e.target.value)} placeholder="35" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Live Sell Fraction %</p>
+              <Input value={liveSellFractionInput} onChange={(e) => setLiveSellFractionInput(e.target.value)} placeholder="50" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Max Sell Notional $</p>
+              <Input value={maxSellNotionalInput} onChange={(e) => setMaxSellNotionalInput(e.target.value)} placeholder="300" />
             </div>
           </div>
         </SettingsMenuCard>
