@@ -39,9 +39,23 @@ function pickNumber(source: Record<string, unknown>, keys: string[]): number | n
   return null;
 }
 
+function extractRunIdFromUrl(runUrl: string): string {
+  const trimmed = runUrl.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  const match = trimmed.match(/\/actor-runs\/([A-Za-z0-9]+)(?:\?|$)/i);
+  return (match?.[1] || "").trim();
+}
+
 export async function fetchFreshPumpfunTokens(limit = 20): Promise<FreshTokenItem[]> {
   const apifyToken = String(process.env.APIFY_TOKEN || "").trim();
   const actorId = String(process.env.APIFY_PUMPFUN_ACTOR_ID || DEFAULT_PUMPFUN_ACTOR_ID).trim();
+  const explicitRunId = String(process.env.APIFY_RUN_ID || "").trim();
+  const explicitRunUrl = String(process.env.APIFY_RUN_URL || "").trim();
+  const runIdFromUrl = extractRunIdFromUrl(explicitRunUrl);
+  const runId = explicitRunId || runIdFromUrl;
 
   if (!apifyToken) {
     const error = new Error("APIFY_TOKEN is missing");
@@ -52,25 +66,50 @@ export async function fetchFreshPumpfunTokens(limit = 20): Promise<FreshTokenIte
   const runsUrl = `${APIFY_API_BASE}/acts/${encodeURIComponent(actorId)}/runs?token=${encodeURIComponent(apifyToken)}&status=SUCCEEDED&desc=1&limit=1`;
 
   try {
-    const runsResponse = await fetch(runsUrl);
-    if (!runsResponse.ok) {
-      const body = await runsResponse.text();
-      logStructured("error", "apify.runs_request_failed", {
-        status: runsResponse.status,
-        actorId,
-        body: body.slice(0, 400),
-      });
-      throw new Error(`Apify runs request failed with ${runsResponse.status}`);
+    let datasetId = "";
+    let resolvedRunId: string | null = null;
+
+    if (runId) {
+      const runResponse = await fetch(`${APIFY_API_BASE}/actor-runs/${encodeURIComponent(runId)}?token=${encodeURIComponent(apifyToken)}`);
+      if (!runResponse.ok) {
+        const body = await runResponse.text();
+        logStructured("error", "apify.run_request_failed", {
+          status: runResponse.status,
+          runId,
+          body: body.slice(0, 400),
+        });
+        throw new Error(`Apify run request failed with ${runResponse.status}`);
+      }
+
+      const runPayload = await runResponse.json() as {
+        data?: { defaultDatasetId?: string; id?: string };
+      };
+
+      resolvedRunId = String(runPayload?.data?.id || runId).trim() || runId;
+      datasetId = String(runPayload?.data?.defaultDatasetId || "").trim();
+    } else {
+      const runsResponse = await fetch(runsUrl);
+      if (!runsResponse.ok) {
+        const body = await runsResponse.text();
+        logStructured("error", "apify.runs_request_failed", {
+          status: runsResponse.status,
+          actorId,
+          body: body.slice(0, 400),
+        });
+        throw new Error(`Apify runs request failed with ${runsResponse.status}`);
+      }
+
+      const runsPayload = await runsResponse.json() as {
+        data?: { items?: Array<{ defaultDatasetId?: string; id?: string }> };
+      };
+
+      const run = runsPayload?.data?.items?.[0];
+      resolvedRunId = String(run?.id || "").trim() || null;
+      datasetId = String(run?.defaultDatasetId || "").trim();
     }
 
-    const runsPayload = await runsResponse.json() as {
-      data?: { items?: Array<{ defaultDatasetId?: string; id?: string }> };
-    };
-
-    const run = runsPayload?.data?.items?.[0];
-    const datasetId = String(run?.defaultDatasetId || "").trim();
     if (!datasetId) {
-      logStructured("warn", "apify.no_dataset_found", { actorId, runId: run?.id || null });
+      logStructured("warn", "apify.no_dataset_found", { actorId, runId: resolvedRunId });
       return [];
     }
 
@@ -106,6 +145,7 @@ export async function fetchFreshPumpfunTokens(limit = 20): Promise<FreshTokenIte
 
     logStructured("info", "apify.fresh_tokens_fetched", {
       actorId,
+      runId: resolvedRunId,
       datasetId,
       totalItems: Array.isArray(itemsPayload) ? itemsPayload.length : 0,
       freshTokenCount: normalized.length,
