@@ -710,39 +710,48 @@ export async function registerRoutes(
         : (await (async () => {
             try {
               const fresh = await fetchFreshPumpfunTokens(40);
-              return fresh.map((token, index) => ({
-                id: -(index + 1),
-                address: token.mintAddress,
-                symbol: token.symbol,
-                name: token.name,
-                chain: "solana",
-                dexId: token.sourcePlatform || "pumpfun",
-                pairAddress: null,
-                priceUsd: String(token.priceUsd || 0),
-                liquidity: Number(token.liquidityUsd || 0),
-                marketCap: Number(token.marketCapUsd || 0),
-                volume24h: 0,
-                priceChange1h: 0,
-                priceChange24h: 0,
-                buys24h: 0,
-                sells24h: 0,
-                safetyScore: Number(scoreFreshToken({
-                  liquidityUsd: Number(token.liquidityUsd || 0),
-                  holdersCount: 0,
-                  mintAuthorityActive: true,
-                  freezeAuthorityActive: true,
-                }).score || 0),
-                mintAuthorityDisabled: false,
-                topHoldersPercentage: 0,
-                devWalletPercentage: 0,
-                socialLinks: {
-                  twitter: token.twitterUrl || undefined,
-                  telegram: token.telegramUrl || undefined,
-                  website: token.websiteUrl || undefined,
-                },
-                aiAnalysis: null,
-                createdAt: token.discoveredAt ? new Date(token.discoveredAt) : new Date(),
-              }));
+              return fresh.map((token, index) => {
+                const raw = (token.raw || {}) as Record<string, unknown>;
+                const sourcePlatform = String(raw.sourcePlatform || raw.source_platform || raw.platform || token.eventType || "pumpfun");
+                const priceUsd = Number(raw.priceUsd || raw.price_usd || raw.usdPrice || 0);
+                const marketCapUsd = Number(raw.marketCapUsd || raw.market_cap_usd || raw.marketCap || 0);
+                const createdAtRaw = String(raw.discoveredAt || raw.created_at || raw.createdAt || raw.timestamp || "").trim();
+                const createdAt = createdAtRaw ? new Date(createdAtRaw) : new Date();
+                const social = {
+                  twitter: String(raw.twitterUrl || raw.twitter || raw.x || "").trim() || undefined,
+                  telegram: String(raw.telegramUrl || raw.telegram || "").trim() || undefined,
+                  website: String(raw.websiteUrl || raw.website || "").trim() || undefined,
+                };
+                return {
+                  id: -(index + 1),
+                  address: token.mintAddress,
+                  symbol: token.symbol,
+                  name: token.name,
+                  chain: "solana",
+                  dexId: sourcePlatform || "pumpfun",
+                  pairAddress: null,
+                  priceUsd: String(priceUsd || 0),
+                  liquidity: Number(token.liquidityUsd || 0),
+                  marketCap: Number(marketCapUsd || 0),
+                  volume24h: 0,
+                  priceChange1h: 0,
+                  priceChange24h: 0,
+                  buys24h: 0,
+                  sells24h: 0,
+                  safetyScore: Number(scoreFreshToken({
+                    liquidityUsd: Number(token.liquidityUsd || 0),
+                    holdersCount: 0,
+                    mintAuthorityActive: true,
+                    freezeAuthorityActive: true,
+                  }).score || 0),
+                  mintAuthorityDisabled: false,
+                  topHoldersPercentage: 0,
+                  devWalletPercentage: 0,
+                  socialLinks: social,
+                  aiAnalysis: null,
+                  createdAt,
+                };
+              });
             } catch {
               return [];
             }

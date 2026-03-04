@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { useSafeBuy } from "@/hooks/use-safe-buy";
+import { useSafeBuy, type SafeBuyItem } from "@/hooks/use-safe-buy";
 import { useScannerStream } from "@/hooks/use-scanner-stream";
 import { useChain, SUPPORTED_CHAINS, type AppChain } from "@/hooks/use-chain";
 import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
@@ -47,7 +47,7 @@ export default function SafeBuy() {
   });
 
   const now = Date.now();
-  const filterRecent = (tokens = []) => tokens.filter(token => {
+  const filterRecent = (tokens: SafeBuyItem[] = []) => tokens.filter((token) => {
     if (!token.created_at) return false;
     const ageMinutes = (now - new Date(token.created_at).getTime()) / 60000;
     return ageMinutes < 1440;
