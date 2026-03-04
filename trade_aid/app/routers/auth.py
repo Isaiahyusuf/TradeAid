@@ -6,8 +6,8 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from jose import JWTError, jwt
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, Annotated
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
@@ -31,14 +31,14 @@ settings = get_settings()
 class RegisterRequest(BaseModel):
     username: str
     email: Optional[str] = None
-    password: str
+    password: Annotated[str, Field(min_length=8, max_length=72)]
     device_id: Optional[str] = None
     access_code: Optional[str] = None
 
 
 class LoginRequest(BaseModel):
     username: str
-    password: str
+    password: Annotated[str, Field(min_length=8, max_length=72)]
     totp_code: Optional[str] = None
     device_id: Optional[str] = None
     access_code: Optional[str] = None
@@ -68,7 +68,7 @@ class ForgotPasswordRequest(BaseModel):
 class ConfirmPasswordResetRequest(BaseModel):
     email: str
     code: str
-    new_password: str
+    new_password: Annotated[str, Field(min_length=8, max_length=72)]
 
 
 class UpdateProfileRequest(BaseModel):

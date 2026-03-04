@@ -15,7 +15,8 @@ solana==0.35.1
 networkx==3.4.2
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-bcrypt==4.0.1
+# Pin bcrypt to a backend-compatible version to avoid __about__ attribute errors
+bcrypt==3.2.2
 cryptography==44.0.0
 pyotp==2.9.0
 pydantic==2.10.3
