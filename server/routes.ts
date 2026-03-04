@@ -13,6 +13,11 @@ import { multichainScanner } from "./services/multichain-scanner";
 import { getTokenPairs } from "./services/dexscreener";
 import { FREE_TIER_LIMITS, SUBSCRIPTION_PRICE_USD, SUPPORTED_PAYMENT_CHAINS } from "@shared/schema";
 import { cryptoPaymentService } from "./services/crypto-payment";
+import { fetchFreshPumpfunTokens } from "./services/fresh-token-service";
+import { enrichTokenWithHelius } from "./services/helius-enrichment-service";
+import { scoreFreshToken } from "./services/token-scoring-engine";
+import { getAutoTradeConfig, maybeTriggerAutoTrade } from "./services/auto-trade-hook";
+import { logStructured } from "./services/structured-logger";
 import OpenAI from "openai";
 
 let openaiClient: OpenAI | null = null;
@@ -41,6 +46,64 @@ export async function registerRoutes(
   
   // Register token scanner routes (new powerful scanner)
   registerScannerRoutes(app);
+
+  app.get("/process-fresh", async (req, res) => {
+    const limitRaw = Number(req.query.limit || 20);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(100, limitRaw)) : 20;
+
+    try {
+      const freshTokens = await fetchFreshPumpfunTokens(limit);
+      const processed: Array<Record<string, unknown>> = [];
+
+      for (const token of freshTokens) {
+        const enrichment = await enrichTokenWithHelius(token.mintAddress);
+
+        const scoreResult = scoreFreshToken({
+          liquidityUsd: Number(token.liquidityUsd || 0),
+          holdersCount: Number(enrichment.holdersCount || 0),
+          mintAuthorityActive: enrichment.authorities.mintAuthorityActive,
+          freezeAuthorityActive: enrichment.authorities.freezeAuthorityActive,
+        });
+
+        const autoTrade = await maybeTriggerAutoTrade({
+          mintAddress: token.mintAddress,
+          symbol: token.symbol,
+          score: scoreResult.score,
+        });
+
+        logStructured("info", "fresh_token.scored", {
+          mintAddress: token.mintAddress,
+          symbol: token.symbol,
+          score: scoreResult.score,
+          riskLevel: scoreResult.riskLevel,
+          autoTradeTriggered: autoTrade.triggered,
+        });
+
+        processed.push({
+          token,
+          enrichment,
+          scoring: scoreResult,
+          autoTrade,
+        });
+      }
+
+      return res.json({
+        ok: true,
+        fetched: freshTokens.length,
+        processedAt: new Date().toISOString(),
+        autoTrade: getAutoTradeConfig(),
+        items: processed,
+      });
+    } catch (error) {
+      logStructured("error", "fresh_token.process_failed", {
+        message: error instanceof Error ? error.message : "Unknown error",
+      });
+      return res.status(500).json({
+        ok: false,
+        message: error instanceof Error ? error.message : "Failed to process fresh tokens",
+      });
+    }
+  });
 
   const pythonApiBase = String(
     process.env.TRADE_AID_BACKEND_URL || process.env.BACKEND_URL || process.env.VITE_API_URL || "",
