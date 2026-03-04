@@ -278,8 +278,14 @@ class ScoringService:
 
     async def _compute_scores(self, db: AsyncSession, token: Token) -> dict:
         try:
+            # Try AI service - check if it's mounted locally or external
+            ai_url = settings.AI_SERVICE_URL
+            if ai_url.startswith("http://ai_service"):
+                # Use localhost if AI service is mounted in same app
+                ai_url = "http://localhost:8000/ai"
+            
             ai_response = await self.client.post(
-                f"{settings.AI_SERVICE_URL}/score-token",
+                f"{ai_url}/score-token",
                 json={
                     "contract_address": token.contract_address,
                     "chain": token.chain,

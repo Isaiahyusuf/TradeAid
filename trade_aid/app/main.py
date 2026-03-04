@@ -61,6 +61,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Mount AI Service as sub-application
+try:
+    from ai_service.main import app as ai_app
+    app.mount("/ai", ai_app)
+    logger.info("AI Service mounted at /ai")
+except Exception as e:
+    logger.warning(f"Could not mount AI service: {e}")
+
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 cors_origins = []
