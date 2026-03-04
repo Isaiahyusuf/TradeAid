@@ -8,6 +8,7 @@ import { useTokens, useTokenStats } from "@/hooks/use-memetrend";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAlerts } from "@/hooks/use-alerts";
 import { useSafeBuy } from "@/hooks/use-safe-buy";
+import { useGrowthSummary } from "@/hooks/use-growth-summary";
 import { 
   TrendingUp, Activity, Eye, ShieldCheck,
   ArrowUpRight, ArrowDownRight, Bell, ExternalLink, Lock, RefreshCw
@@ -94,6 +95,7 @@ export default function Dashboard() {
   const { data: stats, isLoading: statsLoading, error: statsError } = useTokenStats();
   const { data: alertData, isLoading: alertsLoading, error: alertsError } = useAlerts();
   const { data: safeBuyData, isLoading: safeBuyLoading } = useSafeBuy(5);
+  const { data: growthSummary, isLoading: growthLoading } = useGrowthSummary();
   const hasError = tokensError || statsError || alertsError;
   // Filter out tokens older than 24 hours (1440 minutes) in all cases
   const now = Date.now();
@@ -315,6 +317,71 @@ export default function Dashboard() {
               <Link href="/safebuy">
                 <Button size="sm" variant="outline" data-testid="button-open-safe-buy">Open Safe Buy</Button>
               </Link>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="solana-card p-4">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <h3 className="font-semibold flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-primary" />
+                Growth Intelligence
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                AI-ranked opportunities and operating recommendations from live token flow.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge variant="outline">Low Risk {growthSummary?.risk_mix?.low ?? 0}</Badge>
+              <Badge variant="outline">Medium {growthSummary?.risk_mix?.medium ?? 0}</Badge>
+              <Badge variant="outline">High {growthSummary?.risk_mix?.high ?? 0}</Badge>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Top Candidates</p>
+              {growthLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              ) : ((growthSummary?.candidates || []).slice(0, 3).length > 0 ? (
+                <div className="space-y-2">
+                  {(growthSummary?.candidates || []).slice(0, 3).map((item) => (
+                    <div key={item.address} className="rounded-lg border border-border/60 p-2.5 bg-muted/20">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium">{item.symbol}</span>
+                        <Badge variant="secondary">Safety {item.safety_score.toFixed(0)}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">{item.rationale}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No growth candidates yet.</p>
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Recommendations</p>
+              {growthLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-6 w-full" />
+                  <Skeleton className="h-6 w-full" />
+                  <Skeleton className="h-6 w-full" />
+                </div>
+              ) : ((growthSummary?.recommendations || []).length > 0 ? (
+                <div className="space-y-2">
+                  {(growthSummary?.recommendations || []).slice(0, 3).map((line) => (
+                    <p key={line} className="text-sm text-muted-foreground">• {line}</p>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No recommendations available.</p>
+              ))}
             </div>
           </div>
         </Card>
