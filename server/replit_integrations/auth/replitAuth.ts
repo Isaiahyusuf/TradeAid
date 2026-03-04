@@ -10,9 +10,12 @@ import { authStorage } from "./storage";
 
 const getOidcConfig = memoize(
   async () => {
+    if (!process.env.REPL_ID) {
+      throw new Error("Replit configuration not available");
+    }
     return await client.discovery(
       new URL(process.env.ISSUER_URL ?? "https://replit.com/oidc"),
-      process.env.REPL_ID!
+      process.env.REPL_ID
     );
   },
   { maxAge: 3600 * 1000 }
@@ -67,6 +70,12 @@ export async function setupAuth(app: Express) {
   app.use(getSession());
   app.use(passport.initialize());
   app.use(passport.session());
+
+  // Skip Replit Auth if not in Replit environment
+  if (!process.env.REPL_ID) {
+    console.log("Replit Auth skipped - not in Replit environment");
+    return;
+  }
 
   const config = await getOidcConfig();
 
