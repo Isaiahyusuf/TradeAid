@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "@/lib/api";
-import { useAuth } from "@/hooks/use-auth";
 import type { TokenFeedItem, TokenFeedResponse } from "@shared/token-contract";
 
 export type TokenItem = TokenFeedItem;
@@ -16,7 +15,6 @@ export function useTokens(
     limit?: number;
   }
 ) {
-  const { hasToken } = useAuth();
   const queryString = new URLSearchParams();
   if (chain && chain !== "all") queryString.set("chain", chain);
   if (options?.newOnly) queryString.set("new_only", "true");
@@ -41,19 +39,18 @@ export function useTokens(
     queryFn: () => apiGet<TokenFeedResponse>(`/api/tokens${qs ? `?${qs}` : ""}`),
     staleTime: 5000,
     refetchInterval: 5000,
-    enabled: hasToken,
+    enabled: true,
     retry: 1,
   });
 }
 
 export function useTokenStats() {
-  const { hasToken } = useAuth();
   return useQuery({
     queryKey: ["token-stats"],
     queryFn: () => apiGet<{ total_tokens: number; by_chain: Record<string, number> }>("/api/tokens/stats/overview"),
     staleTime: 5000,
     refetchInterval: 5000,
-    enabled: hasToken,
+    enabled: true,
     retry: 1,
   });
 }

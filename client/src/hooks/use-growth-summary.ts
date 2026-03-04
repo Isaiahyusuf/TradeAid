@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "@/lib/api";
-import { useAuth } from "@/hooks/use-auth";
 
 export type GrowthCandidate = {
   symbol: string;
@@ -24,14 +23,12 @@ export type GrowthSummary = {
 };
 
 export function useGrowthSummary() {
-  const { hasToken } = useAuth();
-
   return useQuery({
     queryKey: ["growth-summary"],
     queryFn: () => apiGet<GrowthSummary>("/api/growth/summary"),
     staleTime: 15000,
     refetchInterval: 30000,
-    enabled: hasToken,
+    enabled: true,
     retry: 1,
   });
 }

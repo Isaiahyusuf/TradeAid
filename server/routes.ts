@@ -762,15 +762,15 @@ export async function registerRoutes(
     const chains = assistantChains.reduce<Record<string, any>>((acc, chain) => {
       const address = assistantRuntime.wallet.addresses_by_chain[chain] || "";
       const native_symbol = chain === "solana" ? "SOL" : chain === "ethereum" ? "ETH" : chain.toUpperCase();
-      const native_balance = address ? Number((Math.random() * 1.8 + 0.2).toFixed(4)) : 0;
+      const native_balance = address ? 0 : null;
       const price_usd = chain === "solana" ? 160 : chain === "ethereum" ? 3200 : 1;
       acc[chain] = {
         address,
         native_symbol,
         native_balance,
         price_usd,
-        value_usd: Number((native_balance * price_usd).toFixed(2)),
-        data_status: address ? "ok" : "not_configured",
+        value_usd: 0,
+        data_status: address ? "rpc_not_configured" : "not_configured",
       };
       return acc;
     }, {});

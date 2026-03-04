@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { useAuth } from "@/hooks/use-auth";
 import { apiGet } from "@/lib/api";
 
 export type SafeBuyItem = {
@@ -43,8 +42,6 @@ export function useSafeBuy(
     chains?: string[];
   }
 ) {
-  const { hasToken } = useAuth();
-
   const chain = (options?.chain || "all").trim().toLowerCase();
   const chainList = (options?.chains || []).map((item) => item.trim().toLowerCase()).filter(Boolean);
   const params = new URLSearchParams();
@@ -59,7 +56,7 @@ export function useSafeBuy(
     queryFn: () => apiGet<{ tokens: SafeBuyItem[]; count: number; near_miss_tokens: SafeBuyItem[]; near_miss_count: number; refreshed_at: string }>(`/api/safe-buy?${params.toString()}`),
     staleTime: 10000,
     refetchInterval: 30000,
-    enabled: hasToken,
+    enabled: true,
     retry: 1,
   });
 }
