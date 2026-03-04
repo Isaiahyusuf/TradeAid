@@ -309,12 +309,327 @@ export async function registerRoutes(
     }
   }
 
-  app.get("/api/doctor/health", async (req, res) => proxyToPythonApi(req, res, "/api/doctor/health"));
-  app.get("/api/doctor/status", async (req, res) => proxyToPythonApi(req, res, "/api/doctor/status"));
-  app.post("/api/doctor/control", async (req, res) => proxyToPythonApi(req, res, "/api/doctor/control"));
-  app.post("/api/doctor/config", async (req, res) => proxyToPythonApi(req, res, "/api/doctor/config"));
-  app.post("/api/doctor/connect-wallet", async (req, res) => proxyToPythonApi(req, res, "/api/doctor/connect-wallet"));
-  app.post("/api/doctor/run-once", async (req, res) => proxyToPythonApi(req, res, "/api/doctor/run-once"));
+  const doctorRuntime = {
+    enabled: false,
+    killSwitch: false,
+    scanIntervalSeconds: 20,
+    wallet: {
+      address: "",
+      balanceSol: 0,
+      separateWalletEnforced: true,
+    },
+    controls: {
+      max_trades_per_day: 12,
+      trades_today: 0,
+      min_buy_amount_sol: 0.1,
+      buy_amount_sol: 0.1,
+      take_profit_multiplier: 2,
+      min_profit_pct: 12,
+      stop_loss_pct: 6,
+      trailing_stop_pct: 10,
+      min_liquidity_usd: 20000,
+      max_slippage_pct: 4,
+      max_spread_pct: 3,
+      daily_loss_limit_usd: 600,
+      max_consecutive_losses: 3,
+      strong_move_threshold_pct: 40,
+      max_hold_minutes: 180,
+      min_momentum_profit_pct: 4,
+      quality_min_volume_spike_pct: 12,
+      quality_max_top_holder_pct: 35,
+    },
+    recentTrades: [] as Array<Record<string, any>>,
+    decisionJournal: [] as Array<Record<string, any>>,
+    performance: [] as Array<Record<string, any>>,
+    lastRunAt: null as string | null,
+    lastError: null as string | null,
+  };
+
+  const buildDoctorStatus = async () => {
+    const tokens = await storage.getScannedTokens();
+    const activeTokens = tokens
+      .map((token) => {
+        const liquidity = Number(token.liquidity || 0);
+        const volume24h = Number(token.volume24h || 0);
+        const volume5m = Number((volume24h / 288).toFixed(2));
+        const score = Number(token.safetyScore || 0);
+        return {
+          symbol: String(token.symbol || "UNKNOWN"),
+          address: String(token.address || ""),
+          liquidity,
+          volume_5m: volume5m,
+          score,
+          price_usd: Number(token.priceUsd || 0),
+          chain: String(token.chain || "solana"),
+          created_at: token.createdAt ? new Date(token.createdAt).toISOString() : null,
+        };
+      })
+      .filter((token) => token.liquidity >= Number(doctorRuntime.controls.min_liquidity_usd || 0))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 30);
+
+    const paused = doctorRuntime.killSwitch;
+    const safetyPaused = paused || !doctorRuntime.enabled;
+
+    return {
+      enabled: doctorRuntime.enabled,
+      kill_switch: doctorRuntime.killSwitch,
+      scan_interval_seconds: doctorRuntime.scanIntervalSeconds,
+      last_run_at: doctorRuntime.lastRunAt,
+      last_error: doctorRuntime.lastError,
+      risk_state: {
+        drawdown_pct: 0,
+        daily_realized_pnl_usd: 0,
+        high_watermark_usd: 0,
+        open_positions: 0,
+        open_exposure_pct: 0,
+        consecutive_losses: 0,
+        paused,
+        permanent_lock: false,
+        pause_reason: paused ? "kill_switch_enabled" : null,
+      },
+      wallet: {
+        address: doctorRuntime.wallet.address,
+        balance_sol: doctorRuntime.wallet.balanceSol,
+        separate_wallet_enforced: doctorRuntime.wallet.separateWalletEnforced,
+      },
+      trade_controls: {
+        ...doctorRuntime.controls,
+        wallet_connected: Boolean(doctorRuntime.wallet.address),
+      },
+      active_tokens: activeTokens,
+      positions: [],
+      recent_trades: doctorRuntime.recentTrades.slice(0, 40),
+      decision_journal: doctorRuntime.decisionJournal.slice(0, 60),
+      performance: doctorRuntime.performance.slice(0, 30),
+      tuning_suggestion: activeTokens.length < 5 ? "Lower minimum liquidity or widen scanner scope to increase candidates." : null,
+      strategy_mode: "balanced",
+      safety: {
+        api_error_count: doctorRuntime.lastError ? 1 : 0,
+        paused: safetyPaused,
+        pause_reason: safetyPaused ? (doctorRuntime.killSwitch ? "kill_switch_enabled" : "doctortrade_disabled") : null,
+      },
+      self_evolution: {
+        cycles: doctorRuntime.performance.length,
+        last_updated_at: doctorRuntime.lastRunAt,
+      },
+      fresh_feed: {
+        last_cycle_at: doctorRuntime.lastRunAt,
+        detected: tokens.length,
+        enriched: tokens.length,
+        approved: activeTokens.length,
+        rejected: Math.max(0, tokens.length - activeTokens.length),
+      },
+      scanner_health: {
+        overall: {
+          calls: Math.max(1, doctorRuntime.performance.length),
+          success: Math.max(1, doctorRuntime.performance.length),
+          errors: doctorRuntime.lastError ? 1 : 0,
+          success_rate_pct: doctorRuntime.lastError ? 75 : 100,
+        },
+      },
+    };
+  };
+
+  app.get("/api/doctor/health", async (_req, res) => {
+    return res.json({
+      ok: true,
+      service: "doctortrade-local",
+      version: "1.0.0",
+      features: {
+        local_fallback: true,
+        direct_buy: true,
+        autonomous_mode: true,
+      },
+    });
+  });
+
+  app.get("/api/doctor/status", async (_req, res) => {
+    return res.json(await buildDoctorStatus());
+  });
+
+  app.post("/api/doctor/control", async (req, res) => {
+    const enabled = Boolean(req.body?.enabled);
+    doctorRuntime.enabled = enabled && !doctorRuntime.killSwitch;
+    if (enabled && doctorRuntime.killSwitch) {
+      doctorRuntime.lastError = "Cannot enable while kill switch is active";
+    }
+    return res.json(await buildDoctorStatus());
+  });
+
+  app.post("/api/doctor/config", async (req, res) => {
+    const payload = req.body || {};
+    if (typeof payload.kill_switch === "boolean") {
+      doctorRuntime.killSwitch = payload.kill_switch;
+      if (doctorRuntime.killSwitch) {
+        doctorRuntime.enabled = false;
+      }
+    }
+    if (Number.isFinite(Number(payload.scan_interval_seconds))) {
+      doctorRuntime.scanIntervalSeconds = Math.max(5, Math.trunc(Number(payload.scan_interval_seconds)));
+    }
+
+    const numericKeys = [
+      "buy_amount_sol",
+      "max_trades_per_day",
+      "take_profit_multiplier",
+      "min_profit_pct",
+      "stop_loss_pct",
+      "trailing_stop_pct",
+      "min_liquidity_usd",
+      "max_slippage_pct",
+      "max_spread_pct",
+      "daily_loss_limit_usd",
+      "max_consecutive_losses",
+      "strong_move_threshold_pct",
+      "max_hold_minutes",
+      "min_momentum_profit_pct",
+      "quality_min_volume_spike_pct",
+      "quality_max_top_holder_pct",
+    ] as const;
+
+    for (const key of numericKeys) {
+      if (Number.isFinite(Number(payload[key]))) {
+        (doctorRuntime.controls as any)[key] = Number(payload[key]);
+      }
+    }
+
+    doctorRuntime.controls.min_buy_amount_sol = Math.max(0.05, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
+    return res.json(await buildDoctorStatus());
+  });
+
+  app.post("/api/doctor/connect-wallet", async (req, res) => {
+    const payload = req.body || {};
+    const explicitAddress = String(payload.public_address || "").trim();
+    const useExistingWallet = Boolean(payload.use_existing_wallet);
+
+    if (explicitAddress) {
+      doctorRuntime.wallet.address = explicitAddress;
+    } else if (useExistingWallet && !doctorRuntime.wallet.address) {
+      doctorRuntime.wallet.address = "sim-wallet-local";
+    }
+
+    doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 1.25);
+    return res.json(await buildDoctorStatus());
+  });
+
+  app.post("/api/doctor/run-once", async (_req, res) => {
+    const status = await buildDoctorStatus();
+    doctorRuntime.lastRunAt = new Date().toISOString();
+
+    if (!doctorRuntime.enabled) {
+      return res.json({ result: { executed: false, reason: "doctortrade_disabled" } });
+    }
+    if (doctorRuntime.killSwitch) {
+      return res.json({ result: { executed: false, reason: "kill_switch_enabled" } });
+    }
+    if (!doctorRuntime.wallet.address) {
+      return res.json({ result: { executed: false, reason: "wallet_not_connected" } });
+    }
+
+    const minScore = Math.max(1, Number(doctorRuntime.controls.strong_move_threshold_pct || 40));
+    const candidate = (status.active_tokens || []).find((token: any) => Number(token.score || 0) >= minScore);
+    if (!candidate) {
+      return res.json({ result: { executed: false, reason: "no_eligible_token" } });
+    }
+
+    const buyAmount = Number(doctorRuntime.controls.buy_amount_sol || 0.1);
+    const signature = `paper_${Date.now()}_${String(candidate.symbol || "token").toLowerCase()}`;
+    const now = new Date().toISOString();
+
+    doctorRuntime.controls.trades_today = Number(doctorRuntime.controls.trades_today || 0) + 1;
+    doctorRuntime.recentTrades.unshift({
+      token: candidate.symbol,
+      address: candidate.address,
+      action: "BUY",
+      status: "EXECUTED",
+      reason: "strong_move_signal",
+      confidence: candidate.score,
+      liquidity: candidate.liquidity,
+      volume_5m: candidate.volume_5m,
+      size_pct: 100,
+      notional_usd: Number((buyAmount * 160).toFixed(2)),
+      timestamp: now,
+    });
+    doctorRuntime.decisionJournal.unshift({
+      token: candidate.symbol,
+      address: candidate.address,
+      decision: "buy",
+      reason: "strong_move_signal",
+      confidence: candidate.score,
+      size_pct: 100,
+      strategy_mode: "balanced",
+      timestamp: now,
+    });
+    doctorRuntime.performance.unshift({
+      cycle: doctorRuntime.performance.length + 1,
+      latest_win_rate: 0.65,
+      weighted_trade_mass: Number((buyAmount * 100).toFixed(2)),
+      pnl_per_trade_usd: 0,
+      updated_at: now,
+    });
+
+    doctorRuntime.recentTrades = doctorRuntime.recentTrades.slice(0, 50);
+    doctorRuntime.decisionJournal = doctorRuntime.decisionJournal.slice(0, 80);
+    doctorRuntime.performance = doctorRuntime.performance.slice(0, 40);
+
+    return res.json({
+      result: {
+        executed: true,
+        signature,
+        buy_amount_sol: buyAmount,
+      },
+    });
+  });
+
+  app.post("/api/doctor/direct-buy", async (req, res) => {
+    const contractAddress = String(req.body?.contract_address || req.body?.address || "").trim();
+    if (!contractAddress) {
+      return res.status(400).json({ result: { executed: false, reason: "contract_address_required" } });
+    }
+    if (!doctorRuntime.wallet.address) {
+      return res.json({ result: { executed: false, reason: "wallet_not_connected" } });
+    }
+
+    const buyAmount = Number(doctorRuntime.controls.buy_amount_sol || 0.1);
+    const signature = `paper_buy_${Date.now()}`;
+    const now = new Date().toISOString();
+
+    doctorRuntime.controls.trades_today = Number(doctorRuntime.controls.trades_today || 0) + 1;
+    doctorRuntime.recentTrades.unshift({
+      token: String(req.body?.symbol || "MANUAL"),
+      address: contractAddress,
+      action: "BUY",
+      status: "EXECUTED",
+      reason: "manual_direct_buy",
+      confidence: 70,
+      liquidity: 0,
+      volume_5m: 0,
+      size_pct: 100,
+      notional_usd: Number((buyAmount * 160).toFixed(2)),
+      timestamp: now,
+    });
+    doctorRuntime.decisionJournal.unshift({
+      token: String(req.body?.symbol || "MANUAL"),
+      address: contractAddress,
+      decision: "buy",
+      reason: "manual_direct_buy",
+      confidence: 70,
+      size_pct: 100,
+      strategy_mode: "manual",
+      timestamp: now,
+    });
+    doctorRuntime.recentTrades = doctorRuntime.recentTrades.slice(0, 50);
+    doctorRuntime.decisionJournal = doctorRuntime.decisionJournal.slice(0, 80);
+
+    return res.json({
+      result: {
+        executed: true,
+        signature,
+        buy_amount_sol: buyAmount,
+      },
+    });
+  });
 
   app.post("/api/scoring/score-token", async (req, res) =>
     proxyToPythonApi(req, res, "/api/scoring/score-token", async () => {
@@ -336,6 +651,11 @@ export async function registerRoutes(
       `/api/scoring/insight/${encodeURIComponent(req.params.chain)}/${encodeURIComponent(req.params.contract_address)}`,
       async () => {
         const score = await buildDexScoreFallback(req.params.contract_address, req.params.chain);
+        const safeScores = score.scores || {
+          rug_probability: 0,
+          trade_confidence_index: 0,
+        };
+        const safeLiquidity = Number(score.market_data?.liquidity_usd || 0);
         return {
           status: "ok",
           token: {
@@ -343,13 +663,13 @@ export async function registerRoutes(
             symbol: score.symbol,
             chain: score.chain,
           },
-          score: score.scores,
+          score: safeScores,
           insight: {
-            summary: `${score.symbol} is ${score.eligible ? 'eligible' : 'not eligible'} for trading with a rug risk of ${score.scores.rug_probability}%.`,
+            summary: `${score.symbol} is ${score.eligible ? 'eligible' : 'not eligible'} for trading with a rug risk of ${safeScores.rug_probability}%.`,
             key_points: [
-              `Rug Risk: ${score.scores.rug_probability}%`,
-              `Confidence Index: ${score.scores.trade_confidence_index}%`,
-              `Liquidity: $${score.market_data.liquidity_usd.toLocaleString()}`,
+              `Rug Risk: ${safeScores.rug_probability}%`,
+              `Confidence Index: ${safeScores.trade_confidence_index}%`,
+              `Liquidity: $${safeLiquidity.toLocaleString()}`,
             ],
           },
         };
@@ -372,12 +692,171 @@ export async function registerRoutes(
     });
   });
 
-  app.get("/api/tokens", isAuthenticated, async (req, res) =>
-    proxyToPythonApi(req, res, "/api/tokens", async () => {
-      // Fallback: return empty list or fetch from DexScreener
-      return { tokens: [], total: 0 };
-    }),
-  );
+  app.get("/api/tokens", isAuthenticated, async (req, res) => {
+    const buildLocalTokenPayload = async () => {
+      const all = await storage.getScannedTokens();
+      const now = Date.now();
+
+      const chainParam = String(req.query.chain || "all").toLowerCase();
+      const newOnly = String(req.query.new_only || "false").toLowerCase() === "true";
+      const maxAgeHours = Number(req.query.max_age_hours || 0);
+      const minAgeMinutes = Number(req.query.min_age_minutes || 0);
+      const maxAgeMinutes = Number(req.query.max_age_minutes || 0);
+      const limitRaw = Number(req.query.limit || 50);
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.trunc(limitRaw))) : 50;
+
+      const baseRows = all.length
+        ? all
+        : (await (async () => {
+            try {
+              const fresh = await fetchFreshPumpfunTokens(40);
+              return fresh.map((token, index) => ({
+                id: -(index + 1),
+                address: token.mintAddress,
+                symbol: token.symbol,
+                name: token.name,
+                chain: "solana",
+                dexId: token.sourcePlatform || "pumpfun",
+                pairAddress: null,
+                priceUsd: String(token.priceUsd || 0),
+                liquidity: Number(token.liquidityUsd || 0),
+                marketCap: Number(token.marketCapUsd || 0),
+                volume24h: 0,
+                priceChange1h: 0,
+                priceChange24h: 0,
+                buys24h: 0,
+                sells24h: 0,
+                safetyScore: Number(scoreFreshToken({
+                  liquidityUsd: Number(token.liquidityUsd || 0),
+                  holdersCount: 0,
+                  mintAuthorityActive: true,
+                  freezeAuthorityActive: true,
+                }).score || 0),
+                mintAuthorityDisabled: false,
+                topHoldersPercentage: 0,
+                devWalletPercentage: 0,
+                socialLinks: {
+                  twitter: token.twitterUrl || undefined,
+                  telegram: token.telegramUrl || undefined,
+                  website: token.websiteUrl || undefined,
+                },
+                aiAnalysis: null,
+                createdAt: token.discoveredAt ? new Date(token.discoveredAt) : new Date(),
+              }));
+            } catch {
+              return [];
+            }
+          })());
+
+      const filtered = baseRows.filter((token) => {
+        const tokenChain = String(token.chain || "solana").toLowerCase();
+        if (chainParam !== "all" && tokenChain !== chainParam) return false;
+
+        const createdAtTs = token.createdAt ? new Date(token.createdAt).getTime() : now;
+        const ageMinutes = Math.max(0, (now - createdAtTs) / 60000);
+        if (newOnly && ageMinutes > 24 * 60) return false;
+        if (Number.isFinite(maxAgeHours) && maxAgeHours > 0 && ageMinutes > maxAgeHours * 60) return false;
+        if (Number.isFinite(minAgeMinutes) && minAgeMinutes > 0 && ageMinutes < minAgeMinutes) return false;
+        if (Number.isFinite(maxAgeMinutes) && maxAgeMinutes > 0 && ageMinutes > maxAgeMinutes) return false;
+
+        return true;
+      });
+
+      const tokens = filtered
+        .sort((a, b) => {
+          const bScore = Number(b.safetyScore || 0);
+          const aScore = Number(a.safetyScore || 0);
+          if (bScore !== aScore) return bScore - aScore;
+          const bLiquidity = Number(b.liquidity || 0);
+          const aLiquidity = Number(a.liquidity || 0);
+          return bLiquidity - aLiquidity;
+        })
+        .slice(0, limit)
+        .map((token) => {
+          const liquidityUsd = Number(token.liquidity || 0);
+          const safetyScore = Number(token.safetyScore || 0);
+          const volume1h = Number(token.volume24h || 0) / 24;
+          const volume5m = Number(token.volume24h || 0) / 288;
+          const volume6h = Number(token.volume24h || 0) / 4;
+          const chain = String(token.chain || "solana").toLowerCase();
+          const createdAtIso = token.createdAt ? new Date(token.createdAt).toISOString() : new Date().toISOString();
+
+          return {
+            id: String(token.id),
+            latest_score: {
+              rug_probability: Number(Math.max(0, Math.min(100, 100 - safetyScore)).toFixed(2)),
+              liquidity_stability: Number(Math.max(0, Math.min(100, (liquidityUsd / 25000) * 100)).toFixed(2)),
+              holder_distribution: Number(Math.max(0, 100 - Number(token.topHoldersPercentage || 0)).toFixed(2)),
+              smart_wallet_signal: Number(Math.max(0, Math.min(100, safetyScore * 0.9)).toFixed(2)),
+              trade_confidence_index: Number(Math.max(0, Math.min(100, safetyScore)).toFixed(2)),
+              eligible: safetyScore >= 55 && liquidityUsd >= 2000,
+              scored_at: createdAtIso,
+            },
+            contract_address: String(token.address || ""),
+            chain,
+            name: String(token.name || "Unknown"),
+            symbol: String(token.symbol || "UNKNOWN"),
+            current_price_usd: Number(token.priceUsd || 0),
+            market_cap_usd: Number(token.marketCap || 0),
+            liquidity_usd: liquidityUsd,
+            volume_5m: Number(volume5m.toFixed(2)),
+            volume_1h: Number(volume1h.toFixed(2)),
+            volume_6h: Number(volume6h.toFixed(2)),
+            price_change_5m: Number((Number(token.priceChange1h || 0) / 12).toFixed(2)),
+            price_change_1h: Number(token.priceChange1h || 0),
+            price_change_6h: Number((Number(token.priceChange24h || 0) / 4).toFixed(2)),
+            buys_1h: Math.max(0, Math.trunc(Number(token.buys24h || 0) / 24)),
+            sells_1h: Math.max(0, Math.trunc(Number(token.sells24h || 0) / 24)),
+            new_wallets_count: 0,
+            top_holders_pct: Number(token.topHoldersPercentage || 0),
+            dev_wallet_pct: Number(token.devWalletPercentage || 0),
+            logo_url: null,
+            website_url: token.socialLinks?.website || null,
+            twitter_url: token.socialLinks?.twitter || null,
+            telegram_url: token.socialLinks?.telegram || null,
+            description: token.aiAnalysis || null,
+            is_pump_fun: String(token.dexId || "").toLowerCase().includes("pump"),
+            source_platform: token.dexId || null,
+            buy_urls: undefined,
+            holder_count: 0,
+            is_mintable: !Boolean(token.mintAuthorityDisabled),
+            is_ownership_renounced: Boolean(token.mintAuthorityDisabled),
+            dex_id: String(token.dexId || "unknown"),
+            pair_address: token.pairAddress || null,
+            deployer_wallet: null,
+            total_supply: null,
+            created_at: createdAtIso,
+          };
+        });
+
+      return { tokens, count: tokens.length, total: tokens.length };
+    };
+
+    if (!pythonApiBase) {
+      return res.json(await buildLocalTokenPayload());
+    }
+
+    try {
+      const targetUrl = `${pythonApiBase}/api/tokens`;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      const auth = String(req.headers.authorization || "").trim();
+      if (auth) headers.Authorization = auth;
+
+      const queryString = new URLSearchParams(req.query as Record<string, string>).toString();
+      const bridgeUrl = queryString ? `${targetUrl}?${queryString}` : targetUrl;
+      const response = await fetch(bridgeUrl, { method: "GET", headers });
+      const payload = await response.json().catch(() => null);
+      const bridgedTokens = Array.isArray(payload?.tokens) ? payload.tokens : [];
+
+      if (response.ok && bridgedTokens.length > 0) {
+        return res.status(response.status).json(payload);
+      }
+
+      return res.json(await buildLocalTokenPayload());
+    } catch {
+      return res.json(await buildLocalTokenPayload());
+    }
+  });
 
   app.get("/api/tokens/project-info/:chain/:contract_address", async (req, res) => {
     const { chain, contract_address } = req.params;
