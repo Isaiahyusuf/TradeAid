@@ -358,7 +358,7 @@ export async function registerRoutes(
   );
 
   // Get token list with AI scores
-  app.get("/api/tokens/stats/overview", isAuthenticated, async (req, res) =>
+  app.get("/api/tokens/stats/overview", async (req, res) =>
     proxyToPythonApi(req, res, "/api/tokens/stats/overview", async () => {
       const tokens = await storage.getScannedTokens();
       const byChain = tokens.reduce<Record<string, number>>((acc, token) => {
