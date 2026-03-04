@@ -680,6 +680,421 @@ export async function registerRoutes(
     });
   });
 
+  const assistantChains = ["solana", "ethereum", "bsc", "base", "arbitrum", "avalanche", "polygon"] as const;
+  type AssistantChain = (typeof assistantChains)[number];
+
+  const assistantRuntime = {
+    wallet: {
+      has_wallet: false,
+      backup_confirmed: false,
+      backup_confirmed_at: null as string | null,
+      created_at: null as string | null,
+      addresses_by_chain: {} as Record<string, string>,
+      enabled_chains: [...assistantChains] as string[],
+      mnemonic: "",
+      private_keys_by_chain: {} as Record<string, string>,
+    },
+    trading: {
+      enabled: false,
+      pending_approval: false,
+      consent_id: null as string | null,
+      consent_expires_at: null as string | null,
+      approved_at: null as string | null,
+      mode: "paper" as "paper" | "live",
+      wallet_address: null as string | null,
+      wallets_by_chain: {} as Record<string, string>,
+      enabled_chains: [...assistantChains] as string[],
+      risk_limits: {
+        max_notional_usd_per_trade: 100,
+        max_trades_per_day: 12,
+        max_daily_loss_usd: 300,
+      },
+      last_revoked_at: null as string | null,
+    },
+    transactions: [] as Array<Record<string, any>>,
+  };
+
+  const wordBank = [
+    "alpha", "bridge", "candle", "delta", "engine", "fusion", "globe", "harbor", "ion", "jungle",
+    "kernel", "lunar", "matrix", "nebula", "orbit", "pulse", "quantum", "rocket", "signal", "token",
+  ];
+
+  const randomWord = () => wordBank[Math.floor(Math.random() * wordBank.length)];
+  const generateMnemonic = () => Array.from({ length: 12 }, () => randomWord()).join(" ");
+  const nowIso = () => new Date().toISOString();
+  const generateAddress = (chain: AssistantChain) => `${chain.slice(0, 3)}_${Math.random().toString(36).slice(2, 14)}`;
+  const generatePrivateKey = (chain: AssistantChain) => `${chain}_pk_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+
+  const ensureWalletExists = () => assistantRuntime.wallet.has_wallet && Object.values(assistantRuntime.wallet.addresses_by_chain).some(Boolean);
+
+  const assistantWalletStatus = () => ({
+    has_wallet: assistantRuntime.wallet.has_wallet,
+    backup_confirmed: assistantRuntime.wallet.backup_confirmed,
+    backup_confirmed_at: assistantRuntime.wallet.backup_confirmed_at,
+    created_at: assistantRuntime.wallet.created_at,
+    addresses_by_chain: assistantRuntime.wallet.addresses_by_chain,
+    enabled_chains: assistantRuntime.wallet.enabled_chains,
+  });
+
+  const assistantTradingStatus = () => ({
+    ...assistantRuntime.trading,
+    wallets_by_chain: assistantRuntime.wallet.addresses_by_chain,
+    wallet_address: assistantRuntime.wallet.addresses_by_chain.solana || null,
+  });
+
+  const assistantBundle = (includePrivate = true) => ({
+    mnemonic: assistantRuntime.wallet.mnemonic,
+    addresses_by_chain: assistantRuntime.wallet.addresses_by_chain,
+    private_keys_by_chain: includePrivate ? assistantRuntime.wallet.private_keys_by_chain : undefined,
+    warning: "Never share your recovery phrase or private keys. Store offline.",
+    reveal_confirmation_phrase: "I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS",
+  });
+
+  app.get("/api/ai/wallets/status", (_req, res) => {
+    return res.json({ wallet: assistantWalletStatus() });
+  });
+
+  app.get("/api/ai/trading/status", (_req, res) => {
+    return res.json({ trading: assistantTradingStatus() });
+  });
+
+  app.get("/api/ai/wallets/portfolio", (_req, res) => {
+    const chains = assistantChains.reduce<Record<string, any>>((acc, chain) => {
+      const address = assistantRuntime.wallet.addresses_by_chain[chain] || "";
+      const native_symbol = chain === "solana" ? "SOL" : chain === "ethereum" ? "ETH" : chain.toUpperCase();
+      const native_balance = address ? Number((Math.random() * 1.8 + 0.2).toFixed(4)) : 0;
+      const price_usd = chain === "solana" ? 160 : chain === "ethereum" ? 3200 : 1;
+      acc[chain] = {
+        address,
+        native_symbol,
+        native_balance,
+        price_usd,
+        value_usd: Number((native_balance * price_usd).toFixed(2)),
+        data_status: address ? "ok" : "not_configured",
+      };
+      return acc;
+    }, {});
+
+    const total_usd = Object.values(chains).reduce((sum: number, item: any) => sum + Number(item.value_usd || 0), 0);
+    return res.json({
+      wallet: assistantWalletStatus(),
+      portfolio: {
+        chains,
+        total_usd: Number(total_usd.toFixed(2)),
+        updated_at: nowIso(),
+      },
+    });
+  });
+
+  app.get("/api/ai/wallets/transactions", (req, res) => {
+    const limitRaw = Number(req.query.limit || 25);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.trunc(limitRaw))) : 25;
+    const transactions = assistantRuntime.transactions.slice(0, limit);
+    return res.json({ transactions, count: transactions.length });
+  });
+
+  app.post("/api/ai/wallets/create", (req, res) => {
+    const overwrite = Boolean(req.body?.overwrite);
+    if (assistantRuntime.wallet.has_wallet && !overwrite) {
+      return res.status(400).json({ message: "wallet already exists" });
+    }
+
+    const addresses_by_chain = assistantChains.reduce<Record<string, string>>((acc, chain) => {
+      acc[chain] = generateAddress(chain);
+      return acc;
+    }, {});
+    const private_keys_by_chain = assistantChains.reduce<Record<string, string>>((acc, chain) => {
+      acc[chain] = generatePrivateKey(chain);
+      return acc;
+    }, {});
+
+    assistantRuntime.wallet.has_wallet = true;
+    assistantRuntime.wallet.backup_confirmed = false;
+    assistantRuntime.wallet.backup_confirmed_at = null;
+    assistantRuntime.wallet.created_at = nowIso();
+    assistantRuntime.wallet.addresses_by_chain = addresses_by_chain;
+    assistantRuntime.wallet.private_keys_by_chain = private_keys_by_chain;
+    assistantRuntime.wallet.mnemonic = generateMnemonic();
+    assistantRuntime.trading.wallets_by_chain = addresses_by_chain;
+
+    return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
+  });
+
+  app.post("/api/ai/wallets/import", (req, res) => {
+    const mnemonic = String(req.body?.mnemonic || "").trim();
+    const overwrite = Boolean(req.body?.overwrite);
+    if (!mnemonic) {
+      return res.status(400).json({ message: "mnemonic required" });
+    }
+    if (assistantRuntime.wallet.has_wallet && !overwrite) {
+      return res.status(400).json({ message: "wallet already exists" });
+    }
+
+    const addresses_by_chain = assistantChains.reduce<Record<string, string>>((acc, chain) => {
+      acc[chain] = generateAddress(chain);
+      return acc;
+    }, {});
+    const private_keys_by_chain = assistantChains.reduce<Record<string, string>>((acc, chain) => {
+      acc[chain] = generatePrivateKey(chain);
+      return acc;
+    }, {});
+
+    assistantRuntime.wallet.has_wallet = true;
+    assistantRuntime.wallet.backup_confirmed = false;
+    assistantRuntime.wallet.backup_confirmed_at = null;
+    assistantRuntime.wallet.created_at = nowIso();
+    assistantRuntime.wallet.addresses_by_chain = addresses_by_chain;
+    assistantRuntime.wallet.private_keys_by_chain = private_keys_by_chain;
+    assistantRuntime.wallet.mnemonic = mnemonic;
+    assistantRuntime.trading.wallets_by_chain = addresses_by_chain;
+
+    return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
+  });
+
+  app.post("/api/ai/wallets/confirm-backup", (req, res) => {
+    const mnemonic = String(req.body?.mnemonic || "").trim();
+    if (!ensureWalletExists()) {
+      return res.status(400).json({ message: "wallet not found" });
+    }
+    if (!mnemonic || mnemonic !== assistantRuntime.wallet.mnemonic) {
+      return res.status(400).json({ message: "mnemonic mismatch" });
+    }
+    assistantRuntime.wallet.backup_confirmed = true;
+    assistantRuntime.wallet.backup_confirmed_at = nowIso();
+    return res.json({ wallet: assistantWalletStatus() });
+  });
+
+  app.post("/api/ai/wallets/reveal", (req, res) => {
+    const confirmation = String(req.body?.confirmation_text || "").trim();
+    if (confirmation !== "I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS") {
+      return res.status(400).json({ message: "invalid confirmation text" });
+    }
+    if (!ensureWalletExists()) {
+      return res.status(400).json({ message: "wallet not found" });
+    }
+    return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
+  });
+
+  app.post("/api/ai/wallets/remove-chain", (req, res) => {
+    const chain = String(req.body?.chain || "").toLowerCase();
+    if (!assistantChains.includes(chain as AssistantChain)) {
+      return res.status(400).json({ message: "unsupported chain" });
+    }
+    delete assistantRuntime.wallet.addresses_by_chain[chain];
+    delete assistantRuntime.wallet.private_keys_by_chain[chain];
+    assistantRuntime.trading.wallets_by_chain = assistantRuntime.wallet.addresses_by_chain;
+    return res.json({ wallet: assistantWalletStatus(), trading: assistantTradingStatus() });
+  });
+
+  app.post("/api/ai/wallets/export-key", (req, res) => {
+    const chain = String(req.body?.chain || "").toLowerCase();
+    const confirmation = String(req.body?.confirmation_text || "").trim();
+    if (confirmation !== "I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS") {
+      return res.status(400).json({ message: "invalid confirmation text" });
+    }
+    const address = assistantRuntime.wallet.addresses_by_chain[chain];
+    const privateKey = assistantRuntime.wallet.private_keys_by_chain[chain];
+    if (!address || !privateKey) {
+      return res.status(404).json({ message: "wallet key not found for chain" });
+    }
+    return res.json({
+      wallet_key: {
+        chain,
+        address,
+        private_key: privateKey,
+        warning: "Never share your private key.",
+      },
+    });
+  });
+
+  app.post("/api/ai/wallets/transfer", (req, res) => {
+    const chain = String(req.body?.chain || "").toLowerCase();
+    const recipient = String(req.body?.recipient_address || "").trim();
+    const amount = Number(req.body?.amount || 0);
+    const asset = String(req.body?.asset || "SOL").toUpperCase();
+    if (!ensureWalletExists()) {
+      return res.status(400).json({ message: "wallet not found" });
+    }
+    if (!recipient || !Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ message: "invalid transfer payload" });
+    }
+    const txHash = `tx_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const transaction = {
+      id: `transfer_${Date.now()}`,
+      chain,
+      side: "transfer",
+      status: "submitted",
+      contract_address: asset,
+      notional_usd: Number((amount * (chain === "solana" ? 160 : 1)).toFixed(2)),
+      quantity: amount,
+      asset,
+      tx_hash: txHash,
+      explorer_url: `https://explorer.solana.com/tx/${txHash}`,
+      from_address: assistantRuntime.wallet.addresses_by_chain[chain] || assistantRuntime.wallet.addresses_by_chain.solana || "",
+      to_address: recipient,
+      created_at: nowIso(),
+    };
+    assistantRuntime.transactions.unshift(transaction);
+    assistantRuntime.transactions = assistantRuntime.transactions.slice(0, 200);
+
+    return res.json({
+      transfer: {
+        transaction_id: transaction.id,
+        tx_hash: txHash,
+        explorer_url: transaction.explorer_url,
+        status: "submitted",
+      },
+    });
+  });
+
+  app.post("/api/ai/trading/consent/request", (req, res) => {
+    const mode = String(req.body?.mode || "paper").toLowerCase() === "live" ? "live" : "paper";
+    const consentId = `consent_${Date.now().toString(36)}`;
+    assistantRuntime.trading.mode = mode;
+    assistantRuntime.trading.pending_approval = true;
+    assistantRuntime.trading.enabled = false;
+    assistantRuntime.trading.consent_id = consentId;
+    assistantRuntime.trading.consent_expires_at = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    return res.json({
+      consent_id: consentId,
+      trading: assistantTradingStatus(),
+    });
+  });
+
+  app.post("/api/ai/trading/consent/approve", (req, res) => {
+    const consentId = String(req.body?.consent_id || "").trim();
+    const confirmation = String(req.body?.confirmation_text || "").trim();
+    if (!consentId || consentId !== assistantRuntime.trading.consent_id) {
+      return res.status(400).json({ message: "invalid consent id" });
+    }
+    if (confirmation !== "I_APPROVE_ASSISTANT_TRADING") {
+      return res.status(400).json({ message: "invalid confirmation text" });
+    }
+    assistantRuntime.trading.pending_approval = false;
+    assistantRuntime.trading.enabled = true;
+    assistantRuntime.trading.approved_at = nowIso();
+    return res.json({ trading: assistantTradingStatus() });
+  });
+
+  app.post("/api/ai/trading/consent/revoke", (_req, res) => {
+    assistantRuntime.trading.enabled = false;
+    assistantRuntime.trading.pending_approval = false;
+    assistantRuntime.trading.last_revoked_at = nowIso();
+    return res.json({ trading: assistantTradingStatus() });
+  });
+
+  app.post("/api/ai/trading/execute", (req, res) => {
+    const chain = String(req.body?.chain || "solana").toLowerCase();
+    const contractAddress = String(req.body?.contract_address || "").trim();
+    const side = String(req.body?.side || "buy").toLowerCase() === "sell" ? "sell" : "buy";
+    const notionalUsd = Number(req.body?.notional_usd || 0);
+    const mode = String(req.body?.mode || assistantRuntime.trading.mode || "paper").toLowerCase() === "live" ? "live" : "paper";
+
+    if (!contractAddress || !Number.isFinite(notionalUsd) || notionalUsd <= 0) {
+      return res.status(400).json({ message: "invalid trade payload" });
+    }
+
+    const txHash = `trade_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const transaction = {
+      id: `trade_${Date.now()}`,
+      chain,
+      side,
+      status: "executed",
+      contract_address: contractAddress,
+      notional_usd: Number(notionalUsd.toFixed(2)),
+      quantity: null,
+      asset: "TOKEN",
+      tx_hash: txHash,
+      explorer_url: `https://explorer.solana.com/tx/${txHash}`,
+      from_address: assistantRuntime.wallet.addresses_by_chain[chain] || assistantRuntime.wallet.addresses_by_chain.solana || "",
+      to_address: contractAddress,
+      created_at: nowIso(),
+      mode,
+    };
+    assistantRuntime.transactions.unshift(transaction);
+    assistantRuntime.transactions = assistantRuntime.transactions.slice(0, 200);
+
+    return res.json({
+      trade: {
+        id: transaction.id,
+        chain,
+        mode,
+        side,
+        status: "executed",
+        tx_hash: txHash,
+        explorer_url: transaction.explorer_url,
+      },
+    });
+  });
+
+  app.get("/api/ai/context/overview", (req, res) => {
+    const daysRaw = Number(req.query.days || 30);
+    const days = Number.isFinite(daysRaw) ? Math.max(1, Math.min(365, Math.trunc(daysRaw))) : 30;
+    const recent = assistantRuntime.transactions.slice(0, 20);
+    const totalNotional = recent.reduce((sum, item) => sum + Number(item.notional_usd || 0), 0);
+
+    return res.json({
+      user_id: "local-user",
+      context: {
+        window_days: days,
+        summary: {
+          total_trades: recent.length,
+          total_notional_usd: Number(totalNotional.toFixed(2)),
+          total_pnl_usd: 0,
+          chain_count: Object.keys(assistantRuntime.wallet.addresses_by_chain).length,
+        },
+        chain_stats: {},
+        recent_trades: recent.map((item) => ({
+          id: String(item.id || ""),
+          chain: String(item.chain || "solana"),
+          contract_address: String(item.contract_address || ""),
+          side: String(item.side || "buy"),
+          mode: String(item.mode || assistantRuntime.trading.mode),
+          status: String(item.status || "executed"),
+          notional_usd: Number(item.notional_usd || 0),
+          price_usd: null,
+          fees_usd: 0,
+          pnl_usd: 0,
+          created_at: String(item.created_at || nowIso()),
+        })),
+        market_scores: {
+          by_chain: {},
+          samples: 0,
+        },
+        confidence_calibration: {
+          global_bias: 0,
+          lookback_trades: recent.length,
+          by_chain: {},
+        },
+      },
+    });
+  });
+
+  app.post("/api/ai/ask", (req, res) => {
+    const question = String(req.body?.question || "").trim();
+    return res.json({
+      assistant: {
+        answer: question ? `Assistant response: ${question}` : "Ask a specific trading question to get guidance.",
+        key_points: [
+          "Prefer low-rug, high-liquidity tokens",
+          "Use strict risk limits before switching to live mode",
+          "Review wallet backup and consent status regularly",
+        ],
+        source: "local-fallback",
+      },
+    });
+  });
+
+  app.post("/api/ai/assist", (_req, res) => {
+    return res.json({
+      assistant: {
+        recommendation: "monitor",
+        confidence: 62,
+        rationale: "Moderate setup quality; wait for stronger momentum confirmation.",
+      },
+    });
+  });
+
   app.post("/api/scoring/score-token", async (req, res) =>
     proxyToPythonApi(req, res, "/api/scoring/score-token", async () => {
       const body = req.body || {};

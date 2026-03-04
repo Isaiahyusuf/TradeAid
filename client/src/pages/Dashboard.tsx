@@ -99,9 +99,10 @@ export default function Dashboard() {
   const hasError = tokensError || statsError || alertsError;
   // Filter out tokens older than 24 hours (1440 minutes) in all cases
   const now = Date.now();
-  const filterRecent = (tokens: any[] = []) => tokens.filter(token => {
-    if (!token.created_at) return false;
+  const filterRecent = (tokens: any[] = []) => tokens.filter((token) => {
+    if (!token.created_at) return true;
     const ageMinutes = (now - new Date(token.created_at).getTime()) / 60000;
+    if (!Number.isFinite(ageMinutes)) return true;
     return ageMinutes < 1440;
   });
   const displayTokens = tokenTab === "all"
@@ -132,9 +133,10 @@ export default function Dashboard() {
   const intelligenceMetrics = useMemo(() => {
     // Only consider tokens from the last 24 hours for all stats
     const now = Date.now();
-    const allTokens = (tokenData?.tokens || []).filter(token => {
-      if (!token.created_at) return false;
+    const allTokens = (tokenData?.tokens || []).filter((token) => {
+      if (!token.created_at) return true;
       const ageMinutes = (now - new Date(token.created_at).getTime()) / 60000;
+      if (!Number.isFinite(ageMinutes)) return true;
       return ageMinutes < 1440;
     });
     const scored = allTokens.filter((token) => token.latest_score);

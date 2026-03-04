@@ -35,6 +35,18 @@ const checks = [
     expect: [200],
   },
   {
+    name: "AI wallet status",
+    path: "/api/ai/wallets/status",
+    method: "GET",
+    expect: [200],
+  },
+  {
+    name: "AI trading status",
+    path: "/api/ai/trading/status",
+    method: "GET",
+    expect: [200],
+  },
+  {
     name: "Tokens feed",
     path: "/api/tokens?limit=5",
     method: "GET",
