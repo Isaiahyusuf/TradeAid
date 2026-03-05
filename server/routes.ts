@@ -20,6 +20,7 @@ import { getTokenPairs } from "./services/dexscreener";
 import { FREE_TIER_LIMITS, SUBSCRIPTION_PRICE_USD, SUPPORTED_PAYMENT_CHAINS } from "@shared/schema";
 import { cryptoPaymentService } from "./services/crypto-payment";
 import { fetchFreshPumpfunTokens } from "./services/fresh-token-service";
+import { runApifyWorkflowOnce, startApifyWorkflowScheduler } from "./services/apify-workflow";
 import { enrichTokenWithHelius } from "./services/helius-enrichment-service";
 import { scoreFreshToken } from "./services/token-scoring-engine";
 import { getAutoTradeConfig, maybeTriggerAutoTrade } from "./services/auto-trade-hook";
@@ -99,6 +100,79 @@ export async function registerRoutes(
   
   // Register token scanner routes (new powerful scanner)
   registerScannerRoutes(app);
+
+  let lastApifyIngest: {
+    run_id: string | null;
+    dataset_id: string | null;
+    received_at: string | null;
+    received_count: number;
+  } = {
+    run_id: null,
+    dataset_id: null,
+    received_at: null,
+    received_count: 0,
+  };
+
+  app.post("/api/fresh/apify-ingest", async (req, res) => {
+    try {
+      const expectedKey = String(process.env.TRADEAID_APIFY_INGEST_KEY || "").trim();
+      const providedKey = String(req.headers["x-tradeaid-ingest-key"] || "").trim();
+      if (expectedKey && providedKey !== expectedKey) {
+        return res.status(401).json({ ok: false, message: "Unauthorized" });
+      }
+
+      const runId = String(req.body?.run_id || "").trim() || null;
+      const datasetId = String(req.body?.dataset_id || "").trim() || null;
+      const items = Array.isArray(req.body?.items) ? req.body.items : [];
+
+      lastApifyIngest = {
+        run_id: runId,
+        dataset_id: datasetId,
+        received_at: new Date().toISOString(),
+        received_count: items.length,
+      };
+
+      logStructured("info", "apify.dataset_ingested", {
+        runId,
+        datasetId,
+        itemCount: items.length,
+      });
+
+      return res.json({
+        ok: true,
+        received: items.length,
+        run_id: runId,
+        dataset_id: datasetId,
+        received_at: lastApifyIngest.received_at,
+      });
+    } catch (error) {
+      logStructured("error", "apify.dataset_ingest_failed", {
+        message: error instanceof Error ? error.message : "Unknown error",
+      });
+      return res.status(500).json({ ok: false, message: "Failed to ingest Apify dataset" });
+    }
+  });
+
+  app.get("/api/fresh/apify-ingest/status", (_req, res) => {
+    return res.json({
+      ok: true,
+      ingest: lastApifyIngest,
+    });
+  });
+
+  app.post("/api/fresh/apify-sync/run", async (req, res) => {
+    try {
+      const limitRaw = Number(req.body?.limit || req.query?.limit || process.env.APIFY_DATASET_LIMIT || 100);
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, Math.trunc(limitRaw))) : 100;
+      const result = await runApifyWorkflowOnce(limit);
+      return res.json({ ok: true, result });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        message: error instanceof Error ? error.message : "Failed to run Apify workflow",
+      });
+    }
+  });
 
   app.get("/process-fresh", async (req, res) => {
     const limitRaw = Number(req.query.limit || 20);
@@ -2984,6 +3058,13 @@ export async function registerRoutes(
     multichainScanner.scanAllLaunchpads().catch(console.error);
   } catch (e) {
     console.error("Failed to start multichain scanner:", e);
+  }
+
+  // Start Apify workflow scheduler (every 30 minutes)
+  try {
+    startApifyWorkflowScheduler(30 * 60 * 1000);
+  } catch (e) {
+    console.error("Failed to start Apify workflow scheduler:", e);
   }
 
   // === RugShield ===
