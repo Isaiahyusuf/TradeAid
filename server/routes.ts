@@ -259,6 +259,23 @@ export async function registerRoutes(
     process.env.TRADE_AID_BACKEND_URL || process.env.BACKEND_URL || process.env.VITE_API_URL || "",
   ).replace(/\/$/, "");
 
+  const getRequestHost = (req: any) => {
+    const forwardedHost = String(req.headers?.["x-forwarded-host"] || "").split(",")[0].trim();
+    const host = String(req.headers?.host || "").split(",")[0].trim();
+    return (forwardedHost || host).toLowerCase();
+  };
+
+  const isBridgeLoopbackForRequest = (req: any) => {
+    if (!pythonApiBase) return false;
+    try {
+      const target = new URL(pythonApiBase);
+      const requestHost = getRequestHost(req);
+      return Boolean(requestHost) && requestHost === String(target.host || "").toLowerCase();
+    } catch {
+      return false;
+    }
+  };
+
   const normalizeDexChain = (chain: string) => {
     const normalized = String(chain || "").toLowerCase().trim();
     const map: Record<string, string> = {
@@ -404,7 +421,8 @@ export async function registerRoutes(
     targetPath: string,
     fallback?: () => Promise<any>,
   ) {
-    if (!pythonApiBase) {
+    if (!pythonApiBase || isBridgeLoopbackForRequest(req)) {
+      observability.bridgeFallbacks += 1;
       if (fallback) {
         return res.status(200).json(await fallback());
       }
@@ -2900,6 +2918,7 @@ export async function registerRoutes(
       const maxAgeMinutes = Number(req.query.max_age_minutes || 0);
       const limitRaw = Number(req.query.limit || 50);
       const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.trunc(limitRaw))) : 50;
+      const effectiveMaxAgeHours = Number.isFinite(maxAgeHours) && maxAgeHours > 0 ? maxAgeHours : 24;
 
       const freshRows = await (async () => {
         try {
@@ -2911,6 +2930,7 @@ export async function registerRoutes(
             const marketCapUsd = Number(raw.marketCapUsd || raw.market_cap_usd || raw.marketCap || 0);
             const createdAtRaw = String(raw.discoveredAt || raw.created_at || raw.createdAt || raw.timestamp || "").trim();
             const createdAt = createdAtRaw ? new Date(createdAtRaw) : new Date();
+            const logoUrl = String(raw.logoUrl || raw.logo_url || raw.imageUrl || raw.image || "").trim();
             const social = {
               twitter: String(raw.twitterUrl || raw.twitter || raw.x || "").trim() || undefined,
               telegram: String(raw.telegramUrl || raw.telegram || "").trim() || undefined,
@@ -2941,6 +2961,7 @@ export async function registerRoutes(
               mintAuthorityDisabled: false,
               topHoldersPercentage: Number(raw.topHoldersPercentage || raw.top_holder_pct || 0),
               devWalletPercentage: Number(raw.devWalletPercentage || raw.dev_wallet_pct || 0),
+              logoUrl: logoUrl || null,
               socialLinks: social,
               aiAnalysis: null,
               createdAt,
@@ -2951,8 +2972,57 @@ export async function registerRoutes(
         }
       })();
 
+      const dexsFreshRows = await (async () => {
+        try {
+          const dexChain = chainParam === "all" ? "solana" : normalizeDexChain(chainParam || "solana");
+          const pairs = await getNewPairs(dexChain, effectiveMaxAgeHours);
+          return pairs
+            .sort((a, b) => Number(b.pairCreatedAt || 0) - Number(a.pairCreatedAt || 0))
+            .slice(0, Math.max(limit * 3, 150))
+            .map((pair, index) => {
+              const token = pairToTokenData(pair);
+              const createdAt = token.pairCreatedAt || (pair.pairCreatedAt ? new Date(pair.pairCreatedAt) : new Date());
+              return {
+                id: -(1000 + index + 1),
+                address: String(token.address || pair.baseToken?.address || ""),
+                symbol: String(token.symbol || pair.baseToken?.symbol || "UNKNOWN"),
+                name: String(token.name || pair.baseToken?.name || "Unknown"),
+                chain: String(token.chain || pair.chainId || dexChain || "solana").toLowerCase(),
+                dexId: String(token.dexId || pair.dexId || "dexscreener"),
+                pairAddress: String(token.pairAddress || pair.pairAddress || ""),
+                priceUsd: String(token.priceUsd || pair.priceUsd || "0"),
+                liquidity: Number(token.liquidity || 0),
+                marketCap: Number(token.marketCap || 0),
+                volume24h: Number(token.volume24h || 0),
+                priceChange1h: Number(token.priceChange1h || 0),
+                priceChange24h: Number(token.priceChange24h || pair.priceChange?.h24 || 0),
+                buys24h: Number(pair.txns?.h24?.buys || token.buys24h || 0),
+                sells24h: Number(pair.txns?.h24?.sells || token.sells24h || 0),
+                safetyScore: Number(Math.max(0, Math.min(100, (token.liquidity || 0) >= 2000 ? 70 : 40))),
+                mintAuthorityDisabled: false,
+                topHoldersPercentage: 0,
+                devWalletPercentage: 0,
+                logoUrl: String(pair.info?.imageUrl || "").trim() || null,
+                socialLinks: {
+                  website: pair.info?.websites?.[0]?.url || undefined,
+                  twitter: pair.info?.socials?.find((item) => String(item.platform || "").toLowerCase().includes("twitter"))?.url || undefined,
+                  telegram: pair.info?.socials?.find((item) => String(item.platform || "").toLowerCase().includes("telegram"))?.url || undefined,
+                },
+                aiAnalysis: null,
+                createdAt,
+              };
+            });
+        } catch {
+          return [];
+        }
+      })();
+
       const mergedByAddress = new Map<string, any>();
-      for (const token of [...all, ...freshRows]) {
+      const sourceRows = newOnly && dexsFreshRows.length > 0
+        ? [...dexsFreshRows, ...freshRows]
+        : [...all, ...freshRows, ...dexsFreshRows];
+
+      for (const token of sourceRows) {
         const key = String((token as any)?.address || "").trim();
         if (!key) continue;
         const previous = mergedByAddress.get(key);
@@ -2984,6 +3054,12 @@ export async function registerRoutes(
 
       const tokens: TokenFeedItem[] = filtered
         .sort((a, b) => {
+          if (newOnly) {
+            const bCreated = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+            const aCreated = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+            if (bCreated !== aCreated) return bCreated - aCreated;
+            return Number(b.liquidity || 0) - Number(a.liquidity || 0);
+          }
           const bScore = Number(b.safetyScore || 0);
           const aScore = Number(a.safetyScore || 0);
           if (bScore !== aScore) return bScore - aScore;
@@ -3030,7 +3106,7 @@ export async function registerRoutes(
             new_wallets_count: 0,
             top_holders_pct: Number(token.topHoldersPercentage || 0),
             dev_wallet_pct: Number(token.devWalletPercentage || 0),
-            logo_url: null,
+            logo_url: token.logoUrl || token.logo_url || null,
             website_url: token.socialLinks?.website || null,
             twitter_url: token.socialLinks?.twitter || null,
             telegram_url: token.socialLinks?.telegram || null,
@@ -3052,7 +3128,7 @@ export async function registerRoutes(
       return { tokens, count: tokens.length, total: tokens.length };
     };
 
-    if (!pythonApiBase) {
+    if (!pythonApiBase || isBridgeLoopbackForRequest(req)) {
       observability.bridgeFallbacks += 1;
       return res.json(await buildLocalTokenPayload());
     }
