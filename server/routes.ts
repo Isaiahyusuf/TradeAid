@@ -2974,9 +2974,14 @@ export async function registerRoutes(
     const body = req.body || {};
     const contractAddress = String(body.contract_address || body.address || body.token || "").trim();
     const chain = String(body.chain || "all").trim().toLowerCase();
+    const useBridge = String(process.env.SCORE_TOKEN_USE_BRIDGE || "false").trim().toLowerCase() === "true";
 
     if (!contractAddress) {
       return res.status(200).json({ error: "Contract address required", eligible: false });
+    }
+
+    if (!useBridge) {
+      return res.status(200).json(await buildDexScoreFallback(contractAddress, chain));
     }
 
     return proxyToPythonApi(req, res, "/api/scoring/score-token", async () =>
