@@ -3,7 +3,7 @@ import type { Server } from "http";
 import { randomBytes, randomUUID } from "crypto";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { resolve } from "path";
-import { Connection, Keypair, PublicKey, VersionedTransaction } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, SystemProgram, Transaction, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import * as bip39 from "bip39";
 import { derivePath } from "ed25519-hd-key";
@@ -2551,6 +2551,12 @@ export async function registerRoutes(
       return res.status(400).json({ message: `unsupported asset for ${chain}. use ${nativeSymbol}` });
     }
 
+    if (chain !== "solana") {
+      return res.status(400).json({
+        message: "real on-chain transfer is currently supported for Solana only",
+      });
+    }
+
     const balance = await fetchNativeBalance(chain as AssistantChain, senderAddress);
     if (balance === null) {
       return res.status(503).json({ message: `unable to fetch ${chain} balance from rpc` });
@@ -2559,14 +2565,67 @@ export async function registerRoutes(
       return res.status(400).json({ message: `insufficient ${nativeSymbol} balance`, available_balance: balance });
     }
 
+    const senderPrivateKey = String(assistantRuntime.wallet.private_keys_by_chain.solana || "").trim();
+    if (!senderPrivateKey) {
+      return res.status(400).json({ message: "solana private key is missing for wallet" });
+    }
+
+    const secretKey = parseSolanaSecretKey(senderPrivateKey);
+    if (!secretKey) {
+      return res.status(400).json({ message: "stored solana private key is invalid" });
+    }
+
+    const keypair = Keypair.fromSecretKey(secretKey);
+    if (keypair.publicKey.toBase58() !== senderAddress) {
+      return res.status(400).json({ message: "wallet address/private key mismatch" });
+    }
+
+    const rpcUrl = getRpcUrlForChain("solana");
+    const connection = new Connection(rpcUrl, "confirmed");
+    const lamports = Math.max(1, Math.trunc(amount * 1_000_000_000));
+
+    let txHash = "";
+    try {
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+      const transferTx = new Transaction({
+        feePayer: keypair.publicKey,
+        blockhash,
+        lastValidBlockHeight,
+      }).add(
+        SystemProgram.transfer({
+          fromPubkey: keypair.publicKey,
+          toPubkey: new PublicKey(recipient),
+          lamports,
+        }),
+      );
+
+      transferTx.sign(keypair);
+      txHash = await connection.sendRawTransaction(transferTx.serialize(), {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+
+      await connection.confirmTransaction(
+        {
+          signature: txHash,
+          blockhash,
+          lastValidBlockHeight,
+        },
+        "confirmed",
+      );
+    } catch (error) {
+      return res.status(502).json({
+        message: error instanceof Error ? error.message : "solana transfer failed",
+      });
+    }
+
     const prices = await fetchChainPricesUsd();
     const chainPrice = Number(prices[chain as AssistantChain] || 0);
-    const txHash = `tx_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const transaction = {
       id: `transfer_${Date.now()}`,
       chain,
       side: "transfer",
-      status: "submitted",
+      status: "confirmed",
       contract_address: asset,
       notional_usd: Number((amount * chainPrice).toFixed(2)),
       quantity: amount,
@@ -2585,7 +2644,7 @@ export async function registerRoutes(
         transaction_id: transaction.id,
         tx_hash: txHash,
         explorer_url: transaction.explorer_url,
-        status: "submitted",
+        status: "confirmed",
       },
     });
   });
