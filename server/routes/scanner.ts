@@ -17,6 +17,7 @@ import {
 } from "../services/token-scanner";
 import { searchTokens, getTokenPairs } from "../services/dexscreener";
 import { multichainScanner } from "../services/multichain-scanner";
+import type { TokenFeedItem, TokenFeedResponse } from "@shared/token-contract";
 
 const scanTokenSchema = z.object({
   address: z.string().min(20, "Invalid token address"),
@@ -34,12 +35,78 @@ const startScannerSchema = z.object({
 export function registerScannerRoutes(app: Express): void {
   app.get("/api/tokens", async (req: Request, res: Response) => {
     try {
-      const { limit = "50", sort = "safetyScore" } = req.query;
+      const { limit = "50", chain = "all" } = req.query;
+      const normalizedChain = String(chain || "all").trim().toLowerCase();
       const tokens = await db.select()
         .from(scannedTokens)
         .orderBy(desc(scannedTokens.safetyScore))
         .limit(parseInt(limit as string));
-      res.json(tokens);
+
+      const filtered = normalizedChain === "all"
+        ? tokens
+        : tokens.filter((token) => String(token.chain || "").toLowerCase() === normalizedChain);
+
+      const mapped: TokenFeedItem[] = filtered.map((token) => {
+        const safetyScore = Number(token.safetyScore || 0);
+        const liquidityUsd = Number(token.liquidity || 0);
+        const volume24h = Number(token.volume24h || 0);
+        const createdAtIso = token.createdAt ? new Date(token.createdAt).toISOString() : new Date().toISOString();
+
+        return {
+          id: String(token.id),
+          latest_score: {
+            rug_probability: Number(Math.max(0, Math.min(100, 100 - safetyScore)).toFixed(2)),
+            liquidity_stability: Number(Math.max(0, Math.min(100, (liquidityUsd / 25000) * 100)).toFixed(2)),
+            holder_distribution: Number(Math.max(0, 100 - Number(token.topHoldersPercentage || 0)).toFixed(2)),
+            smart_wallet_signal: Number(Math.max(0, Math.min(100, safetyScore * 0.9)).toFixed(2)),
+            trade_confidence_index: Number(Math.max(0, Math.min(100, safetyScore)).toFixed(2)),
+            eligible: safetyScore >= 55 && liquidityUsd >= 2000,
+            scored_at: createdAtIso,
+          },
+          contract_address: String(token.address || ""),
+          chain: String(token.chain || "solana").toLowerCase(),
+          name: String(token.name || "Unknown"),
+          symbol: String(token.symbol || "UNKNOWN"),
+          current_price_usd: Number(token.priceUsd || 0),
+          market_cap_usd: Number(token.marketCap || 0),
+          liquidity_usd: liquidityUsd,
+          volume_5m: Number((volume24h / 288).toFixed(2)),
+          volume_1h: Number((volume24h / 24).toFixed(2)),
+          volume_6h: Number((volume24h / 4).toFixed(2)),
+          price_change_5m: Number((Number(token.priceChange1h || 0) / 12).toFixed(2)),
+          price_change_1h: Number(token.priceChange1h || 0),
+          price_change_6h: Number((Number(token.priceChange24h || 0) / 4).toFixed(2)),
+          buys_1h: Math.max(0, Math.trunc(Number(token.buys24h || 0) / 24)),
+          sells_1h: Math.max(0, Math.trunc(Number(token.sells24h || 0) / 24)),
+          new_wallets_count: 0,
+          top_holders_pct: Number(token.topHoldersPercentage || 0),
+          dev_wallet_pct: Number(token.devWalletPercentage || 0),
+          logo_url: null,
+          website_url: token.socialLinks?.website || null,
+          twitter_url: token.socialLinks?.twitter || null,
+          telegram_url: token.socialLinks?.telegram || null,
+          description: token.aiAnalysis || null,
+          is_pump_fun: String(token.dexId || "").toLowerCase().includes("pump"),
+          source_platform: token.dexId || null,
+          buy_urls: undefined,
+          holder_count: 0,
+          is_mintable: !Boolean(token.mintAuthorityDisabled),
+          is_ownership_renounced: Boolean(token.mintAuthorityDisabled),
+          dex_id: String(token.dexId || "unknown"),
+          pair_address: token.pairAddress || null,
+          deployer_wallet: null,
+          total_supply: null,
+          created_at: createdAtIso,
+        };
+      });
+
+      const payload: TokenFeedResponse = {
+        tokens: mapped,
+        count: mapped.length,
+        total: mapped.length,
+      };
+
+      res.json(payload);
     } catch (error) {
       console.error("Error fetching tokens:", error);
       res.status(500).json({ error: "Failed to fetch tokens" });
@@ -93,7 +160,7 @@ export function registerScannerRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/tokens/:address", async (req: Request, res: Response) => {
+  app.get("/api/tokens/:address([1-9A-HJ-NP-Za-km-z]{20,64})", async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const [token] = await db.select()
@@ -139,7 +206,7 @@ export function registerScannerRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/tokens/:address/deep-analyze", async (req: Request, res: Response) => {
+  app.post("/api/tokens/:address([1-9A-HJ-NP-Za-km-z]{20,64})/deep-analyze", async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
       const result = await performDeepAnalysis(address);
