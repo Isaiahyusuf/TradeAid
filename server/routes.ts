@@ -55,11 +55,36 @@ const bs58Codec = (() => {
 
 let openaiClient: OpenAI | null = null;
 
+function resolveOpenAiApiKey(): string {
+  return String(
+    process.env.AI_INTEGRATIONS_OPENAI_API_KEY
+      || process.env.OPENAI_API_KEY
+      || "",
+  ).trim();
+}
+
+function resolveOpenAiBaseUrl(): string | undefined {
+  const value = String(
+    process.env.AI_INTEGRATIONS_OPENAI_BASE_URL
+      || process.env.OPENAI_BASE_URL
+      || "",
+  ).trim();
+  return value || undefined;
+}
+
+function resolveOpenAiModel(): string {
+  return String(
+    process.env.AI_INTEGRATIONS_OPENAI_MODEL
+      || process.env.OPENAI_MODEL
+      || "gpt-4.1-mini",
+  ).trim();
+}
+
 function getOpenAI(): OpenAI {
   if (!openaiClient) {
     openaiClient = new OpenAI({
-      apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-      baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      apiKey: resolveOpenAiApiKey(),
+      baseURL: resolveOpenAiBaseUrl(),
     });
   }
   return openaiClient;
@@ -411,7 +436,7 @@ export async function registerRoutes(
   };
 
   const buildOpenAiScoreExplanation = async (scorePayload: Record<string, any>) => {
-    const apiKey = String(process.env.AI_INTEGRATIONS_OPENAI_API_KEY || "").trim();
+    const apiKey = resolveOpenAiApiKey();
     const enabled = String(process.env.SCORE_TOKEN_OPENAI_ENABLED || "true").trim().toLowerCase() !== "false";
     if (!enabled || !apiKey) {
       return {
@@ -436,7 +461,7 @@ export async function registerRoutes(
       ].join("\n");
 
       const completion = await getOpenAI().chat.completions.create({
-        model: String(process.env.AI_INTEGRATIONS_OPENAI_MODEL || "gpt-4.1-mini"),
+        model: resolveOpenAiModel(),
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_object" },
       });
@@ -3627,7 +3652,7 @@ export async function registerRoutes(
 
   app.post("/api/ai/ask", (req, res) => {
     const question = String(req.body?.question || "").trim();
-    const apiKey = String(process.env.AI_INTEGRATIONS_OPENAI_API_KEY || "").trim();
+    const apiKey = resolveOpenAiApiKey();
     if (!apiKey) {
       return res.json({
         assistant: {
@@ -3643,7 +3668,7 @@ export async function registerRoutes(
     }
 
     return getOpenAI().chat.completions.create({
-      model: String(process.env.AI_INTEGRATIONS_OPENAI_MODEL || "gpt-4.1-mini"),
+      model: resolveOpenAiModel(),
       messages: [
         { role: "system", content: "You are TradeAid AI assistant. Give practical, concise trading guidance with risk warnings." },
         { role: "user", content: question || "Give a short update on how to safely run meme sniping." },
@@ -4306,7 +4331,7 @@ export async function registerRoutes(
       - summary: A short witty summary of why (max 2 sentences).`;
 
       const completion = await getOpenAI().chat.completions.create({
-        model: "gpt-4.1-mini",
+        model: resolveOpenAiModel(),
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_object" },
       });
