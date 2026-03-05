@@ -221,6 +221,14 @@ export function useDoctorConnectWallet() {
   });
 }
 
+export function useDoctorDisconnectWallet() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost<DoctorStatus>("/api/doctor/disconnect-wallet", {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade"] }),
+  });
+}
+
 export function useDoctorRunOnce() {
   const qc = useQueryClient();
   return useMutation({

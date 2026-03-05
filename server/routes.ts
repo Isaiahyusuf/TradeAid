@@ -1927,6 +1927,12 @@ export async function registerRoutes(
     return res.json(await buildDoctorStatus());
   });
 
+  app.post("/api/doctor/disconnect-wallet", async (_req, res) => {
+    doctorRuntime.wallet.address = "";
+    await persistDoctorRuntime();
+    return res.json(await buildDoctorStatus());
+  });
+
   app.post("/api/doctor/run-once", async (_req, res) => {
     const result = await executeDoctorCycle("manual");
     return res.json({ result });
