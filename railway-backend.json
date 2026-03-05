@@ -7,6 +7,8 @@
   "deploy": {
     "numReplicas": 1,
     "restartPolicyType": "ON_FAILURE",
+    "healthcheckPath": "/api/system/health",
+    "healthcheckTimeout": 300,
     "startCommand": "node dist/index.cjs"
   }
 }
