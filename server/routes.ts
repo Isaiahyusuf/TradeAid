@@ -2037,7 +2037,7 @@ export async function registerRoutes(
       return priceCache.data;
     }
 
-    const fallback: Record<AssistantChain, number> = {
+    const empty: Record<AssistantChain, number> = {
       solana: 0,
       ethereum: 0,
       bsc: 0,
@@ -2047,25 +2047,75 @@ export async function registerRoutes(
       polygon: 0,
     };
 
+    const withTimeout = async (url: string, timeoutMs = 8000) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(url, {
+          headers: { "Accept": "application/json", "User-Agent": "TradeAid/1.0" },
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error(`http_${response.status}`);
+        }
+        return response;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
     try {
-      const response = await fetch(
-        "https://api.coingecko.com/api/v3/simple/price?ids=solana,ethereum,binancecoin,avalanche-2,matic-network&vs_currencies=usd",
-      );
-      const payload = (await response.json()) as Record<string, { usd?: number }>;
-      const eth = Number(payload?.ethereum?.usd || 0);
+      const [geckoRes, compareRes] = await Promise.allSettled([
+        withTimeout("https://api.coingecko.com/api/v3/simple/price?ids=solana,ethereum,binancecoin,avalanche-2,matic-network&vs_currencies=usd"),
+        withTimeout("https://min-api.cryptocompare.com/data/pricemulti?fsyms=SOL,ETH,BNB,AVAX,MATIC&tsyms=USD"),
+      ]);
+
+      let geckoPayload: Record<string, { usd?: number }> = {};
+      if (geckoRes.status === "fulfilled") {
+        geckoPayload = (await geckoRes.value.json()) as Record<string, { usd?: number }>;
+      }
+
+      let comparePayload: Record<string, { USD?: number }> = {};
+      if (compareRes.status === "fulfilled") {
+        comparePayload = (await compareRes.value.json()) as Record<string, { USD?: number }>;
+      }
+
+      const pick = (...values: unknown[]) => {
+        for (const value of values) {
+          const parsed = Number(value);
+          if (Number.isFinite(parsed) && parsed > 0) {
+            return parsed;
+          }
+        }
+        return 0;
+      };
+
+      const eth = pick(geckoPayload?.ethereum?.usd, comparePayload?.ETH?.USD);
       const prices: Record<AssistantChain, number> = {
-        solana: Number(payload?.solana?.usd || 0),
+        solana: pick(geckoPayload?.solana?.usd, comparePayload?.SOL?.USD),
         ethereum: eth,
-        bsc: Number(payload?.binancecoin?.usd || 0),
+        bsc: pick(geckoPayload?.binancecoin?.usd, comparePayload?.BNB?.USD),
         base: eth,
         arbitrum: eth,
-        avalanche: Number(payload?.["avalanche-2"]?.usd || 0),
-        polygon: Number(payload?.["matic-network"]?.usd || 0),
+        avalanche: pick(geckoPayload?.["avalanche-2"]?.usd, comparePayload?.AVAX?.USD),
+        polygon: pick(geckoPayload?.["matic-network"]?.usd, comparePayload?.MATIC?.USD),
       };
-      priceCache = { ts: Date.now(), data: prices };
-      return prices;
+
+      const hasAnyLivePrice = Object.values(prices).some((value) => value > 0);
+      if (hasAnyLivePrice) {
+        priceCache = { ts: Date.now(), data: prices };
+        return prices;
+      }
+
+      if (priceCache) {
+        return priceCache.data;
+      }
+      return empty;
     } catch {
-      return fallback;
+      if (priceCache) {
+        return priceCache.data;
+      }
+      return empty;
     }
   };
 

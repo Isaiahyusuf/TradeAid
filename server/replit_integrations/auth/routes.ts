@@ -1,18 +1,112 @@
 import type { Express } from "express";
+import { randomUUID } from "crypto";
 import { authStorage } from "./storage";
 import { isAuthenticated } from "./replitAuth";
+
+type SessionEntry = {
+  userId: string;
+  expiresAt: number;
+};
+
+const accessTokenStore = new Map<string, SessionEntry>();
+const refreshTokenStore = new Map<string, SessionEntry>();
+
+const ACCESS_TOKEN_TTL_MS = 1000 * 60 * 60 * 24;
+const REFRESH_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+
+function issueSessionTokens(userId: string) {
+  const accessToken = `ta_access_${randomUUID()}`;
+  const refreshToken = `ta_refresh_${randomUUID()}`;
+  accessTokenStore.set(accessToken, { userId, expiresAt: Date.now() + ACCESS_TOKEN_TTL_MS });
+  refreshTokenStore.set(refreshToken, { userId, expiresAt: Date.now() + REFRESH_TOKEN_TTL_MS });
+  return { accessToken, refreshToken, tokenType: "bearer" as const };
+}
+
+function readBearerToken(req: any): string {
+  const authHeader = String(req.headers?.authorization || "").trim();
+  if (!authHeader.toLowerCase().startsWith("bearer ")) {
+    return "";
+  }
+  return authHeader.slice(7).trim();
+}
+
+function getSessionUserId(token: string, store: Map<string, SessionEntry>): string {
+  if (!token) return "";
+  const session = store.get(token);
+  if (!session) return "";
+  if (session.expiresAt < Date.now()) {
+    store.delete(token);
+    return "";
+  }
+  return session.userId;
+}
+
+function toFrontendUser(user: any) {
+  return {
+    user_id: user.id,
+    username: user.username || "",
+    email: user.email || "",
+    is_admin: false,
+    totp_enabled: false,
+    email_verified: true,
+    display_name: user.firstName || "",
+    avatar_url: user.profileImageUrl || "",
+    telemetry_opt_in: Boolean(user.notificationsEnabled ?? true),
+  };
+}
+
+async function resolveUserFromRequest(req: any) {
+  const accessToken = readBearerToken(req);
+  const userIdFromToken = getSessionUserId(accessToken, accessTokenStore);
+  if (userIdFromToken) {
+    const user = await authStorage.getUser(userIdFromToken);
+    if (user) {
+      return user;
+    }
+  }
+
+  const sub = String(req.user?.claims?.sub || "").trim();
+  if (!sub) {
+    return undefined;
+  }
+
+  const existing = await authStorage.getUser(sub);
+  if (existing) {
+    return existing;
+  }
+
+  return authStorage.upsertUser({
+    id: sub,
+    email: req.user?.claims?.email || null,
+    username: req.user?.claims?.preferred_username || req.user?.claims?.name || `user_${sub.slice(0, 8)}`,
+    firstName: req.user?.claims?.name || null,
+    profileImageUrl: req.user?.claims?.profile_image_url || req.user?.claims?.picture || null,
+  });
+}
 
 // Register auth-specific routes
 export function registerAuthRoutes(app: Express): void {
   // Login endpoint
   app.post("/api/auth/login", async (req: any, res) => {
     try {
-      // For now, return a mock response since Replit Auth handles the actual auth
-      // In production, integrate with your auth system
-      const user = await authStorage.getUser(req.user?.claims?.sub || "temp-user");
-      res.json({ 
-        access_token: "mock-token",
-        user: user || { id: "temp-user", username: "demo" }
+      const usernameOrEmail = String(req.body?.username || "").trim();
+      if (!usernameOrEmail) {
+        return res.status(400).json({ message: "username is required" });
+      }
+
+      const user = usernameOrEmail.includes("@")
+        ? await authStorage.getUserByEmail(usernameOrEmail)
+        : await authStorage.getUserByUsername(usernameOrEmail);
+
+      if (!user) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      const tokens = issueSessionTokens(user.id);
+      res.json({
+        access_token: tokens.accessToken,
+        refresh_token: tokens.refreshToken,
+        token_type: tokens.tokenType,
       });
     } catch (error) {
       console.error("Error during login:", error);
@@ -23,10 +117,38 @@ export function registerAuthRoutes(app: Express): void {
   // Register endpoint
   app.post("/api/auth/register", async (req: any, res) => {
     try {
-      res.json({ 
-        user_id: "temp-user",
-        username: req.body.username || "new-user",
-        email: req.body.email
+      const username = String(req.body?.username || "").trim();
+      const emailRaw = String(req.body?.email || "").trim();
+      const email = emailRaw || null;
+
+      if (!username || !/^[A-Za-z][A-Za-z0-9_]{2,19}$/.test(username)) {
+        return res.status(400).json({ message: "Invalid username format" });
+      }
+
+      const existingByUsername = await authStorage.getUserByUsername(username);
+      if (existingByUsername) {
+        return res.status(409).json({ message: "Username already taken" });
+      }
+
+      if (email) {
+        const existingByEmail = await authStorage.getUserByEmail(email);
+        if (existingByEmail) {
+          return res.status(409).json({ message: "Email already in use" });
+        }
+      }
+
+      const newUser = await authStorage.upsertUser({
+        id: randomUUID(),
+        username,
+        email,
+      });
+
+      res.json({
+        user_id: newUser.id,
+        username: newUser.username,
+        email: newUser.email,
+        requires_email_verification: false,
+        verification_email_sent: false,
       });
     } catch (error) {
       console.error("Error during registration:", error);
@@ -37,12 +159,23 @@ export function registerAuthRoutes(app: Express): void {
   // Check username endpoint
   app.get("/api/auth/check-username", async (req: any, res) => {
     try {
-      const username = req.query.username;
-      res.json({ 
+      const username = String(req.query.username || "").trim();
+      const valid = !!username && /^[A-Za-z][A-Za-z0-9_]{2,19}$/.test(username);
+      if (!valid) {
+        return res.json({
+          username,
+          available: false,
+          valid: false,
+          message: "Username must be 3-20 chars, start with a letter, and use letters/numbers/_",
+        });
+      }
+
+      const existing = await authStorage.getUserByUsername(username);
+      res.json({
         username,
-        available: true,
-        valid: username && /^[A-Za-z][A-Za-z0-9_]{2,19}$/.test(username),
-        message: "Username available"
+        available: !existing,
+        valid: true,
+        message: existing ? "Username already taken" : "Username available",
       });
     } catch (error) {
       console.error("Error checking username:", error);
@@ -75,19 +208,75 @@ export function registerAuthRoutes(app: Express): void {
   // Get user info at /api/auth/me endpoint
   app.get("/api/auth/me", async (req: any, res) => {
     try {
-      const user = req.user || {};
-      res.json({
-        user_id: user.claims?.sub || "guest",
-        username: user.claims?.preferred_username || "guest",
-        email: user.claims?.email || "",
-        is_admin: false,
-        totp_enabled: false,
-        email_verified: true,
-        display_name: user.claims?.name || ""
-      });
+      const user = await resolveUserFromRequest(req);
+      if (!user) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      res.json(toFrontendUser(user));
     } catch (error) {
       console.error("Error fetching user info:", error);
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  app.post("/api/auth/refresh", async (req: any, res) => {
+    try {
+      const refreshToken = String(req.body?.refresh_token || "").trim();
+      if (!refreshToken) {
+        return res.status(400).json({ message: "refresh_token is required" });
+      }
+
+      const userId = getSessionUserId(refreshToken, refreshTokenStore);
+      if (!userId) {
+        return res.status(401).json({ message: "Invalid refresh token" });
+      }
+
+      refreshTokenStore.delete(refreshToken);
+      const tokens = issueSessionTokens(userId);
+      return res.json({
+        access_token: tokens.accessToken,
+        refresh_token: tokens.refreshToken,
+        token_type: tokens.tokenType,
+      });
+    } catch (error) {
+      console.error("Error refreshing token:", error);
+      return res.status(500).json({ message: "Refresh failed" });
+    }
+  });
+
+  app.patch("/api/auth/profile", async (req: any, res) => {
+    try {
+      const user = await resolveUserFromRequest(req);
+      if (!user) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+
+      const nextUsername = req.body?.username ? String(req.body.username).trim() : undefined;
+      if (nextUsername) {
+        if (!/^[A-Za-z][A-Za-z0-9_]{2,19}$/.test(nextUsername)) {
+          return res.status(400).json({ message: "Invalid username format" });
+        }
+        const existing = await authStorage.getUserByUsername(nextUsername);
+        if (existing && existing.id !== user.id) {
+          return res.status(409).json({ message: "Username already taken" });
+        }
+      }
+
+      const updated = await authStorage.updateUser(user.id, {
+        username: nextUsername,
+        firstName: req.body?.display_name ? String(req.body.display_name).trim() : undefined,
+        profileImageUrl: req.body?.avatar_url ? String(req.body.avatar_url).trim() : undefined,
+        notificationsEnabled: typeof req.body?.telemetry_opt_in === "boolean" ? req.body.telemetry_opt_in : undefined,
+      });
+
+      if (!updated) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      return res.json(toFrontendUser(updated));
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      return res.status(500).json({ message: "Profile update failed" });
     }
   });
 
