@@ -76,8 +76,18 @@ function resolveOpenAiModel(): string {
   return String(
     process.env.AI_INTEGRATIONS_OPENAI_MODEL
       || process.env.OPENAI_MODEL
-      || "gpt-4.1-mini",
+      || "gpt-4o-mini",
   ).trim();
+}
+
+function resolveOpenAiModelFallbacks(): string[] {
+  const preferred = resolveOpenAiModel();
+  const models = [
+    preferred,
+    "gpt-4o-mini",
+    "gpt-4.1-mini",
+  ].map((item) => String(item || "").trim()).filter(Boolean);
+  return Array.from(new Set(models));
 }
 
 function getOpenAI(): OpenAI {
@@ -460,11 +470,23 @@ export async function registerRoutes(
         JSON.stringify(scorePayload),
       ].join("\n");
 
-      const completion = await getOpenAI().chat.completions.create({
-        model: resolveOpenAiModel(),
-        messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" },
-      });
+      let completion: Awaited<ReturnType<OpenAI["chat"]["completions"]["create"]>> | null = null;
+      let lastError: unknown = null;
+      for (const model of resolveOpenAiModelFallbacks()) {
+        try {
+          completion = await getOpenAI().chat.completions.create({
+            model,
+            messages: [{ role: "user", content: prompt }],
+            response_format: { type: "json_object" },
+          });
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      if (!completion) {
+        throw lastError instanceof Error ? lastError : new Error("openai_completion_failed");
+      }
 
       const parsed = JSON.parse(String(completion.choices?.[0]?.message?.content || "{}"));
       const confidenceAdjustment = Math.max(-10, Math.min(10, Number(parsed?.confidence_adjustment || 0)));
@@ -3667,13 +3689,24 @@ export async function registerRoutes(
       });
     }
 
-    return getOpenAI().chat.completions.create({
-      model: resolveOpenAiModel(),
-      messages: [
-        { role: "system", content: "You are TradeAid AI assistant. Give practical, concise trading guidance with risk warnings." },
-        { role: "user", content: question || "Give a short update on how to safely run meme sniping." },
-      ],
-    }).then((completion) => {
+    const messages = [
+      { role: "system" as const, content: "You are TradeAid AI assistant. Give practical, concise trading guidance with risk warnings." },
+      { role: "user" as const, content: question || "Give a short update on how to safely run meme sniping." },
+    ];
+
+    const attempt = async () => {
+      let lastError: unknown = null;
+      for (const model of resolveOpenAiModelFallbacks()) {
+        try {
+          return await getOpenAI().chat.completions.create({ model, messages });
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError instanceof Error ? lastError : new Error("openai_completion_failed");
+    };
+
+    return attempt().then((completion) => {
       const answer = String(completion.choices?.[0]?.message?.content || "").trim() || "No response generated.";
       const keyPoints = answer
         .split(/\n|\.|;|\-/g)
@@ -4330,11 +4363,23 @@ export async function registerRoutes(
       - score: number between 0-100
       - summary: A short witty summary of why (max 2 sentences).`;
 
-      const completion = await getOpenAI().chat.completions.create({
-        model: resolveOpenAiModel(),
-        messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" },
-      });
+      let completion: Awaited<ReturnType<OpenAI["chat"]["completions"]["create"]>> | null = null;
+      let lastError: unknown = null;
+      for (const model of resolveOpenAiModelFallbacks()) {
+        try {
+          completion = await getOpenAI().chat.completions.create({
+            model,
+            messages: [{ role: "user", content: prompt }],
+            response_format: { type: "json_object" },
+          });
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      if (!completion) {
+        throw lastError instanceof Error ? lastError : new Error("openai_completion_failed");
+      }
 
       const aiResponse = JSON.parse(completion.choices[0].message.content || "{}");
       
