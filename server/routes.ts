@@ -2194,7 +2194,38 @@ export async function registerRoutes(
   };
 
   const buildDoctorStatus = async () => {
-    const activeTokens = await getDoctorActiveTokens();
+    const earlyTokens = await getSolanaEarlyScoredTokens(120, 220);
+    const activeTokens = earlyTokens
+      .filter((token) => Boolean((token as any)?.eligible))
+      .filter((token) => Number((token as any)?.liquidity_usd || 0) >= Number(doctorRuntime.controls.min_liquidity_usd || 0))
+      .map((token: any) => {
+        const score = Number(token.confidence_score || 0);
+        return {
+          symbol: String(token.symbol || "UNKNOWN"),
+          address: String(token.mint || ""),
+          liquidity: Number(token.liquidity_usd || 0),
+          volume_5m: Number(token.volume_5m || 0),
+          volume_24h: Number(token.volume_24h || 0),
+          market_cap_usd: Number(token.market_cap_usd || 0),
+          score,
+          price_usd: Number((token as any).price_usd || 0),
+          price_change_1h: Number((token as any).price_change_1h || 0),
+          age_seconds: Number((token as any).age_seconds || 0),
+          chain: "solana",
+          created_at: String(token.first_seen_at || nowIso()),
+          holders_count: Number(token.holders_count || 0),
+          top_holder_pct: Number(token.top_holder_pct || 0),
+          dev_wallet_pct: Number(token.dev_wallet_pct || 0),
+          launch_source: String(token.launch_source || "unknown"),
+          liquidity_locked: Boolean(token.liquidity_locked),
+          pool_address: String((token as any).pool_address || ""),
+          base_mint: String((token as any).base_mint || ""),
+          risk_level: score >= 70 ? "SAFE" : score >= 45 ? "MEDIUM" : "HIGH RISK",
+          source: String(token.source || "solana_early"),
+          reject_reasons: token.reject_reasons || [],
+        };
+      })
+      .slice(0, 40);
     const { dailyRealizedPnlUsd, consecutiveLosses } = computeDoctorRiskMetrics();
 
     const paused = doctorRuntime.killSwitch;
@@ -2264,10 +2295,10 @@ export async function registerRoutes(
       },
       fresh_feed: {
         last_cycle_at: doctorRuntime.lastRunAt,
-        detected: activeTokens.length,
-        enriched: activeTokens.length,
+        detected: earlyTokens.length,
+        enriched: earlyTokens.length,
         approved: activeTokens.length,
-        rejected: 0,
+        rejected: Math.max(0, earlyTokens.length - activeTokens.length),
       },
       scanner_health: {
         overall: {
