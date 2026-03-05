@@ -18,7 +18,7 @@ import { setupAuth, registerAuthRoutes, isAuthenticated, authStorage } from "./r
 import { registerScannerRoutes } from "./routes/scanner";
 import { startBackgroundScanner, scanHotTokens } from "./services/token-scanner";
 import { multichainScanner } from "./services/multichain-scanner";
-import { getNewPairs, getTokenPairs, pairToTokenData } from "./services/dexscreener";
+import { getNewPairs, getTokenPairs, getTokenPairsFast, pairToTokenData } from "./services/dexscreener";
 import { FREE_TIER_LIMITS, SUBSCRIPTION_PRICE_USD, SUPPORTED_PAYMENT_CHAINS } from "@shared/schema";
 import { cryptoPaymentService } from "./services/crypto-payment";
 import { fetchFreshPumpfunTokens } from "./services/fresh-token-service";
@@ -291,7 +291,7 @@ export async function registerRoutes(
     const requestedChain = normalizeDexChain(chain || "all");
     let pairs: any[] = [];
     try {
-      pairs = await getTokenPairs(contractAddress);
+      pairs = await getTokenPairsFast(contractAddress);
     } catch {
       pairs = [];
     }
@@ -477,7 +477,12 @@ export async function registerRoutes(
       }
 
       const controller = new AbortController();
-      const bridgeTimeoutMs = Math.max(3000, Number(process.env.BRIDGE_TIMEOUT_MS || 12000));
+      const isScoringRequest = targetPath.startsWith("/api/scoring/");
+      const bridgeTimeoutEnvRaw = isScoringRequest
+        ? Number(process.env.BRIDGE_TIMEOUT_SCORING_MS || process.env.BRIDGE_TIMEOUT_MS || 3000)
+        : Number(process.env.BRIDGE_TIMEOUT_MS || 12000);
+      const bridgeTimeoutEnv = Number.isFinite(bridgeTimeoutEnvRaw) ? bridgeTimeoutEnvRaw : (isScoringRequest ? 3000 : 12000);
+      const bridgeTimeoutMs = Math.max(2000, bridgeTimeoutEnv);
       const timeout = setTimeout(() => controller.abort(), bridgeTimeoutMs);
 
       let response: Response;
@@ -2965,17 +2970,19 @@ export async function registerRoutes(
     });
   });
 
-  app.post("/api/scoring/score-token", async (req, res) =>
-    proxyToPythonApi(req, res, "/api/scoring/score-token", async () => {
-      const body = req.body || {};
-      const contractAddress = String(body.contract_address || body.address || "").trim();
-      const chain = String(body.chain || "all").trim().toLowerCase();
-      if (!contractAddress) {
-        return { error: "Contract address required", eligible: false };
-      }
-      return buildDexScoreFallback(contractAddress, chain);
-    }),
-  );
+  app.post("/api/scoring/score-token", async (req, res) => {
+    const body = req.body || {};
+    const contractAddress = String(body.contract_address || body.address || body.token || "").trim();
+    const chain = String(body.chain || "all").trim().toLowerCase();
+
+    if (!contractAddress) {
+      return res.status(200).json({ error: "Contract address required", eligible: false });
+    }
+
+    return proxyToPythonApi(req, res, "/api/scoring/score-token", async () =>
+      buildDexScoreFallback(contractAddress, chain),
+    );
+  });
 
   // AI Scoring Insight Endpoint
   app.get("/api/scoring/insight/:chain/:contract_address", isAuthenticated, async (req, res) =>

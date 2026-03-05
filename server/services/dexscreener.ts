@@ -46,12 +46,30 @@ export interface TokenProfile {
   links?: { label: string; url: string }[];
 }
 
-async function fetchWithRetry<T>(url: string, retries = 3): Promise<T | null> {
+async function fetchWithRetry<T>(
+  url: string,
+  options: {
+    retries?: number;
+    timeoutMs?: number;
+    retryDelayMs?: number;
+  } = {},
+): Promise<T | null> {
+  const retries = Math.max(1, Math.trunc(options.retries ?? 3));
+  const timeoutMs = Math.max(500, Math.trunc(options.timeoutMs ?? 8000));
+  const retryDelayMs = Math.max(100, Math.trunc(options.retryDelayMs ?? 1000));
+
   for (let i = 0; i < retries; i++) {
     try {
-      const res = await fetch(url);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      let res: Response;
+      try {
+        res = await fetch(url, { signal: controller.signal });
+      } finally {
+        clearTimeout(timeout);
+      }
       if (res.status === 429) {
-        await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+        await new Promise(r => setTimeout(r, retryDelayMs * 2 * (i + 1)));
         continue;
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -61,7 +79,7 @@ async function fetchWithRetry<T>(url: string, retries = 3): Promise<T | null> {
         console.error(`DexScreener API error: ${url}`, e);
         return null;
       }
-      await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+      await new Promise(r => setTimeout(r, retryDelayMs * (i + 1)));
     }
   }
   return null;
@@ -84,6 +102,15 @@ export async function getTopBoostedTokens(): Promise<TokenProfile[]> {
 
 export async function getTokenPairs(tokenAddress: string): Promise<DexPair[]> {
   const data = await fetchWithRetry<{ pairs: DexPair[] }>(`${DEX_API_BASE}/latest/dex/tokens/${tokenAddress}`);
+  return data?.pairs || [];
+}
+
+export async function getTokenPairsFast(tokenAddress: string): Promise<DexPair[]> {
+  const data = await fetchWithRetry<{ pairs: DexPair[] }>(`${DEX_API_BASE}/latest/dex/tokens/${tokenAddress}`, {
+    retries: 1,
+    timeoutMs: Number(process.env.DEX_SCORE_TIMEOUT_MS || 2500),
+    retryDelayMs: 250,
+  });
   return data?.pairs || [];
 }
 
