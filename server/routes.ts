@@ -72,6 +72,26 @@ function resolveOpenAiBaseUrl(): string | undefined {
   return value || undefined;
 }
 
+function resolveOpenAiOrganization(): string | undefined {
+  const value = String(
+    process.env.AI_INTEGRATIONS_OPENAI_ORGANIZATION
+      || process.env.OPENAI_ORGANIZATION
+      || process.env.OPENAI_ORG_ID
+      || "",
+  ).trim();
+  return value || undefined;
+}
+
+function resolveOpenAiProject(): string | undefined {
+  const value = String(
+    process.env.AI_INTEGRATIONS_OPENAI_PROJECT
+      || process.env.OPENAI_PROJECT
+      || process.env.OPENAI_PROJECT_ID
+      || "",
+  ).trim();
+  return value || undefined;
+}
+
 function resolveOpenAiModel(): string {
   return String(
     process.env.AI_INTEGRATIONS_OPENAI_MODEL
@@ -95,6 +115,8 @@ function getOpenAI(): OpenAI {
     openaiClient = new OpenAI({
       apiKey: resolveOpenAiApiKey(),
       baseURL: resolveOpenAiBaseUrl(),
+      organization: resolveOpenAiOrganization(),
+      project: resolveOpenAiProject(),
     });
   }
   return openaiClient;
@@ -500,7 +522,10 @@ export async function registerRoutes(
         confidence_adjustment: confidenceAdjustment,
         source: "openai",
       };
-    } catch {
+    } catch (error) {
+      logStructured("warn", "openai.score_explanation_failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
       return {
         summary: `${String(scorePayload.symbol || "Token")} has ${Number(scorePayload?.scores?.trade_confidence_index || 0).toFixed(1)} confidence and ${Number(scorePayload?.scores?.rug_probability || 0).toFixed(1)} rug probability.`,
         key_points: [
@@ -3720,7 +3745,10 @@ export async function registerRoutes(
           source: "openai",
         },
       });
-    }).catch(() => {
+    }).catch((error) => {
+      logStructured("warn", "openai.ai_ask_failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
       return res.json({
         assistant: {
           answer: question ? `Assistant response: ${question}` : "Ask a specific trading question to get guidance.",
