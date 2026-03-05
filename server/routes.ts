@@ -476,11 +476,21 @@ export async function registerRoutes(
         headers.Authorization = auth;
       }
 
-      const response = await fetch(targetUrl, {
-        method: req.method,
-        headers,
-        body: req.method === "GET" ? undefined : JSON.stringify(req.body || {}),
-      });
+      const controller = new AbortController();
+      const bridgeTimeoutMs = Math.max(3000, Number(process.env.BRIDGE_TIMEOUT_MS || 12000));
+      const timeout = setTimeout(() => controller.abort(), bridgeTimeoutMs);
+
+      let response: Response;
+      try {
+        response = await fetch(targetUrl, {
+          method: req.method,
+          headers,
+          body: req.method === "GET" ? undefined : JSON.stringify(req.body || {}),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
 
       const text = await response.text();
       let payload: any = null;
