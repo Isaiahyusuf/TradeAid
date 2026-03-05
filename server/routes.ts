@@ -2044,6 +2044,11 @@ export async function registerRoutes(
 
   const assistantChains = ["solana", "ethereum", "bsc", "base", "arbitrum", "avalanche", "polygon"] as const;
   type AssistantChain = (typeof assistantChains)[number];
+  const assistantDefaultRiskLimits = {
+    max_notional_usd_per_trade: 100,
+    max_trades_per_day: 12,
+    max_daily_loss_usd: 300,
+  };
 
   const assistantRuntime = {
     wallet: {
@@ -2066,14 +2071,105 @@ export async function registerRoutes(
       wallet_address: null as string | null,
       wallets_by_chain: {} as Record<string, string>,
       enabled_chains: [...assistantChains] as string[],
-      risk_limits: {
-        max_notional_usd_per_trade: 100,
-        max_trades_per_day: 12,
-        max_daily_loss_usd: 300,
-      },
+      risk_limits: { ...assistantDefaultRiskLimits },
       last_revoked_at: null as string | null,
     },
     transactions: [] as Array<Record<string, any>>,
+  };
+
+  const assistantStateFile = resolve(doctorStateDir, "assistant.runtime.json");
+
+  const resetAssistantRuntime = () => {
+    assistantRuntime.wallet.has_wallet = false;
+    assistantRuntime.wallet.backup_confirmed = false;
+    assistantRuntime.wallet.backup_confirmed_at = null;
+    assistantRuntime.wallet.created_at = null;
+    assistantRuntime.wallet.addresses_by_chain = {};
+    assistantRuntime.wallet.enabled_chains = [...assistantChains];
+    assistantRuntime.wallet.mnemonic = "";
+    assistantRuntime.wallet.private_keys_by_chain = {};
+
+    assistantRuntime.trading.enabled = false;
+    assistantRuntime.trading.pending_approval = false;
+    assistantRuntime.trading.consent_id = null;
+    assistantRuntime.trading.consent_expires_at = null;
+    assistantRuntime.trading.approved_at = null;
+    assistantRuntime.trading.mode = "paper";
+    assistantRuntime.trading.wallet_address = null;
+    assistantRuntime.trading.wallets_by_chain = {};
+    assistantRuntime.trading.enabled_chains = [...assistantChains];
+    assistantRuntime.trading.risk_limits = { ...assistantDefaultRiskLimits };
+    assistantRuntime.trading.last_revoked_at = null;
+
+    assistantRuntime.transactions = [];
+  };
+
+  const persistAssistantRuntime = async () => {
+    try {
+      await mkdir(doctorStateDir, { recursive: true });
+      await writeFile(assistantStateFile, JSON.stringify(assistantRuntime, null, 2), "utf8");
+    } catch {
+    }
+  };
+
+  const loadAssistantRuntime = async () => {
+    try {
+      const text = await readFile(assistantStateFile, "utf8");
+      const loaded = JSON.parse(text) as Record<string, any>;
+
+      const wallet = loaded.wallet as Record<string, any> | undefined;
+      if (wallet && typeof wallet === "object") {
+        assistantRuntime.wallet.has_wallet = Boolean(wallet.has_wallet);
+        assistantRuntime.wallet.backup_confirmed = Boolean(wallet.backup_confirmed);
+        assistantRuntime.wallet.backup_confirmed_at = typeof wallet.backup_confirmed_at === "string" ? wallet.backup_confirmed_at : null;
+        assistantRuntime.wallet.created_at = typeof wallet.created_at === "string" ? wallet.created_at : null;
+        assistantRuntime.wallet.addresses_by_chain =
+          wallet.addresses_by_chain && typeof wallet.addresses_by_chain === "object"
+            ? wallet.addresses_by_chain as Record<string, string>
+            : {};
+        assistantRuntime.wallet.enabled_chains = Array.isArray(wallet.enabled_chains)
+          ? wallet.enabled_chains.map((value: unknown) => String(value || "")).filter(Boolean)
+          : [...assistantChains];
+        assistantRuntime.wallet.mnemonic = typeof wallet.mnemonic === "string" ? wallet.mnemonic : "";
+        assistantRuntime.wallet.private_keys_by_chain =
+          wallet.private_keys_by_chain && typeof wallet.private_keys_by_chain === "object"
+            ? wallet.private_keys_by_chain as Record<string, string>
+            : {};
+      }
+
+      const trading = loaded.trading as Record<string, any> | undefined;
+      if (trading && typeof trading === "object") {
+        assistantRuntime.trading.enabled = Boolean(trading.enabled);
+        assistantRuntime.trading.pending_approval = Boolean(trading.pending_approval);
+        assistantRuntime.trading.consent_id = typeof trading.consent_id === "string" ? trading.consent_id : null;
+        assistantRuntime.trading.consent_expires_at = typeof trading.consent_expires_at === "string" ? trading.consent_expires_at : null;
+        assistantRuntime.trading.approved_at = typeof trading.approved_at === "string" ? trading.approved_at : null;
+        assistantRuntime.trading.mode = String(trading.mode || "paper").toLowerCase() === "live" ? "live" : "paper";
+        assistantRuntime.trading.wallet_address = typeof trading.wallet_address === "string" ? trading.wallet_address : null;
+        assistantRuntime.trading.wallets_by_chain =
+          trading.wallets_by_chain && typeof trading.wallets_by_chain === "object"
+            ? trading.wallets_by_chain as Record<string, string>
+            : {};
+        assistantRuntime.trading.enabled_chains = Array.isArray(trading.enabled_chains)
+          ? trading.enabled_chains.map((value: unknown) => String(value || "")).filter(Boolean)
+          : [...assistantChains];
+        const riskLimits = trading.risk_limits as Record<string, any> | undefined;
+        assistantRuntime.trading.risk_limits = {
+          max_notional_usd_per_trade: Number(riskLimits?.max_notional_usd_per_trade || assistantDefaultRiskLimits.max_notional_usd_per_trade),
+          max_trades_per_day: Number(riskLimits?.max_trades_per_day || assistantDefaultRiskLimits.max_trades_per_day),
+          max_daily_loss_usd: Number(riskLimits?.max_daily_loss_usd || assistantDefaultRiskLimits.max_daily_loss_usd),
+        };
+        assistantRuntime.trading.last_revoked_at = typeof trading.last_revoked_at === "string" ? trading.last_revoked_at : null;
+      }
+
+      if (Array.isArray(loaded.transactions)) {
+        assistantRuntime.transactions = loaded.transactions.slice(0, 200);
+      }
+
+      assistantRuntime.trading.wallets_by_chain = assistantRuntime.wallet.addresses_by_chain;
+      assistantRuntime.trading.wallet_address = assistantRuntime.wallet.addresses_by_chain.solana || null;
+    } catch {
+    }
   };
 
   const SOLANA_DERIVATION_PATH = "m/44'/501'/0'/0'";
@@ -2171,6 +2267,8 @@ export async function registerRoutes(
     };
     return envMap[chain] || defaultRpcUrls[chain];
   };
+
+  await loadAssistantRuntime();
 
   let priceCache: { ts: number; data: Record<AssistantChain, number> } | null = null;
   const fetchChainPricesUsd = async (): Promise<Record<AssistantChain, number>> => {
@@ -2414,7 +2512,7 @@ export async function registerRoutes(
     return res.json({ transactions, count: transactions.length });
   });
 
-  app.post("/api/ai/wallets/create", (req, res) => {
+  app.post("/api/ai/wallets/create", async (req, res) => {
     const overwrite = Boolean(req.body?.overwrite);
     if (assistantRuntime.wallet.has_wallet && !overwrite) {
       return res.status(400).json({ message: "wallet already exists" });
@@ -2431,11 +2529,14 @@ export async function registerRoutes(
     assistantRuntime.wallet.private_keys_by_chain = walletBundle.private_keys_by_chain;
     assistantRuntime.wallet.mnemonic = walletBundle.mnemonic;
     assistantRuntime.trading.wallets_by_chain = walletBundle.addresses_by_chain;
+    assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
+
+    await persistAssistantRuntime();
 
     return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
   });
 
-  app.post("/api/ai/wallets/import", (req, res) => {
+  app.post("/api/ai/wallets/import", async (req, res) => {
     const mnemonic = normalizeMnemonic(String(req.body?.mnemonic || ""));
     const overwrite = Boolean(req.body?.overwrite);
     if (!mnemonic) {
@@ -2463,11 +2564,14 @@ export async function registerRoutes(
     assistantRuntime.wallet.private_keys_by_chain = walletBundle.private_keys_by_chain;
     assistantRuntime.wallet.mnemonic = walletBundle.mnemonic;
     assistantRuntime.trading.wallets_by_chain = walletBundle.addresses_by_chain;
+    assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
+
+    await persistAssistantRuntime();
 
     return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
   });
 
-  app.post("/api/ai/wallets/confirm-backup", (req, res) => {
+  app.post("/api/ai/wallets/confirm-backup", async (req, res) => {
     const mnemonic = String(req.body?.mnemonic || "").trim();
     if (!ensureWalletExists()) {
       return res.status(400).json({ message: "wallet not found" });
@@ -2477,7 +2581,19 @@ export async function registerRoutes(
     }
     assistantRuntime.wallet.backup_confirmed = true;
     assistantRuntime.wallet.backup_confirmed_at = nowIso();
+    await persistAssistantRuntime();
     return res.json({ wallet: assistantWalletStatus() });
+  });
+
+  app.post("/api/ai/wallets/delete", async (_req, res) => {
+    resetAssistantRuntime();
+    await persistAssistantRuntime();
+    return res.json({
+      ok: true,
+      wallet: assistantWalletStatus(),
+      trading: assistantTradingStatus(),
+      message: "wallet deleted",
+    });
   });
 
   app.post("/api/ai/wallets/reveal", (req, res) => {
@@ -2491,7 +2607,7 @@ export async function registerRoutes(
     return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
   });
 
-  app.post("/api/ai/wallets/remove-chain", (req, res) => {
+  app.post("/api/ai/wallets/remove-chain", async (req, res) => {
     const chain = String(req.body?.chain || "").toLowerCase();
     if (!assistantChains.includes(chain as AssistantChain)) {
       return res.status(400).json({ message: "unsupported chain" });
@@ -2499,6 +2615,8 @@ export async function registerRoutes(
     delete assistantRuntime.wallet.addresses_by_chain[chain];
     delete assistantRuntime.wallet.private_keys_by_chain[chain];
     assistantRuntime.trading.wallets_by_chain = assistantRuntime.wallet.addresses_by_chain;
+    assistantRuntime.trading.wallet_address = assistantRuntime.wallet.addresses_by_chain.solana || null;
+    await persistAssistantRuntime();
     return res.json({ wallet: assistantWalletStatus(), trading: assistantTradingStatus() });
   });
 
@@ -2638,6 +2756,7 @@ export async function registerRoutes(
     };
     assistantRuntime.transactions.unshift(transaction);
     assistantRuntime.transactions = assistantRuntime.transactions.slice(0, 200);
+    await persistAssistantRuntime();
 
     return res.json({
       transfer: {
@@ -2649,7 +2768,7 @@ export async function registerRoutes(
     });
   });
 
-  app.post("/api/ai/trading/consent/request", (req, res) => {
+  app.post("/api/ai/trading/consent/request", async (req, res) => {
     const mode = String(req.body?.mode || "paper").toLowerCase() === "live" ? "live" : "paper";
     const consentId = `consent_${Date.now().toString(36)}`;
     assistantRuntime.trading.mode = mode;
@@ -2657,13 +2776,14 @@ export async function registerRoutes(
     assistantRuntime.trading.enabled = false;
     assistantRuntime.trading.consent_id = consentId;
     assistantRuntime.trading.consent_expires_at = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    await persistAssistantRuntime();
     return res.json({
       consent_id: consentId,
       trading: assistantTradingStatus(),
     });
   });
 
-  app.post("/api/ai/trading/consent/approve", (req, res) => {
+  app.post("/api/ai/trading/consent/approve", async (req, res) => {
     const consentId = String(req.body?.consent_id || "").trim();
     const confirmation = String(req.body?.confirmation_text || "").trim();
     if (!consentId || consentId !== assistantRuntime.trading.consent_id) {
@@ -2675,17 +2795,19 @@ export async function registerRoutes(
     assistantRuntime.trading.pending_approval = false;
     assistantRuntime.trading.enabled = true;
     assistantRuntime.trading.approved_at = nowIso();
+    await persistAssistantRuntime();
     return res.json({ trading: assistantTradingStatus() });
   });
 
-  app.post("/api/ai/trading/consent/revoke", (_req, res) => {
+  app.post("/api/ai/trading/consent/revoke", async (_req, res) => {
     assistantRuntime.trading.enabled = false;
     assistantRuntime.trading.pending_approval = false;
     assistantRuntime.trading.last_revoked_at = nowIso();
+    await persistAssistantRuntime();
     return res.json({ trading: assistantTradingStatus() });
   });
 
-  app.post("/api/ai/trading/execute", (req, res) => {
+  app.post("/api/ai/trading/execute", async (req, res) => {
     const chain = String(req.body?.chain || "solana").toLowerCase();
     const contractAddress = String(req.body?.contract_address || "").trim();
     const side = String(req.body?.side || "buy").toLowerCase() === "sell" ? "sell" : "buy";
@@ -2715,6 +2837,7 @@ export async function registerRoutes(
     };
     assistantRuntime.transactions.unshift(transaction);
     assistantRuntime.transactions = assistantRuntime.transactions.slice(0, 200);
+    await persistAssistantRuntime();
 
     return res.json({
       trade: {
