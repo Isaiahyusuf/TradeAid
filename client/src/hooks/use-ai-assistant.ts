@@ -224,6 +224,21 @@ export function useRemoveAssistantWalletChain() {
   });
 }
 
+export function useDeleteAssistantWallet() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () =>
+      apiPost<{ ok: boolean; wallet: AssistantWalletStatus; trading: AssistantTradingStatus; message: string }>("/api/ai/wallets/delete", {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-status"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-trading-status"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-portfolio"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-context-overview"] });
+    },
+  });
+}
+
 export function useExportAssistantWalletKey() {
   return useMutation({
     mutationFn: async (payload: { chain: string; confirmation_text: string }) =>

@@ -25,6 +25,7 @@ import {
   useAssistantWalletStatus,
   useConfirmAssistantWalletBackup,
   useCreateAssistantWallet,
+  useDeleteAssistantWallet,
   useExecuteAssistantTrade,
   useExportAssistantWalletKey,
   useImportAssistantWallet,
@@ -66,6 +67,7 @@ export default function WalletPage() {
   const confirmBackup = useConfirmAssistantWalletBackup();
   const revealWallet = useRevealAssistantWallet();
   const removeWalletChain = useRemoveAssistantWalletChain();
+  const deleteWallet = useDeleteAssistantWallet();
   const exportWalletKey = useExportAssistantWalletKey();
   const transferWallet = useTransferAssistantWallet();
 
@@ -354,6 +356,24 @@ export default function WalletPage() {
       toast({ title: "Wallet removed", description: `${chainName} wallet removed successfully.` });
     } catch (error) {
       toast({ title: "Remove failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteWholeWallet = async () => {
+    const confirmed = window.confirm("Delete the entire wallet and all linked chain accounts? This action cannot be undone.");
+    if (!confirmed) return;
+
+    try {
+      await deleteWallet.mutateAsync();
+      setLatestBundle(null);
+      setExportedKey(null);
+      setSendOpen(false);
+      setReceiveOpen(false);
+      setExportOpen(false);
+      setWalletSettingsOpen(false);
+      toast({ title: "Wallet deleted", description: "You can now create a brand new wallet." });
+    } catch (error) {
+      toast({ title: "Delete failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
     }
   };
 
@@ -856,6 +876,10 @@ export default function WalletPage() {
 
               <Button variant="outline" onClick={() => handleRemoveWalletChain(settingsChain)} disabled={removeWalletChain.isPending || !addressesByChain[settingsChain]}>
                 <Trash2 className="w-4 h-4 mr-2" /> Remove Wallet
+              </Button>
+
+              <Button variant="destructive" onClick={handleDeleteWholeWallet} disabled={deleteWallet.isPending || !wallet?.has_wallet}>
+                <Trash2 className="w-4 h-4 mr-2" /> {deleteWallet.isPending ? "Deleting..." : "Delete Entire Wallet"}
               </Button>
             </div>
           </SheetContent>
