@@ -540,6 +540,8 @@ export async function registerRoutes(
       max_trades_per_day: 12,
       trades_today: 0,
       max_open_positions: 5,
+      strategy_window_minutes: 120,
+      ai_min_signals_required: 8,
       cooldown_minutes_per_mint: 30,
       min_wallet_fee_buffer_sol: 0.02,
       live_sell_fraction_pct: 50,
@@ -807,6 +809,8 @@ export async function registerRoutes(
           volume_5m: Number(token.volume_5m || 0),
           score,
           price_usd: Number((token as any).price_usd || 0),
+          price_change_1h: Number((token as any).price_change_1h || 0),
+          age_seconds: Number((token as any).age_seconds || 0),
           chain: "solana",
           created_at: String(token.first_seen_at || nowIso()),
           holders_count: Number(token.holders_count || 0),
@@ -1684,10 +1688,217 @@ export async function registerRoutes(
       return { allowed: true, reason: "ok" };
     };
 
+    const evaluateDoctorAiValidation = async (candidate: Record<string, any> | undefined) => {
+      if (!candidate) {
+        return {
+          allowed: false,
+          reason: "ai_validation_no_candidate",
+          checks: {
+            new_token_validation: false,
+            liquidity_stability: false,
+            volume_activity: false,
+            wallet_participation: false,
+            contract_safety: false,
+            market_momentum: false,
+            whale_activity: false,
+            anti_rug_detection: false,
+          },
+          passed_signals: 0,
+          required_signals: Math.max(1, Math.trunc(Number(doctorRuntime.controls.ai_min_signals_required || 8))),
+          required_all_checks: true,
+          all_checks_passed: false,
+          checked_at: nowIso(),
+          age_seconds: 0,
+          token: null,
+          reasons: ["no_candidate"],
+        };
+      }
+
+      const strategyWindowMinutes = Math.max(5, Number(doctorRuntime.controls.strategy_window_minutes || 120));
+      const strategyWindowSeconds = Math.trunc(strategyWindowMinutes * 60);
+      const liquidityMin = Math.max(1000, Number(doctorRuntime.controls.min_liquidity_usd || 0));
+      const topHolderMax = Math.max(1, Number(doctorRuntime.controls.quality_max_top_holder_pct || 35));
+      const volumeSpikeMinPct = Math.max(1, Number(doctorRuntime.controls.quality_min_volume_spike_pct || 12));
+
+      const createdAtMs = new Date(String(candidate.created_at || nowIso())).getTime();
+      const fallbackAgeSeconds = Number.isFinite(createdAtMs) && createdAtMs > 0
+        ? Math.max(0, Math.trunc((nowMs - createdAtMs) / 1000))
+        : strategyWindowSeconds + 1;
+      const ageSeconds = Math.max(0, Number(candidate.age_seconds || fallbackAgeSeconds));
+
+      const contractAddress = String(candidate.address || "").trim();
+      const scoreFallback = contractAddress
+        ? await buildDexScoreFallback(contractAddress, "solana")
+        : null;
+      const scannedToken = contractAddress ? await storage.getScannedTokenByAddress(contractAddress) : undefined;
+
+      const fallbackScores = (scoreFallback?.scores || {}) as Record<string, any>;
+      const fallbackFlags = Array.isArray(scoreFallback?.risk_flags)
+        ? scoreFallback!.risk_flags.map((flag: unknown) => String(flag || "").toUpperCase())
+        : [];
+      const riskFlags = new Set<string>(fallbackFlags);
+
+      const liquidityUsd = Math.max(
+        Number(candidate.liquidity || 0),
+        Number(scoreFallback?.market_data?.liquidity_usd || 0),
+      );
+      const volume5m = Number(candidate.volume_5m || 0);
+      const holdersCount = Number(candidate.holders_count || 0);
+      const topHolderPct = Math.max(
+        Number(candidate.top_holder_pct || 0),
+        Number(scannedToken?.topHoldersPercentage || 0),
+      );
+      const devWalletPct = Number(scannedToken?.devWalletPercentage || 0);
+      const priceChange1h = Number(candidate.price_change_1h || 0);
+
+      const smartWalletSignal = Number(fallbackScores.smart_wallet_signal || 0);
+      const confidenceSignal = Number(fallbackScores.trade_confidence_index || candidate.score || 0);
+      const rugProbability = Number(fallbackScores.rug_probability || 95);
+
+      const dexTradable = Boolean(
+        scoreFallback?.source?.pair_address ||
+        scoreFallback?.status === "dex_live" ||
+        String(scoreFallback?.source?.provider || "").toLowerCase() === "dexscreener",
+      );
+
+      const newTokenValidation =
+        ageSeconds <= strategyWindowSeconds &&
+        liquidityUsd > 0 &&
+        dexTradable;
+
+      const liquidityStability =
+        liquidityUsd >= liquidityMin &&
+        !riskFlags.has("LOW_LIQUIDITY") &&
+        !riskFlags.has("THIN_LIQUIDITY") &&
+        !riskFlags.has("HIGH_SLIPPAGE") &&
+        !riskFlags.has("NO_LIVE_PAIR_DATA");
+
+      const hasBuyPressure = smartWalletSignal >= 45;
+      const volumeGrowthProxy = volume5m >= Math.max(50, Math.trunc(volumeSpikeMinPct * 10));
+      const volumeConsistencyProxy = confidenceSignal >= 45;
+      const volumeActivity = volume5m > 0 && hasBuyPressure && volumeGrowthProxy && volumeConsistencyProxy;
+
+      const walletParticipation =
+        holdersCount >= 25 &&
+        topHolderPct > 0 &&
+        topHolderPct <= topHolderMax &&
+        (devWalletPct <= 0 || devWalletPct <= 20) &&
+        !riskFlags.has("SELL_PRESSURE");
+
+      const contractSafety =
+        !Boolean(scannedToken?.isHoneypot) &&
+        (Boolean(scannedToken?.mintAuthorityDisabled) || Number(scannedToken?.safetyScore || 0) >= 60 || rugProbability <= 75) &&
+        !riskFlags.has("NO_LIVE_PAIR_DATA");
+
+      const marketMomentum =
+        priceChange1h > 0 &&
+        hasBuyPressure &&
+        !riskFlags.has("SELL_PRESSURE") &&
+        Math.abs(priceChange1h) <= 120;
+
+      const whaleActivity =
+        topHolderPct > 0 &&
+        topHolderPct <= topHolderMax &&
+        smartWalletSignal >= 50 &&
+        confidenceSignal >= 50 &&
+        !riskFlags.has("SELL_PRESSURE");
+
+      const antiRugDetection =
+        !riskFlags.has("LOW_LIQUIDITY") &&
+        !riskFlags.has("THIN_LIQUIDITY") &&
+        !riskFlags.has("SELL_PRESSURE") &&
+        rugProbability <= 85 &&
+        !riskFlags.has("NO_LIVE_PAIR_DATA") &&
+        (devWalletPct <= 0 || devWalletPct <= 25);
+
+      const checks = {
+        new_token_validation: newTokenValidation,
+        liquidity_stability: liquidityStability,
+        volume_activity: volumeActivity,
+        wallet_participation: walletParticipation,
+        contract_safety: contractSafety,
+        market_momentum: marketMomentum,
+        whale_activity: whaleActivity,
+        anti_rug_detection: antiRugDetection,
+      };
+
+      const requiredSignals = Math.max(1, Math.trunc(Number(doctorRuntime.controls.ai_min_signals_required || 8)));
+      const passedSignals = Object.values(checks).filter(Boolean).length;
+      const allChecksPassed = Object.values(checks).every(Boolean);
+      const multiSignalPassed = passedSignals >= requiredSignals;
+      const allowed = allChecksPassed && multiSignalPassed && antiRugDetection;
+
+      const failedReasons = Object.entries(checks)
+        .filter(([, passed]) => !passed)
+        .map(([key]) => `${key}_failed`);
+
+      return {
+        allowed,
+        reason: allowed ? "ok" : (failedReasons[0] || "ai_validation_failed"),
+        checks,
+        passed_signals: passedSignals,
+        required_signals: requiredSignals,
+        required_all_checks: true,
+        all_checks_passed: allChecksPassed,
+        checked_at: nowIso(),
+        age_seconds: ageSeconds,
+        token: {
+          symbol: String(candidate.symbol || "UNKNOWN"),
+          address: contractAddress,
+          liquidity_usd: liquidityUsd,
+          volume_5m: volume5m,
+          holders_count: holdersCount,
+          top_holder_pct: topHolderPct,
+          dev_wallet_pct: devWalletPct,
+          price_change_1h: priceChange1h,
+          rug_probability: rugProbability,
+          smart_wallet_signal: smartWalletSignal,
+          confidence_signal: confidenceSignal,
+        },
+        reasons: failedReasons,
+      };
+    };
+
     const guard = evaluatePreTradeGuard(buyCandidate);
     const canBuy = guard.allowed;
 
     if (buyCandidate && canBuy) {
+      const aiValidation = await evaluateDoctorAiValidation(buyCandidate);
+      if (!aiValidation.allowed) {
+        appendDoctorExecutionAudit({
+          action: "buy",
+          symbol: String(buyCandidate.symbol || "UNKNOWN"),
+          mint: String(buyCandidate.address || ""),
+          amount_sol: buyAmountSol,
+          expected_price_usd: Number(buyCandidate.price_usd || 0),
+          expected_notional_usd: Number((buyAmountSol * Number(buyCandidate.price_usd || 0)).toFixed(2)),
+          trigger,
+          reason: "ai_validation_gate",
+          status: "blocked",
+          block_reason: aiValidation.reason,
+          ai_validation: aiValidation,
+        });
+        doctorRuntime.decisionJournal.unshift({
+          token: String(buyCandidate.symbol || "UNKNOWN"),
+          address: String(buyCandidate.address || ""),
+          decision: "skip",
+          reason: "ai_validation_gate",
+          confidence: Number(buyCandidate.score || 0),
+          size_pct: 0,
+          strategy_mode: "autonomous",
+          ai_validation: aiValidation,
+          timestamp: nowIso(),
+        });
+        doctorRuntime.lastDecision = {
+          action: "skip",
+          reason: aiValidation.reason,
+          trigger,
+          at: nowIso(),
+          token: String(buyCandidate.symbol || "UNKNOWN"),
+          mint: String(buyCandidate.address || ""),
+          ai_validation: aiValidation,
+        };
+      } else {
       const tokenPriceUsd = resolveCurrentPriceUsd(buyCandidate, 0);
       const buyExecution = await executeDoctorOrder({
         action: "buy",
@@ -1765,7 +1976,9 @@ export async function registerRoutes(
         token: position.symbol,
         mint: position.address,
         confidence: Number(position.confidence || 0),
+        ai_validation: aiValidation,
       };
+      }
       }
     } else {
       doctorRuntime.lastDecision = { action: "skip", reason: guard.reason, trigger, at: nowIso() };
@@ -1955,6 +2168,8 @@ export async function registerRoutes(
       "take_profit_multiplier",
       "min_profit_pct",
       "max_open_positions",
+      "strategy_window_minutes",
+      "ai_min_signals_required",
       "cooldown_minutes_per_mint",
       "min_wallet_fee_buffer_sol",
       "live_sell_fraction_pct",
