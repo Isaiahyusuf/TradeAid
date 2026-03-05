@@ -289,7 +289,12 @@ export async function registerRoutes(
 
   const buildDexScoreFallback = async (contractAddress: string, chain: string) => {
     const requestedChain = normalizeDexChain(chain || "all");
-    const pairs = await getTokenPairs(contractAddress);
+    let pairs: any[] = [];
+    try {
+      pairs = await getTokenPairs(contractAddress);
+    } catch {
+      pairs = [];
+    }
     const filtered = pairs.filter((pair) => {
       const pairChain = normalizeDexChain(String(pair.chainId || ""));
       return requestedChain === "all" ? true : pairChain === requestedChain;
@@ -299,7 +304,37 @@ export async function registerRoutes(
     );
     const pair = ranked[0];
     if (!pair) {
-      return { error: "Token not found", eligible: false };
+      return {
+        contract_address: contractAddress,
+        chain: requestedChain === "all" ? "solana" : requestedChain,
+        symbol: "UNKNOWN",
+        name: "Unknown Token",
+        eligible: false,
+        eligibility_reason: "token_not_found",
+        risk_flags: ["NO_LIVE_PAIR_DATA"],
+        status: "indexing",
+        scores: {
+          rug_probability: 95,
+          liquidity_stability: 0,
+          holder_distribution: 0,
+          smart_wallet_signal: 0,
+          trade_confidence_index: 0,
+          rug_risk_score: 95,
+          opportunity_score: 0,
+        },
+        market_data: {
+          market_cap_usd: 0,
+          liquidity_usd: 0,
+          holder_count: 0,
+        },
+        source: {
+          provider: "dexscreener",
+          pair_address: "",
+          dex_id: "",
+          url: "",
+        },
+        scored_at: new Date().toISOString(),
+      };
     }
 
     const liquidityUsd = Number(pair.liquidity?.usd || 0);
