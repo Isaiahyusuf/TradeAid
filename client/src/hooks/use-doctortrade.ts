@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost } from "@/lib/api";
-import { useAuth } from "@/hooks/use-auth";
 
 const DOCTOR_STATUS_CACHE_KEY = "doctortrade:status:snapshot:v1";
 
@@ -128,8 +127,6 @@ export type DoctorStatus = {
 };
 
 export function useDoctorStatus() {
-  const { hasToken } = useAuth();
-
     // Cloud sync: always fetch from backend, no localStorage fallback
     const readCached = (): DoctorStatus | undefined => undefined;
 
@@ -146,7 +143,7 @@ export function useDoctorStatus() {
       return payload;
     },
     initialData: readCached,
-    enabled: hasToken,
+    enabled: true,
     placeholderData: (previousData) => previousData,
     staleTime: 5000,
     refetchInterval: 5000,
@@ -202,11 +199,10 @@ export type DoctorHealth = {
 };
 
 export function useDoctorHealth() {
-  const { hasToken } = useAuth();
   return useQuery({
     queryKey: ["doctortrade", "health"],
     queryFn: () => apiGet<DoctorHealth>("/api/doctor/health"),
-    enabled: hasToken,
+    enabled: true,
     staleTime: 30000,
     retry: 1,
   });
