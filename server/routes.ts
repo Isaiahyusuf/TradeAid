@@ -18,7 +18,7 @@ import { setupAuth, registerAuthRoutes, isAuthenticated, authStorage } from "./r
 import { registerScannerRoutes } from "./routes/scanner";
 import { startBackgroundScanner, scanHotTokens } from "./services/token-scanner";
 import { multichainScanner } from "./services/multichain-scanner";
-import { getNewPairs, getTokenPairs, getTokenPairsFast, pairToTokenData } from "./services/dexscreener";
+import { getNewPairs, getTokenPairs, getTokenPairsFast, getTokenPairsProjectInfo, pairToTokenData } from "./services/dexscreener";
 import { FREE_TIER_LIMITS, SUBSCRIPTION_PRICE_USD, SUPPORTED_PAYMENT_CHAINS } from "@shared/schema";
 import { cryptoPaymentService } from "./services/crypto-payment";
 import { fetchFreshPumpfunTokens } from "./services/fresh-token-service";
@@ -409,7 +409,7 @@ export async function registerRoutes(
 
   const buildDexProjectInfoFallback = async (contractAddress: string, chain: string) => {
     const requestedChain = normalizeDexChain(chain || "all");
-    const pairs = await getTokenPairs(contractAddress);
+    const pairs = await getTokenPairsProjectInfo(contractAddress);
     const filtered = pairs.filter((pair) => {
       const pairChain = normalizeDexChain(String(pair.chainId || ""));
       return requestedChain === "all" ? true : pairChain === requestedChain;
@@ -478,10 +478,15 @@ export async function registerRoutes(
 
       const controller = new AbortController();
       const isScoringRequest = targetPath.startsWith("/api/scoring/");
+      const isProjectInfoRequest = targetPath.startsWith("/api/tokens/project-info/");
       const bridgeTimeoutEnvRaw = isScoringRequest
         ? Number(process.env.BRIDGE_TIMEOUT_SCORING_MS || process.env.BRIDGE_TIMEOUT_MS || 3000)
+        : isProjectInfoRequest
+          ? Number(process.env.BRIDGE_TIMEOUT_PROJECT_INFO_MS || process.env.BRIDGE_TIMEOUT_MS || 2500)
         : Number(process.env.BRIDGE_TIMEOUT_MS || 12000);
-      const bridgeTimeoutEnv = Number.isFinite(bridgeTimeoutEnvRaw) ? bridgeTimeoutEnvRaw : (isScoringRequest ? 3000 : 12000);
+      const bridgeTimeoutEnv = Number.isFinite(bridgeTimeoutEnvRaw)
+        ? bridgeTimeoutEnvRaw
+        : (isScoringRequest ? 3000 : (isProjectInfoRequest ? 2500 : 12000));
       const bridgeTimeoutMs = Math.max(2000, bridgeTimeoutEnv);
       const timeout = setTimeout(() => controller.abort(), bridgeTimeoutMs);
 
@@ -3361,8 +3366,23 @@ export async function registerRoutes(
     }
   });
 
+  let tokenFeedResponseCache: { key: string; at: number; payload: TokenFeedResponse } | null = null;
+
   app.get("/api/tokens", async (req, res) => {
+    const tokenFeedCacheTtlMs = Math.max(1000, Number(process.env.TOKEN_FEED_CACHE_MS || 15000));
     const buildLocalTokenPayload = async (): Promise<TokenFeedResponse> => {
+      const cacheKey = JSON.stringify({
+        chain: String(req.query.chain || "solana").toLowerCase(),
+        new_only: String(req.query.new_only || "false").toLowerCase(),
+        max_age_hours: String(req.query.max_age_hours || ""),
+        min_age_minutes: String(req.query.min_age_minutes || ""),
+        max_age_minutes: String(req.query.max_age_minutes || ""),
+        limit: String(req.query.limit || "50"),
+      });
+      if (tokenFeedResponseCache && tokenFeedResponseCache.key === cacheKey && Date.now() - tokenFeedResponseCache.at < tokenFeedCacheTtlMs) {
+        return tokenFeedResponseCache.payload;
+      }
+
       const all = await storage.getScannedTokens();
       const now = Date.now();
 
@@ -3580,7 +3600,9 @@ export async function registerRoutes(
           } satisfies TokenFeedItem;
         });
 
-      return { tokens, count: tokens.length, total: tokens.length };
+      const payload: TokenFeedResponse = { tokens, count: tokens.length, total: tokens.length };
+      tokenFeedResponseCache = { key: cacheKey, at: Date.now(), payload };
+      return payload;
     };
 
     const preferLocalFreshFeed =
@@ -3665,6 +3687,10 @@ export async function registerRoutes(
 
   app.get("/api/tokens/project-info/:chain/:contract_address", async (req, res) => {
     const { chain, contract_address } = req.params;
+    const useBridge = String(process.env.TOKEN_PROJECT_INFO_USE_BRIDGE || "false").trim().toLowerCase() === "true";
+    if (!useBridge) {
+      return res.status(200).json(await buildDexProjectInfoFallback(contract_address, chain));
+    }
     return proxyToPythonApi(
       req,
       res,

@@ -1,6 +1,7 @@
 import type { InsertScannedToken } from "@shared/schema";
 
 const DEX_API_BASE = "https://api.dexscreener.com";
+const tokenPairsCache = new Map<string, { at: number; pairs: DexPair[] }>();
 
 function toNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
@@ -76,13 +77,31 @@ async function fetchWithRetry<T>(
       return await res.json();
     } catch (e) {
       if (i === retries - 1) {
-        console.error(`DexScreener API error: ${url}`, e);
+        const isAbort = e instanceof Error && (e.name === "AbortError" || /aborted/i.test(e.message || ""));
+        if (!isAbort) {
+          console.error(`DexScreener API error: ${url}`, e);
+        }
         return null;
       }
       await new Promise(r => setTimeout(r, retryDelayMs * (i + 1)));
     }
   }
   return null;
+}
+
+function getCachedPairs(tokenAddress: string, ttlMs: number): DexPair[] | null {
+  const key = String(tokenAddress || "").trim();
+  if (!key) return null;
+  const cached = tokenPairsCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.at > Math.max(1000, ttlMs)) return null;
+  return cached.pairs;
+}
+
+function setCachedPairs(tokenAddress: string, pairs: DexPair[]): void {
+  const key = String(tokenAddress || "").trim();
+  if (!key) return;
+  tokenPairsCache.set(key, { at: Date.now(), pairs });
 }
 
 export async function getLatestTokenProfiles(): Promise<TokenProfile[]> {
@@ -101,17 +120,41 @@ export async function getTopBoostedTokens(): Promise<TokenProfile[]> {
 }
 
 export async function getTokenPairs(tokenAddress: string): Promise<DexPair[]> {
+  const cacheMs = Number(process.env.DEX_PAIRS_CACHE_MS || 15000);
+  const cached = getCachedPairs(tokenAddress, cacheMs);
+  if (cached) return cached;
   const data = await fetchWithRetry<{ pairs: DexPair[] }>(`${DEX_API_BASE}/latest/dex/tokens/${tokenAddress}`);
-  return data?.pairs || [];
+  const pairs = data?.pairs || [];
+  setCachedPairs(tokenAddress, pairs);
+  return pairs;
 }
 
 export async function getTokenPairsFast(tokenAddress: string): Promise<DexPair[]> {
+  const cacheMs = Number(process.env.DEX_PAIRS_CACHE_MS || 15000);
+  const cached = getCachedPairs(tokenAddress, cacheMs);
+  if (cached) return cached;
   const data = await fetchWithRetry<{ pairs: DexPair[] }>(`${DEX_API_BASE}/latest/dex/tokens/${tokenAddress}`, {
     retries: 1,
     timeoutMs: Number(process.env.DEX_SCORE_TIMEOUT_MS || 2500),
     retryDelayMs: 250,
   });
-  return data?.pairs || [];
+  const pairs = data?.pairs || [];
+  setCachedPairs(tokenAddress, pairs);
+  return pairs;
+}
+
+export async function getTokenPairsProjectInfo(tokenAddress: string): Promise<DexPair[]> {
+  const cacheMs = Number(process.env.DEX_PAIRS_CACHE_MS || 15000);
+  const cached = getCachedPairs(tokenAddress, cacheMs);
+  if (cached) return cached;
+  const data = await fetchWithRetry<{ pairs: DexPair[] }>(`${DEX_API_BASE}/latest/dex/tokens/${tokenAddress}`, {
+    retries: 1,
+    timeoutMs: Number(process.env.DEX_PROJECT_INFO_TIMEOUT_MS || 2200),
+    retryDelayMs: 200,
+  });
+  const pairs = data?.pairs || [];
+  setCachedPairs(tokenAddress, pairs);
+  return pairs;
 }
 
 export function pickBestPair(pairs: DexPair[], preferredChain?: string): DexPair | null {
