@@ -29,6 +29,27 @@ import { getAutoTradeConfig, maybeTriggerAutoTrade } from "./services/auto-trade
 import { logStructured } from "./services/structured-logger";
 import OpenAI from "openai";
 
+const bs58Codec = (() => {
+  type Bs58Codec = {
+    encode: (data: Uint8Array) => string;
+    decode: (value: string) => Uint8Array;
+  };
+
+  const moduleValue = bs58 as unknown as {
+    encode?: Bs58Codec["encode"];
+    decode?: Bs58Codec["decode"];
+    default?: Partial<Bs58Codec>;
+  };
+
+  if (typeof moduleValue?.encode === "function" && typeof moduleValue?.decode === "function") {
+    return moduleValue as Bs58Codec;
+  }
+  if (typeof moduleValue?.default?.encode === "function" && typeof moduleValue?.default?.decode === "function") {
+    return moduleValue.default as Bs58Codec;
+  }
+  throw new Error("bs58 codec is not available");
+})();
+
 let openaiClient: OpenAI | null = null;
 
 function getOpenAI(): OpenAI {
@@ -837,7 +858,7 @@ export async function registerRoutes(
     }
 
     try {
-      const decoded = bs58.decode(trimmed);
+      const decoded = bs58Codec.decode(trimmed);
       if (decoded.length >= 32) return decoded;
     } catch {
     }
@@ -2071,7 +2092,7 @@ export async function registerRoutes(
     const keypair = Keypair.fromSeed(derived.key.slice(0, 32));
     return {
       address: keypair.publicKey.toBase58(),
-      privateKey: bs58.encode(keypair.secretKey),
+      privateKey: bs58Codec.encode(keypair.secretKey),
       mnemonic: normalized,
     };
   };
