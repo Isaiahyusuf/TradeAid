@@ -4,7 +4,7 @@ import {
   type InsertScannedToken, type InsertTrackedWallet, type InsertWalletAlert, type InsertTrendingCoin, type InsertSubscription, type InsertPaymentRecord,
   type ScannedToken, type TrackedWallet, type WalletAlert, type TrendingCoin, type Subscription, type UserUsage, type PaymentRecord
 } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 
 export interface IStorage {
   // RugShield
@@ -37,9 +37,28 @@ export interface IStorage {
   getPaymentByTxHash(txHash: string): Promise<PaymentRecord | undefined>;
   updatePaymentRecord(id: number, updates: Partial<InsertPaymentRecord & { status: string; verifiedAt: Date }>): Promise<PaymentRecord>;
   getUserPayments(userId: string): Promise<PaymentRecord[]>;
+
+  // App state (JSON key/value)
+  getAppState<T = unknown>(key: string): Promise<T | undefined>;
+  setAppState<T = unknown>(key: string, value: T): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
+  private appStateTableReady: Promise<void> | null = null;
+
+  private async ensureAppStateTable(): Promise<void> {
+    if (!this.appStateTableReady) {
+      this.appStateTableReady = db.execute(sql`
+        CREATE TABLE IF NOT EXISTS app_state (
+          key TEXT PRIMARY KEY,
+          value JSONB NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `).then(() => undefined);
+    }
+    await this.appStateTableReady;
+  }
+
   // RugShield
   async createScannedToken(token: InsertScannedToken): Promise<ScannedToken> {
     const [newItem] = await db.insert(scannedTokens).values(token).returning();
@@ -185,6 +204,25 @@ export class DatabaseStorage implements IStorage {
 
   async getUserPayments(userId: string): Promise<PaymentRecord[]> {
     return await db.select().from(paymentRecords).where(eq(paymentRecords.userId, userId)).orderBy(desc(paymentRecords.createdAt));
+  }
+
+  async getAppState<T = unknown>(key: string): Promise<T | undefined> {
+    await this.ensureAppStateTable();
+    const result = await db.execute(sql`SELECT value FROM app_state WHERE key = ${key} LIMIT 1`);
+    const rows = (result as any)?.rows as Array<{ value?: T }> | undefined;
+    const value = rows?.[0]?.value;
+    return value === undefined ? undefined : value;
+  }
+
+  async setAppState<T = unknown>(key: string, value: T): Promise<void> {
+    await this.ensureAppStateTable();
+    const serialized = JSON.stringify(value ?? null);
+    await db.execute(sql`
+      INSERT INTO app_state (key, value, updated_at)
+      VALUES (${key}, ${serialized}::jsonb, NOW())
+      ON CONFLICT (key)
+      DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    `);
   }
 }
 

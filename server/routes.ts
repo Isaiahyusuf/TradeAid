@@ -2127,7 +2127,7 @@ export async function registerRoutes(
     transactions: [] as Array<Record<string, any>>,
   };
 
-  const assistantStateFile = resolve(doctorStateDir, "assistant.runtime.json");
+  const assistantStateKey = "assistant.runtime.v1";
 
   const resetAssistantRuntime = () => {
     assistantRuntime.wallet.has_wallet = false;
@@ -2156,16 +2156,17 @@ export async function registerRoutes(
 
   const persistAssistantRuntime = async () => {
     try {
-      await mkdir(doctorStateDir, { recursive: true });
-      await writeFile(assistantStateFile, JSON.stringify(assistantRuntime, null, 2), "utf8");
+      await storage.setAppState(assistantStateKey, assistantRuntime);
     } catch {
     }
   };
 
   const loadAssistantRuntime = async () => {
     try {
-      const text = await readFile(assistantStateFile, "utf8");
-      const loaded = JSON.parse(text) as Record<string, any>;
+      const loaded = await storage.getAppState<Record<string, any>>(assistantStateKey);
+      if (!loaded || typeof loaded !== "object") {
+        return;
+      }
 
       const wallet = loaded.wallet as Record<string, any> | undefined;
       if (wallet && typeof wallet === "object") {
