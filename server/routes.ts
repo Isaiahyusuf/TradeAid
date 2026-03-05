@@ -3128,7 +3128,11 @@ export async function registerRoutes(
       return { tokens, count: tokens.length, total: tokens.length };
     };
 
-    if (!pythonApiBase || isBridgeLoopbackForRequest(req)) {
+    const preferLocalFreshFeed =
+      String(req.query.new_only || "false").toLowerCase() === "true" ||
+      (Number.isFinite(Number(req.query.max_age_hours || 0)) && Number(req.query.max_age_hours || 0) > 0);
+
+    if (preferLocalFreshFeed || !pythonApiBase || isBridgeLoopbackForRequest(req)) {
       observability.bridgeFallbacks += 1;
       return res.json(await buildLocalTokenPayload());
     }
