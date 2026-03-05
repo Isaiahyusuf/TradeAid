@@ -410,6 +410,63 @@ export async function registerRoutes(
     };
   };
 
+  const buildOpenAiScoreExplanation = async (scorePayload: Record<string, any>) => {
+    const apiKey = String(process.env.AI_INTEGRATIONS_OPENAI_API_KEY || "").trim();
+    const enabled = String(process.env.SCORE_TOKEN_OPENAI_ENABLED || "true").trim().toLowerCase() !== "false";
+    if (!enabled || !apiKey) {
+      return {
+        summary: `${String(scorePayload.symbol || "Token")} scored ${Number(scorePayload?.scores?.trade_confidence_index || 0).toFixed(1)} confidence with rug risk ${Number(scorePayload?.scores?.rug_probability || 0).toFixed(1)}%.`,
+        key_points: [
+          `Liquidity: $${Number(scorePayload?.market_data?.liquidity_usd || 0).toLocaleString()}`,
+          `Confidence: ${Number(scorePayload?.scores?.trade_confidence_index || 0).toFixed(1)}%`,
+          `Rug Risk: ${Number(scorePayload?.scores?.rug_probability || 0).toFixed(1)}%`,
+        ],
+        confidence_adjustment: 0,
+        source: "local-fallback",
+      };
+    }
+
+    try {
+      const prompt = [
+        "You are a crypto trading risk assistant for meme-token sniping.",
+        "Analyze this token scoring payload and return concise plain-English guidance.",
+        "Return strict JSON with keys: summary (string), key_points (string[] up to 4), confidence_adjustment (number from -10 to 10).",
+        "Do not include markdown.",
+        JSON.stringify(scorePayload),
+      ].join("\n");
+
+      const completion = await getOpenAI().chat.completions.create({
+        model: String(process.env.AI_INTEGRATIONS_OPENAI_MODEL || "gpt-4.1-mini"),
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+      });
+
+      const parsed = JSON.parse(String(completion.choices?.[0]?.message?.content || "{}"));
+      const confidenceAdjustment = Math.max(-10, Math.min(10, Number(parsed?.confidence_adjustment || 0)));
+      const keyPoints = Array.isArray(parsed?.key_points)
+        ? parsed.key_points.map((item: unknown) => String(item || "").trim()).filter(Boolean).slice(0, 4)
+        : [];
+
+      return {
+        summary: String(parsed?.summary || "AI analysis unavailable.").trim() || "AI analysis unavailable.",
+        key_points: keyPoints,
+        confidence_adjustment: confidenceAdjustment,
+        source: "openai",
+      };
+    } catch {
+      return {
+        summary: `${String(scorePayload.symbol || "Token")} has ${Number(scorePayload?.scores?.trade_confidence_index || 0).toFixed(1)} confidence and ${Number(scorePayload?.scores?.rug_probability || 0).toFixed(1)} rug probability.`,
+        key_points: [
+          `DEX: ${String(scorePayload?.source?.dex_id || "unknown")}`,
+          `Liquidity: $${Number(scorePayload?.market_data?.liquidity_usd || 0).toLocaleString()}`,
+          `Flags: ${(Array.isArray(scorePayload?.risk_flags) ? scorePayload.risk_flags : []).join(", ") || "none"}`,
+        ],
+        confidence_adjustment: 0,
+        source: "local-fallback",
+      };
+    }
+  };
+
   const buildDexProjectInfoFallback = async (contractAddress: string, chain: string) => {
     const requestedChain = normalizeDexChain(chain || "all");
     const pairs = await getTokenPairsProjectInfo(contractAddress);
@@ -789,6 +846,42 @@ export async function registerRoutes(
       }
     })();
 
+    const dexscreenerTokens = await (async () => {
+      try {
+        const pairs = await getNewPairs("solana", 6);
+        return pairs
+          .slice(0, 160)
+          .map((pair) => {
+            const token = pairToTokenData(pair);
+            const createdAtMs = Number(pair.pairCreatedAt || 0);
+            const createdAt = createdAtMs > 0 ? new Date(createdAtMs) : new Date();
+            const firstSeenAt = Number.isNaN(createdAt.getTime()) ? nowIso() : createdAt.toISOString();
+            const launchSource = normalizeLaunchSource(String(token.dexId || pair.dexId || "dexscreener"));
+            return {
+              mint: String(token.address || pair.baseToken?.address || "").trim(),
+              symbol: String(token.symbol || pair.baseToken?.symbol || "UNKNOWN"),
+              name: String(token.name || pair.baseToken?.name || "Unknown"),
+              source: "dexscreener",
+              first_seen_at: firstSeenAt,
+              liquidity_usd: Number(token.liquidity || pair.liquidity?.usd || 0),
+              market_cap_usd: Number(token.marketCap || pair.marketCap || pair.fdv || 0),
+              volume_24h: Number(token.volume24h || pair.volume?.h24 || 0),
+              volume_5m: Number(pair.volume?.m5 || 0),
+              holders_count: 0,
+              top_holder_pct: 0,
+              dev_wallet_pct: 0,
+              price_change_1h: Number(pair.priceChange?.h1 || 0),
+              price_usd: Number(token.priceUsd || pair.priceUsd || 0),
+              liquidity_locked: launchSource === "raydium" || launchSource === "bonk",
+              launch_source: launchSource,
+            };
+          })
+          .filter((token) => token.mint);
+      } catch {
+        return [] as Array<Record<string, any>>;
+      }
+    })();
+
     const raydiumTokens = await (async () => {
       try {
         const pools = await refreshRaydiumPools();
@@ -826,7 +919,7 @@ export async function registerRoutes(
     })();
 
     const byMint = new Map<string, Record<string, any>>();
-    for (const token of [...scannedTokens, ...apifyTokens, ...raydiumTokens]) {
+    for (const token of [...scannedTokens, ...apifyTokens, ...raydiumTokens, ...dexscreenerTokens]) {
       const mint = String(token.mint || "").trim();
       if (!mint) continue;
       const prev = byMint.get(mint);
@@ -3534,16 +3627,49 @@ export async function registerRoutes(
 
   app.post("/api/ai/ask", (req, res) => {
     const question = String(req.body?.question || "").trim();
-    return res.json({
-      assistant: {
-        answer: question ? `Assistant response: ${question}` : "Ask a specific trading question to get guidance.",
-        key_points: [
-          "Prefer low-rug, high-liquidity tokens",
-          "Use strict risk limits before switching to live mode",
-          "Review wallet backup and consent status regularly",
-        ],
-        source: "local-fallback",
-      },
+    const apiKey = String(process.env.AI_INTEGRATIONS_OPENAI_API_KEY || "").trim();
+    if (!apiKey) {
+      return res.json({
+        assistant: {
+          answer: question ? `Assistant response: ${question}` : "Ask a specific trading question to get guidance.",
+          key_points: [
+            "Prefer low-rug, high-liquidity tokens",
+            "Use strict risk limits before switching to live mode",
+            "Review wallet backup and consent status regularly",
+          ],
+          source: "local-fallback",
+        },
+      });
+    }
+
+    return getOpenAI().chat.completions.create({
+      model: String(process.env.AI_INTEGRATIONS_OPENAI_MODEL || "gpt-4.1-mini"),
+      messages: [
+        { role: "system", content: "You are TradeAid AI assistant. Give practical, concise trading guidance with risk warnings." },
+        { role: "user", content: question || "Give a short update on how to safely run meme sniping." },
+      ],
+    }).then((completion) => {
+      const answer = String(completion.choices?.[0]?.message?.content || "").trim() || "No response generated.";
+      const keyPoints = answer
+        .split(/\n|\.|;|\-/g)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .slice(0, 4);
+      return res.json({
+        assistant: {
+          answer,
+          key_points: keyPoints,
+          source: "openai",
+        },
+      });
+    }).catch(() => {
+      return res.json({
+        assistant: {
+          answer: question ? `Assistant response: ${question}` : "Ask a specific trading question to get guidance.",
+          key_points: ["AI temporarily unavailable; using fallback guidance."],
+          source: "local-fallback",
+        },
+      });
     });
   });
 
@@ -3568,7 +3694,18 @@ export async function registerRoutes(
     }
 
     if (!useBridge) {
-      return res.status(200).json(await buildDexScoreFallback(contractAddress, chain));
+      const score = await buildDexScoreFallback(contractAddress, chain);
+      const aiExplanation = await buildOpenAiScoreExplanation(score);
+      const baseConfidence = Number(score?.scores?.trade_confidence_index || 0);
+      const adjustedConfidence = Math.max(0, Math.min(100, baseConfidence + Number(aiExplanation.confidence_adjustment || 0)));
+      return res.status(200).json({
+        ...score,
+        scores: {
+          ...(score.scores || {}),
+          trade_confidence_index: Number(adjustedConfidence.toFixed(2)),
+        },
+        ai_explanation: aiExplanation,
+      });
     }
 
     return proxyToPythonApi(req, res, "/api/scoring/score-token", async () =>
