@@ -723,6 +723,7 @@ export async function registerRoutes(
       .map((token) => {
         const createdAt = token.createdAt ? new Date(token.createdAt) : new Date();
         const firstSeenAt = Number.isNaN(createdAt.getTime()) ? nowIso() : createdAt.toISOString();
+        const launchSource = normalizeLaunchSource(String((token as any).dexId || "scanner"));
         return {
           mint: String(token.address || "").trim(),
           symbol: String(token.symbol || "UNKNOWN"),
@@ -738,8 +739,8 @@ export async function registerRoutes(
           dev_wallet_pct: Number((token as any).devWalletPercentage || 0),
           price_change_1h: Number(token.priceChange1h || 0),
           price_usd: Number(token.priceUsd || 0),
-          liquidity_locked: Boolean((token as any).isLiquidityLocked),
-          launch_source: normalizeLaunchSource(String((token as any).dexId || "scanner")),
+          liquidity_locked: Boolean((token as any).isLiquidityLocked) || launchSource === "raydium" || launchSource === "bonk",
+          launch_source: launchSource,
         };
       })
       .filter((token) => token.mint);
@@ -754,6 +755,7 @@ export async function registerRoutes(
             const createdAt = createdAtRaw ? new Date(createdAtRaw) : new Date();
             const firstSeenAt = Number.isNaN(createdAt.getTime()) ? nowIso() : createdAt.toISOString();
             const volume24h = Number(raw.volume24h || raw.volume_24h || 0);
+            const launchSource = normalizeLaunchSource(String(raw.sourcePlatform || raw.source_platform || token.eventType || "pumpfun"));
             return {
               mint: String(token.mintAddress || "").trim(),
               symbol: String(token.symbol || token.name || "UNKNOWN"),
@@ -769,8 +771,8 @@ export async function registerRoutes(
               dev_wallet_pct: Number(raw.devWalletPercentage || raw.dev_wallet_pct || 0),
               price_change_1h: Number(raw.priceChange1h || raw.price_change_1h || 0),
               price_usd: Number(raw.priceUsd || raw.price_usd || raw.usdPrice || 0),
-              liquidity_locked: Boolean(raw.isLiquidityLocked || raw.liquidity_locked || raw.lpLocked),
-              launch_source: normalizeLaunchSource(String(raw.sourcePlatform || raw.source_platform || token.eventType || "pumpfun")),
+              liquidity_locked: Boolean(raw.isLiquidityLocked || raw.liquidity_locked || raw.lpLocked) || launchSource === "raydium" || launchSource === "bonk",
+              launch_source: launchSource,
             };
           })
           .filter((token) => token.mint);
