@@ -5,6 +5,13 @@ const DEFAULT_PUMPFUN_ACTOR_ID = "mscrpt/pump-fun-real-time-monitor";
 
 const terminalStatuses = new Set(["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"]);
 
+function extractRunIdFromUrl(runUrl: string): string {
+  const trimmed = String(runUrl || "").trim();
+  if (!trimmed) return "";
+  const match = trimmed.match(/\/actor-runs\/([A-Za-z0-9]+)(?:\?|$)/i);
+  return (match?.[1] || "").trim();
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -45,42 +52,57 @@ export type ApifyWorkflowResult = {
 export async function runApifyWorkflowOnce(limit: number = 100): Promise<ApifyWorkflowResult> {
   const apifyToken = String(process.env.APIFY_TOKEN || "").trim();
   const actorId = String(process.env.APIFY_PUMPFUN_ACTOR_ID || DEFAULT_PUMPFUN_ACTOR_ID).trim();
+  const explicitRunId = String(process.env.APIFY_RUN_ID || "").trim();
+  const explicitRunUrl = String(process.env.APIFY_RUN_URL || "").trim();
+  const replayRunId = explicitRunId || extractRunIdFromUrl(explicitRunUrl);
 
   if (!apifyToken) {
     throw new Error("APIFY_TOKEN is missing");
   }
 
-  const startUrl = `${APIFY_API_BASE}/acts/${encodeURIComponent(actorId)}/runs?token=${encodeURIComponent(apifyToken)}`;
-  const actorInput = parseActorInput();
+  let runId = replayRunId;
+  let finalStatus = "RUNNING";
+  let datasetId = "";
 
-  const startResponse = await fetch(startUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(actorInput),
-  });
-
-  if (!startResponse.ok) {
-    const body = await startResponse.text();
-    logStructured("error", "apify.workflow.start_failed", {
-      actorId,
-      status: startResponse.status,
-      body: body.slice(0, 400),
-    });
-    throw new Error(`Failed to start Apify actor run (${startResponse.status})`);
-  }
-
-  const startPayload = (await startResponse.json()) as { data?: { id?: string; status?: string; defaultDatasetId?: string } };
-  const runId = String(startPayload?.data?.id || "").trim();
   if (!runId) {
-    throw new Error("Apify actor run did not return run id");
+    const startUrl = `${APIFY_API_BASE}/acts/${encodeURIComponent(actorId)}/runs?token=${encodeURIComponent(apifyToken)}`;
+    const actorInput = parseActorInput();
+
+    const startResponse = await fetch(startUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(actorInput),
+    });
+
+    if (!startResponse.ok) {
+      const body = await startResponse.text();
+      logStructured("error", "apify.workflow.start_failed", {
+        actorId,
+        status: startResponse.status,
+        body: body.slice(0, 400),
+      });
+      throw new Error(`Failed to start Apify actor run (${startResponse.status})`);
+    }
+
+    const startPayload = (await startResponse.json()) as { data?: { id?: string; status?: string; defaultDatasetId?: string } };
+    runId = String(startPayload?.data?.id || "").trim();
+    if (!runId) {
+      throw new Error("Apify actor run did not return run id");
+    }
+
+    finalStatus = String(startPayload?.data?.status || "RUNNING").trim().toUpperCase();
+    datasetId = String(startPayload?.data?.defaultDatasetId || "").trim();
+  } else {
+    logStructured("info", "apify.workflow.replay_mode", { actorId, runId });
   }
 
   const pollIntervalMs = Math.max(2_000, Number(process.env.APIFY_RUN_POLL_INTERVAL_MS || 5_000));
   const timeoutMs = Math.max(30_000, Number(process.env.APIFY_RUN_TIMEOUT_MS || 180_000));
   const startedAt = Date.now();
 
-  let finalStatus = String(startPayload?.data?.status || "RUNNING").trim().toUpperCase();
-  let datasetId = String(startPayload?.data?.defaultDatasetId || "").trim();
+  if (replayRunId && runId) {
+    finalStatus = "RUNNING";
+  }
 
   while (!terminalStatuses.has(finalStatus)) {
     if (Date.now() - startedAt > timeoutMs) {
