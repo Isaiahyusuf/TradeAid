@@ -44,7 +44,7 @@ function toNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function detectLiquidityLocked(input: Record<string, unknown>): boolean {
+function detectLiquidityLocked(input: Record<string, unknown>): boolean | null {
   const direct = [
     input.liquidityLocked,
     input.liquidity_locked,
@@ -71,7 +71,7 @@ function detectLiquidityLocked(input: Record<string, unknown>): boolean {
     return lpLockPct >= 50;
   }
 
-  return false;
+  return null;
 }
 
 function parseRows(payload: any): any[] {
@@ -90,11 +90,21 @@ function mapPool(row: Record<string, unknown>): RaydiumPoolSnapshot | null {
   if (!poolAddress || !baseMint || !quoteMint) return null;
 
   const createdAtRaw = String(row.poolOpenTime || row.createdAt || row.created_at || row.openTime || "").trim();
-  const createdAtDate = createdAtRaw ? new Date(Number.isFinite(Number(createdAtRaw)) ? Number(createdAtRaw) : createdAtRaw) : new Date();
+  const createdAtDate = (() => {
+    if (!createdAtRaw) return new Date();
+    const numeric = Number(createdAtRaw);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      const epochMs = numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+      return new Date(epochMs);
+    }
+    return new Date(createdAtRaw);
+  })();
   const createdAtIso = Number.isNaN(createdAtDate.getTime()) ? new Date().toISOString() : createdAtDate.toISOString();
 
   const sourceRaw = String(row.launchpad || row.source || row.dexId || row.dex_id || row.platform || "");
   const launchSource = normalizeSource(sourceRaw || "raydium");
+
+  const lockState = detectLiquidityLocked(row);
 
   return {
     poolAddress,
@@ -107,7 +117,7 @@ function mapPool(row: Record<string, unknown>): RaydiumPoolSnapshot | null {
     volume24hUsd: toNumber(row.volume24h ?? row.volume_24h ?? (row as any)?.day?.volume ?? row.volume),
     topHoldersPct: toNumber(row.topHoldersPct ?? row.top_holders_pct ?? row.topHolderPct ?? row.top_holder_pct),
     devWalletPct: toNumber(row.devWalletPct ?? row.dev_wallet_pct ?? row.devPct ?? row.dev_pct),
-    liquidityLocked: detectLiquidityLocked(row),
+    liquidityLocked: lockState ?? (launchSource === "raydium" || launchSource === "bonk"),
     launchSource,
     createdAtIso,
   };
