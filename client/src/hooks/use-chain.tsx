@@ -1,17 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
-export const SUPPORTED_CHAINS = ["all", "solana", "ethereum", "bsc", "base", "arbitrum", "avalanche", "polygon"] as const;
-export type AppChain = (typeof SUPPORTED_CHAINS)[number];
+export const SUPPORTED_CHAINS = ["solana"] as const;
+export type AppChain = "solana" | "all";
 
 const CHAIN_LABELS: Record<AppChain, string> = {
   all: "All Chains",
   solana: "Solana",
-  ethereum: "Ethereum",
-  bsc: "BNB Chain",
-  base: "Base",
-  arbitrum: "Arbitrum",
-  avalanche: "Avalanche",
-  polygon: "Polygon",
 };
 
 type ChainContextValue = {
@@ -29,7 +23,7 @@ function normalizeChain(value: string | null | undefined): AppChain {
   if ((SUPPORTED_CHAINS as readonly string[]).includes(normalized)) {
     return normalized as AppChain;
   }
-  return "all";
+  return "solana";
 }
 
 export function ChainProvider({ children }: { children: ReactNode }) {

@@ -9,11 +9,6 @@ import { Loader2, Search } from "lucide-react";
 
 const SUPPORTED_CHAINS = [
   { value: "solana", label: "Solana" },
-  { value: "ethereum", label: "Ethereum" },
-  { value: "bsc", label: "BSC" },
-  { value: "base", label: "Base" },
-  { value: "arbitrum", label: "Arbitrum" },
-  { value: "polygon", label: "Polygon" },
 ];
 
 export function TokenScanner() {

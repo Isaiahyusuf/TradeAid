@@ -7,7 +7,6 @@ import { SafeBuyCard } from "@/components/safe-buy/SafeBuyCard";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { useSafeBuy, type SafeBuyItem } from "@/hooks/use-safe-buy";
@@ -27,16 +26,10 @@ export default function SafeBuy() {
   const queryClient = useQueryClient();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chainFilter, setChainFilter] = useState<string>(chain);
-  const [customChains, setCustomChains] = useState("solana,ethereum");
   const [draftChainFilter, setDraftChainFilter] = useState<string>(chain);
-  const [draftCustomChains, setDraftCustomChains] = useState("solana,ethereum");
-  const parsedCustomChains = customChains
-    .split(",")
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
   const { data, isLoading } = useSafeBuy(20, {
     chain: chainFilter,
-    chains: parsedCustomChains,
+    chains: ["solana"],
   });
 
   useScannerStream((event) => {
@@ -67,7 +60,6 @@ export default function SafeBuy() {
 
   const applySafeBuySettings = () => {
     setChainFilter(draftChainFilter);
-    setCustomChains(draftCustomChains);
     if ((SUPPORTED_CHAINS as readonly string[]).includes(draftChainFilter)) {
       setChain(draftChainFilter as AppChain);
     }
@@ -84,12 +76,12 @@ export default function SafeBuy() {
               🔒 Safe Buy
             </h1>
             <p className="text-muted-foreground">
-              AI-filtered multi-chain early tokens with strict safety logic and 30s live refresh.
+              AI-filtered Solana early tokens with strict safety logic and 30s live refresh.
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="outline" className="solana-badge">Auto Refresh 30s</Badge>
-            <Badge variant="outline" className="uppercase">{chainFilter === "all" || chainFilter === "custom" ? chainFilter : chain}</Badge>
+            <Badge variant="outline" className="uppercase">{chain}</Badge>
             <Badge variant="outline" className="border-accent/30 text-accent">Min Safety 50</Badge>
             <Badge variant="outline">Risk Low/Medium</Badge>
           </div>
@@ -99,12 +91,12 @@ export default function SafeBuy() {
           <DialogContent className="max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <SettingsMenuCard
               title="Safe Buy Settings"
-              description="Adjust chain scope and custom chain presets. Assistant Trade is only for Solana tokens. Other chains require manual buy."
+              description="Adjust scanner scope. Safe Buy is Solana-only."
               open={settingsOpen}
               onToggle={() => setSettingsOpen(false)}
             >
               <div className="min-h-[120px] max-h-[60vh] overflow-y-auto pr-2">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3">
                   <Select
                     value={draftChainFilter}
                     onValueChange={(value) => setDraftChainFilter(value)}
@@ -113,23 +105,9 @@ export default function SafeBuy() {
                       <SelectValue placeholder="Select chain scope" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Chains</SelectItem>
                       <SelectItem value="solana">Solana</SelectItem>
-                      <SelectItem value="ethereum">Ethereum</SelectItem>
-                      <SelectItem value="bsc">BSC</SelectItem>
-                      <SelectItem value="base">Base</SelectItem>
-                      <SelectItem value="arbitrum">Arbitrum</SelectItem>
-                      <SelectItem value="avalanche">Avalanche</SelectItem>
-                      <SelectItem value="polygon">Polygon</SelectItem>
-                      <SelectItem value="custom">Custom (comma separated)</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Input
-                    value={draftCustomChains}
-                    onChange={(event) => setDraftCustomChains(event.target.value)}
-                    placeholder="solana,ethereum,bsc"
-                    disabled={draftChainFilter !== "custom"}
-                  />
                 </div>
                 <div className="mt-3 flex justify-end">
                   <Button variant="outline" onClick={applySafeBuySettings}>Apply Settings</Button>

@@ -36,12 +36,12 @@ import {
   useTransferAssistantWallet,
 } from "@/hooks/use-ai-assistant";
 
-type SupportedWalletChain = Exclude<(typeof SUPPORTED_CHAINS)[number], "all">;
+type SupportedWalletChain = (typeof SUPPORTED_CHAINS)[number];
 
 export default function WalletPage() {
   const { toast } = useToast();
   const [location, setLocation] = useLocation();
-  const enabledChains = SUPPORTED_CHAINS.filter((item) => item !== "all") as SupportedWalletChain[];
+  const enabledChains = [...SUPPORTED_CHAINS] as SupportedWalletChain[];
   const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
   const returnTo = String(searchParams.get("returnTo") || "").trim();
   const walletAction = String(searchParams.get("action") || "").trim().toLowerCase();
@@ -562,10 +562,10 @@ export default function WalletPage() {
             <WalletIcon className="w-8 h-8 text-primary" />
             <span className="doctorstrange-font text-gradient">Wallet</span>
           </h1>
-          <p className="text-muted-foreground">Professional multi-chain wallet with live chain prices, send/receive actions, and secure key controls.</p>
+          <p className="text-muted-foreground">Professional Solana wallet with live pricing, send/receive actions, and secure key controls.</p>
           <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="outline" className="solana-badge">Master Recovery Phrase</Badge>
-            <Badge variant="outline">Multi-chain Accounts</Badge>
+            <Badge variant="outline">Solana Account</Badge>
             <Badge variant="outline">Private Key Export</Badge>
           </div>
         </div>
@@ -608,7 +608,7 @@ export default function WalletPage() {
           <TabsContent value="assets" className="space-y-3">
             <Card className="solana-card">
               <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2"><WalletIcon className="w-4 h-4" />Multi-Chain Wallets</CardTitle>
+                <CardTitle className="text-base flex items-center gap-2"><WalletIcon className="w-4 h-4" />Solana Wallet</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 {enabledChains.map((chainName) => {

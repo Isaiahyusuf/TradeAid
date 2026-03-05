@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import type { Server } from "http";
-import { randomBytes, randomUUID } from "crypto";
+import { randomUUID } from "crypto";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { resolve } from "path";
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, VersionedTransaction } from "@solana/web3.js";
@@ -27,6 +27,9 @@ import { enrichTokenWithHelius } from "./services/helius-enrichment-service";
 import { scoreFreshToken } from "./services/token-scoring-engine";
 import { getAutoTradeConfig, maybeTriggerAutoTrade } from "./services/auto-trade-hook";
 import { logStructured } from "./services/structured-logger";
+import { getHeliusRpcUrl, getSolanaConnection, getTokenMintAuthorityInfo, getTokenMintDecimals } from "./services/solana-connection";
+import { BONK_MINT, SOL_MINT, detectSupportedBaseMint, refreshRaydiumPools, startRaydiumPoolFetcher } from "./services/raydium-pools";
+import { fetchRaydiumQuote, fetchRaydiumSwapPayload, getDoctorTradeBaseAssetMint } from "./services/raydium-swap";
 import OpenAI from "openai";
 
 const bs58Codec = (() => {
@@ -557,7 +560,10 @@ export async function registerRoutes(
       min_profit_pct: 12,
       stop_loss_pct: 6,
       trailing_stop_pct: 10,
-      min_liquidity_usd: 20000,
+      min_liquidity_usd: 10000,
+      min_market_cap_usd: 15000,
+      min_volume_24h_usd: 12000,
+      min_token_age_minutes: 15,
       max_slippage_pct: 4,
       max_spread_pct: 3,
       daily_loss_limit_usd: 600,
@@ -566,7 +572,7 @@ export async function registerRoutes(
       max_hold_minutes: 180,
       min_momentum_profit_pct: 4,
       quality_min_volume_spike_pct: 12,
-      quality_max_top_holder_pct: 35,
+      quality_max_top_holder_pct: 24,
     },
     execution: {
       mode: "paper" as "paper" | "live",
@@ -668,6 +674,37 @@ export async function registerRoutes(
   let doctorCycleRunning = false;
   let doctorCycleTimer: NodeJS.Timeout | null = null;
   let doctorEarlyScoredCache: { at: number; tokens: Array<Record<string, any>> } | null = null;
+  const doctorTradeLogStateKey = "doctortrade.executions.v1";
+
+  const normalizeLaunchSource = (value: string) => {
+    const normalized = String(value || "").toLowerCase();
+    if (normalized.includes("pump")) return "pumpfun";
+    if (normalized.includes("ray")) return "raydium";
+    if (normalized.includes("bonk")) return "bonk";
+    return "unknown";
+  };
+
+  const getAllowedLaunchSources = () => {
+    const configured = String(process.env.DOCTORTRADE_ALLOWED_LAUNCH_SOURCES || "pumpfun,raydium,bonk")
+      .split(",")
+      .map((item) => normalizeLaunchSource(item))
+      .filter((item) => item !== "unknown");
+    return new Set(configured.length > 0 ? configured : ["pumpfun", "raydium", "bonk"]);
+  };
+
+  const appendDoctorTradeLog = async (entry: Record<string, any>) => {
+    try {
+      const current = await storage.getAppState<Array<Record<string, any>>>(doctorTradeLogStateKey);
+      const rows = Array.isArray(current) ? current.slice(0, 499) : [];
+      rows.unshift({
+        id: `trade_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        created_at: nowIso(),
+        ...entry,
+      });
+      await storage.setAppState(doctorTradeLogStateKey, rows);
+    } catch {
+    }
+  };
 
   const getSolanaEarlyScoredTokens = async (windowMinutes = 120, limit = 200) => {
     const nowMs = Date.now();
@@ -694,11 +731,15 @@ export async function registerRoutes(
           first_seen_at: firstSeenAt,
           liquidity_usd: Number(token.liquidity || 0),
           market_cap_usd: Number(token.marketCap || 0),
+          volume_24h: Number(token.volume24h || 0),
           volume_5m: Number((Number(token.volume24h || 0) / 288).toFixed(2)),
           holders_count: Number((token as any).holdersCount || (token as any).holders || 0),
           top_holder_pct: Number((token as any).topHoldersPercentage || (token as any).topHolderPct || 0),
+          dev_wallet_pct: Number((token as any).devWalletPercentage || 0),
           price_change_1h: Number(token.priceChange1h || 0),
           price_usd: Number(token.priceUsd || 0),
+          liquidity_locked: Boolean((token as any).isLiquidityLocked),
+          launch_source: normalizeLaunchSource(String((token as any).dexId || "scanner")),
         };
       })
       .filter((token) => token.mint);
@@ -721,11 +762,15 @@ export async function registerRoutes(
               first_seen_at: firstSeenAt,
               liquidity_usd: Number(token.liquidityUsd || raw.liquidityUsd || raw.liquidity_usd || raw.liquidity || 0),
               market_cap_usd: Number(raw.marketCapUsd || raw.market_cap_usd || raw.marketCap || 0),
+              volume_24h: volume24h,
               volume_5m: Number((volume24h / 288).toFixed(2)),
               holders_count: Number(raw.holdersCount || raw.holder_count || 0),
               top_holder_pct: Number(raw.topHoldersPercentage || raw.top_holder_pct || 0),
+              dev_wallet_pct: Number(raw.devWalletPercentage || raw.dev_wallet_pct || 0),
               price_change_1h: Number(raw.priceChange1h || raw.price_change_1h || 0),
               price_usd: Number(raw.priceUsd || raw.price_usd || raw.usdPrice || 0),
+              liquidity_locked: Boolean(raw.isLiquidityLocked || raw.liquidity_locked || raw.lpLocked),
+              launch_source: normalizeLaunchSource(String(raw.sourcePlatform || raw.source_platform || token.eventType || "pumpfun")),
             };
           })
           .filter((token) => token.mint);
@@ -734,8 +779,44 @@ export async function registerRoutes(
       }
     })();
 
+    const raydiumTokens = await (async () => {
+      try {
+        const pools = await refreshRaydiumPools();
+        return pools
+          .map((pool) => {
+            const baseRoute = detectSupportedBaseMint(pool);
+            if (!baseRoute) return null;
+            const createdAt = new Date(pool.createdAtIso);
+            const firstSeenAt = Number.isNaN(createdAt.getTime()) ? nowIso() : createdAt.toISOString();
+            return {
+              mint: String(baseRoute.tokenMint || "").trim(),
+              symbol: "UNKNOWN",
+              name: "Raydium Pool Token",
+              source: "raydium",
+              first_seen_at: firstSeenAt,
+              liquidity_usd: Number(pool.liquidityUsd || 0),
+              market_cap_usd: Number(pool.marketCapUsd || 0),
+              volume_24h: Number(pool.volume24hUsd || 0),
+              volume_5m: Number((Number(pool.volume24hUsd || 0) / 288).toFixed(2)),
+              holders_count: 0,
+              top_holder_pct: Number(pool.topHoldersPct || 0),
+              dev_wallet_pct: Number(pool.devWalletPct || 0),
+              price_change_1h: 0,
+              price_usd: 0,
+              liquidity_locked: Boolean(pool.liquidityLocked),
+              launch_source: normalizeLaunchSource(pool.launchSource),
+              pool_address: pool.poolAddress,
+              base_mint: baseRoute.baseMint,
+            };
+          })
+          .filter((token) => Boolean((token as any)?.mint)) as Array<Record<string, any>>;
+      } catch {
+        return [] as Array<Record<string, any>>;
+      }
+    })();
+
     const byMint = new Map<string, Record<string, any>>();
-    for (const token of [...scannedTokens, ...apifyTokens]) {
+    for (const token of [...scannedTokens, ...apifyTokens, ...raydiumTokens]) {
       const mint = String(token.mint || "").trim();
       if (!mint) continue;
       const prev = byMint.get(mint);
@@ -751,9 +832,13 @@ export async function registerRoutes(
         first_seen_at: prevSeen > 0 && nextSeen > 0 ? new Date(Math.min(prevSeen, nextSeen)).toISOString() : prev.first_seen_at,
         liquidity_usd: Math.max(Number(prev.liquidity_usd || 0), Number(token.liquidity_usd || 0)),
         market_cap_usd: Math.max(Number(prev.market_cap_usd || 0), Number(token.market_cap_usd || 0)),
+        volume_24h: Math.max(Number(prev.volume_24h || 0), Number(token.volume_24h || 0)),
         volume_5m: Math.max(Number(prev.volume_5m || 0), Number(token.volume_5m || 0)),
         holders_count: Math.max(Number(prev.holders_count || 0), Number(token.holders_count || 0)),
         top_holder_pct: Number(token.top_holder_pct || prev.top_holder_pct || 0),
+        dev_wallet_pct: Number(token.dev_wallet_pct || prev.dev_wallet_pct || 0),
+        liquidity_locked: Boolean(token.liquidity_locked || prev.liquidity_locked),
+        launch_source: normalizeLaunchSource(String(token.launch_source || prev.launch_source || prev.source || "unknown")),
         source: prev.source === "apify" || token.source === "apify" ? "apify+scanner" : prev.source,
       });
     }
@@ -763,10 +848,14 @@ export async function registerRoutes(
         const firstSeenMs = new Date(String(token.first_seen_at || "")).getTime();
         const ageSeconds = Number.isFinite(firstSeenMs) && firstSeenMs > 0 ? Math.max(0, Math.trunc((nowMs - firstSeenMs) / 1000)) : 0;
         const liquidityUsd = Number(token.liquidity_usd || 0);
+        const marketCapUsd = Number(token.market_cap_usd || 0);
+        const volume24h = Number(token.volume_24h || 0);
         const volume5m = Number(token.volume_5m || 0);
         const holdersCount = Number(token.holders_count || 0);
         const topHolderPct = Number(token.top_holder_pct || 0);
         const priceChange1h = Number(token.price_change_1h || 0);
+        const liquidityLocked = Boolean(token.liquidity_locked);
+        const launchSource = normalizeLaunchSource(String(token.launch_source || token.source || "unknown"));
 
         const freshnessScore = Math.max(0, 40 * (1 - Math.min(ageSeconds, windowSeconds) / Math.max(1, windowSeconds)));
         const liquidityScore = Math.max(0, Math.min(25, (liquidityUsd / 25_000) * 25));
@@ -777,13 +866,20 @@ export async function registerRoutes(
 
         const rejectReasons: string[] = [];
         if (ageSeconds > windowSeconds) rejectReasons.push("outside_window");
+        if (ageSeconds < Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 15))) * 60) rejectReasons.push("below_min_age");
         if (liquidityUsd < 2000) rejectReasons.push("low_liquidity");
+        if (marketCapUsd < Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000))) rejectReasons.push("low_market_cap");
+        if (volume24h < Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000))) rejectReasons.push("low_volume_24h");
         if (topHolderPct > 45) rejectReasons.push("holder_concentration_high");
+        if (!liquidityLocked) rejectReasons.push("liquidity_not_locked");
+        if (!getAllowedLaunchSources().has(launchSource)) rejectReasons.push("launch_source_not_allowed");
         if (confidenceScore < 55) rejectReasons.push("confidence_below_threshold");
 
         return {
           ...token,
           chain: "solana",
+          launch_source: launchSource,
+          liquidity_locked: liquidityLocked,
           age_seconds: ageSeconds,
           confidence_score: confidenceScore,
           eligible: rejectReasons.length === 0,
@@ -812,6 +908,8 @@ export async function registerRoutes(
           address: String(token.mint || ""),
           liquidity: Number(token.liquidity_usd || 0),
           volume_5m: Number(token.volume_5m || 0),
+          volume_24h: Number(token.volume_24h || 0),
+          market_cap_usd: Number(token.market_cap_usd || 0),
           score,
           price_usd: Number((token as any).price_usd || 0),
           price_change_1h: Number((token as any).price_change_1h || 0),
@@ -820,6 +918,11 @@ export async function registerRoutes(
           created_at: String(token.first_seen_at || nowIso()),
           holders_count: Number(token.holders_count || 0),
           top_holder_pct: Number(token.top_holder_pct || 0),
+          dev_wallet_pct: Number(token.dev_wallet_pct || 0),
+          launch_source: String(token.launch_source || "unknown"),
+          liquidity_locked: Boolean(token.liquidity_locked),
+          pool_address: String((token as any).pool_address || ""),
+          base_mint: String((token as any).base_mint || ""),
           risk_level: score >= 70 ? "SAFE" : score >= 45 ? "MEDIUM" : "HIGH RISK",
           source: String(token.source || "solana_early"),
           reject_reasons: token.reject_reasons || [],
@@ -876,48 +979,29 @@ export async function registerRoutes(
     doctorRuntime.executionAudit = doctorRuntime.executionAudit.slice(0, 200);
   };
 
-  const SOL_MINT = "So11111111111111111111111111111111111111112";
-
   const fetchJupiterQuote = async (params: {
     inputMint: string;
     outputMint: string;
     amountAtomic: number | string;
     slippageBps: number;
   }) => {
-    const query = new URLSearchParams({
+    return fetchRaydiumQuote({
       inputMint: params.inputMint,
       outputMint: params.outputMint,
-      amount: String(params.amountAtomic),
-      slippageBps: String(params.slippageBps),
-      restrictIntermediateTokens: "true",
-      onlyDirectRoutes: "false",
+      amountAtomic: params.amountAtomic,
+      slippageBps: params.slippageBps,
     });
-
-    const response = await fetch(`https://quote-api.jup.ag/v6/quote?${query.toString()}`);
-    if (!response.ok) {
-      throw new Error(`jupiter_quote_failed_${response.status}`);
-    }
-    return (await response.json()) as Record<string, any>;
   };
 
   const fetchJupiterSwapPayload = async (params: {
     quoteResponse: Record<string, any>;
     userPublicKey: string;
   }) => {
-    const response = await fetch("https://quote-api.jup.ag/v6/swap", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        quoteResponse: params.quoteResponse,
-        userPublicKey: params.userPublicKey,
-        wrapAndUnwrapSol: true,
-        dynamicComputeUnitLimit: true,
-      }),
+    return fetchRaydiumSwapPayload({
+      quoteResponse: params.quoteResponse,
+      userPublicKey: params.userPublicKey,
+      priorityFeeLamports: Number(process.env.DOCTORTRADE_PRIORITY_FEE_LAMPORTS || 0),
     });
-    if (!response.ok) {
-      throw new Error(`jupiter_swap_failed_${response.status}`);
-    }
-    return (await response.json()) as Record<string, any>;
   };
 
   const parseSolanaSecretKey = (value: string): Uint8Array | null => {
@@ -957,6 +1041,7 @@ export async function registerRoutes(
     expectedPriceUsd: number;
     reason: string;
     trigger: "manual" | "auto";
+    baseMint?: string;
   }) => {
     const liveEnabled = String(process.env.DOCTORTRADE_LIVE_TRADING_ENABLED || "").toLowerCase() === "true";
     const mode = doctorRuntime.execution.mode;
@@ -985,8 +1070,13 @@ export async function registerRoutes(
       const walletPublicKey = String(process.env.DOCTORTRADE_LIVE_WALLET_PUBLIC_KEY || "").trim();
       const walletPrivateKey = String(process.env.DOCTORTRADE_LIVE_WALLET_PRIVATE_KEY || "").trim();
       const slippageBps = Math.max(25, Math.trunc(Number(doctorRuntime.controls.max_slippage_pct || 1) * 100));
-      const amountLamports = Math.max(1, Math.trunc(params.amountSol * 1_000_000_000));
-      const solanaRpcUrl = String(process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com").trim();
+      const tradeBaseMint = [SOL_MINT, BONK_MINT].includes(String(params.baseMint || "").trim())
+        ? String(params.baseMint || "").trim()
+        : getDoctorTradeBaseAssetMint();
+      const baseDecimals = await getTokenMintDecimals(tradeBaseMint).catch(() => (
+        tradeBaseMint === BONK_MINT ? Math.max(0, Number(process.env.BONK_DECIMALS || 5)) : 9
+      ));
+      const amountLamports = Math.max(1, Math.trunc(params.amountSol * Math.pow(10, baseDecimals)));
 
       if (params.action === "sell") {
         if (!walletPublicKey) {
@@ -1001,7 +1091,7 @@ export async function registerRoutes(
             reason: params.reason,
             status: "blocked",
             block_reason: "live_wallet_public_key_missing",
-            router: "jupiter",
+            router: "raydium",
           });
           return {
             executed: false,
@@ -1022,7 +1112,7 @@ export async function registerRoutes(
             reason: params.reason,
             status: "blocked",
             block_reason: "live_wallet_private_key_missing",
-            router: "jupiter",
+            router: "raydium",
           });
           return {
             executed: false,
@@ -1044,7 +1134,7 @@ export async function registerRoutes(
             reason: params.reason,
             status: "blocked",
             block_reason: "live_wallet_private_key_invalid",
-            router: "jupiter",
+            router: "raydium",
           });
           return {
             executed: false,
@@ -1054,7 +1144,7 @@ export async function registerRoutes(
         }
 
         try {
-          const connection = new Connection(solanaRpcUrl, "confirmed");
+          const connection = getSolanaConnection();
           const ownerPk = new PublicKey(walletPublicKey);
           const mintPk = new PublicKey(params.mint);
           const accounts = await connection.getParsedTokenAccountsByOwner(ownerPk, { mint: mintPk }, "confirmed");
@@ -1087,7 +1177,7 @@ export async function registerRoutes(
               reason: params.reason,
               status: "blocked",
               block_reason: "live_sell_balance_zero",
-              router: "jupiter",
+              router: "raydium",
             });
             return {
               executed: false,
@@ -1117,7 +1207,7 @@ export async function registerRoutes(
 
           const quote = await fetchJupiterQuote({
             inputMint: params.mint,
-            outputMint: SOL_MINT,
+            outputMint: tradeBaseMint,
             amountAtomic: sellRawAmountString,
             slippageBps,
           });
@@ -1143,7 +1233,7 @@ export async function registerRoutes(
               reason: params.reason,
               status: "blocked",
               block_reason: "live_swap_transaction_missing",
-              router: "jupiter",
+              router: "raydium",
             });
             return {
               executed: false,
@@ -1166,7 +1256,7 @@ export async function registerRoutes(
               reason: params.reason,
               status: "blocked",
               block_reason: "live_wallet_public_key_mismatch",
-              router: "jupiter",
+              router: "raydium",
               configured_public_key: walletPublicKey,
               derived_public_key: derivedPublicKey,
             });
@@ -1205,7 +1295,7 @@ export async function registerRoutes(
             trigger: params.trigger,
             reason: params.reason,
             status: "executed",
-            router: "jupiter",
+            router: "raydium",
             tx_hash: signature,
             explorer_url: `https://solscan.io/tx/${signature}`,
             quote_out_amount: outAmount,
@@ -1215,6 +1305,16 @@ export async function registerRoutes(
             sell_amount_decimals: decimals,
             sell_fraction_pct: Number(((Number(scaledFraction) / 1_000_000) * 100).toFixed(2)),
             max_sell_notional_usd: Number.isFinite(maxSellNotionalUsd) ? maxSellNotionalUsd : null,
+          });
+
+          await appendDoctorTradeLog({
+            token_address: params.mint,
+            pool_address: null,
+            trade_amount: executedAmountSol,
+            entry_price: params.expectedPriceUsd,
+            transaction_signature: signature,
+            base_asset_mint: tradeBaseMint,
+            timestamp: nowIso(),
           });
 
           return {
@@ -1236,7 +1336,7 @@ export async function registerRoutes(
             reason: params.reason,
             status: "blocked",
             block_reason: message,
-            router: "jupiter",
+            router: "raydium",
           });
           return {
             executed: false,
@@ -1248,7 +1348,7 @@ export async function registerRoutes(
 
       try {
         const quote = await fetchJupiterQuote({
-          inputMint: SOL_MINT,
+          inputMint: tradeBaseMint,
           outputMint: params.mint,
           amountAtomic: amountLamports,
           slippageBps,
@@ -1270,7 +1370,7 @@ export async function registerRoutes(
             reason: params.reason,
             status: "blocked",
             block_reason: "live_wallet_public_key_missing",
-            router: "jupiter",
+            router: "raydium",
             quote_out_amount: outAmount,
             quote_price_impact_pct: priceImpactPct,
             route_hops: routePlan.length,
@@ -1299,7 +1399,7 @@ export async function registerRoutes(
             reason: params.reason,
             status: "blocked",
             block_reason: "live_wallet_private_key_missing",
-            router: "jupiter",
+            router: "raydium",
             quote_out_amount: outAmount,
             quote_price_impact_pct: priceImpactPct,
             route_hops: routePlan.length,
@@ -1325,7 +1425,7 @@ export async function registerRoutes(
             reason: params.reason,
             status: "blocked",
             block_reason: "live_wallet_private_key_invalid",
-            router: "jupiter",
+            router: "raydium",
             quote_out_amount: outAmount,
             quote_price_impact_pct: priceImpactPct,
             route_hops: routePlan.length,
@@ -1350,7 +1450,7 @@ export async function registerRoutes(
             reason: params.reason,
             status: "blocked",
             block_reason: "live_swap_transaction_missing",
-            router: "jupiter",
+            router: "raydium",
           });
           return {
             executed: false,
@@ -1373,7 +1473,7 @@ export async function registerRoutes(
             reason: params.reason,
             status: "blocked",
             block_reason: "live_wallet_public_key_mismatch",
-            router: "jupiter",
+            router: "raydium",
             configured_public_key: walletPublicKey,
             derived_public_key: derivedPublicKey,
           });
@@ -1384,7 +1484,7 @@ export async function registerRoutes(
           } as const;
         }
 
-        const connection = new Connection(solanaRpcUrl, "confirmed");
+        const connection = getSolanaConnection();
         const swapTxBytes = Buffer.from(String(swapPayload.swapTransaction), "base64");
         const versioned = VersionedTransaction.deserialize(swapTxBytes);
         versioned.sign([keypair]);
@@ -1413,12 +1513,21 @@ export async function registerRoutes(
           trigger: params.trigger,
           reason: params.reason,
           status: "executed",
-          router: "jupiter",
+          router: "raydium",
           tx_hash: signature,
           explorer_url: `https://solscan.io/tx/${signature}`,
           quote_out_amount: outAmount,
           quote_price_impact_pct: priceImpactPct,
           route_hops: routePlan.length,
+        });
+        await appendDoctorTradeLog({
+          token_address: params.mint,
+          pool_address: null,
+          trade_amount: params.amountSol,
+          entry_price: params.expectedPriceUsd,
+          transaction_signature: signature,
+          base_asset_mint: tradeBaseMint,
+          timestamp: nowIso(),
         });
         return {
           executed: true,
@@ -1438,7 +1547,7 @@ export async function registerRoutes(
           reason: params.reason,
           status: "blocked",
           block_reason: message,
-          router: "jupiter",
+          router: "raydium",
         });
         return {
           executed: false,
@@ -1461,6 +1570,16 @@ export async function registerRoutes(
       reason: params.reason,
       status: "executed",
       tx_hash: txHash,
+    });
+
+    await appendDoctorTradeLog({
+      token_address: params.mint,
+      pool_address: null,
+      trade_amount: params.amountSol,
+      entry_price: params.expectedPriceUsd,
+      transaction_signature: txHash,
+      base_asset_mint: getDoctorTradeBaseAssetMint(),
+      timestamp: nowIso(),
     });
 
     return {
@@ -1534,7 +1653,7 @@ export async function registerRoutes(
           marketVolume5m <= 0 ||
           marketScore < Math.max(1, Number(doctorRuntime.controls.strong_move_threshold_pct || 40)) * 0.7 ||
           (marketHolders > 0 && marketHolders < 120) ||
-          (topHolderPct > 0 && topHolderPct > Math.max(1, Number(doctorRuntime.controls.quality_max_top_holder_pct || 35)))
+          (topHolderPct > 0 && topHolderPct > Math.max(1, Number(doctorRuntime.controls.quality_max_top_holder_pct || 24)))
         )
       ) {
         sellReason = "momentum_or_holder_quality_drop";
@@ -1560,6 +1679,7 @@ export async function registerRoutes(
         expectedPriceUsd: currentPrice,
         reason: sellReason,
         trigger,
+        baseMint: String((position as any).base_mint || getDoctorTradeBaseAssetMint()),
       });
       if (!sellExecution.executed) {
         updatedPositions.push({
@@ -1642,10 +1762,15 @@ export async function registerRoutes(
       .filter((token) => !openAddresses.has(String(token.address || "")))
       .filter((token) => Number(token.score || 0) >= Math.max(1, Number(doctorRuntime.controls.strong_move_threshold_pct || 40)))
       .filter((token) => Number(token.liquidity || 0) >= Math.max(1000, Number(doctorRuntime.controls.min_liquidity_usd || 0)))
+      .filter((token) => Number(token.market_cap_usd || 0) >= Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000)))
+      .filter((token) => Number(token.volume_24h || 0) >= Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000)))
+      .filter((token) => Number(token.age_seconds || 0) >= Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 15))) * 60)
+      .filter((token) => Boolean(token.liquidity_locked))
+      .filter((token) => getAllowedLaunchSources().has(normalizeLaunchSource(String(token.launch_source || token.source || "unknown"))))
       .filter((token) => {
         const topHolderPct = Number(token.top_holder_pct || 0);
         if (topHolderPct <= 0) return true;
-        return topHolderPct <= Math.max(1, Number(doctorRuntime.controls.quality_max_top_holder_pct || 35));
+        return topHolderPct <= Math.max(1, Number(doctorRuntime.controls.quality_max_top_holder_pct || 24));
       })
       .sort((a, b) => {
         const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
@@ -1685,9 +1810,12 @@ export async function registerRoutes(
         return { allowed: false, reason: "mint_cooldown_active" };
       }
 
-      const availableSol = Number(doctorRuntime.wallet.balanceSol || 0);
-      if (availableSol < buyAmountSol + feeBufferSol) {
-        return { allowed: false, reason: "insufficient_wallet_balance_with_fee_buffer" };
+      const baseAssetMint = getDoctorTradeBaseAssetMint();
+      if (baseAssetMint === "So11111111111111111111111111111111111111112") {
+        const availableSol = Number(doctorRuntime.wallet.balanceSol || 0);
+        if (availableSol < buyAmountSol + feeBufferSol) {
+          return { allowed: false, reason: "insufficient_wallet_balance_with_fee_buffer" };
+        }
       }
 
       return { allowed: true, reason: "ok" };
@@ -1722,8 +1850,12 @@ export async function registerRoutes(
       const strategyWindowMinutes = Math.max(5, Number(doctorRuntime.controls.strategy_window_minutes || 120));
       const strategyWindowSeconds = Math.trunc(strategyWindowMinutes * 60);
       const liquidityMin = Math.max(1000, Number(doctorRuntime.controls.min_liquidity_usd || 0));
-      const topHolderMax = Math.max(1, Number(doctorRuntime.controls.quality_max_top_holder_pct || 35));
+      const topHolderMax = Math.max(1, Number(doctorRuntime.controls.quality_max_top_holder_pct || 24));
       const volumeSpikeMinPct = Math.max(1, Number(doctorRuntime.controls.quality_min_volume_spike_pct || 12));
+      const minTokenAgeSeconds = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 15))) * 60;
+      const minVolume24h = Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000));
+      const minMarketCap = Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000));
+      const allowedLaunchSources = getAllowedLaunchSources();
 
       const createdAtMs = new Date(String(candidate.created_at || nowIso())).getTime();
       const fallbackAgeSeconds = Number.isFinite(createdAtMs) && createdAtMs > 0
@@ -1732,10 +1864,20 @@ export async function registerRoutes(
       const ageSeconds = Math.max(0, Number(candidate.age_seconds || fallbackAgeSeconds));
 
       const contractAddress = String(candidate.address || "").trim();
+      const tokenBlacklist = new Set(
+        String(process.env.DOCTORTRADE_TOKEN_BLACKLIST || "")
+          .split(",")
+          .map((item) => String(item || "").trim())
+          .filter(Boolean),
+      );
+      const isBlacklisted = tokenBlacklist.has(contractAddress);
       const scoreFallback = contractAddress
         ? await buildDexScoreFallback(contractAddress, "solana")
         : null;
       const scannedToken = contractAddress ? await storage.getScannedTokenByAddress(contractAddress) : undefined;
+      const mintAuthorityInfo = contractAddress
+        ? await getTokenMintAuthorityInfo(contractAddress)
+        : { mintAuthorityDisabled: false, freezeAuthorityDisabled: false };
 
       const fallbackScores = (scoreFallback?.scores || {}) as Record<string, any>;
       const fallbackFlags = Array.isArray(scoreFallback?.risk_flags)
@@ -1747,6 +1889,8 @@ export async function registerRoutes(
         Number(candidate.liquidity || 0),
         Number(scoreFallback?.market_data?.liquidity_usd || 0),
       );
+      const marketCapUsd = Number(candidate.market_cap_usd || 0);
+      const volume24h = Number(candidate.volume_24h || 0);
       const volume5m = Number(candidate.volume_5m || 0);
       const holdersCount = Number(candidate.holders_count || 0);
       const topHolderPct = Math.max(
@@ -1754,6 +1898,8 @@ export async function registerRoutes(
         Number(scannedToken?.topHoldersPercentage || 0),
       );
       const devWalletPct = Number(scannedToken?.devWalletPercentage || 0);
+      const launchSource = normalizeLaunchSource(String(candidate.launch_source || candidate.source || "unknown"));
+      const liquidityLocked = Boolean(candidate.liquidity_locked || scannedToken?.isLiquidityLocked);
       const priceChange1h = Number(candidate.price_change_1h || 0);
 
       const smartWalletSignal = Number(fallbackScores.smart_wallet_signal || 0);
@@ -1767,12 +1913,18 @@ export async function registerRoutes(
       );
 
       const newTokenValidation =
+        ageSeconds >= minTokenAgeSeconds &&
         ageSeconds <= strategyWindowSeconds &&
         liquidityUsd > 0 &&
+        marketCapUsd >= minMarketCap &&
+        volume24h >= minVolume24h &&
+        liquidityLocked &&
+        allowedLaunchSources.has(launchSource) &&
         dexTradable;
 
       const liquidityStability =
         liquidityUsd >= liquidityMin &&
+        liquidityLocked &&
         !riskFlags.has("LOW_LIQUIDITY") &&
         !riskFlags.has("THIN_LIQUIDITY") &&
         !riskFlags.has("HIGH_SLIPPAGE") &&
@@ -1791,8 +1943,10 @@ export async function registerRoutes(
         !riskFlags.has("SELL_PRESSURE");
 
       const contractSafety =
+        !isBlacklisted &&
         !Boolean(scannedToken?.isHoneypot) &&
-        (Boolean(scannedToken?.mintAuthorityDisabled) || Number(scannedToken?.safetyScore || 0) >= 60 || rugProbability <= 75) &&
+        (Boolean(scannedToken?.mintAuthorityDisabled) || mintAuthorityInfo.mintAuthorityDisabled || Number(scannedToken?.safetyScore || 0) >= 60 || rugProbability <= 75) &&
+        mintAuthorityInfo.freezeAuthorityDisabled &&
         !riskFlags.has("NO_LIVE_PAIR_DATA");
 
       const marketMomentum =
@@ -1809,10 +1963,15 @@ export async function registerRoutes(
         !riskFlags.has("SELL_PRESSURE");
 
       const antiRugDetection =
+        !isBlacklisted &&
         !riskFlags.has("LOW_LIQUIDITY") &&
         !riskFlags.has("THIN_LIQUIDITY") &&
         !riskFlags.has("SELL_PRESSURE") &&
         rugProbability <= 85 &&
+        liquidityLocked &&
+        volume24h >= minVolume24h &&
+        marketCapUsd >= minMarketCap &&
+        allowedLaunchSources.has(launchSource) &&
         !riskFlags.has("NO_LIVE_PAIR_DATA") &&
         (devWalletPct <= 0 || devWalletPct <= 25);
 
@@ -1850,7 +2009,11 @@ export async function registerRoutes(
         token: {
           symbol: String(candidate.symbol || "UNKNOWN"),
           address: contractAddress,
+          launch_source: launchSource,
+          liquidity_locked: liquidityLocked,
           liquidity_usd: liquidityUsd,
+          market_cap_usd: marketCapUsd,
+          volume_24h: volume24h,
           volume_5m: volume5m,
           holders_count: holdersCount,
           top_holder_pct: topHolderPct,
@@ -1913,6 +2076,7 @@ export async function registerRoutes(
         expectedPriceUsd: tokenPriceUsd,
         reason: String(buyCandidate.source || "scanner_signal"),
         trigger,
+        baseMint: String(buyCandidate.base_mint || getDoctorTradeBaseAssetMint()),
       });
       if (!buyExecution.executed) {
         doctorRuntime.lastDecision = {
@@ -1936,6 +2100,7 @@ export async function registerRoutes(
         risk_status: String(buyCandidate.risk_level || "MEDIUM"),
         trailing_stop_pct: Number(doctorRuntime.controls.trailing_stop_pct || 10),
         amount_sol: buyAmountSol,
+        base_mint: String(buyCandidate.base_mint || getDoctorTradeBaseAssetMint()),
         opened_at: nowIso(),
         source: String(buyCandidate.source || "scanner"),
       };
@@ -2068,7 +2233,11 @@ export async function registerRoutes(
           String(process.env.DOCTORTRADE_LIVE_TRADING_ENABLED || "").toLowerCase() === "true" &&
           Boolean(String(process.env.DOCTORTRADE_LIVE_WALLET_PUBLIC_KEY || "").trim()) &&
           Boolean(String(process.env.DOCTORTRADE_LIVE_WALLET_PRIVATE_KEY || "").trim()),
+        raydium_route_enabled: true,
         jupiter_quote_enabled: true,
+        base_asset_mint: getDoctorTradeBaseAssetMint(),
+        bonk_mint: BONK_MINT,
+        helius_rpc_url: getHeliusRpcUrl(),
       },
       active_tokens: activeTokens,
       positions: doctorRuntime.positions.slice(0, 30),
@@ -2182,6 +2351,9 @@ export async function registerRoutes(
       "stop_loss_pct",
       "trailing_stop_pct",
       "min_liquidity_usd",
+      "min_market_cap_usd",
+      "min_volume_24h_usd",
+      "min_token_age_minutes",
       "max_slippage_pct",
       "max_spread_pct",
       "daily_loss_limit_usd",
@@ -2312,7 +2484,7 @@ export async function registerRoutes(
     doctorCycleTimer.unref?.();
   }
 
-  const assistantChains = ["solana", "ethereum", "bsc", "base", "arbitrum", "avalanche", "polygon"] as const;
+  const assistantChains = ["solana"] as const;
   type AssistantChain = (typeof assistantChains)[number];
   const assistantDefaultRiskLimits = {
     max_notional_usd_per_trade: 100,
@@ -2398,14 +2570,19 @@ export async function registerRoutes(
           wallet.addresses_by_chain && typeof wallet.addresses_by_chain === "object"
             ? wallet.addresses_by_chain as Record<string, string>
             : {};
-        assistantRuntime.wallet.enabled_chains = Array.isArray(wallet.enabled_chains)
-          ? wallet.enabled_chains.map((value: unknown) => String(value || "")).filter(Boolean)
-          : [...assistantChains];
+        assistantRuntime.wallet.enabled_chains = ["solana"];
         assistantRuntime.wallet.mnemonic = typeof wallet.mnemonic === "string" ? wallet.mnemonic : "";
         assistantRuntime.wallet.private_keys_by_chain =
           wallet.private_keys_by_chain && typeof wallet.private_keys_by_chain === "object"
             ? wallet.private_keys_by_chain as Record<string, string>
             : {};
+
+        assistantRuntime.wallet.addresses_by_chain = {
+          solana: String(assistantRuntime.wallet.addresses_by_chain.solana || "").trim(),
+        };
+        assistantRuntime.wallet.private_keys_by_chain = {
+          solana: String(assistantRuntime.wallet.private_keys_by_chain.solana || "").trim(),
+        };
       }
 
       const trading = loaded.trading as Record<string, any> | undefined;
@@ -2421,9 +2598,7 @@ export async function registerRoutes(
           trading.wallets_by_chain && typeof trading.wallets_by_chain === "object"
             ? trading.wallets_by_chain as Record<string, string>
             : {};
-        assistantRuntime.trading.enabled_chains = Array.isArray(trading.enabled_chains)
-          ? trading.enabled_chains.map((value: unknown) => String(value || "")).filter(Boolean)
-          : [...assistantChains];
+        assistantRuntime.trading.enabled_chains = ["solana"];
         const riskLimits = trading.risk_limits as Record<string, any> | undefined;
         assistantRuntime.trading.risk_limits = {
           max_notional_usd_per_trade: Number(riskLimits?.max_notional_usd_per_trade || assistantDefaultRiskLimits.max_notional_usd_per_trade),
@@ -2437,7 +2612,9 @@ export async function registerRoutes(
         assistantRuntime.transactions = loaded.transactions.slice(0, 200);
       }
 
-      assistantRuntime.trading.wallets_by_chain = assistantRuntime.wallet.addresses_by_chain;
+      assistantRuntime.trading.wallets_by_chain = {
+        solana: String(assistantRuntime.wallet.addresses_by_chain.solana || "").trim(),
+      };
       assistantRuntime.trading.wallet_address = assistantRuntime.wallet.addresses_by_chain.solana || null;
     } catch {
     }
@@ -2447,25 +2624,9 @@ export async function registerRoutes(
   const normalizeMnemonic = (value: string) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
   const generateMnemonic = () => bip39.generateMnemonic(128);
   const nowIso = () => new Date().toISOString();
-  const chainNativeSymbol = (chain: AssistantChain) => {
-    if (chain === "solana") return "SOL";
-    if (chain === "ethereum") return "ETH";
-    if (chain === "bsc") return "BNB";
-    if (chain === "avalanche") return "AVAX";
-    if (chain === "polygon") return "MATIC";
-    return "ETH";
-  };
+  const chainNativeSymbol = (_chain: AssistantChain) => "SOL";
 
-  const chainExplorerTxUrl = (chain: AssistantChain, txHash: string) => {
-    if (chain === "solana") return `https://explorer.solana.com/tx/${txHash}`;
-    if (chain === "ethereum") return `https://etherscan.io/tx/${txHash}`;
-    if (chain === "bsc") return `https://bscscan.com/tx/${txHash}`;
-    if (chain === "base") return `https://basescan.org/tx/${txHash}`;
-    if (chain === "arbitrum") return `https://arbiscan.io/tx/${txHash}`;
-    if (chain === "avalanche") return `https://snowtrace.io/tx/${txHash}`;
-    if (chain === "polygon") return `https://polygonscan.com/tx/${txHash}`;
-    return "";
-  };
+  const chainExplorerTxUrl = (_chain: AssistantChain, txHash: string) => `https://explorer.solana.com/tx/${txHash}`;
 
   const deriveSolanaWalletFromMnemonic = (mnemonic: string) => {
     const normalized = normalizeMnemonic(mnemonic);
@@ -2482,24 +2643,10 @@ export async function registerRoutes(
     };
   };
 
-  const generateAddress = (chain: AssistantChain) => {
-    return `0x${randomBytes(20).toString("hex")}`;
-  };
-
-  const generatePrivateKey = (chain: AssistantChain) => {
-    return `0x${randomBytes(32).toString("hex")}`;
-  };
-
   const buildAssistantWalletFromMnemonic = (mnemonicInput: string) => {
     const solanaWallet = deriveSolanaWalletFromMnemonic(mnemonicInput);
-    const addresses_by_chain = assistantChains.reduce<Record<string, string>>((acc, chain) => {
-      acc[chain] = chain === "solana" ? solanaWallet.address : generateAddress(chain);
-      return acc;
-    }, {});
-    const private_keys_by_chain = assistantChains.reduce<Record<string, string>>((acc, chain) => {
-      acc[chain] = chain === "solana" ? solanaWallet.privateKey : generatePrivateKey(chain);
-      return acc;
-    }, {});
+    const addresses_by_chain = { solana: solanaWallet.address };
+    const private_keys_by_chain = { solana: solanaWallet.privateKey };
     return {
       mnemonic: solanaWallet.mnemonic,
       addresses_by_chain,
@@ -2510,31 +2657,17 @@ export async function registerRoutes(
   const validateAddressForChain = (chain: string, address: string) => {
     const value = String(address || "").trim();
     if (!value) return false;
-    if (chain === "solana") {
-      return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value);
-    }
-    return /^0x[a-fA-F0-9]{40}$/.test(value);
+    if (chain !== "solana") return false;
+    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value);
   };
 
   const defaultRpcUrls: Record<AssistantChain, string> = {
     solana: "https://api.mainnet-beta.solana.com",
-    ethereum: "https://cloudflare-eth.com",
-    bsc: "https://bsc-dataseed.binance.org",
-    base: "https://mainnet.base.org",
-    arbitrum: "https://arb1.arbitrum.io/rpc",
-    avalanche: "https://api.avax.network/ext/bc/C/rpc",
-    polygon: "https://polygon-rpc.com",
   };
 
   const getRpcUrlForChain = (chain: AssistantChain) => {
     const envMap: Record<AssistantChain, string> = {
       solana: String(process.env.SOLANA_RPC_URL || process.env.HELIUS_RPC_URL || "").trim(),
-      ethereum: String(process.env.ETHEREUM_RPC_URL || process.env.EVM_RPC_URL_ETHEREUM || "").trim(),
-      bsc: String(process.env.BSC_RPC_URL || process.env.EVM_RPC_URL_BSC || "").trim(),
-      base: String(process.env.BASE_RPC_URL || process.env.EVM_RPC_URL_BASE || "").trim(),
-      arbitrum: String(process.env.ARBITRUM_RPC_URL || process.env.EVM_RPC_URL_ARBITRUM || "").trim(),
-      avalanche: String(process.env.AVALANCHE_RPC_URL || process.env.EVM_RPC_URL_AVALANCHE || "").trim(),
-      polygon: String(process.env.POLYGON_RPC_URL || process.env.EVM_RPC_URL_POLYGON || "").trim(),
     };
     return envMap[chain] || defaultRpcUrls[chain];
   };
@@ -2549,12 +2682,6 @@ export async function registerRoutes(
 
     const empty: Record<AssistantChain, number> = {
       solana: 0,
-      ethereum: 0,
-      bsc: 0,
-      base: 0,
-      arbitrum: 0,
-      avalanche: 0,
-      polygon: 0,
     };
 
     const withTimeout = async (url: string, timeoutMs = 8000) => {
@@ -2576,8 +2703,8 @@ export async function registerRoutes(
 
     try {
       const [geckoRes, compareRes] = await Promise.allSettled([
-        withTimeout("https://api.coingecko.com/api/v3/simple/price?ids=solana,ethereum,binancecoin,avalanche-2,matic-network&vs_currencies=usd"),
-        withTimeout("https://min-api.cryptocompare.com/data/pricemulti?fsyms=SOL,ETH,BNB,AVAX,MATIC&tsyms=USD"),
+        withTimeout("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd"),
+        withTimeout("https://min-api.cryptocompare.com/data/pricemulti?fsyms=SOL&tsyms=USD"),
       ]);
 
       let geckoPayload: Record<string, { usd?: number }> = {};
@@ -2600,15 +2727,8 @@ export async function registerRoutes(
         return 0;
       };
 
-      const eth = pick(geckoPayload?.ethereum?.usd, comparePayload?.ETH?.USD);
       const prices: Record<AssistantChain, number> = {
         solana: pick(geckoPayload?.solana?.usd, comparePayload?.SOL?.USD),
-        ethereum: eth,
-        bsc: pick(geckoPayload?.binancecoin?.usd, comparePayload?.BNB?.USD),
-        base: eth,
-        arbitrum: eth,
-        avalanche: pick(geckoPayload?.["avalanche-2"]?.usd, comparePayload?.AVAX?.USD),
-        polygon: pick(geckoPayload?.["matic-network"]?.usd, comparePayload?.MATIC?.USD),
       };
 
       const hasAnyLivePrice = Object.values(prices).some((value) => value > 0);
@@ -2640,26 +2760,18 @@ export async function registerRoutes(
     }
 
     try {
-      if (chain === "solana") {
-        const response = await fetch(rpcUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getBalance", params: [address] }),
-        });
-        const payload = (await response.json()) as { result?: { value?: number } };
-        const lamports = Number(payload?.result?.value || 0);
-        return Number((lamports / 1_000_000_000).toFixed(9));
+      if (chain !== "solana") {
+        return null;
       }
 
       const response = await fetch(rpcUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBalance", params: [address, "latest"] }),
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getBalance", params: [address] }),
       });
-      const payload = (await response.json()) as { result?: string };
-      const weiHex = String(payload?.result || "0x0");
-      const wei = BigInt(weiHex);
-      return Number(wei) / 1e18;
+      const payload = (await response.json()) as { result?: { value?: number } };
+      const lamports = Number(payload?.result?.value || 0);
+      return Number((lamports / 1_000_000_000).toFixed(9));
     } catch {
       return null;
     }
@@ -2883,6 +2995,9 @@ export async function registerRoutes(
     if (!assistantChains.includes(chain as AssistantChain)) {
       return res.status(400).json({ message: "unsupported chain" });
     }
+    if (chain === "solana") {
+      return res.status(400).json({ message: "solana cannot be removed" });
+    }
     delete assistantRuntime.wallet.addresses_by_chain[chain];
     delete assistantRuntime.wallet.private_keys_by_chain[chain];
     assistantRuntime.trading.wallets_by_chain = assistantRuntime.wallet.addresses_by_chain;
@@ -2894,6 +3009,9 @@ export async function registerRoutes(
   app.post("/api/ai/wallets/export-key", (req, res) => {
     const chain = String(req.body?.chain || "").toLowerCase();
     const confirmation = String(req.body?.confirmation_text || "").trim();
+    if (chain !== "solana") {
+      return res.status(400).json({ message: "unsupported chain" });
+    }
     if (confirmation !== "I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS") {
       return res.status(400).json({ message: "invalid confirmation text" });
     }
@@ -2913,14 +3031,14 @@ export async function registerRoutes(
   });
 
   app.post("/api/ai/wallets/transfer", async (req, res) => {
-    const chain = String(req.body?.chain || "").toLowerCase();
+    const chain = String(req.body?.chain || "solana").toLowerCase();
     const recipient = String(req.body?.recipient_address || "").trim();
     const amount = Number(req.body?.amount || 0);
     const asset = String(req.body?.asset || chainNativeSymbol((chain as AssistantChain) || "solana")).toUpperCase();
     if (!ensureWalletExists()) {
       return res.status(400).json({ message: "wallet not found" });
     }
-    if (!assistantChains.includes(chain as AssistantChain)) {
+    if (chain !== "solana") {
       return res.status(400).json({ message: "unsupported chain" });
     }
     if (!recipient || !Number.isFinite(amount) || amount <= 0) {
@@ -2938,12 +3056,6 @@ export async function registerRoutes(
     const nativeSymbol = chainNativeSymbol(chain as AssistantChain);
     if (asset !== nativeSymbol) {
       return res.status(400).json({ message: `unsupported asset for ${chain}. use ${nativeSymbol}` });
-    }
-
-    if (chain !== "solana") {
-      return res.status(400).json({
-        message: "real on-chain transfer is currently supported for Solana only",
-      });
     }
 
     const balance = await fetchNativeBalance(chain as AssistantChain, senderAddress);
@@ -3079,7 +3191,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/ai/trading/execute", async (req, res) => {
-    const chain = String(req.body?.chain || "solana").toLowerCase();
+    const chain = "solana";
     const contractAddress = String(req.body?.contract_address || "").trim();
     const side = String(req.body?.side || "buy").toLowerCase() === "sell" ? "sell" : "buy";
     const notionalUsd = Number(req.body?.notional_usd || 0);
@@ -3194,7 +3306,7 @@ export async function registerRoutes(
   app.post("/api/scoring/score-token", async (req, res) => {
     const body = req.body || {};
     const contractAddress = String(body.contract_address || body.address || body.token || "").trim();
-    const chain = String(body.chain || "all").trim().toLowerCase();
+    const chain = "solana";
     const useBridge = String(process.env.SCORE_TOKEN_USE_BRIDGE || "false").trim().toLowerCase() === "true";
 
     if (!contractAddress) {
@@ -3372,7 +3484,7 @@ export async function registerRoutes(
     const tokenFeedCacheTtlMs = Math.max(1000, Number(process.env.TOKEN_FEED_CACHE_MS || 15000));
     const buildLocalTokenPayload = async (): Promise<TokenFeedResponse> => {
       const cacheKey = JSON.stringify({
-        chain: String(req.query.chain || "solana").toLowerCase(),
+        chain: "solana",
         new_only: String(req.query.new_only || "false").toLowerCase(),
         max_age_hours: String(req.query.max_age_hours || ""),
         min_age_minutes: String(req.query.min_age_minutes || ""),
@@ -3386,7 +3498,7 @@ export async function registerRoutes(
       const all = await storage.getScannedTokens();
       const now = Date.now();
 
-      const chainParam = String(req.query.chain || "solana").toLowerCase();
+      const chainParam = "solana";
       const newOnly = String(req.query.new_only || "false").toLowerCase() === "true";
       const maxAgeHours = Number(req.query.max_age_hours || 0);
       const minAgeMinutes = Number(req.query.min_age_minutes || 0);
@@ -3449,7 +3561,7 @@ export async function registerRoutes(
 
       const dexsFreshRows = await (async () => {
         try {
-          const dexChain = chainParam === "all" ? "solana" : normalizeDexChain(chainParam || "solana");
+          const dexChain = normalizeDexChain(chainParam || "solana");
           const pairs = await getNewPairs(dexChain, effectiveMaxAgeHours);
           return pairs
             .sort((a, b) => Number(b.pairCreatedAt || 0) - Number(a.pairCreatedAt || 0))
@@ -3515,7 +3627,7 @@ export async function registerRoutes(
 
       const filtered = baseRows.filter((token) => {
         const tokenChain = String(token.chain || "solana").toLowerCase();
-        if (chainParam !== "all" && tokenChain !== chainParam) return false;
+        if (tokenChain !== chainParam) return false;
 
         const createdAtTs = token.createdAt ? new Date(token.createdAt).getTime() : now;
         const ageMinutes = Math.max(0, (now - createdAtTs) / 60000);
@@ -3686,18 +3798,24 @@ export async function registerRoutes(
   });
 
   app.get("/api/tokens/project-info/:chain/:contract_address", async (req, res) => {
-    const { chain, contract_address } = req.params;
+    const { contract_address } = req.params;
     const useBridge = String(process.env.TOKEN_PROJECT_INFO_USE_BRIDGE || "false").trim().toLowerCase() === "true";
     if (!useBridge) {
-      return res.status(200).json(await buildDexProjectInfoFallback(contract_address, chain));
+      return res.status(200).json(await buildDexProjectInfoFallback(contract_address, "solana"));
     }
     return proxyToPythonApi(
       req,
       res,
-      `/api/tokens/project-info/${encodeURIComponent(chain)}/${encodeURIComponent(contract_address)}`,
-      async () => buildDexProjectInfoFallback(contract_address, chain),
+      `/api/tokens/project-info/${encodeURIComponent("solana")}/${encodeURIComponent(contract_address)}`,
+      async () => buildDexProjectInfoFallback(contract_address, "solana"),
     );
   });
+
+  try {
+    await refreshRaydiumPools(true);
+    startRaydiumPoolFetcher();
+  } catch {
+  }
   
   // Start background token scanner (scans every 60 seconds for fresh tokens)
   startBackgroundScanner(60 * 1000);

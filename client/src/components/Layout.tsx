@@ -97,7 +97,7 @@ export function Layout({ children }: { children: ReactNode }) {
               <SelectContent align="end">
                 {SUPPORTED_CHAINS.map((item) => (
                   <SelectItem key={item} value={item} className="capitalize">
-                    {item === "all" ? "All Chains" : item === "bsc" ? "BNB Chain" : item}
+                    {item}
                   </SelectItem>
                 ))}
               </SelectContent>

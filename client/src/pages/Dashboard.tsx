@@ -447,13 +447,6 @@ export default function Dashboard() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="solana">Solana</SelectItem>
-              <SelectItem value="ethereum">Ethereum</SelectItem>
-              <SelectItem value="bsc">BSC</SelectItem>
-              <SelectItem value="base">Base</SelectItem>
-              <SelectItem value="arbitrum">Arbitrum</SelectItem>
-              <SelectItem value="avalanche">Avalanche</SelectItem>
-              <SelectItem value="polygon">Polygon</SelectItem>
-              <SelectItem value="all">All Chains</SelectItem>
             </SelectContent>
           </Select>
         </div>

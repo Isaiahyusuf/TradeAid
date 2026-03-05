@@ -35,7 +35,6 @@ export default function RugShield() {
   const { chain, chainLabel, setChain } = useChain();
   const [address, setAddress] = useState("");
   const [scannedAddress, setScannedAddress] = useState("");
-  const [detectedChain, setDetectedChain] = useState<string | null>(null);
   const didAutoScan = useRef(false);
   const { mutate: scanToken, isPending, data: result } = useScanToken();
   const { data: devIntel } = useDevIntel(scannedAddress || undefined, chain);
@@ -80,23 +79,6 @@ export default function RugShield() {
 
     didAutoScan.current = true;
   }, [chain, scanToken, setChain, toast]);
-
-  useEffect(() => {
-    if (chain !== "all") {
-      setDetectedChain(null);
-      return;
-    }
-    const resolved = String(result?.chain || "").trim().toLowerCase();
-    if (!resolved || resolved === "all") {
-      setDetectedChain(null);
-      return;
-    }
-    if ((SUPPORTED_CHAINS as readonly string[]).includes(resolved)) {
-      setDetectedChain(resolved);
-      return;
-    }
-    setDetectedChain(null);
-  }, [chain, result?.chain]);
 
   const handleScan = () => {
     if (!address) {
@@ -145,11 +127,6 @@ export default function RugShield() {
             <Badge variant="outline" className="solana-badge">Risk Matrix</Badge>
             <Badge variant="outline">{chainLabel}</Badge>
             <Badge variant="outline" className="border-accent/30 text-accent">Safety Focused</Badge>
-            {detectedChain && (
-              <Badge variant="outline" className="border-cyan-500/30 text-cyan-300">
-                Detected: {detectedChain === "bsc" ? "BNB Chain" : detectedChain}
-              </Badge>
-            )}
           </div>
         </div>
 
@@ -162,7 +139,7 @@ export default function RugShield() {
               <SelectContent>
                 {SUPPORTED_CHAINS.map((item) => (
                   <SelectItem key={item} value={item} className="capitalize">
-                    {item === "all" ? "All Chains" : item === "bsc" ? "BNB Chain" : item}
+                    {item}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -185,17 +162,6 @@ export default function RugShield() {
               {isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Shield className="w-4 h-4 mr-2" />}
               {isPending ? "Scoring..." : "Score Token"}
             </Button>
-            {chain === "all" && detectedChain && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setChain(detectedChain as AppChain);
-                  toast({ title: "Chain applied", description: `Switched to ${detectedChain}.` });
-                }}
-              >
-                Use Detected Chain
-              </Button>
-            )}
           </div>
         </Card>
 
