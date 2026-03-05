@@ -5,6 +5,8 @@ import { mkdir, readFile, writeFile } from "fs/promises";
 import { resolve } from "path";
 import { Connection, Keypair, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
+import * as bip39 from "bip39";
+import { derivePath } from "ed25519-hd-key";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import type { TokenFeedItem, TokenFeedResponse } from "@shared/token-contract";
@@ -16,7 +18,7 @@ import { setupAuth, registerAuthRoutes, isAuthenticated, authStorage } from "./r
 import { registerScannerRoutes } from "./routes/scanner";
 import { startBackgroundScanner, scanHotTokens } from "./services/token-scanner";
 import { multichainScanner } from "./services/multichain-scanner";
-import { getTokenPairs } from "./services/dexscreener";
+import { getNewPairs, getTokenPairs, pairToTokenData } from "./services/dexscreener";
 import { FREE_TIER_LIMITS, SUBSCRIPTION_PRICE_USD, SUPPORTED_PAYMENT_CHAINS } from "@shared/schema";
 import { cryptoPaymentService } from "./services/crypto-payment";
 import { fetchFreshPumpfunTokens } from "./services/fresh-token-service";
@@ -2035,16 +2037,10 @@ export async function registerRoutes(
     transactions: [] as Array<Record<string, any>>,
   };
 
-  const wordBank = [
-    "alpha", "bridge", "candle", "delta", "engine", "fusion", "globe", "harbor", "ion", "jungle",
-    "kernel", "lunar", "matrix", "nebula", "orbit", "pulse", "quantum", "rocket", "signal", "token",
-  ];
-
-  const randomWord = () => wordBank[Math.floor(Math.random() * wordBank.length)];
-  const generateMnemonic = () => Array.from({ length: 12 }, () => randomWord()).join(" ");
+  const SOLANA_DERIVATION_PATH = "m/44'/501'/0'/0'";
+  const normalizeMnemonic = (value: string) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const generateMnemonic = () => bip39.generateMnemonic(128);
   const nowIso = () => new Date().toISOString();
-  const solanaAlphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  const randomBase58 = (length: number) => Array.from({ length }, () => solanaAlphabet[Math.floor(Math.random() * solanaAlphabet.length)]).join("");
   const chainNativeSymbol = (chain: AssistantChain) => {
     if (chain === "solana") return "SOL";
     if (chain === "ethereum") return "ETH";
@@ -2065,18 +2061,44 @@ export async function registerRoutes(
     return "";
   };
 
-  const generateAddress = (chain: AssistantChain) => {
-    if (chain === "solana") {
-      return randomBase58(44);
+  const deriveSolanaWalletFromMnemonic = (mnemonic: string) => {
+    const normalized = normalizeMnemonic(mnemonic);
+    if (!bip39.validateMnemonic(normalized)) {
+      throw new Error("invalid mnemonic");
     }
+    const seed = bip39.mnemonicToSeedSync(normalized);
+    const derived = derivePath(SOLANA_DERIVATION_PATH, seed.toString("hex"));
+    const keypair = Keypair.fromSeed(derived.key.slice(0, 32));
+    return {
+      address: keypair.publicKey.toBase58(),
+      privateKey: bs58.encode(keypair.secretKey),
+      mnemonic: normalized,
+    };
+  };
+
+  const generateAddress = (chain: AssistantChain) => {
     return `0x${randomBytes(20).toString("hex")}`;
   };
 
   const generatePrivateKey = (chain: AssistantChain) => {
-    if (chain === "solana") {
-      return randomBase58(88);
-    }
     return `0x${randomBytes(32).toString("hex")}`;
+  };
+
+  const buildAssistantWalletFromMnemonic = (mnemonicInput: string) => {
+    const solanaWallet = deriveSolanaWalletFromMnemonic(mnemonicInput);
+    const addresses_by_chain = assistantChains.reduce<Record<string, string>>((acc, chain) => {
+      acc[chain] = chain === "solana" ? solanaWallet.address : generateAddress(chain);
+      return acc;
+    }, {});
+    const private_keys_by_chain = assistantChains.reduce<Record<string, string>>((acc, chain) => {
+      acc[chain] = chain === "solana" ? solanaWallet.privateKey : generatePrivateKey(chain);
+      return acc;
+    }, {});
+    return {
+      mnemonic: solanaWallet.mnemonic,
+      addresses_by_chain,
+      private_keys_by_chain,
+    };
   };
 
   const validateAddressForChain = (chain: string, address: string) => {
@@ -2359,54 +2381,49 @@ export async function registerRoutes(
       return res.status(400).json({ message: "wallet already exists" });
     }
 
-    const addresses_by_chain = assistantChains.reduce<Record<string, string>>((acc, chain) => {
-      acc[chain] = generateAddress(chain);
-      return acc;
-    }, {});
-    const private_keys_by_chain = assistantChains.reduce<Record<string, string>>((acc, chain) => {
-      acc[chain] = generatePrivateKey(chain);
-      return acc;
-    }, {});
+    const mnemonic = generateMnemonic();
+    const walletBundle = buildAssistantWalletFromMnemonic(mnemonic);
 
     assistantRuntime.wallet.has_wallet = true;
     assistantRuntime.wallet.backup_confirmed = false;
     assistantRuntime.wallet.backup_confirmed_at = null;
     assistantRuntime.wallet.created_at = nowIso();
-    assistantRuntime.wallet.addresses_by_chain = addresses_by_chain;
-    assistantRuntime.wallet.private_keys_by_chain = private_keys_by_chain;
-    assistantRuntime.wallet.mnemonic = generateMnemonic();
-    assistantRuntime.trading.wallets_by_chain = addresses_by_chain;
+    assistantRuntime.wallet.addresses_by_chain = walletBundle.addresses_by_chain;
+    assistantRuntime.wallet.private_keys_by_chain = walletBundle.private_keys_by_chain;
+    assistantRuntime.wallet.mnemonic = walletBundle.mnemonic;
+    assistantRuntime.trading.wallets_by_chain = walletBundle.addresses_by_chain;
 
     return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
   });
 
   app.post("/api/ai/wallets/import", (req, res) => {
-    const mnemonic = String(req.body?.mnemonic || "").trim();
+    const mnemonic = normalizeMnemonic(String(req.body?.mnemonic || ""));
     const overwrite = Boolean(req.body?.overwrite);
     if (!mnemonic) {
       return res.status(400).json({ message: "mnemonic required" });
+    }
+    if (!bip39.validateMnemonic(mnemonic)) {
+      return res.status(400).json({ message: "invalid mnemonic" });
     }
     if (assistantRuntime.wallet.has_wallet && !overwrite) {
       return res.status(400).json({ message: "wallet already exists" });
     }
 
-    const addresses_by_chain = assistantChains.reduce<Record<string, string>>((acc, chain) => {
-      acc[chain] = generateAddress(chain);
-      return acc;
-    }, {});
-    const private_keys_by_chain = assistantChains.reduce<Record<string, string>>((acc, chain) => {
-      acc[chain] = generatePrivateKey(chain);
-      return acc;
-    }, {});
+    let walletBundle: ReturnType<typeof buildAssistantWalletFromMnemonic>;
+    try {
+      walletBundle = buildAssistantWalletFromMnemonic(mnemonic);
+    } catch {
+      return res.status(400).json({ message: "invalid mnemonic" });
+    }
 
     assistantRuntime.wallet.has_wallet = true;
     assistantRuntime.wallet.backup_confirmed = false;
     assistantRuntime.wallet.backup_confirmed_at = null;
     assistantRuntime.wallet.created_at = nowIso();
-    assistantRuntime.wallet.addresses_by_chain = addresses_by_chain;
-    assistantRuntime.wallet.private_keys_by_chain = private_keys_by_chain;
-    assistantRuntime.wallet.mnemonic = mnemonic;
-    assistantRuntime.trading.wallets_by_chain = addresses_by_chain;
+    assistantRuntime.wallet.addresses_by_chain = walletBundle.addresses_by_chain;
+    assistantRuntime.wallet.private_keys_by_chain = walletBundle.private_keys_by_chain;
+    assistantRuntime.wallet.mnemonic = walletBundle.mnemonic;
+    assistantRuntime.trading.wallets_by_chain = walletBundle.addresses_by_chain;
 
     return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
   });
@@ -2800,6 +2817,54 @@ export async function registerRoutes(
       cached: doctorEarlyScoredCache ? Date.now() - doctorEarlyScoredCache.at < 20_000 : false,
       tokens: filtered,
     });
+  });
+
+  app.get("/api/tokens/solana/fresh", async (req, res) => {
+    const maxAgeHoursRaw = Number(req.query.max_age_hours || 24);
+    const limitRaw = Number(req.query.limit || 50);
+    const maxAgeHours = Number.isFinite(maxAgeHoursRaw) ? Math.max(1, Math.min(168, Math.trunc(maxAgeHoursRaw))) : 24;
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.trunc(limitRaw))) : 50;
+
+    try {
+      const pairs = await getNewPairs("solana", maxAgeHours);
+      const ranked = [...pairs]
+        .sort((a, b) => Number(b.pairCreatedAt || 0) - Number(a.pairCreatedAt || 0))
+        .slice(0, limit);
+
+      const tokens = ranked.map((pair) => {
+        const token = pairToTokenData(pair);
+        return {
+          address: String(token.address || pair.baseToken.address || ""),
+          symbol: String(token.symbol || pair.baseToken.symbol || "UNKNOWN"),
+          name: String(token.name || pair.baseToken.name || "Unknown"),
+          chain: "solana",
+          dexId: String(token.dexId || pair.dexId || "dexscreener"),
+          pairAddress: String(token.pairAddress || pair.pairAddress || ""),
+          priceUsd: String(token.priceUsd || pair.priceUsd || "0"),
+          liquidity: Number(token.liquidity || 0),
+          marketCap: Number(token.marketCap || 0),
+          volume24h: Number(token.volume24h || 0),
+          priceChange1h: Number(token.priceChange1h || 0),
+          launched_at: pair.pairCreatedAt ? new Date(pair.pairCreatedAt).toISOString() : null,
+          pair_url: pair.url,
+        };
+      });
+
+      return res.json({
+        ok: true,
+        chain: "solana",
+        source: "dexscreener",
+        max_age_hours: maxAgeHours,
+        count: tokens.length,
+        snapshot_at: nowIso(),
+        tokens,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        message: error instanceof Error ? error.message : "Failed to fetch fresh Solana launches",
+      });
+    }
   });
 
   app.get("/api/tokens", async (req, res) => {
