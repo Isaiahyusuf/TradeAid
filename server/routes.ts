@@ -547,24 +547,28 @@ export async function registerRoutes(
     controls: {
       max_trades_per_day: 12,
       trades_today: 0,
-      max_open_positions: 5,
-      strategy_window_minutes: 120,
+      max_open_positions: 4,
+      strategy_window_minutes: 30,
       ai_min_signals_required: 6,
       cooldown_minutes_per_mint: 30,
       min_wallet_fee_buffer_sol: 0.02,
       live_sell_fraction_pct: 50,
       max_sell_notional_usd: 300,
+      max_wallet_allocation_pct: 10,
       min_buy_amount_sol: 0.1,
-      buy_amount_sol: 0.1,
-      take_profit_multiplier: 2,
+      buy_amount_sol: 0.2,
+      take_profit_multiplier: 3,
       min_profit_pct: 12,
-      stop_loss_pct: 6,
+      stop_loss_pct: 25,
       trailing_stop_pct: 10,
-      min_liquidity_usd: 10000,
+      min_liquidity_usd: 15000,
+      max_liquidity_usd: 500000,
       min_market_cap_usd: 15000,
-      min_volume_24h_usd: 12000,
-      min_token_age_minutes: 15,
-      max_slippage_pct: 4,
+      min_volume_24h_usd: 20000,
+      min_token_age_minutes: 3,
+      max_token_age_minutes: 30,
+      min_lock_hours: 24,
+      max_slippage_pct: 8,
       max_spread_pct: 3,
       daily_loss_limit_usd: 600,
       max_consecutive_losses: 3,
@@ -572,7 +576,11 @@ export async function registerRoutes(
       max_hold_minutes: 180,
       min_momentum_profit_pct: 4,
       quality_min_volume_spike_pct: 12,
-      quality_max_top_holder_pct: 24,
+      quality_max_top_holder_pct: 5,
+      max_dev_wallet_pct: 3,
+      min_unique_buyers: 40,
+      min_buy_ratio_pct: 60,
+      max_early_spike_pct: 200,
     },
     execution: {
       mode: "paper" as "paper" | "live",
@@ -1757,6 +1765,10 @@ export async function registerRoutes(
     const cooldownMinutes = Math.max(0, Number(doctorRuntime.controls.cooldown_minutes_per_mint || 0));
     const feeBufferSol = Math.max(0, Number(doctorRuntime.controls.min_wallet_fee_buffer_sol || 0));
     const buyAmountSol = Math.max(0.01, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
+    const maxLiquidityUsd = Math.max(1, Number(doctorRuntime.controls.max_liquidity_usd || 500000));
+    const maxTokenAgeSeconds = Math.max(60, Math.trunc(Number(doctorRuntime.controls.max_token_age_minutes || 30)) * 60);
+    const maxDevWalletPct = Math.max(0, Number(doctorRuntime.controls.max_dev_wallet_pct || 3));
+    const minUniqueBuyers = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_unique_buyers || 40)));
     const openAddresses = new Set(doctorRuntime.positions.map((position) => String(position.address || "")));
 
     const buyCandidate = activeTokens
@@ -1764,10 +1776,17 @@ export async function registerRoutes(
       .filter((token) => !openAddresses.has(String(token.address || "")))
       .filter((token) => Number(token.score || 0) >= Math.max(1, Number(doctorRuntime.controls.strong_move_threshold_pct || 40)))
       .filter((token) => Number(token.liquidity || 0) >= Math.max(1000, Number(doctorRuntime.controls.min_liquidity_usd || 0)))
+      .filter((token) => Number(token.liquidity || 0) <= maxLiquidityUsd)
       .filter((token) => Number(token.market_cap_usd || 0) >= Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000)))
       .filter((token) => Number(token.volume_24h || 0) >= Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000)))
       .filter((token) => Number(token.age_seconds || 0) >= Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 15))) * 60)
+      .filter((token) => Number(token.age_seconds || 0) <= maxTokenAgeSeconds)
       .filter((token) => Boolean(token.liquidity_locked))
+      .filter((token) => Number(token.holders_count || 0) >= minUniqueBuyers)
+      .filter((token) => {
+        const devWalletPct = Number(token.dev_wallet_pct || 0);
+        return devWalletPct <= 0 || devWalletPct <= maxDevWalletPct;
+      })
       .filter((token) => getAllowedLaunchSources().has(normalizeLaunchSource(String(token.launch_source || token.source || "unknown"))))
       .filter((token) => {
         const topHolderPct = Number(token.top_holder_pct || 0);
@@ -1818,6 +1837,12 @@ export async function registerRoutes(
         if (availableSol < buyAmountSol + feeBufferSol) {
           return { allowed: false, reason: "insufficient_wallet_balance_with_fee_buffer" };
         }
+
+        const maxWalletAllocationPct = Math.max(1, Number(doctorRuntime.controls.max_wallet_allocation_pct || 10));
+        const maxAllowedBuy = Number((availableSol * (maxWalletAllocationPct / 100)).toFixed(9));
+        if (buyAmountSol > maxAllowedBuy) {
+          return { allowed: false, reason: "buy_amount_exceeds_wallet_allocation_limit" };
+        }
       }
 
       return { allowed: true, reason: "ok" };
@@ -1852,9 +1877,14 @@ export async function registerRoutes(
       const strategyWindowMinutes = Math.max(5, Number(doctorRuntime.controls.strategy_window_minutes || 120));
       const strategyWindowSeconds = Math.trunc(strategyWindowMinutes * 60);
       const liquidityMin = Math.max(1000, Number(doctorRuntime.controls.min_liquidity_usd || 0));
+      const liquidityMax = Math.max(liquidityMin, Number(doctorRuntime.controls.max_liquidity_usd || 500000));
       const topHolderMax = Math.max(1, Number(doctorRuntime.controls.quality_max_top_holder_pct || 24));
+      const maxDevWalletPct = Math.max(0, Number(doctorRuntime.controls.max_dev_wallet_pct || 3));
+      const minUniqueBuyers = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_unique_buyers || 40)));
+      const maxEarlySpikePct = Math.max(50, Number(doctorRuntime.controls.max_early_spike_pct || 200));
       const volumeSpikeMinPct = Math.max(1, Number(doctorRuntime.controls.quality_min_volume_spike_pct || 12));
       const minTokenAgeSeconds = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 15))) * 60;
+      const maxTokenAgeSeconds = Math.max(minTokenAgeSeconds, Math.trunc(Number(doctorRuntime.controls.max_token_age_minutes || 30)) * 60);
       const minVolume24h = Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000));
       const minMarketCap = Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000));
       const allowedLaunchSources = getAllowedLaunchSources();
@@ -1916,8 +1946,10 @@ export async function registerRoutes(
 
       const newTokenValidation =
         ageSeconds >= minTokenAgeSeconds &&
+        ageSeconds <= maxTokenAgeSeconds &&
         ageSeconds <= strategyWindowSeconds &&
         liquidityUsd > 0 &&
+        liquidityUsd <= liquidityMax &&
         marketCapUsd >= minMarketCap &&
         volume24h >= minVolume24h &&
         liquidityLocked &&
@@ -1926,6 +1958,7 @@ export async function registerRoutes(
 
       const liquidityStability =
         liquidityUsd >= liquidityMin &&
+        liquidityUsd <= liquidityMax &&
         liquidityLocked &&
         !riskFlags.has("LOW_LIQUIDITY") &&
         !riskFlags.has("THIN_LIQUIDITY") &&
@@ -1938,10 +1971,10 @@ export async function registerRoutes(
       const volumeActivity = volume5m > 0 && hasBuyPressure && volumeGrowthProxy && volumeConsistencyProxy;
 
       const walletParticipation =
-        holdersCount >= 25 &&
+        holdersCount >= minUniqueBuyers &&
         topHolderPct > 0 &&
         topHolderPct <= topHolderMax &&
-        (devWalletPct <= 0 || devWalletPct <= 20) &&
+        (devWalletPct <= 0 || devWalletPct <= maxDevWalletPct) &&
         !riskFlags.has("SELL_PRESSURE");
 
       const contractSafety =
@@ -1955,7 +1988,7 @@ export async function registerRoutes(
         priceChange1h > 0 &&
         hasBuyPressure &&
         !riskFlags.has("SELL_PRESSURE") &&
-        Math.abs(priceChange1h) <= 120;
+        Math.abs(priceChange1h) <= maxEarlySpikePct;
 
       const whaleActivity =
         topHolderPct > 0 &&
@@ -1975,7 +2008,7 @@ export async function registerRoutes(
         marketCapUsd >= minMarketCap &&
         allowedLaunchSources.has(launchSource) &&
         !riskFlags.has("NO_LIVE_PAIR_DATA") &&
-        (devWalletPct <= 0 || devWalletPct <= 25);
+        (devWalletPct <= 0 || devWalletPct <= maxDevWalletPct);
 
       const checks = {
         new_token_validation: newTokenValidation,
@@ -2386,6 +2419,7 @@ export async function registerRoutes(
     const numericKeys = [
       "buy_amount_sol",
       "max_trades_per_day",
+      "max_wallet_allocation_pct",
       "take_profit_multiplier",
       "min_profit_pct",
       "max_open_positions",
@@ -2398,9 +2432,12 @@ export async function registerRoutes(
       "stop_loss_pct",
       "trailing_stop_pct",
       "min_liquidity_usd",
+      "max_liquidity_usd",
       "min_market_cap_usd",
       "min_volume_24h_usd",
       "min_token_age_minutes",
+      "max_token_age_minutes",
+      "min_lock_hours",
       "max_slippage_pct",
       "max_spread_pct",
       "daily_loss_limit_usd",
@@ -2410,6 +2447,10 @@ export async function registerRoutes(
       "min_momentum_profit_pct",
       "quality_min_volume_spike_pct",
       "quality_max_top_holder_pct",
+      "max_dev_wallet_pct",
+      "min_unique_buyers",
+      "min_buy_ratio_pct",
+      "max_early_spike_pct",
     ] as const;
 
     for (const key of numericKeys) {
