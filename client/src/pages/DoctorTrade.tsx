@@ -30,7 +30,7 @@ const DOCTOR_PERSIST_WALLET_KEY = "doctortrade:persist:wallet:v1";
 export default function DoctorTrade() {
     // Only show new launches on Solana (created within 24h and chain is solana)
     // (Declarations moved below after viewData is defined)
-  const { data } = useDoctorStatus();
+  const { data, isLoading, isFetching, refetch, dataUpdatedAt } = useDoctorStatus();
   const doctorHealth = useDoctorHealth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
@@ -173,6 +173,7 @@ export default function DoctorTrade() {
 
   const scannerSuccessRate = Number(viewData?.scanner_health?.overall?.success_rate_pct || 0);
   const autoSnipeReady = Boolean(viewData?.enabled && viewData?.trade_controls?.wallet_connected);
+  const lastSyncLabel = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : "-";
 
   const saveRiskRules = () => {
     const scanIntervalSeconds = Math.max(5, Math.trunc(Number.parseFloat(intervalInput) || 20));
@@ -383,6 +384,35 @@ export default function DoctorTrade() {
     });
   };
 
+  const handleToggleDoctor = () => {
+    const nextEnabled = !Boolean(viewData?.enabled);
+    controlMutation.mutate(nextEnabled, {
+      onSuccess: (status) => {
+        const enabledNow = Boolean(status?.enabled);
+        if (nextEnabled && !enabledNow) {
+          toast({
+            title: "DoctorTrade did not start",
+            description: String(status?.last_error || "Check kill switch and wallet connection, then try again."),
+            variant: "destructive",
+          });
+          return;
+        }
+        toast({
+          title: enabledNow ? "DoctorTrade started" : "DoctorTrade stopped",
+          description: enabledNow ? "Autonomous engine is now active." : "Autonomous engine has been paused.",
+        });
+        refetch();
+      },
+      onError: (error) => {
+        toast({
+          title: "DoctorTrade update failed",
+          description: error instanceof Error ? error.message : "Could not update DoctorTrade state.",
+          variant: "destructive",
+        });
+      },
+    });
+  };
+
   useEffect(() => {
     if (!viewData || restoreAttempted) return;
     if (viewData?.trade_controls?.wallet_connected) {
@@ -464,7 +494,7 @@ export default function DoctorTrade() {
         <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60">
           <div className="flex flex-wrap gap-2 items-center">
             <Button
-              onClick={() => controlMutation.mutate(!viewData?.enabled)}
+              onClick={handleToggleDoctor}
               disabled={controlMutation.isPending}
               variant={viewData?.enabled ? "destructive" : "default"}
             >
@@ -473,6 +503,9 @@ export default function DoctorTrade() {
             </Button>
             <Button variant="outline" onClick={() => runMutation.mutate()} disabled={runMutation.isPending || !viewData?.enabled}>
               <Activity className="w-4 h-4 mr-2" /> Run Cycle
+            </Button>
+            <Button variant="outline" onClick={() => refetch()} disabled={isFetching}>
+              <Activity className={`w-4 h-4 mr-2 ${isFetching ? "animate-spin" : ""}`} /> {isFetching ? "Syncing..." : "Refresh Data"}
             </Button>
             <Button
               variant="outline"
@@ -494,6 +527,10 @@ export default function DoctorTrade() {
             {doctorHealth.data?.ok && (
               <Badge variant="outline" className="border-green-500/40 text-green-400">Backend Healthy</Badge>
             )}
+          </div>
+          <div className="mt-3 text-xs text-muted-foreground flex items-center gap-3">
+            <span>{isLoading ? "Loading DoctorTrade..." : isFetching ? "Updating live data..." : "Live sync active"}</span>
+            <span>Last sync: {lastSyncLabel}</span>
           </div>
         </Card>
 
@@ -758,7 +795,7 @@ export default function DoctorTrade() {
                   <Button
                     className="flex-1"
                     variant={viewData?.enabled ? "destructive" : "default"}
-                    onClick={() => controlMutation.mutate(!viewData?.enabled)}
+                    onClick={handleToggleDoctor}
                     disabled={controlMutation.isPending}
                   >
                     {viewData?.enabled ? "Disarm" : "Arm Sniper"}

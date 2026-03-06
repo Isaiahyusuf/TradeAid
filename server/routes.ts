@@ -302,8 +302,8 @@ export async function registerRoutes(
 
   app.post("/api/fresh/apify-sync/run", async (req, res) => {
     try {
-      const limitRaw = Number(req.body?.limit || req.query?.limit || process.env.APIFY_DATASET_LIMIT || 100);
-      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, Math.trunc(limitRaw))) : 100;
+      const limitRaw = Number(req.body?.limit || req.query?.limit || process.env.APIFY_DATASET_LIMIT || 10);
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, Math.trunc(limitRaw))) : 10;
       const result = await runApifyWorkflowOnce(limit);
       return res.json({ ok: true, result });
     } catch (error) {
@@ -2734,12 +2734,18 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
+    const requestedEnable = Boolean(req.body?.enabled);
     if (!isDoctorOwner(userId)) {
-      return res.status(403).json({ message: "DoctorTrade engine is currently owned by another account" });
+      const canTakeOverOwnership = requestedEnable && !doctorRuntime.enabled;
+      if (canTakeOverOwnership) {
+        doctorRuntime.ownerUserId = userId;
+      } else {
+        return res.status(403).json({ message: "DoctorTrade engine is currently owned by another account" });
+      }
     }
     await loadDoctorWalletForUser(userId);
 
-    const enabled = Boolean(req.body?.enabled);
+    const enabled = requestedEnable;
     if (enabled && !doctorRuntime.ownerUserId) {
       doctorRuntime.ownerUserId = userId;
     }
@@ -3131,6 +3137,9 @@ export async function registerRoutes(
   };
 
   const assistantStateKey = "assistant.runtime.v1";
+  let assistantCurrentUserId = "";
+
+  const getAssistantStateKeyForUser = (userId: string) => `${assistantStateKey}:${String(userId || "").trim()}`;
 
   const resetAssistantRuntime = () => {
     assistantRuntime.wallet.has_wallet = false;
@@ -3157,16 +3166,30 @@ export async function registerRoutes(
     assistantRuntime.transactions = [];
   };
 
-  const persistAssistantRuntime = async () => {
+  const persistAssistantRuntime = async (userIdOverride?: string) => {
+    const userId = String(userIdOverride || assistantCurrentUserId || "").trim();
+    if (!userId) {
+      return;
+    }
     try {
-      await storage.setAppState(assistantStateKey, assistantRuntime);
+      await storage.setAppState(getAssistantStateKeyForUser(userId), assistantRuntime);
     } catch {
     }
   };
 
-  const loadAssistantRuntime = async () => {
+  const loadAssistantRuntime = async (userId: string) => {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) {
+      resetAssistantRuntime();
+      assistantCurrentUserId = "";
+      return;
+    }
+
+    resetAssistantRuntime();
+    assistantCurrentUserId = normalizedUserId;
+
     try {
-      const loaded = await storage.getAppState<Record<string, any>>(assistantStateKey);
+      const loaded = await storage.getAppState<Record<string, any>>(getAssistantStateKeyForUser(normalizedUserId));
       if (!loaded || typeof loaded !== "object") {
         return;
       }
@@ -3283,7 +3306,18 @@ export async function registerRoutes(
     return envMap[chain] || defaultRpcUrls[chain];
   };
 
-  await loadAssistantRuntime();
+  app.use("/api/ai", isAuthenticated, async (req: any, res, next) => {
+    try {
+      const userId = String(req?.user?.claims?.sub || "").trim();
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      await loadAssistantRuntime(userId);
+      return next();
+    } catch {
+      return res.status(500).json({ message: "Failed to initialize assistant context" });
+    }
+  });
 
   let priceCache: { ts: number; data: Record<AssistantChain, number> } | null = null;
   const fetchChainPricesUsd = async (): Promise<Record<AssistantChain, number>> => {
@@ -4769,9 +4803,10 @@ export async function registerRoutes(
     console.error("Failed to start multichain scanner:", e);
   }
 
-  // Start Apify workflow scheduler (every 30 minutes)
+  // Start Apify workflow scheduler (default 5 minutes, configurable)
   try {
-    startApifyWorkflowScheduler(30 * 60 * 1000);
+    const apifyIntervalMs = Math.max(60_000, Number(process.env.APIFY_WORKFLOW_INTERVAL_MS || 5 * 60 * 1000));
+    startApifyWorkflowScheduler(apifyIntervalMs);
   } catch (e) {
     console.error("Failed to start Apify workflow scheduler:", e);
   }

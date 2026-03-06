@@ -146,9 +146,10 @@ export function useDoctorStatus() {
     enabled: true,
     placeholderData: (previousData) => previousData,
     staleTime: 5000,
-    refetchInterval: 5000,
+    refetchInterval: 3000,
     refetchIntervalInBackground: true,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
     notifyOnChangeProps: ["data", "error"],
     retry: 2,
   });

@@ -65,12 +65,13 @@ async function refreshAccessToken(): Promise<string | null> {
           body: JSON.stringify({ refresh_token: refreshToken }),
         });
       } catch {
-        clearToken();
         return null;
       }
 
       if (!response.ok) {
-        clearToken();
+        if (response.status === 401) {
+          clearToken();
+        }
         return null;
       }
 
@@ -127,7 +128,7 @@ export async function apiFetch<T = any>(
     window.clearTimeout(timeoutId);
   }
 
-  if ((res.status === 401 || res.status === 403) && shouldRetry && path !== "/api/auth/refresh") {
+  if (res.status === 401 && shouldRetry && path !== "/api/auth/refresh") {
     const refreshedToken = await refreshAccessToken();
     if (refreshedToken) {
       return apiFetch<T>(path, options, false);
@@ -150,7 +151,7 @@ export async function apiFetch<T = any>(
       }
     }
 
-    if (res.status === 401 || res.status === 403) {
+    if (res.status === 401) {
       clearToken();
     }
 

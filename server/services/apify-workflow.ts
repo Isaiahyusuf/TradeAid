@@ -49,7 +49,7 @@ export type ApifyWorkflowResult = {
   finishedAt: string;
 };
 
-export async function runApifyWorkflowOnce(limit: number = 100): Promise<ApifyWorkflowResult> {
+export async function runApifyWorkflowOnce(limit: number = 10): Promise<ApifyWorkflowResult> {
   const apifyToken = String(process.env.APIFY_TOKEN || "").trim();
   const actorId = String(process.env.APIFY_PUMPFUN_ACTOR_ID || DEFAULT_PUMPFUN_ACTOR_ID).trim();
   const explicitRunId = String(process.env.APIFY_RUN_ID || "").trim();
@@ -204,7 +204,7 @@ export async function runApifyWorkflowOnce(limit: number = 100): Promise<ApifyWo
 
 let schedulerTimer: NodeJS.Timeout | null = null;
 
-export function startApifyWorkflowScheduler(intervalMs: number = 30 * 60 * 1000): void {
+export function startApifyWorkflowScheduler(intervalMs: number = 5 * 60 * 1000): void {
   if (schedulerTimer) {
     return;
   }
@@ -217,7 +217,7 @@ export function startApifyWorkflowScheduler(intervalMs: number = 30 * 60 * 1000)
 
   const runCycle = async () => {
     try {
-      await runApifyWorkflowOnce(Number(process.env.APIFY_DATASET_LIMIT || 100));
+      await runApifyWorkflowOnce(Number(process.env.APIFY_DATASET_LIMIT || 10));
     } catch (error) {
       logStructured("error", "apify.workflow.cycle_failed", {
         message: error instanceof Error ? error.message : "Unknown error",
