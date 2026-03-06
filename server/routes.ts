@@ -2052,6 +2052,7 @@ export async function registerRoutes(
       const minMarketCap = Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000));
       const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours ?? 24)) > 0;
       const requireFreezeAuthorityDisabled = String(process.env.DOCTOR_REQUIRE_FREEZE_AUTHORITY_DISABLED || "false").trim().toLowerCase() === "true";
+      const strictContractSafety = String(process.env.DOCTOR_STRICT_CONTRACT_SAFETY || "false").trim().toLowerCase() === "true";
       const allowedLaunchSources = getAllowedLaunchSources();
 
       const createdAtMs = new Date(String(candidate.created_at || nowIso())).getTime();
@@ -2142,12 +2143,19 @@ export async function registerRoutes(
         (devWalletPct <= 0 || devWalletPct <= maxDevWalletPct) &&
         !riskFlags.has("SELL_PRESSURE");
 
-      const contractSafety =
+      const strictContractSafetyPass =
         !isBlacklisted &&
         !Boolean(scannedToken?.isHoneypot) &&
         (Boolean(scannedToken?.mintAuthorityDisabled) || mintAuthorityInfo.mintAuthorityDisabled || Number(scannedToken?.safetyScore || 0) >= 60 || rugProbability <= 75) &&
         (!requireFreezeAuthorityDisabled || mintAuthorityInfo.freezeAuthorityDisabled) &&
         !riskFlags.has("NO_LIVE_PAIR_DATA");
+
+      const relaxedContractSafetyPass =
+        !isBlacklisted &&
+        rugProbability <= 80 &&
+        !riskFlags.has("NO_LIVE_PAIR_DATA");
+
+      const contractSafety = strictContractSafety ? strictContractSafetyPass : relaxedContractSafetyPass;
 
       const marketMomentum =
         priceChange1h > 0 &&
