@@ -472,14 +472,10 @@ export async function registerRoutes(
     const enabled = String(process.env.SCORE_TOKEN_OPENAI_ENABLED || "true").trim().toLowerCase() !== "false";
     if (!enabled || !apiKey) {
       return {
-        summary: `${String(scorePayload.symbol || "Token")} scored ${Number(scorePayload?.scores?.trade_confidence_index || 0).toFixed(1)} confidence with rug risk ${Number(scorePayload?.scores?.rug_probability || 0).toFixed(1)}%.`,
-        key_points: [
-          `Liquidity: $${Number(scorePayload?.market_data?.liquidity_usd || 0).toLocaleString()}`,
-          `Confidence: ${Number(scorePayload?.scores?.trade_confidence_index || 0).toFixed(1)}%`,
-          `Rug Risk: ${Number(scorePayload?.scores?.rug_probability || 0).toFixed(1)}%`,
-        ],
+        summary: "OpenAI scoring explanation unavailable. Configure OpenAI API access.",
+        key_points: ["OpenAI key missing or OpenAI scoring disabled."],
         confidence_adjustment: 0,
-        source: "local-fallback",
+        source: "openai_unavailable",
       };
     }
 
@@ -527,14 +523,10 @@ export async function registerRoutes(
         message: error instanceof Error ? error.message : String(error),
       });
       return {
-        summary: `${String(scorePayload.symbol || "Token")} has ${Number(scorePayload?.scores?.trade_confidence_index || 0).toFixed(1)} confidence and ${Number(scorePayload?.scores?.rug_probability || 0).toFixed(1)} rug probability.`,
-        key_points: [
-          `DEX: ${String(scorePayload?.source?.dex_id || "unknown")}`,
-          `Liquidity: $${Number(scorePayload?.market_data?.liquidity_usd || 0).toLocaleString()}`,
-          `Flags: ${(Array.isArray(scorePayload?.risk_flags) ? scorePayload.risk_flags : []).join(", ") || "none"}`,
-        ],
+        summary: "OpenAI scoring explanation request failed.",
+        key_points: ["Retry shortly; OpenAI service may be rate-limited or unavailable."],
         confidence_adjustment: 0,
-        source: "local-fallback",
+        source: "openai_unavailable",
       };
     }
   };
@@ -3705,15 +3697,11 @@ export async function registerRoutes(
     const question = String(req.body?.question || "").trim();
     const apiKey = resolveOpenAiApiKey();
     if (!apiKey) {
-      return res.json({
+      return res.status(503).json({
         assistant: {
-          answer: question ? `Assistant response: ${question}` : "Ask a specific trading question to get guidance.",
-          key_points: [
-            "Prefer low-rug, high-liquidity tokens",
-            "Use strict risk limits before switching to live mode",
-            "Review wallet backup and consent status regularly",
-          ],
-          source: "local-fallback",
+          answer: "OpenAI is not configured for this environment.",
+          key_points: ["Set OPENAI_API_KEY or AI_INTEGRATIONS_OPENAI_API_KEY."],
+          source: "openai_unavailable",
         },
       });
     }
@@ -3753,24 +3741,84 @@ export async function registerRoutes(
       logStructured("warn", "openai.ai_ask_failed", {
         message: error instanceof Error ? error.message : String(error),
       });
-      return res.json({
+      return res.status(502).json({
         assistant: {
-          answer: question ? `Assistant response: ${question}` : "Ask a specific trading question to get guidance.",
-          key_points: ["AI temporarily unavailable; using fallback guidance."],
-          source: "local-fallback",
+          answer: "OpenAI request failed.",
+          key_points: ["Retry shortly; OpenAI may be unavailable or rate-limited."],
+          source: "openai_unavailable",
         },
       });
     });
   });
 
-  app.post("/api/ai/assist", (_req, res) => {
-    return res.json({
-      assistant: {
-        recommendation: "monitor",
-        confidence: 62,
-        rationale: "Moderate setup quality; wait for stronger momentum confirmation.",
-      },
-    });
+  app.post("/api/ai/assist", async (req, res) => {
+    const apiKey = resolveOpenAiApiKey();
+    if (!apiKey) {
+      return res.status(503).json({
+        assistant: {
+          recommendation: "hold",
+          confidence: 0,
+          rationale: "OpenAI is not configured for this environment.",
+          source: "openai_unavailable",
+        },
+      });
+    }
+
+    try {
+      const token = req.body?.token || req.body || {};
+      const prompt = [
+        "You are TradeAid AI assistant.",
+        "Given token context, return strict JSON with keys: recommendation (buy|monitor|hold|sell), confidence (0-100 number), rationale (string, max 2 sentences).",
+        "Do not include markdown.",
+        JSON.stringify(token),
+      ].join("\n");
+
+      let completion: Awaited<ReturnType<OpenAI["chat"]["completions"]["create"]>> | null = null;
+      let lastError: unknown = null;
+      for (const model of resolveOpenAiModelFallbacks()) {
+        try {
+          completion = await getOpenAI().chat.completions.create({
+            model,
+            messages: [{ role: "user", content: prompt }],
+            response_format: { type: "json_object" },
+          });
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      if (!completion) {
+        throw lastError instanceof Error ? lastError : new Error("openai_completion_failed");
+      }
+
+      const parsed = JSON.parse(String(completion.choices?.[0]?.message?.content || "{}"));
+      const recommendationRaw = String(parsed?.recommendation || "monitor").trim().toLowerCase();
+      const recommendation = (["buy", "monitor", "hold", "sell"] as const).includes(recommendationRaw as any)
+        ? recommendationRaw
+        : "monitor";
+
+      return res.json({
+        assistant: {
+          recommendation,
+          confidence: Math.max(0, Math.min(100, Number(parsed?.confidence || 0))),
+          rationale: String(parsed?.rationale || "No rationale provided.").trim(),
+          source: "openai",
+        },
+      });
+    } catch (error) {
+      logStructured("warn", "openai.ai_assist_failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return res.status(502).json({
+        assistant: {
+          recommendation: "hold",
+          confidence: 0,
+          rationale: "OpenAI request failed.",
+          source: "openai_unavailable",
+        },
+      });
+    }
   });
 
   app.post("/api/scoring/score-token", async (req, res) => {
@@ -3810,12 +3858,73 @@ export async function registerRoutes(
       res,
       `/api/scoring/insight/${encodeURIComponent(req.params.chain)}/${encodeURIComponent(req.params.contract_address)}`,
       async () => {
+        const apiKey = resolveOpenAiApiKey();
+        if (!apiKey) {
+          return {
+            status: "error",
+            message: "OpenAI is not configured for insight generation.",
+            source: "openai_unavailable",
+          };
+        }
+
         const score = await buildDexScoreFallback(req.params.contract_address, req.params.chain);
         const safeScores = score.scores || {
           rug_probability: 0,
           trade_confidence_index: 0,
         };
         const safeLiquidity = Number(score.market_data?.liquidity_usd || 0);
+
+        const prompt = [
+          "You are TradeAid AI scoring assistant.",
+          "Return strict JSON with keys: summary (string) and key_points (array of max 4 short strings).",
+          "Do not include markdown.",
+          JSON.stringify({
+            symbol: score.symbol,
+            eligible: score.eligible,
+            scores: safeScores,
+            liquidity_usd: safeLiquidity,
+            risk_flags: score.risk_flags || [],
+            source: score.source || {},
+          }),
+        ].join("\n");
+
+        let insightSummary = "";
+        let insightPoints: string[] = [];
+        try {
+          let completion: Awaited<ReturnType<OpenAI["chat"]["completions"]["create"]>> | null = null;
+          let lastError: unknown = null;
+          for (const model of resolveOpenAiModelFallbacks()) {
+            try {
+              completion = await getOpenAI().chat.completions.create({
+                model,
+                messages: [{ role: "user", content: prompt }],
+                response_format: { type: "json_object" },
+              });
+              break;
+            } catch (error) {
+              lastError = error;
+            }
+          }
+          if (!completion) {
+            throw lastError instanceof Error ? lastError : new Error("openai_completion_failed");
+          }
+
+          const parsed = JSON.parse(String(completion.choices?.[0]?.message?.content || "{}"));
+          insightSummary = String(parsed?.summary || "").trim();
+          insightPoints = Array.isArray(parsed?.key_points)
+            ? parsed.key_points.map((item: unknown) => String(item || "").trim()).filter(Boolean).slice(0, 4)
+            : [];
+        } catch (error) {
+          logStructured("warn", "openai.scoring_insight_failed", {
+            message: error instanceof Error ? error.message : String(error),
+          });
+          return {
+            status: "error",
+            message: "OpenAI insight generation failed.",
+            source: "openai_unavailable",
+          };
+        }
+
         return {
           status: "ok",
           token: {
@@ -3825,13 +3934,10 @@ export async function registerRoutes(
           },
           score: safeScores,
           insight: {
-            summary: `${score.symbol} is ${score.eligible ? 'eligible' : 'not eligible'} for trading with a rug risk of ${safeScores.rug_probability}%.`,
-            key_points: [
-              `Rug Risk: ${safeScores.rug_probability}%`,
-              `Confidence Index: ${safeScores.trade_confidence_index}%`,
-              `Liquidity: $${safeLiquidity.toLocaleString()}`,
-            ],
+            summary: insightSummary || "OpenAI returned no summary.",
+            key_points: insightPoints,
           },
+          source: "openai",
         };
       },
     ),
