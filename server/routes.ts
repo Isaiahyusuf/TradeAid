@@ -2051,6 +2051,7 @@ export async function registerRoutes(
       const minVolume24h = Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000));
       const minMarketCap = Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000));
       const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours ?? 24)) > 0;
+      const requireFreezeAuthorityDisabled = String(process.env.DOCTOR_REQUIRE_FREEZE_AUTHORITY_DISABLED || "false").trim().toLowerCase() === "true";
       const allowedLaunchSources = getAllowedLaunchSources();
 
       const createdAtMs = new Date(String(candidate.created_at || nowIso())).getTime();
@@ -2145,7 +2146,7 @@ export async function registerRoutes(
         !isBlacklisted &&
         !Boolean(scannedToken?.isHoneypot) &&
         (Boolean(scannedToken?.mintAuthorityDisabled) || mintAuthorityInfo.mintAuthorityDisabled || Number(scannedToken?.safetyScore || 0) >= 60 || rugProbability <= 75) &&
-        mintAuthorityInfo.freezeAuthorityDisabled &&
+        (!requireFreezeAuthorityDisabled || mintAuthorityInfo.freezeAuthorityDisabled) &&
         !riskFlags.has("NO_LIVE_PAIR_DATA");
 
       const marketMomentum =
