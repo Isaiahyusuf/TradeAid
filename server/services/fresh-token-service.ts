@@ -13,6 +13,49 @@ export interface FreshTokenItem {
   raw: Record<string, unknown>;
 }
 
+function normalizeEventType(value: string): string {
+  return String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+function isFreshLaunchEvent(record: Record<string, unknown>, eventType: string): boolean {
+  const normalizedEvent = normalizeEventType(eventType);
+  const action = normalizeEventType(pickString(record, ["action", "operation", "event"]));
+  const composite = `${normalizedEvent} ${action}`;
+
+  if (!normalizedEvent && !action) {
+    return true;
+  }
+
+  if (/(new_?token|token_?created|create|launch)/.test(composite)) {
+    return true;
+  }
+
+  if (/(swap|buy|sell|trade|transfer)/.test(composite)) {
+    return false;
+  }
+
+  return true;
+}
+
+export function normalizeApifyDatasetItems(items: unknown[]): FreshTokenItem[] {
+  return (Array.isArray(items) ? items : [])
+    .map((item) => {
+      const record = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+      const eventType = normalizeEventType(pickString(record, ["eventType", "event_type", "type"]));
+      return {
+        mintAddress: pickString(record, ["mintAddress", "mint", "tokenAddress", "address", "baseTokenAddress"]),
+        name: pickString(record, ["name", "tokenName"]),
+        symbol: pickString(record, ["symbol", "tokenSymbol"]),
+        creator: pickString(record, ["creator", "creatorAddress", "owner"]) || null,
+        liquidityUsd: pickNumber(record, ["liquidityUsd", "liquidity_usd", "liquidity", "initialLiquidityUsd"]),
+        eventType,
+        raw: record,
+      } satisfies FreshTokenItem;
+    })
+    .filter((item) => !!item.mintAddress)
+    .filter((item) => isFreshLaunchEvent(item.raw, item.eventType));
+}
+
 function pickString(source: Record<string, unknown>, keys: string[]): string {
   for (const key of keys) {
     const value = source[key];
@@ -127,21 +170,7 @@ export async function fetchFreshPumpfunTokens(limit = 20): Promise<FreshTokenIte
     }
 
     const itemsPayload = await itemsResponse.json() as Array<Record<string, unknown>>;
-    const normalized = (Array.isArray(itemsPayload) ? itemsPayload : [])
-      .map((item) => {
-        const record = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
-        const eventType = pickString(record, ["eventType", "event_type", "type"]).toLowerCase();
-        return {
-          mintAddress: pickString(record, ["mintAddress", "mint", "tokenAddress", "address"]),
-          name: pickString(record, ["name", "tokenName"]),
-          symbol: pickString(record, ["symbol", "tokenSymbol"]),
-          creator: pickString(record, ["creator", "creatorAddress", "owner"]) || null,
-          liquidityUsd: pickNumber(record, ["liquidityUsd", "liquidity_usd", "liquidity", "initialLiquidityUsd"]),
-          eventType,
-          raw: record,
-        } satisfies FreshTokenItem;
-      })
-      .filter((item) => item.eventType === "new_token" && !!item.mintAddress);
+    const normalized = normalizeApifyDatasetItems(Array.isArray(itemsPayload) ? itemsPayload : []);
 
     logStructured("info", "apify.fresh_tokens_fetched", {
       actorId,

@@ -21,7 +21,7 @@ import { multichainScanner } from "./services/multichain-scanner";
 import { getNewPairs, getTokenPairs, getTokenPairsFast, getTokenPairsProjectInfo, pairToTokenData } from "./services/dexscreener";
 import { FREE_TIER_LIMITS, SUBSCRIPTION_PRICE_USD, SUPPORTED_PAYMENT_CHAINS } from "@shared/schema";
 import { cryptoPaymentService } from "./services/crypto-payment";
-import { fetchFreshPumpfunTokens } from "./services/fresh-token-service";
+import { fetchFreshPumpfunTokens, normalizeApifyDatasetItems, type FreshTokenItem } from "./services/fresh-token-service";
 import { runApifyWorkflowOnce, startApifyWorkflowScheduler } from "./services/apify-workflow";
 import { enrichTokenWithHelius } from "./services/helius-enrichment-service";
 import { scoreFreshToken } from "./services/token-scoring-engine";
@@ -196,6 +196,45 @@ export async function registerRoutes(
     received_count: 0,
   };
 
+  const apifyIngestItemsStateKey = "apify:fresh:items:v1";
+
+  const getStoredApifyFreshTokens = async (limit = 100): Promise<FreshTokenItem[]> => {
+    try {
+      const snapshot = await storage.getAppState<{ items?: FreshTokenItem[] }>(apifyIngestItemsStateKey);
+      const rows = Array.isArray(snapshot?.items) ? snapshot.items : [];
+      return rows.slice(0, Math.max(1, Math.min(500, Math.trunc(limit))));
+    } catch {
+      return [];
+    }
+  };
+
+  const getMergedFreshPumpfunTokens = async (limit = 80): Promise<FreshTokenItem[]> => {
+    const safeLimit = Math.max(1, Math.min(500, Math.trunc(limit)));
+    const fromApifyApi = await (async () => {
+      try {
+        return await fetchFreshPumpfunTokens(safeLimit);
+      } catch {
+        return [] as FreshTokenItem[];
+      }
+    })();
+
+    const fromIngest = await getStoredApifyFreshTokens(safeLimit);
+    if (!fromIngest.length) {
+      return fromApifyApi.slice(0, safeLimit);
+    }
+
+    const merged = new Map<string, FreshTokenItem>();
+    for (const row of [...fromApifyApi, ...fromIngest]) {
+      const key = String(row?.mintAddress || "").trim();
+      if (!key) continue;
+      if (!merged.has(key)) {
+        merged.set(key, row);
+      }
+    }
+
+    return Array.from(merged.values()).slice(0, safeLimit);
+  };
+
   app.post("/api/fresh/apify-ingest", async (req, res) => {
     try {
       const expectedKey = String(process.env.TRADEAID_APIFY_INGEST_KEY || "").trim();
@@ -207,6 +246,15 @@ export async function registerRoutes(
       const runId = String(req.body?.run_id || "").trim() || null;
       const datasetId = String(req.body?.dataset_id || "").trim() || null;
       const items = Array.isArray(req.body?.items) ? req.body.items : [];
+      const normalizedItems = normalizeApifyDatasetItems(items)
+        .slice(0, 500)
+        .map((item) => ({
+          ...item,
+          raw: {
+            ...item.raw,
+            ingestedAt: new Date().toISOString(),
+          },
+        }));
 
       lastApifyIngest = {
         run_id: runId,
@@ -215,15 +263,24 @@ export async function registerRoutes(
         received_count: items.length,
       };
 
+      await storage.setAppState(apifyIngestItemsStateKey, {
+        run_id: runId,
+        dataset_id: datasetId,
+        received_at: lastApifyIngest.received_at,
+        items: normalizedItems,
+      });
+
       logStructured("info", "apify.dataset_ingested", {
         runId,
         datasetId,
         itemCount: items.length,
+        normalizedCount: normalizedItems.length,
       });
 
       return res.json({
         ok: true,
         received: items.length,
+        normalized: normalizedItems.length,
         run_id: runId,
         dataset_id: datasetId,
         received_at: lastApifyIngest.received_at,
@@ -914,39 +971,35 @@ export async function registerRoutes(
       .filter((token) => token.mint);
 
     const apifyTokens = await (async () => {
-      try {
-        const rows = await fetchFreshPumpfunTokens(80);
-        return rows
-          .map((token) => {
-            const raw = (token.raw || {}) as Record<string, unknown>;
-            const createdAtRaw = String(raw.discoveredAt || raw.created_at || raw.createdAt || raw.timestamp || "").trim();
-            const createdAt = createdAtRaw ? new Date(createdAtRaw) : new Date();
-            const firstSeenAt = Number.isNaN(createdAt.getTime()) ? nowIso() : createdAt.toISOString();
-            const volume24h = Number(raw.volume24h || raw.volume_24h || 0);
-            const launchSource = normalizeLaunchSource(String(raw.sourcePlatform || raw.source_platform || token.eventType || "pumpfun"));
-            return {
-              mint: String(token.mintAddress || "").trim(),
-              symbol: String(token.symbol || token.name || "UNKNOWN"),
-              name: String(token.name || token.symbol || "Unknown"),
-              source: "apify",
-              first_seen_at: firstSeenAt,
-              liquidity_usd: Number(token.liquidityUsd || raw.liquidityUsd || raw.liquidity_usd || raw.liquidity || 0),
-              market_cap_usd: Number(raw.marketCapUsd || raw.market_cap_usd || raw.marketCap || 0),
-              volume_24h: volume24h,
-              volume_5m: Number((volume24h / 288).toFixed(2)),
-              holders_count: Number(raw.holdersCount || raw.holder_count || 0),
-              top_holder_pct: Number(raw.topHoldersPercentage || raw.top_holder_pct || 0),
-              dev_wallet_pct: Number(raw.devWalletPercentage || raw.dev_wallet_pct || 0),
-              price_change_1h: Number(raw.priceChange1h || raw.price_change_1h || 0),
-              price_usd: Number(raw.priceUsd || raw.price_usd || raw.usdPrice || 0),
-              liquidity_locked: Boolean(raw.isLiquidityLocked || raw.liquidity_locked || raw.lpLocked) || launchSource === "raydium" || launchSource === "bonk",
-              launch_source: launchSource,
-            };
-          })
-          .filter((token) => token.mint);
-      } catch {
-        return [] as Array<Record<string, any>>;
-      }
+      const rows = await getMergedFreshPumpfunTokens(80);
+      return rows
+        .map((token) => {
+          const raw = (token.raw || {}) as Record<string, unknown>;
+          const createdAtRaw = String(raw.discoveredAt || raw.created_at || raw.createdAt || raw.timestamp || "").trim();
+          const createdAt = createdAtRaw ? new Date(createdAtRaw) : new Date();
+          const firstSeenAt = Number.isNaN(createdAt.getTime()) ? nowIso() : createdAt.toISOString();
+          const volume24h = Number(raw.volume24h || raw.volume_24h || 0);
+          const launchSource = normalizeLaunchSource(String(raw.sourcePlatform || raw.source_platform || token.eventType || "pumpfun"));
+          return {
+            mint: String(token.mintAddress || "").trim(),
+            symbol: String(token.symbol || token.name || "UNKNOWN"),
+            name: String(token.name || token.symbol || "Unknown"),
+            source: "apify",
+            first_seen_at: firstSeenAt,
+            liquidity_usd: Number(token.liquidityUsd || raw.liquidityUsd || raw.liquidity_usd || raw.liquidity || 0),
+            market_cap_usd: Number(raw.marketCapUsd || raw.market_cap_usd || raw.marketCap || 0),
+            volume_24h: volume24h,
+            volume_5m: Number((volume24h / 288).toFixed(2)),
+            holders_count: Number(raw.holdersCount || raw.holder_count || 0),
+            top_holder_pct: Number(raw.topHoldersPercentage || raw.top_holder_pct || 0),
+            dev_wallet_pct: Number(raw.devWalletPercentage || raw.dev_wallet_pct || 0),
+            price_change_1h: Number(raw.priceChange1h || raw.price_change_1h || 0),
+            price_usd: Number(raw.priceUsd || raw.price_usd || raw.usdPrice || 0),
+            liquidity_locked: Boolean(raw.isLiquidityLocked || raw.liquidity_locked || raw.lpLocked) || launchSource === "raydium" || launchSource === "bonk",
+            launch_source: launchSource,
+          };
+        })
+        .filter((token) => token.mint);
     })();
 
     const dexscreenerTokens = await (async () => {
@@ -4171,55 +4224,51 @@ export async function registerRoutes(
       const effectiveMaxAgeHours = Number.isFinite(maxAgeHours) && maxAgeHours > 0 ? maxAgeHours : 24;
 
       const freshRows = await (async () => {
-        try {
-          const fresh = await fetchFreshPumpfunTokens(60);
-          return fresh.map((token, index) => {
-            const raw = (token.raw || {}) as Record<string, unknown>;
-            const sourcePlatform = String(raw.sourcePlatform || raw.source_platform || raw.platform || token.eventType || "pumpfun");
-            const priceUsd = Number(raw.priceUsd || raw.price_usd || raw.usdPrice || 0);
-            const marketCapUsd = Number(raw.marketCapUsd || raw.market_cap_usd || raw.marketCap || 0);
-            const createdAtRaw = String(raw.discoveredAt || raw.created_at || raw.createdAt || raw.timestamp || "").trim();
-            const createdAt = createdAtRaw ? new Date(createdAtRaw) : new Date();
-            const logoUrl = String(raw.logoUrl || raw.logo_url || raw.imageUrl || raw.image || "").trim();
-            const social = {
-              twitter: String(raw.twitterUrl || raw.twitter || raw.x || "").trim() || undefined,
-              telegram: String(raw.telegramUrl || raw.telegram || "").trim() || undefined,
-              website: String(raw.websiteUrl || raw.website || "").trim() || undefined,
-            };
-            return {
-              id: -(index + 1),
-              address: token.mintAddress,
-              symbol: token.symbol,
-              name: token.name,
-              chain: "solana",
-              dexId: sourcePlatform || "pumpfun",
-              pairAddress: null,
-              priceUsd: String(priceUsd || 0),
-              liquidity: Number(token.liquidityUsd || 0),
-              marketCap: Number(marketCapUsd || 0),
-              volume24h: Number(raw.volume24h || raw.volume_24h || 0),
-              priceChange1h: Number(raw.priceChange1h || raw.price_change_1h || 0),
-              priceChange24h: Number(raw.priceChange24h || raw.price_change_24h || 0),
-              buys24h: Number(raw.buys24h || raw.buys_24h || 0),
-              sells24h: Number(raw.sells24h || raw.sells_24h || 0),
-              safetyScore: Number(scoreFreshToken({
-                liquidityUsd: Number(token.liquidityUsd || 0),
-                holdersCount: Number(raw.holdersCount || raw.holder_count || 0),
-                mintAuthorityActive: true,
-                freezeAuthorityActive: true,
-              }).score || 0),
-              mintAuthorityDisabled: false,
-              topHoldersPercentage: Number(raw.topHoldersPercentage || raw.top_holder_pct || 0),
-              devWalletPercentage: Number(raw.devWalletPercentage || raw.dev_wallet_pct || 0),
-              logoUrl: logoUrl || null,
-              socialLinks: social,
-              aiAnalysis: null,
-              createdAt,
-            };
-          });
-        } catch {
-          return [];
-        }
+        const fresh = await getMergedFreshPumpfunTokens(60);
+        return fresh.map((token, index) => {
+          const raw = (token.raw || {}) as Record<string, unknown>;
+          const sourcePlatform = String(raw.sourcePlatform || raw.source_platform || raw.platform || token.eventType || "pumpfun");
+          const priceUsd = Number(raw.priceUsd || raw.price_usd || raw.usdPrice || 0);
+          const marketCapUsd = Number(raw.marketCapUsd || raw.market_cap_usd || raw.marketCap || 0);
+          const createdAtRaw = String(raw.discoveredAt || raw.created_at || raw.createdAt || raw.timestamp || "").trim();
+          const createdAt = createdAtRaw ? new Date(createdAtRaw) : new Date();
+          const logoUrl = String(raw.logoUrl || raw.logo_url || raw.imageUrl || raw.image || "").trim();
+          const social = {
+            twitter: String(raw.twitterUrl || raw.twitter || raw.x || "").trim() || undefined,
+            telegram: String(raw.telegramUrl || raw.telegram || "").trim() || undefined,
+            website: String(raw.websiteUrl || raw.website || "").trim() || undefined,
+          };
+          return {
+            id: -(index + 1),
+            address: token.mintAddress,
+            symbol: token.symbol,
+            name: token.name,
+            chain: "solana",
+            dexId: sourcePlatform || "pumpfun",
+            pairAddress: null,
+            priceUsd: String(priceUsd || 0),
+            liquidity: Number(token.liquidityUsd || 0),
+            marketCap: Number(marketCapUsd || 0),
+            volume24h: Number(raw.volume24h || raw.volume_24h || 0),
+            priceChange1h: Number(raw.priceChange1h || raw.price_change_1h || 0),
+            priceChange24h: Number(raw.priceChange24h || raw.price_change_24h || 0),
+            buys24h: Number(raw.buys24h || raw.buys_24h || 0),
+            sells24h: Number(raw.sells24h || raw.sells_24h || 0),
+            safetyScore: Number(scoreFreshToken({
+              liquidityUsd: Number(token.liquidityUsd || 0),
+              holdersCount: Number(raw.holdersCount || raw.holder_count || 0),
+              mintAuthorityActive: true,
+              freezeAuthorityActive: true,
+            }).score || 0),
+            mintAuthorityDisabled: false,
+            topHoldersPercentage: Number(raw.topHoldersPercentage || raw.top_holder_pct || 0),
+            devWalletPercentage: Number(raw.devWalletPercentage || raw.dev_wallet_pct || 0),
+            logoUrl: logoUrl || null,
+            socialLinks: social,
+            aiAnalysis: null,
+            createdAt,
+          };
+        });
       })();
 
       const dexsFreshRows = await (async () => {
