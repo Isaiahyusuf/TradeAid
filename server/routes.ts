@@ -2201,15 +2201,16 @@ export async function registerRoutes(
       };
 
       const requiredSignals = Math.max(1, Math.trunc(Number(doctorRuntime.controls.ai_min_signals_required || 8)));
+      const requireStrictCoreChecks =
+        String(process.env.DOCTOR_STRICT_AI_CORE_CHECKS || "false").trim().toLowerCase() === "true";
       const passedSignals = Object.values(checks).filter(Boolean).length;
       const allChecksPassed = Object.values(checks).every(Boolean);
       const multiSignalPassed = passedSignals >= requiredSignals;
       const allowed =
         multiSignalPassed &&
         antiRugDetection &&
-        newTokenValidation &&
-        liquidityStability &&
-        contractSafety;
+        contractSafety &&
+        (!requireStrictCoreChecks || (newTokenValidation && liquidityStability));
 
       const failedReasons = Object.entries(checks)
         .filter(([, passed]) => !passed)
@@ -2221,7 +2222,7 @@ export async function registerRoutes(
         checks,
         passed_signals: passedSignals,
         required_signals: requiredSignals,
-        required_all_checks: true,
+        required_all_checks: requireStrictCoreChecks,
         all_checks_passed: allChecksPassed,
         checked_at: nowIso(),
         age_seconds: ageSeconds,
