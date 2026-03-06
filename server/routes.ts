@@ -778,6 +778,7 @@ export async function registerRoutes(
   const doctorStateFile = resolve(doctorStateDir, "doctortrade.runtime.json");
   const doctorRuntimeStateKey = "doctortrade.runtime.v1";
   const doctorWalletByUserStateKey = "doctortrade.wallets.by_user.v1";
+  const assistantRuntimeStateKeyPrefix = "assistant.runtime.v1";
 
   const getRequestUserId = (req: any): string => {
     return String(req?.user?.claims?.sub || "").trim();
@@ -820,13 +821,52 @@ export async function registerRoutes(
 
   const saveDoctorWalletForUser = async (userId: string) => {
     const wallets = await getStoredDoctorWalletsByUser();
+    const current = wallets[userId] as Record<string, any> | undefined;
     wallets[userId] = {
       address: String(doctorRuntime.wallet.address || "").trim(),
       balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0)),
       separateWalletEnforced: doctorRuntime.wallet.separateWalletEnforced !== false,
+      livePrivateKey: String(current?.livePrivateKey || "").trim(),
       updatedAt: nowIso(),
     };
     await setStoredDoctorWalletsByUser(wallets);
+  };
+
+  const setDoctorLivePrivateKeyForUser = async (userId: string, privateKey: string) => {
+    const wallets = await getStoredDoctorWalletsByUser();
+    const current = wallets[userId] as Record<string, any> | undefined;
+    wallets[userId] = {
+      ...(current || {}),
+      address: String(doctorRuntime.wallet.address || current?.address || "").trim(),
+      balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol ?? current?.balanceSol ?? 0)),
+      separateWalletEnforced: (doctorRuntime.wallet.separateWalletEnforced ?? current?.separateWalletEnforced) !== false,
+      livePrivateKey: String(privateKey || "").trim(),
+      updatedAt: nowIso(),
+    };
+    await setStoredDoctorWalletsByUser(wallets);
+  };
+
+  const getDoctorLiveWalletCredentials = async () => {
+    const envPublicKey = String(process.env.DOCTORTRADE_LIVE_WALLET_PUBLIC_KEY || "").trim();
+    const envPrivateKey = String(process.env.DOCTORTRADE_LIVE_WALLET_PRIVATE_KEY || "").trim();
+
+    const ownerUserId = String(doctorRuntime.ownerUserId || "").trim();
+    if (!ownerUserId) {
+      return {
+        walletPublicKey: envPublicKey,
+        walletPrivateKey: envPrivateKey,
+      };
+    }
+
+    const wallets = await getStoredDoctorWalletsByUser();
+    const ownerWallet = wallets[ownerUserId] as Record<string, any> | undefined;
+    const userPublicKey = String(ownerWallet?.address || "").trim();
+    const userPrivateKey = String(ownerWallet?.livePrivateKey || "").trim();
+
+    return {
+      walletPublicKey: userPublicKey || envPublicKey,
+      walletPrivateKey: userPrivateKey || envPrivateKey,
+    };
   };
 
   const clearDoctorWalletForUser = async (userId: string) => {
@@ -1405,8 +1445,7 @@ export async function registerRoutes(
         } as const;
       }
 
-      const walletPublicKey = String(process.env.DOCTORTRADE_LIVE_WALLET_PUBLIC_KEY || "").trim();
-      const walletPrivateKey = String(process.env.DOCTORTRADE_LIVE_WALLET_PRIVATE_KEY || "").trim();
+      const { walletPublicKey, walletPrivateKey } = await getDoctorLiveWalletCredentials();
       const slippageBps = Math.max(25, Math.trunc(Number(doctorRuntime.controls.max_slippage_pct || 1) * 100));
       const tradeBaseMint = [SOL_MINT, BONK_MINT].includes(String(params.baseMint || "").trim())
         ? String(params.baseMint || "").trim()
@@ -2904,6 +2943,7 @@ export async function registerRoutes(
 
     const payload = req.body || {};
     const explicitAddress = String(payload.public_address || "").trim();
+    const explicitPrivateKey = String(payload.private_key || "").trim();
     const useExistingWallet = Boolean(payload.use_existing_wallet);
     const configuredPaperBalance = Math.max(1, Number(process.env.DOCTORTRADE_PAPER_BALANCE_SOL || 5));
     const walletBalanceTimeoutMs = Math.max(300, Number(process.env.DOCTOR_WALLET_BALANCE_TIMEOUT_MS || 1200));
@@ -2920,8 +2960,34 @@ export async function registerRoutes(
         doctorRuntime.wallet.balanceSol = Math.max(0, onchainBalanceSol);
       } catch {
       }
-    } else if (useExistingWallet && !doctorRuntime.wallet.address) {
-      doctorRuntime.wallet.address = "sim-wallet-local";
+    } else if (useExistingWallet) {
+      let importedAddress = "";
+      let importedPrivateKey = "";
+      try {
+        const assistantState = await storage.getAppState<Record<string, any>>(`${assistantRuntimeStateKeyPrefix}:${userId}`);
+        const assistantWallet = assistantState?.wallet as Record<string, any> | undefined;
+        if (assistantWallet && typeof assistantWallet === "object") {
+          const addresses = assistantWallet.addresses_by_chain as Record<string, any> | undefined;
+          const privateKeys = assistantWallet.private_keys_by_chain as Record<string, any> | undefined;
+          importedAddress = String(addresses?.solana || "").trim();
+          importedPrivateKey = String(privateKeys?.solana || "").trim();
+        }
+      } catch {
+      }
+
+      if (importedAddress) {
+        doctorRuntime.wallet.address = importedAddress;
+      } else if (!doctorRuntime.wallet.address) {
+        doctorRuntime.wallet.address = "sim-wallet-local";
+      }
+
+      if (importedPrivateKey) {
+        await setDoctorLivePrivateKeyForUser(userId, importedPrivateKey);
+      }
+    }
+
+    if (explicitPrivateKey) {
+      await setDoctorLivePrivateKeyForUser(userId, explicitPrivateKey);
     }
 
     if (doctorRuntime.wallet.address === "sim-wallet-local") {
