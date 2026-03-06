@@ -1942,7 +1942,10 @@ export async function registerRoutes(
       .filter((token) => Number(token.age_seconds || 0) >= Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 15))) * 60)
       .filter((token) => Number(token.age_seconds || 0) <= maxTokenAgeSeconds)
       .filter((token) => !requireLiquidityLock || Boolean(token.liquidity_locked))
-      .filter((token) => Number(token.holders_count || 0) >= minUniqueBuyers)
+      .filter((token) => {
+        const holdersCount = Number(token.holders_count || 0);
+        return holdersCount <= 0 || holdersCount >= minUniqueBuyers;
+      })
       .filter((token) => {
         const devWalletPct = Number(token.dev_wallet_pct || 0);
         return devWalletPct <= 0 || devWalletPct <= maxDevWalletPct;
@@ -2133,9 +2136,8 @@ export async function registerRoutes(
       const volumeActivity = volume5m > 0 && hasBuyPressure && volumeGrowthProxy && volumeConsistencyProxy;
 
       const walletParticipation =
-        holdersCount >= minUniqueBuyers &&
-        topHolderPct > 0 &&
-        topHolderPct <= topHolderMax &&
+        (holdersCount <= 0 || holdersCount >= minUniqueBuyers) &&
+        (topHolderPct <= 0 || topHolderPct <= topHolderMax) &&
         (devWalletPct <= 0 || devWalletPct <= maxDevWalletPct) &&
         !riskFlags.has("SELL_PRESSURE");
 
