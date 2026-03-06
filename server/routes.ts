@@ -714,6 +714,7 @@ export async function registerRoutes(
   }
 
   const doctorRuntime = {
+    ownerUserId: "" as string,
     enabled: false,
     killSwitch: false,
     scanIntervalSeconds: Math.max(2, Math.trunc(Number(process.env.DOCTORTRADE_SCAN_INTERVAL_SECONDS || 20))),
@@ -776,6 +777,68 @@ export async function registerRoutes(
   const doctorStateDir = resolve(process.cwd(), "server", "state");
   const doctorStateFile = resolve(doctorStateDir, "doctortrade.runtime.json");
   const doctorRuntimeStateKey = "doctortrade.runtime.v1";
+  const doctorWalletByUserStateKey = "doctortrade.wallets.by_user.v1";
+
+  const getRequestUserId = (req: any): string => {
+    return String(req?.user?.claims?.sub || "").trim();
+  };
+
+  const getStoredDoctorWalletsByUser = async (): Promise<Record<string, any>> => {
+    try {
+      const state = await storage.getAppState<Record<string, any>>(doctorWalletByUserStateKey);
+      if (state && typeof state === "object" && !Array.isArray(state)) {
+        return state;
+      }
+      return {};
+    } catch {
+      return {};
+    }
+  };
+
+  const setStoredDoctorWalletsByUser = async (value: Record<string, any>) => {
+    await storage.setAppState(doctorWalletByUserStateKey, value);
+  };
+
+  const loadDoctorWalletForUser = async (userId: string) => {
+    const wallets = await getStoredDoctorWalletsByUser();
+    const userWallet = wallets[userId] as Record<string, any> | undefined;
+
+    doctorRuntime.wallet.address = String(userWallet?.address || "").trim();
+    doctorRuntime.wallet.balanceSol = Math.max(0, Number(userWallet?.balanceSol || 0));
+    doctorRuntime.wallet.separateWalletEnforced = userWallet?.separateWalletEnforced !== false;
+  };
+
+  const getDoctorWalletSnapshotForUser = async (userId: string) => {
+    const wallets = await getStoredDoctorWalletsByUser();
+    const userWallet = wallets[userId] as Record<string, any> | undefined;
+    return {
+      address: String(userWallet?.address || "").trim(),
+      balanceSol: Math.max(0, Number(userWallet?.balanceSol || 0)),
+      separateWalletEnforced: userWallet?.separateWalletEnforced !== false,
+    };
+  };
+
+  const saveDoctorWalletForUser = async (userId: string) => {
+    const wallets = await getStoredDoctorWalletsByUser();
+    wallets[userId] = {
+      address: String(doctorRuntime.wallet.address || "").trim(),
+      balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0)),
+      separateWalletEnforced: doctorRuntime.wallet.separateWalletEnforced !== false,
+      updatedAt: nowIso(),
+    };
+    await setStoredDoctorWalletsByUser(wallets);
+  };
+
+  const clearDoctorWalletForUser = async (userId: string) => {
+    const wallets = await getStoredDoctorWalletsByUser();
+    delete wallets[userId];
+    await setStoredDoctorWalletsByUser(wallets);
+  };
+
+  const isDoctorOwner = (userId: string) => {
+    if (!doctorRuntime.ownerUserId) return true;
+    return doctorRuntime.ownerUserId === userId;
+  };
 
   const persistDoctorRuntime = async () => {
     const snapshot = JSON.parse(JSON.stringify(doctorRuntime));
@@ -808,6 +871,9 @@ export async function registerRoutes(
 
       if (typeof loaded.enabled === "boolean") {
         doctorRuntime.enabled = loaded.enabled;
+      }
+      if (typeof loaded.ownerUserId === "string") {
+        doctorRuntime.ownerUserId = String(loaded.ownerUserId || "").trim();
       }
       if (typeof loaded.killSwitch === "boolean") {
         doctorRuntime.killSwitch = loaded.killSwitch;
@@ -2633,15 +2699,56 @@ export async function registerRoutes(
     });
   });
 
-  app.get("/api/doctor/status", async (_req, res) => {
-    return res.json(await buildDoctorStatus());
+  app.get("/api/doctor/status", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const ownerAccess = isDoctorOwner(userId);
+    const userWallet = await getDoctorWalletSnapshotForUser(userId);
+    if (ownerAccess) {
+      await loadDoctorWalletForUser(userId);
+    }
+    const status = await buildDoctorStatus();
+    if (!ownerAccess) {
+      status.wallet = {
+        address: userWallet.address,
+        balance_sol: userWallet.balanceSol,
+        separate_wallet_enforced: userWallet.separateWalletEnforced,
+      };
+      if (status.trade_controls) {
+        status.trade_controls.wallet_connected = Boolean(userWallet.address);
+      }
+      status.enabled = false;
+      status.last_decision = {
+        action: "skip",
+        reason: "doctortrade_owned_by_other_user",
+        at: nowIso(),
+      };
+    }
+    return res.json(status);
   });
 
-  app.post("/api/doctor/control", async (req, res) => {
+  app.post("/api/doctor/control", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    if (!isDoctorOwner(userId)) {
+      return res.status(403).json({ message: "DoctorTrade engine is currently owned by another account" });
+    }
+    await loadDoctorWalletForUser(userId);
+
     const enabled = Boolean(req.body?.enabled);
+    if (enabled && !doctorRuntime.ownerUserId) {
+      doctorRuntime.ownerUserId = userId;
+    }
     doctorRuntime.enabled = enabled && !doctorRuntime.killSwitch;
     if (enabled && doctorRuntime.killSwitch) {
       doctorRuntime.lastError = "Cannot enable while kill switch is active";
+    }
+    if (!enabled && doctorRuntime.ownerUserId === userId) {
+      doctorRuntime.ownerUserId = "";
     }
     await persistDoctorRuntime();
 
@@ -2671,10 +2778,20 @@ export async function registerRoutes(
       doctorCycleTimer.unref?.();
     }
 
+    await saveDoctorWalletForUser(userId);
     return res.json(await buildDoctorStatus());
   });
 
-  app.post("/api/doctor/config", async (req, res) => {
+  app.post("/api/doctor/config", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    if (!isDoctorOwner(userId)) {
+      return res.status(403).json({ message: "DoctorTrade settings are currently owned by another account" });
+    }
+    await loadDoctorWalletForUser(userId);
+
     const payload = req.body || {};
     if (typeof payload.execution_mode === "string") {
       const mode = String(payload.execution_mode || "").toLowerCase();
@@ -2753,10 +2870,20 @@ export async function registerRoutes(
       doctorCycleTimer.unref?.();
     }
 
+    await saveDoctorWalletForUser(userId);
     return res.json(await buildDoctorStatus());
   });
 
-  app.post("/api/doctor/connect-wallet", async (req, res) => {
+  app.post("/api/doctor/connect-wallet", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    if (!isDoctorOwner(userId)) {
+      return res.status(403).json({ message: "DoctorTrade wallet is currently owned by another account" });
+    }
+    await loadDoctorWalletForUser(userId);
+
     const payload = req.body || {};
     const explicitAddress = String(payload.public_address || "").trim();
     const useExistingWallet = Boolean(payload.use_existing_wallet);
@@ -2784,23 +2911,61 @@ export async function registerRoutes(
     } else {
       doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 0);
     }
+    doctorRuntime.ownerUserId = userId;
     await persistDoctorRuntime();
+    await saveDoctorWalletForUser(userId);
     return res.json(await buildDoctorStatus());
   });
 
-  app.post("/api/doctor/disconnect-wallet", async (_req, res) => {
+  app.post("/api/doctor/disconnect-wallet", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    if (!isDoctorOwner(userId)) {
+      return res.status(403).json({ message: "DoctorTrade wallet is currently owned by another account" });
+    }
+    await loadDoctorWalletForUser(userId);
+
     doctorRuntime.wallet.address = "";
+    doctorRuntime.wallet.balanceSol = 0;
+    if (doctorRuntime.ownerUserId === userId) {
+      doctorRuntime.ownerUserId = "";
+      doctorRuntime.enabled = false;
+    }
+    await clearDoctorWalletForUser(userId);
     await persistDoctorRuntime();
     return res.json(await buildDoctorStatus());
   });
 
-  app.post("/api/doctor/run-once", async (_req, res) => {
+  app.post("/api/doctor/run-once", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    if (!isDoctorOwner(userId)) {
+      return res.status(403).json({ result: { executed: false, reason: "doctortrade_owned_by_other_user" } });
+    }
+    await loadDoctorWalletForUser(userId);
+
     const result = await executeDoctorCycle("manual");
+    await saveDoctorWalletForUser(userId);
+    await persistDoctorRuntime();
     return res.json({ result });
   });
 
-  app.post("/api/doctor/direct-buy", async (req, res) => {
+  app.post("/api/doctor/direct-buy", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    if (!isDoctorOwner(userId)) {
+      return res.status(403).json({ result: { executed: false, reason: "doctortrade_owned_by_other_user" } });
+    }
+    await loadDoctorWalletForUser(userId);
+
     const contractAddress = String(req.body?.contract_address || req.body?.address || "").trim();
+    const symbol = String(req.body?.symbol || "MANUAL").trim() || "MANUAL";
     if (!contractAddress) {
       return res.status(400).json({ result: { executed: false, reason: "contract_address_required" } });
     }
@@ -2808,42 +2973,101 @@ export async function registerRoutes(
       return res.json({ result: { executed: false, reason: "wallet_not_connected" } });
     }
 
+    const existingPosition = doctorRuntime.positions.find((position) => String(position.address || "") === contractAddress);
+    if (existingPosition) {
+      return res.json({ result: { executed: false, reason: "token_already_owned" } });
+    }
+
+    const alreadyBought = doctorRuntime.recentTrades.find((trade) => (
+      String(trade.action || "").toUpperCase() === "BUY" &&
+      String(trade.address || "") === contractAddress
+    ));
+    if (alreadyBought) {
+      return res.json({ result: { executed: false, reason: "token_already_bought_once" } });
+    }
+
     const buyAmount = Number(doctorRuntime.controls.buy_amount_sol || 0.1);
-    const signature = `paper_buy_${Date.now()}`;
+    const activeTokens = await getDoctorActiveTokens();
+    const candidate = activeTokens.find((item) => String(item.address || "") === contractAddress);
+    const expectedPriceUsd = resolveCurrentPriceUsd(candidate || {}, Number(req.body?.price_usd || 0));
+
+    const buyExecution = await executeDoctorOrder({
+      action: "buy",
+      symbol,
+      mint: contractAddress,
+      amountSol: buyAmount,
+      expectedPriceUsd,
+      reason: "manual_direct_buy",
+      trigger: "manual",
+      baseMint: String((candidate as any)?.base_mint || getDoctorTradeBaseAssetMint()),
+    });
+
+    if (!buyExecution.executed) {
+      return res.json({
+        result: {
+          executed: false,
+          reason: String((buyExecution as any).reason || "manual_buy_failed"),
+        },
+      });
+    }
+
     const now = new Date().toISOString();
+    const position = {
+      symbol,
+      address: contractAddress,
+      entry_price: expectedPriceUsd,
+      current_price: expectedPriceUsd,
+      peak_price: expectedPriceUsd,
+      liquidity: Number((candidate as any)?.liquidity || 0),
+      confidence: Number((candidate as any)?.score || 70),
+      size_pct: 100,
+      risk_status: String((candidate as any)?.risk_level || "MEDIUM"),
+      trailing_stop_pct: Number(doctorRuntime.controls.trailing_stop_pct || 10),
+      amount_sol: buyAmount,
+      base_mint: String((candidate as any)?.base_mint || getDoctorTradeBaseAssetMint()),
+      opened_at: now,
+      source: "manual",
+    };
 
     doctorRuntime.controls.trades_today = Number(doctorRuntime.controls.trades_today || 0) + 1;
+    doctorRuntime.positions.unshift(position);
+    doctorRuntime.positions = doctorRuntime.positions.slice(0, 30);
+    doctorRuntime.wallet.balanceSol = Number((Number(doctorRuntime.wallet.balanceSol || 0) - buyAmount).toFixed(6));
+
     doctorRuntime.recentTrades.unshift({
-      token: String(req.body?.symbol || "MANUAL"),
+      token: symbol,
       address: contractAddress,
       action: "BUY",
       status: "EXECUTED",
       reason: "manual_direct_buy",
-      confidence: 70,
-      liquidity: 0,
-      volume_5m: 0,
+      confidence: Number((candidate as any)?.score || 70),
+      liquidity: Number((candidate as any)?.liquidity || 0),
+      volume_5m: Number((candidate as any)?.volume_5m || 0),
       size_pct: 100,
-      notional_usd: Number((buyAmount * 160).toFixed(2)),
+      notional_usd: Number((buyAmount * expectedPriceUsd).toFixed(2)),
+      tx_hash: (buyExecution as any).txHash,
+      execution_mode: doctorRuntime.execution.mode,
       timestamp: now,
     });
     doctorRuntime.decisionJournal.unshift({
-      token: String(req.body?.symbol || "MANUAL"),
+      token: symbol,
       address: contractAddress,
       decision: "buy",
       reason: "manual_direct_buy",
-      confidence: 70,
+      confidence: Number((candidate as any)?.score || 70),
       size_pct: 100,
       strategy_mode: "manual",
       timestamp: now,
     });
     doctorRuntime.recentTrades = doctorRuntime.recentTrades.slice(0, 50);
     doctorRuntime.decisionJournal = doctorRuntime.decisionJournal.slice(0, 80);
+    await saveDoctorWalletForUser(userId);
     await persistDoctorRuntime();
 
     return res.json({
       result: {
         executed: true,
-        signature,
+        signature: (buyExecution as any).txHash,
         buy_amount_sol: buyAmount,
       },
     });
