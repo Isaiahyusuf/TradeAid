@@ -2053,6 +2053,7 @@ export async function registerRoutes(
       const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours ?? 24)) > 0;
       const requireFreezeAuthorityDisabled = String(process.env.DOCTOR_REQUIRE_FREEZE_AUTHORITY_DISABLED || "false").trim().toLowerCase() === "true";
       const strictContractSafety = String(process.env.DOCTOR_STRICT_CONTRACT_SAFETY || "false").trim().toLowerCase() === "true";
+      const strictLiquidityStability = String(process.env.DOCTOR_STRICT_LIQUIDITY_STABILITY || "false").trim().toLowerCase() === "true";
       const allowedLaunchSources = getAllowedLaunchSources();
 
       const createdAtMs = new Date(String(candidate.created_at || nowIso())).getTime();
@@ -2123,14 +2124,19 @@ export async function registerRoutes(
         allowedLaunchSources.has(launchSource) &&
         dexTradable;
 
-      const liquidityStability =
+      const liquidityStabilityBase =
         liquidityUsd >= liquidityMin &&
         liquidityUsd <= liquidityMax &&
         liquidityLockCheck &&
+        !riskFlags.has("NO_LIVE_PAIR_DATA");
+
+      const liquidityStability =
+        liquidityStabilityBase &&
+        (!strictLiquidityStability || (
         !riskFlags.has("LOW_LIQUIDITY") &&
         !riskFlags.has("THIN_LIQUIDITY") &&
-        !riskFlags.has("HIGH_SLIPPAGE") &&
-        !riskFlags.has("NO_LIVE_PAIR_DATA");
+        !riskFlags.has("HIGH_SLIPPAGE")
+      ));
 
       const hasBuyPressure = smartWalletSignal >= 45;
       const volumeGrowthProxy = volume5m >= Math.max(50, Math.trunc(volumeSpikeMinPct * 10));
