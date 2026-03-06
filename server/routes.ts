@@ -950,6 +950,7 @@ export async function registerRoutes(
     if (normalized.includes("pump")) return "pumpfun";
     if (normalized.includes("ray")) return "raydium";
     if (normalized.includes("bonk")) return "bonk";
+    if (normalized.includes("dex")) return "dexscreener";
     return "unknown";
   };
 
@@ -1070,9 +1071,20 @@ export async function registerRoutes(
 
     const dexscreenerTokens = await (async () => {
       try {
-        const pairs = await getNewPairs("solana", 6);
+        const apifyUnavailable = apifyTokens.length === 0;
+        const dexscreenerLookbackHours = apifyUnavailable ? 12 : 6;
+        const dexscreenerMaxPairs = apifyUnavailable ? 220 : 160;
+        if (apifyUnavailable) {
+          logStructured("warn", "doctortrade.dexscreener_fallback_active", {
+            reason: "apify_unavailable_or_empty",
+            lookback_hours: dexscreenerLookbackHours,
+            max_pairs: dexscreenerMaxPairs,
+          });
+        }
+
+        const pairs = await getNewPairs("solana", dexscreenerLookbackHours);
         return pairs
-          .slice(0, 160)
+          .slice(0, dexscreenerMaxPairs)
           .map((pair) => {
             const token = pairToTokenData(pair);
             const createdAtMs = Number(pair.pairCreatedAt || 0);
