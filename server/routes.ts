@@ -659,7 +659,7 @@ export async function registerRoutes(
   const doctorRuntime = {
     enabled: false,
     killSwitch: false,
-    scanIntervalSeconds: 20,
+    scanIntervalSeconds: Math.max(2, Math.trunc(Number(process.env.DOCTORTRADE_SCAN_INTERVAL_SECONDS || 20))),
     wallet: {
       address: "",
       balanceSol: 0,
@@ -739,7 +739,7 @@ export async function registerRoutes(
         doctorRuntime.killSwitch = loaded.killSwitch;
       }
       if (Number.isFinite(Number(loaded.scanIntervalSeconds))) {
-        doctorRuntime.scanIntervalSeconds = Math.max(5, Math.trunc(Number(loaded.scanIntervalSeconds)));
+        doctorRuntime.scanIntervalSeconds = Math.max(2, Math.trunc(Number(loaded.scanIntervalSeconds)));
       }
 
       const wallet = loaded.wallet as Record<string, any> | undefined;
@@ -2573,7 +2573,7 @@ export async function registerRoutes(
         } finally {
           doctorCycleRunning = false;
         }
-      }, Math.max(5, doctorRuntime.scanIntervalSeconds) * 1000);
+      }, Math.max(2, doctorRuntime.scanIntervalSeconds) * 1000);
       doctorCycleTimer.unref?.();
     }
 
@@ -2593,7 +2593,7 @@ export async function registerRoutes(
       }
     }
     if (Number.isFinite(Number(payload.scan_interval_seconds))) {
-      doctorRuntime.scanIntervalSeconds = Math.max(5, Math.trunc(Number(payload.scan_interval_seconds)));
+      doctorRuntime.scanIntervalSeconds = Math.max(2, Math.trunc(Number(payload.scan_interval_seconds)));
     }
 
     const numericKeys = [
@@ -2655,7 +2655,7 @@ export async function registerRoutes(
         } finally {
           doctorCycleRunning = false;
         }
-      }, Math.max(5, doctorRuntime.scanIntervalSeconds) * 1000);
+      }, Math.max(2, doctorRuntime.scanIntervalSeconds) * 1000);
       doctorCycleTimer.unref?.();
     }
 
@@ -2667,12 +2667,16 @@ export async function registerRoutes(
     const explicitAddress = String(payload.public_address || "").trim();
     const useExistingWallet = Boolean(payload.use_existing_wallet);
     const configuredPaperBalance = Math.max(1, Number(process.env.DOCTORTRADE_PAPER_BALANCE_SOL || 5));
+    const walletBalanceTimeoutMs = Math.max(300, Number(process.env.DOCTOR_WALLET_BALANCE_TIMEOUT_MS || 1200));
 
     if (explicitAddress) {
       doctorRuntime.wallet.address = explicitAddress;
       try {
         const pubkey = new PublicKey(explicitAddress);
-        const lamports = await getSolanaConnection().getBalance(pubkey, "confirmed");
+        const lamports = await Promise.race<number>([
+          getSolanaConnection().getBalance(pubkey, "processed"),
+          new Promise<number>((_resolve, reject) => setTimeout(() => reject(new Error("wallet_balance_timeout")), walletBalanceTimeoutMs)),
+        ]);
         const onchainBalanceSol = Number((lamports / 1_000_000_000).toFixed(6));
         doctorRuntime.wallet.balanceSol = Math.max(0, onchainBalanceSol);
       } catch {
@@ -2769,7 +2773,7 @@ export async function registerRoutes(
       } finally {
         doctorCycleRunning = false;
       }
-    }, Math.max(5, doctorRuntime.scanIntervalSeconds) * 1000);
+    }, Math.max(2, doctorRuntime.scanIntervalSeconds) * 1000);
     doctorCycleTimer.unref?.();
   }
 
