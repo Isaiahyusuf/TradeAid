@@ -131,6 +131,9 @@ export function useAssistantTradingStatus() {
     queryFn: () => apiGet<{ trading: AssistantTradingStatus }>("/api/ai/trading/status"),
     enabled: hasToken,
     retry: 1,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -141,6 +144,9 @@ export function useAssistantWalletStatus() {
     queryFn: () => apiGet<{ wallet: AssistantWalletStatus }>("/api/ai/wallets/status"),
     enabled: hasToken,
     retry: 1,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -152,6 +158,8 @@ export function useAssistantWalletPortfolio() {
     enabled: hasToken,
     retry: 1,
     refetchInterval: 30_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -163,6 +171,8 @@ export function useAssistantWalletTransactions(limit: number = 25) {
     enabled: hasToken,
     retry: 1,
     refetchInterval: 20_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -319,6 +329,9 @@ export function useAssistantContextOverview(days: number = 30) {
     queryFn: () => apiGet<{ context: AssistantContextOverview; user_id: string }>(`/api/ai/context/overview?days=${days}`),
     enabled: hasToken,
     retry: 1,
+    refetchInterval: 20_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   });
 }
 

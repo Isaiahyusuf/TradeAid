@@ -213,6 +213,44 @@ export default function WalletPage() {
     return Math.max(0, Math.round(recentNotional * 0.18 * 100) / 100);
   }, [portfolio?.total_usd, context?.recent_trades]);
 
+  const walletSyncing = Boolean(
+    tradingStatusQuery.isFetching ||
+    doctorStatusQuery.isFetching ||
+    walletStatusQuery.isFetching ||
+    walletPortfolioQuery.isFetching ||
+    walletTransactionsQuery.isFetching ||
+    contextOverviewQuery.isFetching,
+  );
+
+  const walletInitialLoading = Boolean(
+    tradingStatusQuery.isLoading ||
+    doctorStatusQuery.isLoading ||
+    walletStatusQuery.isLoading ||
+    walletPortfolioQuery.isLoading,
+  );
+
+  const lastWalletSyncTs = Math.max(
+    Number(tradingStatusQuery.dataUpdatedAt || 0),
+    Number(doctorStatusQuery.dataUpdatedAt || 0),
+    Number(walletStatusQuery.dataUpdatedAt || 0),
+    Number(walletPortfolioQuery.dataUpdatedAt || 0),
+    Number(walletTransactionsQuery.dataUpdatedAt || 0),
+    Number(contextOverviewQuery.dataUpdatedAt || 0),
+  );
+
+  const lastWalletSyncLabel = lastWalletSyncTs > 0 ? new Date(lastWalletSyncTs).toLocaleTimeString() : "-";
+
+  const refreshWalletViews = async () => {
+    await Promise.allSettled([
+      tradingStatusQuery.refetch(),
+      doctorStatusQuery.refetch(),
+      walletStatusQuery.refetch(),
+      walletPortfolioQuery.refetch(),
+      walletTransactionsQuery.refetch(),
+      contextOverviewQuery.refetch(),
+    ]);
+  };
+
   const shortAddress = (address?: string) => {
     if (!address) return "Not generated";
     if (address.length <= 14) return address;
@@ -567,7 +605,14 @@ export default function WalletPage() {
             <Badge variant="outline" className="solana-badge">Master Recovery Phrase</Badge>
             <Badge variant="outline">Solana Account</Badge>
             <Badge variant="outline">Private Key Export</Badge>
+            <Badge variant="outline" className={walletSyncing ? "border-yellow-500/40 text-yellow-400" : "border-green-500/40 text-green-400"}>
+              {walletInitialLoading ? "Loading..." : walletSyncing ? "Syncing..." : "Live Sync"}
+            </Badge>
+            <Button variant="outline" size="sm" onClick={refreshWalletViews} disabled={walletSyncing}>
+              {walletSyncing ? "Refreshing..." : "Refresh"}
+            </Button>
           </div>
+          <p className="text-xs text-muted-foreground">Last sync: {lastWalletSyncLabel}</p>
         </div>
 
         <Card className="solana-card border-primary/20 bg-gradient-to-r from-primary/10 via-accent/5 to-card">
