@@ -1030,6 +1030,7 @@ export async function registerRoutes(
         const topHolderPct = Number(token.top_holder_pct || 0);
         const priceChange1h = Number(token.price_change_1h || 0);
         const liquidityLocked = Boolean(token.liquidity_locked);
+        const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours || 24)) > 0;
         const launchSource = normalizeLaunchSource(String(token.launch_source || token.source || "unknown"));
 
         const freshnessScore = Math.max(0, 40 * (1 - Math.min(ageSeconds, windowSeconds) / Math.max(1, windowSeconds)));
@@ -1046,7 +1047,7 @@ export async function registerRoutes(
         if (marketCapUsd < Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000))) rejectReasons.push("low_market_cap");
         if (volume24h < Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000))) rejectReasons.push("low_volume_24h");
         if (topHolderPct > 45) rejectReasons.push("holder_concentration_high");
-        if (!liquidityLocked) rejectReasons.push("liquidity_not_locked");
+        if (requireLiquidityLock && !liquidityLocked) rejectReasons.push("liquidity_not_locked");
         if (!getAllowedLaunchSources().has(launchSource)) rejectReasons.push("launch_source_not_allowed");
         if (confidenceScore < 55) rejectReasons.push("confidence_below_threshold");
 
@@ -1934,6 +1935,7 @@ export async function registerRoutes(
     const maxTokenAgeSeconds = Math.max(60, Math.trunc(Number(doctorRuntime.controls.max_token_age_minutes || 30)) * 60);
     const maxDevWalletPct = Math.max(0, Number(doctorRuntime.controls.max_dev_wallet_pct || 3));
     const minUniqueBuyers = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_unique_buyers || 40)));
+    const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours || 24)) > 0;
     const openAddresses = new Set(doctorRuntime.positions.map((position) => String(position.address || "")));
 
     const buyCandidate = activeTokens
@@ -1946,7 +1948,7 @@ export async function registerRoutes(
       .filter((token) => Number(token.volume_24h || 0) >= Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000)))
       .filter((token) => Number(token.age_seconds || 0) >= Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 15))) * 60)
       .filter((token) => Number(token.age_seconds || 0) <= maxTokenAgeSeconds)
-      .filter((token) => Boolean(token.liquidity_locked))
+      .filter((token) => !requireLiquidityLock || Boolean(token.liquidity_locked))
       .filter((token) => Number(token.holders_count || 0) >= minUniqueBuyers)
       .filter((token) => {
         const devWalletPct = Number(token.dev_wallet_pct || 0);
@@ -2052,6 +2054,7 @@ export async function registerRoutes(
       const maxTokenAgeSeconds = Math.max(minTokenAgeSeconds, Math.trunc(Number(doctorRuntime.controls.max_token_age_minutes || 30)) * 60);
       const minVolume24h = Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000));
       const minMarketCap = Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000));
+      const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours || 24)) > 0;
       const allowedLaunchSources = getAllowedLaunchSources();
 
       const createdAtMs = new Date(String(candidate.created_at || nowIso())).getTime();
@@ -2097,6 +2100,7 @@ export async function registerRoutes(
       const devWalletPct = Number(scannedToken?.devWalletPercentage || 0);
       const launchSource = normalizeLaunchSource(String(candidate.launch_source || candidate.source || "unknown"));
       const liquidityLocked = Boolean(candidate.liquidity_locked || scannedToken?.isLiquidityLocked);
+      const liquidityLockCheck = !requireLiquidityLock || liquidityLocked;
       const priceChange1h = Number(candidate.price_change_1h || 0);
 
       const smartWalletSignal = Number(fallbackScores.smart_wallet_signal || 0);
@@ -2117,14 +2121,14 @@ export async function registerRoutes(
         liquidityUsd <= liquidityMax &&
         marketCapUsd >= minMarketCap &&
         volume24h >= minVolume24h &&
-        liquidityLocked &&
+        liquidityLockCheck &&
         allowedLaunchSources.has(launchSource) &&
         dexTradable;
 
       const liquidityStability =
         liquidityUsd >= liquidityMin &&
         liquidityUsd <= liquidityMax &&
-        liquidityLocked &&
+        liquidityLockCheck &&
         !riskFlags.has("LOW_LIQUIDITY") &&
         !riskFlags.has("THIN_LIQUIDITY") &&
         !riskFlags.has("HIGH_SLIPPAGE") &&
@@ -2168,7 +2172,7 @@ export async function registerRoutes(
         !riskFlags.has("THIN_LIQUIDITY") &&
         !riskFlags.has("SELL_PRESSURE") &&
         rugProbability <= 85 &&
-        liquidityLocked &&
+        liquidityLockCheck &&
         volume24h >= minVolume24h &&
         marketCapUsd >= minMarketCap &&
         allowedLaunchSources.has(launchSource) &&
