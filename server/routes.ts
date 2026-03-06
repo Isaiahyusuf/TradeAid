@@ -831,11 +831,32 @@ export async function registerRoutes(
   };
 
   const getAllowedLaunchSources = () => {
-    const configured = String(process.env.DOCTORTRADE_ALLOWED_LAUNCH_SOURCES || "pumpfun,raydium,bonk")
+    const configuredRaw = String(process.env.DOCTORTRADE_ALLOWED_LAUNCH_SOURCES || "all").trim();
+    const configuredItems = configuredRaw
       .split(",")
+      .map((item) => String(item || "").trim().toLowerCase())
+      .filter(Boolean);
+
+    const allowAll =
+      configuredItems.length === 0 ||
+      configuredItems.includes("all") ||
+      configuredItems.includes("*") ||
+      configuredItems.includes("any");
+
+    const normalized = configuredItems
       .map((item) => normalizeLaunchSource(item))
       .filter((item) => item !== "unknown");
-    return new Set(configured.length > 0 ? configured : ["pumpfun", "raydium", "bonk"]);
+
+    return {
+      allowAll,
+      allowed: new Set(normalized),
+    };
+  };
+
+  const isLaunchSourceAllowed = (launchSource: string) => {
+    const { allowAll, allowed } = getAllowedLaunchSources();
+    if (allowAll) return true;
+    return allowed.has(normalizeLaunchSource(launchSource));
   };
 
   const appendDoctorTradeLog = async (entry: Record<string, any>) => {
@@ -1058,7 +1079,7 @@ export async function registerRoutes(
         if (volume24h < Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000))) rejectReasons.push("low_volume_24h");
         if (topHolderPct > 45) rejectReasons.push("holder_concentration_high");
         if (requireLiquidityLock && !liquidityLocked) rejectReasons.push("liquidity_not_locked");
-        if (!getAllowedLaunchSources().has(launchSource)) rejectReasons.push("launch_source_not_allowed");
+        if (!isLaunchSourceAllowed(launchSource)) rejectReasons.push("launch_source_not_allowed");
         if (confidenceScore < 55) rejectReasons.push("confidence_below_threshold");
 
         return {
@@ -1967,7 +1988,7 @@ export async function registerRoutes(
         const devWalletPct = Number(token.dev_wallet_pct || 0);
         return devWalletPct <= 0 || devWalletPct <= maxDevWalletPct;
       })
-      .filter((token) => getAllowedLaunchSources().has(normalizeLaunchSource(String(token.launch_source || token.source || "unknown"))))
+      .filter((token) => isLaunchSourceAllowed(String(token.launch_source || token.source || "unknown")))
       .filter((token) => {
         const topHolderPct = Number(token.top_holder_pct || 0);
         if (topHolderPct <= 0) return true;
@@ -2138,7 +2159,7 @@ export async function registerRoutes(
         marketCapUsd >= minMarketCap &&
         volume24h >= minVolume24h &&
         liquidityLockCheck &&
-        allowedLaunchSources.has(launchSource) &&
+        (allowedLaunchSources.allowAll || allowedLaunchSources.allowed.has(launchSource)) &&
         dexTradable;
 
       const liquidityStabilityBase =
@@ -2202,7 +2223,7 @@ export async function registerRoutes(
         liquidityLockCheck &&
         volume24h >= minVolume24h &&
         marketCapUsd >= minMarketCap &&
-        allowedLaunchSources.has(launchSource) &&
+        (allowedLaunchSources.allowAll || allowedLaunchSources.allowed.has(launchSource)) &&
         !riskFlags.has("NO_LIVE_PAIR_DATA") &&
         (devWalletPct <= 0 || devWalletPct <= maxDevWalletPct);
 
