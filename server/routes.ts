@@ -849,7 +849,7 @@ export async function registerRoutes(
 
     return {
       allowAll,
-      allowed: new Set(normalized),
+      allowed: new Set<string>(normalized),
     };
   };
 
