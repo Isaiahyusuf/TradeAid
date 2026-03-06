@@ -198,7 +198,7 @@ export async function registerRoutes(
 
   const apifyIngestItemsStateKey = "apify:fresh:items:v1";
 
-  const getStoredApifyFreshTokens = async (limit = 100): Promise<FreshTokenItem[]> => {
+  const getStoredApifyFreshTokens = async (limit = 10): Promise<FreshTokenItem[]> => {
     try {
       const snapshot = await storage.getAppState<{ items?: FreshTokenItem[] }>(apifyIngestItemsStateKey);
       const rows = Array.isArray(snapshot?.items) ? snapshot.items : [];
@@ -208,7 +208,7 @@ export async function registerRoutes(
     }
   };
 
-  const getMergedFreshPumpfunTokens = async (limit = 80): Promise<FreshTokenItem[]> => {
+  const getMergedFreshPumpfunTokens = async (limit = 10): Promise<FreshTokenItem[]> => {
     const safeLimit = Math.max(1, Math.min(500, Math.trunc(limit)));
     const fromApifyApi = await (async () => {
       try {
@@ -1037,7 +1037,7 @@ export async function registerRoutes(
       .filter((token) => token.mint);
 
     const apifyTokens = await (async () => {
-      const rows = await getMergedFreshPumpfunTokens(80);
+      const rows = await getMergedFreshPumpfunTokens(10);
       return rows
         .map((token) => {
           const raw = (token.raw || {}) as Record<string, unknown>;
@@ -4482,7 +4482,7 @@ export async function registerRoutes(
       const effectiveMaxAgeHours = Number.isFinite(maxAgeHours) && maxAgeHours > 0 ? maxAgeHours : 24;
 
       const freshRows = await (async () => {
-        const fresh = await getMergedFreshPumpfunTokens(60);
+        const fresh = await getMergedFreshPumpfunTokens(10);
         return fresh.map((token, index) => {
           const raw = (token.raw || {}) as Record<string, unknown>;
           const sourcePlatform = String(raw.sourcePlatform || raw.source_platform || raw.platform || token.eventType || "pumpfun");

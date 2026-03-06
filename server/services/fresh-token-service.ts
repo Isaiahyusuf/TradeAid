@@ -92,7 +92,7 @@ function extractRunIdFromUrl(runUrl: string): string {
   return (match?.[1] || "").trim();
 }
 
-export async function fetchFreshPumpfunTokens(limit = 20): Promise<FreshTokenItem[]> {
+export async function fetchFreshPumpfunTokens(limit = 10): Promise<FreshTokenItem[]> {
   const apifyToken = String(process.env.APIFY_TOKEN || "").trim();
   const actorId = String(process.env.APIFY_PUMPFUN_ACTOR_ID || DEFAULT_PUMPFUN_ACTOR_ID).trim();
   const explicitRunId = String(process.env.APIFY_RUN_ID || "").trim();

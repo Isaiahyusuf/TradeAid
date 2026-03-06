@@ -3,6 +3,8 @@ import { randomUUID } from "crypto";
 import { authStorage } from "./storage";
 import { isAuthenticated } from "./replitAuth";
 import { issueSessionTokens, readBearerToken, getSessionUserId, rotateRefreshToken } from "./tokenSession";
+import { db } from "../../db";
+import { sql } from "drizzle-orm";
 
 function toFrontendUser(user: any) {
   return {
@@ -82,7 +84,7 @@ export function registerAuthRoutes(app: Express): void {
     try {
       const username = String(req.body?.username || "").trim();
       const emailRaw = String(req.body?.email || "").trim();
-      const email = emailRaw || null;
+      const email = emailRaw || `${username}@tradeaid.local`;
 
       if (!username || !/^[A-Za-z][A-Za-z0-9_]{2,19}$/.test(username)) {
         return res.status(400).json({ message: "Invalid username format" });
@@ -100,10 +102,27 @@ export function registerAuthRoutes(app: Express): void {
         }
       }
 
-      const newUser = await authStorage.upsertUser({
+      let newUser = await authStorage.upsertUser({
         id: randomUUID(),
         username,
         email,
+      }).catch(async (error) => {
+        const message = String((error as any)?.message || "").toLowerCase();
+        if (!message.includes("hashed_password") && !message.includes("not-null") && !message.includes("violates")) {
+          throw error;
+        }
+
+        const generatedId = randomUUID();
+        await db.execute(sql`
+          INSERT INTO users (id, username, email, hashed_password, created_at, updated_at)
+          VALUES (${generatedId}::uuid, ${username}, ${email}, ${"!oauth-local-placeholder!"}, NOW(), NOW())
+        `);
+
+        const fallbackUser = await authStorage.getUserByUsername(username);
+        if (!fallbackUser) {
+          throw error;
+        }
+        return fallbackUser;
       });
 
       res.json({
