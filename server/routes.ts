@@ -1969,9 +1969,8 @@ export async function registerRoutes(
     const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours ?? 24)) > 0;
     const openAddresses = new Set(doctorRuntime.positions.map((position) => String(position.address || "")));
 
-    const buyCandidate = activeTokens
+    const candidatePool = activeTokens
       .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
-      .filter((token) => !openAddresses.has(String(token.address || "")))
       .filter((token) => Number(token.score || 0) >= Math.max(1, Number(doctorRuntime.controls.strong_move_threshold_pct || 40)))
       .filter((token) => Number(token.liquidity || 0) >= Math.max(1000, Number(doctorRuntime.controls.min_liquidity_usd || 0)))
       .filter((token) => Number(token.liquidity || 0) <= maxLiquidityUsd)
@@ -1998,7 +1997,11 @@ export async function registerRoutes(
         const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
         if (scoreDiff !== 0) return scoreDiff;
         return Number(b.volume_5m || 0) - Number(a.volume_5m || 0);
-      })[0];
+      });
+
+    const candidatePoolNonOpen = candidatePool.filter((token) => !openAddresses.has(String(token.address || "")));
+    const allowReentrySnipes = String(process.env.DOCTOR_ALLOW_REENTRY_SNIPES || "true").trim().toLowerCase() !== "false";
+    const buyCandidate = candidatePoolNonOpen[0] || (allowReentrySnipes ? candidatePool[0] : undefined);
 
     const evaluatePreTradeGuard = (candidate: Record<string, any> | undefined) => {
       if (!candidate) {
