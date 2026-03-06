@@ -2,44 +2,7 @@ import type { Express } from "express";
 import { randomUUID } from "crypto";
 import { authStorage } from "./storage";
 import { isAuthenticated } from "./replitAuth";
-
-type SessionEntry = {
-  userId: string;
-  expiresAt: number;
-};
-
-const accessTokenStore = new Map<string, SessionEntry>();
-const refreshTokenStore = new Map<string, SessionEntry>();
-
-const ACCESS_TOKEN_TTL_MS = 1000 * 60 * 60 * 24;
-const REFRESH_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 30;
-
-function issueSessionTokens(userId: string) {
-  const accessToken = `ta_access_${randomUUID()}`;
-  const refreshToken = `ta_refresh_${randomUUID()}`;
-  accessTokenStore.set(accessToken, { userId, expiresAt: Date.now() + ACCESS_TOKEN_TTL_MS });
-  refreshTokenStore.set(refreshToken, { userId, expiresAt: Date.now() + REFRESH_TOKEN_TTL_MS });
-  return { accessToken, refreshToken, tokenType: "bearer" as const };
-}
-
-function readBearerToken(req: any): string {
-  const authHeader = String(req.headers?.authorization || "").trim();
-  if (!authHeader.toLowerCase().startsWith("bearer ")) {
-    return "";
-  }
-  return authHeader.slice(7).trim();
-}
-
-function getSessionUserId(token: string, store: Map<string, SessionEntry>): string {
-  if (!token) return "";
-  const session = store.get(token);
-  if (!session) return "";
-  if (session.expiresAt < Date.now()) {
-    store.delete(token);
-    return "";
-  }
-  return session.userId;
-}
+import { issueSessionTokens, readBearerToken, getSessionUserId, rotateRefreshToken } from "./tokenSession";
 
 function toFrontendUser(user: any) {
   return {
@@ -57,7 +20,7 @@ function toFrontendUser(user: any) {
 
 async function resolveUserFromRequest(req: any) {
   const accessToken = readBearerToken(req);
-  const userIdFromToken = getSessionUserId(accessToken, accessTokenStore);
+  const userIdFromToken = getSessionUserId(accessToken, "access");
   if (userIdFromToken) {
     const user = await authStorage.getUser(userIdFromToken);
     if (user) {
@@ -226,13 +189,11 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(400).json({ message: "refresh_token is required" });
       }
 
-      const userId = getSessionUserId(refreshToken, refreshTokenStore);
-      if (!userId) {
+      const tokens = rotateRefreshToken(refreshToken);
+      if (!tokens) {
         return res.status(401).json({ message: "Invalid refresh token" });
       }
 
-      refreshTokenStore.delete(refreshToken);
-      const tokens = issueSessionTokens(userId);
       return res.json({
         access_token: tokens.accessToken,
         refresh_token: tokens.refreshToken,

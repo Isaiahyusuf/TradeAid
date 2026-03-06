@@ -7,6 +7,7 @@ import type { Express, RequestHandler } from "express";
 import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { authStorage } from "./storage";
+import { getSessionUserId, readBearerToken } from "./tokenSession";
 
 const getOidcConfig = memoize(
   async () => {
@@ -142,6 +143,27 @@ export async function setupAuth(app: Express) {
 }
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
+  const bearerToken = readBearerToken(req);
+  if (bearerToken) {
+    const bearerUserId = getSessionUserId(bearerToken, "access");
+    if (bearerUserId) {
+      const dbUser = await authStorage.getUser(bearerUserId);
+      if (dbUser) {
+        (req as any).user = {
+          claims: {
+            sub: dbUser.id,
+            email: dbUser.email,
+            preferred_username: dbUser.username,
+            name: dbUser.firstName,
+            profile_image_url: dbUser.profileImageUrl,
+          },
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+        };
+        return next();
+      }
+    }
+  }
+
   const user = req.user as any;
 
   if (!req.isAuthenticated() || !user.expires_at) {
