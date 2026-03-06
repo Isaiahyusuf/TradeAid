@@ -2650,14 +2650,26 @@ export async function registerRoutes(
     const payload = req.body || {};
     const explicitAddress = String(payload.public_address || "").trim();
     const useExistingWallet = Boolean(payload.use_existing_wallet);
+    const configuredPaperBalance = Math.max(1, Number(process.env.DOCTORTRADE_PAPER_BALANCE_SOL || 5));
 
     if (explicitAddress) {
       doctorRuntime.wallet.address = explicitAddress;
+      try {
+        const pubkey = new PublicKey(explicitAddress);
+        const lamports = await getSolanaConnection().getBalance(pubkey, "confirmed");
+        const onchainBalanceSol = Number((lamports / 1_000_000_000).toFixed(6));
+        doctorRuntime.wallet.balanceSol = Math.max(0, onchainBalanceSol);
+      } catch {
+      }
     } else if (useExistingWallet && !doctorRuntime.wallet.address) {
       doctorRuntime.wallet.address = "sim-wallet-local";
     }
 
-    doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 1.25);
+    if (doctorRuntime.wallet.address === "sim-wallet-local") {
+      doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, configuredPaperBalance);
+    } else {
+      doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 0);
+    }
     await persistDoctorRuntime();
     return res.json(await buildDoctorStatus());
   });
