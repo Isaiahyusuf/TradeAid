@@ -1030,7 +1030,7 @@ export async function registerRoutes(
         const topHolderPct = Number(token.top_holder_pct || 0);
         const priceChange1h = Number(token.price_change_1h || 0);
         const liquidityLocked = Boolean(token.liquidity_locked);
-        const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours || 24)) > 0;
+        const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours ?? 24)) > 0;
         const launchSource = normalizeLaunchSource(String(token.launch_source || token.source || "unknown"));
 
         const freshnessScore = Math.max(0, 40 * (1 - Math.min(ageSeconds, windowSeconds) / Math.max(1, windowSeconds)));
@@ -1935,7 +1935,7 @@ export async function registerRoutes(
     const maxTokenAgeSeconds = Math.max(60, Math.trunc(Number(doctorRuntime.controls.max_token_age_minutes || 30)) * 60);
     const maxDevWalletPct = Math.max(0, Number(doctorRuntime.controls.max_dev_wallet_pct || 3));
     const minUniqueBuyers = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_unique_buyers || 40)));
-    const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours || 24)) > 0;
+    const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours ?? 24)) > 0;
     const openAddresses = new Set(doctorRuntime.positions.map((position) => String(position.address || "")));
 
     const buyCandidate = activeTokens
@@ -2054,7 +2054,7 @@ export async function registerRoutes(
       const maxTokenAgeSeconds = Math.max(minTokenAgeSeconds, Math.trunc(Number(doctorRuntime.controls.max_token_age_minutes || 30)) * 60);
       const minVolume24h = Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000));
       const minMarketCap = Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000));
-      const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours || 24)) > 0;
+      const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours ?? 24)) > 0;
       const allowedLaunchSources = getAllowedLaunchSources();
 
       const createdAtMs = new Date(String(candidate.created_at || nowIso())).getTime();
