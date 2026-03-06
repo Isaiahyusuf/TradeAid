@@ -718,19 +718,36 @@ export async function registerRoutes(
 
   const doctorStateDir = resolve(process.cwd(), "server", "state");
   const doctorStateFile = resolve(doctorStateDir, "doctortrade.runtime.json");
+  const doctorRuntimeStateKey = "doctortrade.runtime.v1";
 
   const persistDoctorRuntime = async () => {
+    const snapshot = JSON.parse(JSON.stringify(doctorRuntime));
     try {
       await mkdir(doctorStateDir, { recursive: true });
-      await writeFile(doctorStateFile, JSON.stringify(doctorRuntime, null, 2), "utf8");
+      await Promise.allSettled([
+        writeFile(doctorStateFile, JSON.stringify(snapshot, null, 2), "utf8"),
+        storage.setAppState(doctorRuntimeStateKey, snapshot),
+      ]);
     } catch {
     }
   };
 
   const loadDoctorRuntime = async () => {
     try {
-      const text = await readFile(doctorStateFile, "utf8");
-      const loaded = JSON.parse(text) as Record<string, any>;
+      let loaded: Record<string, any> | null = null;
+
+      try {
+        const state = await storage.getAppState<Record<string, any>>(doctorRuntimeStateKey);
+        if (state && typeof state === "object") {
+          loaded = state;
+        }
+      } catch {
+      }
+
+      if (!loaded) {
+        const text = await readFile(doctorStateFile, "utf8");
+        loaded = JSON.parse(text) as Record<string, any>;
+      }
 
       if (typeof loaded.enabled === "boolean") {
         doctorRuntime.enabled = loaded.enabled;
