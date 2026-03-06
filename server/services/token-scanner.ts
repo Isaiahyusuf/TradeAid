@@ -145,7 +145,13 @@ export async function scanHotTokens(chain: string = "solana"): Promise<ScanResul
       mergedMap.set(address, pair);
     }
   }
-  const candidatePairs = Array.from(mergedMap.values());
+  const candidatePairs = Array.from(mergedMap.values())
+    .sort((left, right) => {
+      const leftCreated = Number(left?.pairCreatedAt || 0);
+      const rightCreated = Number(right?.pairCreatedAt || 0);
+      if (rightCreated !== leftCreated) return rightCreated - leftCreated;
+      return Number(right?.liquidity?.usd || 0) - Number(left?.liquidity?.usd || 0);
+    });
   const positiveLiquidityPairs = candidatePairs.filter((pair) => Number(pair.liquidity?.usd || 0) > 0);
   scannerHealth.candidatesDiscovered = candidatePairs.length;
   scannerHealth.liquidityPositiveCount = positiveLiquidityPairs.length;
@@ -159,7 +165,10 @@ export async function scanHotTokens(chain: string = "solana"): Promise<ScanResul
   let successful = 0;
   let newSaved = 0;
   
-  for (const pair of candidatePairs.slice(0, 35)) {
+  const maxPairsPerCycle = Math.max(10, Math.min(100, Number(process.env.SCANNER_MAX_PAIRS_PER_CYCLE || 50)));
+  const interPairDelayMs = Math.max(0, Number(process.env.SCANNER_INTER_PAIR_DELAY_MS || 75));
+
+  for (const pair of candidatePairs.slice(0, maxPairsPerCycle)) {
     processed += 1;
     const result = await scanAndAnalyzeToken(pair.baseToken.address, chain);
     if (result) {
@@ -170,7 +179,9 @@ export async function scanHotTokens(chain: string = "solana"): Promise<ScanResul
         console.log(`[Scanner] New token: ${pair.baseToken.symbol} (Score: ${result.token.safetyScore})`);
       }
     }
-    await new Promise(r => setTimeout(r, 200));
+    if (interPairDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, interPairDelayMs));
+    }
   }
 
   scannerHealth.lastScanAt = new Date().toISOString();

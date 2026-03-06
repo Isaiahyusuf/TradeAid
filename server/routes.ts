@@ -839,8 +839,9 @@ export async function registerRoutes(
     const nowMs = Date.now();
     const windowSeconds = Math.max(60, Math.trunc(windowMinutes * 60));
     const cappedLimit = Math.max(1, Math.min(500, Math.trunc(limit)));
+    const earlyCacheTtlMs = Math.max(1000, Number(process.env.DOCTOR_EARLY_CACHE_MS || 5000));
 
-    if (doctorEarlyScoredCache && nowMs - doctorEarlyScoredCache.at < 20_000) {
+    if (doctorEarlyScoredCache && nowMs - doctorEarlyScoredCache.at < earlyCacheTtlMs) {
       return doctorEarlyScoredCache.tokens
         .filter((token) => Number(token.age_seconds || 0) <= windowSeconds)
         .slice(0, cappedLimit);
@@ -4404,14 +4405,16 @@ export async function registerRoutes(
   } catch {
   }
   
-  // Start background token scanner (scans every 60 seconds for fresh tokens)
-  startBackgroundScanner(60 * 1000);
+  // Start background token scanner (fresh pair detection)
+  const scannerIntervalMs = Math.max(10_000, Number(process.env.BACKGROUND_SCANNER_INTERVAL_MS || 20_000));
+  startBackgroundScanner(scannerIntervalMs);
 
-  // Start periodic multichain launchpad scans (every 5 minutes)
+  // Start periodic multichain launchpad scans
   try {
+    const multichainIntervalMs = Math.max(20_000, Number(process.env.MULTICHAIN_SCAN_INTERVAL_MS || 60_000));
     setInterval(() => {
       multichainScanner.scanAllLaunchpads().catch(console.error);
-    }, 5 * 60 * 1000);
+    }, multichainIntervalMs);
     // run once on startup
     multichainScanner.scanAllLaunchpads().catch(console.error);
   } catch (e) {
