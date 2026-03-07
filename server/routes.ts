@@ -1378,7 +1378,6 @@ export async function registerRoutes(
 
     const criticalRejectReasons = new Set([
       "low_liquidity",
-      "launch_source_not_allowed",
     ]);
 
     const strictAddresses = new Set(strictApproved.map((token) => String(token.address || "")));
