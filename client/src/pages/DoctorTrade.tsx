@@ -172,7 +172,23 @@ export default function DoctorTrade() {
   );
 
   const scannerSuccessRate = Number(viewData?.scanner_health?.overall?.success_rate_pct || 0);
-  const autoSnipeReady = Boolean(viewData?.enabled && viewData?.trade_controls?.wallet_connected);
+  const autoSnipeReady = Boolean(
+    viewData?.enabled &&
+    viewData?.trade_controls?.wallet_connected &&
+    String(viewData?.execution?.mode || "").toLowerCase() === "live" &&
+    Boolean(viewData?.execution?.live_capable),
+  );
+  const autoSnipeStatusLabel = !viewData?.enabled
+    ? "Doctor stopped"
+    : !viewData?.trade_controls?.wallet_connected
+      ? "Wallet not connected"
+      : String(viewData?.execution?.mode || "").toLowerCase() !== "live"
+        ? "Execution mode is not live"
+        : !viewData?.execution?.live_capable
+          ? "Live wallet credentials missing"
+          : (viewData?.active_tokens?.length || 0) <= 0
+            ? "No approved targets"
+            : "Auto-snipe running";
   const lastSyncLabel = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : "-";
 
   const saveRiskRules = () => {
@@ -641,9 +657,10 @@ export default function DoctorTrade() {
           <div className="flex items-center justify-between gap-2 mb-2">
             <p className="text-xs font-semibold">Live Ticker</p>
             <Badge variant="outline" className={autoSnipeReady ? "border-green-500/40 text-green-400" : "border-yellow-500/40 text-yellow-400"}>
-              {autoSnipeReady ? "Auto-Snipe Ready" : "Auto-Snipe Not Ready"}
+              {autoSnipeReady ? "Auto-Snipe Active" : "Auto-Snipe Blocked"}
             </Badge>
           </div>
+          <p className="text-[10px] text-muted-foreground mb-2">{autoSnipeStatusLabel}</p>
           <div className="flex gap-2 overflow-x-auto pb-1">
             {tickerTokens.map((token) => (
               <div key={token.address} className="min-w-[180px] border rounded-md px-2 py-1.5">
@@ -756,6 +773,8 @@ export default function DoctorTrade() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">Engine</span><span>{viewData?.enabled ? "Live" : "Stopped"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Wallet Link</span><span>{viewData?.trade_controls?.wallet_connected ? "Connected" : "Missing"}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Execution Mode</span><span>{String(viewData?.execution?.mode || "unknown").toUpperCase()}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Live Capable</span><span>{viewData?.execution?.live_capable ? "Yes" : "No"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Wallet SOL</span><span>{(viewData?.wallet?.balance_sol || 0).toFixed(4)}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Trades Today</span><span>{viewData?.trade_controls?.trades_today || 0}/{viewData?.trade_controls?.max_trades_per_day || 12}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Buy Amount</span><span>{(viewData?.trade_controls?.buy_amount_sol || 0.1).toFixed(3)} SOL</span></div>

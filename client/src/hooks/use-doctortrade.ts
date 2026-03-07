@@ -70,6 +70,14 @@ export type DoctorStatus = {
     balance_sol: number;
     separate_wallet_enforced: boolean;
   };
+  execution?: {
+    mode?: "paper" | "live" | string;
+    live_only?: boolean;
+    live_capable?: boolean;
+    raydium_route_enabled?: boolean;
+    jupiter_quote_enabled?: boolean;
+    base_asset_mint?: string;
+  };
   trade_controls?: {
     max_trades_per_day: number;
     trades_today: number;
