@@ -1336,7 +1336,7 @@ export async function registerRoutes(
 
   const getDoctorActiveTokens = async () => {
     const early = await getSolanaEarlyScoredTokens(120, 220);
-    return early
+    const strictApproved = early
       .filter((token) => Boolean(token.eligible))
       .filter((token) => Number(token.liquidity_usd || 0) >= Number(doctorRuntime.controls.min_liquidity_usd || 0))
       .map((token: any) => {
@@ -1365,9 +1365,73 @@ export async function registerRoutes(
           risk_level: score >= 70 ? "SAFE" : score >= 45 ? "MEDIUM" : "HIGH RISK",
           source: String(token.source || "solana_early"),
           reject_reasons: token.reject_reasons || [],
+          eligible: true,
+          safety_tier: "strict",
         };
       })
       .slice(0, 40);
+
+    const targetApproved = Math.max(5, Math.min(15, Math.trunc(Number(process.env.DOCTOR_APPROVED_TARGET || 15))));
+    if (strictApproved.length >= targetApproved) {
+      return strictApproved;
+    }
+
+    const criticalRejectReasons = new Set([
+      "liquidity_not_locked",
+      "low_liquidity",
+      "launch_source_not_allowed",
+      "holder_concentration_high",
+    ]);
+
+    const strictAddresses = new Set(strictApproved.map((token) => String(token.address || "")));
+
+    const softApproved = early
+      .filter((token) => !strictAddresses.has(String((token as any).mint || "")))
+      .filter((token) => Number((token as any).liquidity_usd || 0) >= Math.max(1000, Number(doctorRuntime.controls.min_liquidity_usd || 0) * 0.5))
+      .filter((token: any) => {
+        const reasons = Array.isArray(token.reject_reasons) ? token.reject_reasons.map((item: unknown) => String(item || "")) : [];
+        return !reasons.some((reason: string) => criticalRejectReasons.has(reason));
+      })
+      .map((token: any) => {
+        const score = Number(token.confidence_score || 0);
+        const reasons = Array.isArray(token.reject_reasons) ? token.reject_reasons : [];
+        return {
+          symbol: String(token.symbol || "UNKNOWN"),
+          address: String(token.mint || ""),
+          liquidity: Number(token.liquidity_usd || 0),
+          volume_5m: Number(token.volume_5m || 0),
+          buy_ratio_pct: Number(token.buy_ratio_pct || 0),
+          volume_24h: Number(token.volume_24h || 0),
+          market_cap_usd: Number(token.market_cap_usd || 0),
+          score,
+          price_usd: Number((token as any).price_usd || 0),
+          price_change_1h: Number((token as any).price_change_1h || 0),
+          age_seconds: Number((token as any).age_seconds || 0),
+          chain: "solana",
+          created_at: String(token.first_seen_at || nowIso()),
+          holders_count: Number(token.holders_count || 0),
+          top_holder_pct: Number(token.top_holder_pct || 0),
+          dev_wallet_pct: Number(token.dev_wallet_pct || 0),
+          launch_source: String(token.launch_source || "unknown"),
+          liquidity_locked: Boolean(token.liquidity_locked),
+          pool_address: String((token as any).pool_address || ""),
+          base_mint: String((token as any).base_mint || ""),
+          risk_level: score >= 70 ? "SAFE" : score >= 45 ? "MEDIUM" : "HIGH RISK",
+          source: String(token.source || "solana_early"),
+          reject_reasons: reasons,
+          eligible: false,
+          safety_tier: "soft",
+          soft_reason_count: reasons.length,
+        };
+      })
+      .sort((a, b) => {
+        const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        return Number(a.soft_reason_count || 0) - Number(b.soft_reason_count || 0);
+      })
+      .slice(0, Math.max(0, targetApproved - strictApproved.length));
+
+    return [...strictApproved, ...softApproved].slice(0, 40);
   };
 
   const resolveCurrentPriceUsd = (token: Record<string, any>, fallbackPriceUsd: number) => {
@@ -2730,38 +2794,7 @@ export async function registerRoutes(
 
   const buildDoctorStatus = async () => {
     const earlyTokens = await getSolanaEarlyScoredTokens(120, 220);
-    const activeTokens = earlyTokens
-      .filter((token) => Boolean((token as any)?.eligible))
-      .filter((token) => Number((token as any)?.liquidity_usd || 0) >= Number(doctorRuntime.controls.min_liquidity_usd || 0))
-      .map((token: any) => {
-        const score = Number(token.confidence_score || 0);
-        return {
-          symbol: String(token.symbol || "UNKNOWN"),
-          address: String(token.mint || ""),
-          liquidity: Number(token.liquidity_usd || 0),
-          volume_5m: Number(token.volume_5m || 0),
-          buy_ratio_pct: Number(token.buy_ratio_pct || 0),
-          volume_24h: Number(token.volume_24h || 0),
-          market_cap_usd: Number(token.market_cap_usd || 0),
-          score,
-          price_usd: Number((token as any).price_usd || 0),
-          price_change_1h: Number((token as any).price_change_1h || 0),
-          age_seconds: Number((token as any).age_seconds || 0),
-          chain: "solana",
-          created_at: String(token.first_seen_at || nowIso()),
-          holders_count: Number(token.holders_count || 0),
-          top_holder_pct: Number(token.top_holder_pct || 0),
-          dev_wallet_pct: Number(token.dev_wallet_pct || 0),
-          launch_source: String(token.launch_source || "unknown"),
-          liquidity_locked: Boolean(token.liquidity_locked),
-          pool_address: String((token as any).pool_address || ""),
-          base_mint: String((token as any).base_mint || ""),
-          risk_level: score >= 70 ? "SAFE" : score >= 45 ? "MEDIUM" : "HIGH RISK",
-          source: String(token.source || "solana_early"),
-          reject_reasons: token.reject_reasons || [],
-        };
-      })
-      .slice(0, 40);
+    const activeTokens = await getDoctorActiveTokens();
     const { dailyRealizedPnlUsd, consecutiveLosses } = computeDoctorRiskMetrics();
 
     const paused = doctorRuntime.killSwitch;
