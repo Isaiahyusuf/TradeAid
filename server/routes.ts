@@ -1377,17 +1377,15 @@ export async function registerRoutes(
     }
 
     const criticalRejectReasons = new Set([
-      "liquidity_not_locked",
       "low_liquidity",
       "launch_source_not_allowed",
-      "holder_concentration_high",
     ]);
 
     const strictAddresses = new Set(strictApproved.map((token) => String(token.address || "")));
 
     const softApproved = early
       .filter((token) => !strictAddresses.has(String((token as any).mint || "")))
-      .filter((token) => Number((token as any).liquidity_usd || 0) >= Math.max(1000, Number(doctorRuntime.controls.min_liquidity_usd || 0) * 0.5))
+      .filter((token) => Number((token as any).liquidity_usd || 0) >= 500)
       .filter((token: any) => {
         const reasons = Array.isArray(token.reject_reasons) ? token.reject_reasons.map((item: unknown) => String(item || "")) : [];
         return !reasons.some((reason: string) => criticalRejectReasons.has(reason));
