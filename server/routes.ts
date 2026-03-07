@@ -874,6 +874,20 @@ export async function registerRoutes(
     };
   };
 
+  const isDoctorLiveTradingEnabled = () => {
+    return String(process.env.DOCTORTRADE_LIVE_TRADING_ENABLED || "true").toLowerCase() !== "false";
+  };
+
+  const ensureDoctorLiveExecutionModeIfCapable = async () => {
+    const { walletPublicKey, walletPrivateKey } = await getDoctorLiveWalletCredentials();
+    const liveCapable = isDoctorLiveTradingEnabled() && Boolean(walletPublicKey) && Boolean(walletPrivateKey);
+    if (liveCapable && doctorRuntime.execution.mode !== "live") {
+      doctorRuntime.execution.mode = "live";
+      await persistDoctorRuntime();
+    }
+    return liveCapable;
+  };
+
   const clearDoctorWalletForUser = async (userId: string) => {
     const wallets = await getStoredDoctorWalletsByUser();
     delete wallets[userId];
@@ -1459,7 +1473,7 @@ export async function registerRoutes(
     trigger: "manual" | "auto";
     baseMint?: string;
   }) => {
-    const liveEnabled = String(process.env.DOCTORTRADE_LIVE_TRADING_ENABLED || "").toLowerCase() === "true";
+    const liveEnabled = isDoctorLiveTradingEnabled();
     const mode = doctorRuntime.execution.mode;
 
     if (mode === "live") {
@@ -2007,6 +2021,8 @@ export async function registerRoutes(
 
   const executeDoctorCycle = async (trigger: "manual" | "auto" = "manual") => {
     doctorRuntime.lastRunAt = nowIso();
+
+    await ensureDoctorLiveExecutionModeIfCapable();
 
     if (!doctorRuntime.enabled) {
       doctorRuntime.lastDecision = { action: "skip", reason: "doctortrade_disabled", trigger, at: nowIso() };
@@ -2722,6 +2738,12 @@ export async function registerRoutes(
     const paused = doctorRuntime.killSwitch;
     const safetyPaused = paused || !doctorRuntime.enabled;
 
+    const liveCredentials = await getDoctorLiveWalletCredentials();
+    const liveCapable =
+      isDoctorLiveTradingEnabled() &&
+      Boolean(String(liveCredentials.walletPublicKey || "").trim()) &&
+      Boolean(String(liveCredentials.walletPrivateKey || "").trim());
+
     return {
       enabled: doctorRuntime.enabled,
       kill_switch: doctorRuntime.killSwitch,
@@ -2756,10 +2778,7 @@ export async function registerRoutes(
       },
       execution: {
         mode: doctorRuntime.execution.mode,
-        live_capable:
-          String(process.env.DOCTORTRADE_LIVE_TRADING_ENABLED || "").toLowerCase() === "true" &&
-          Boolean(String(process.env.DOCTORTRADE_LIVE_WALLET_PUBLIC_KEY || "").trim()) &&
-          Boolean(String(process.env.DOCTORTRADE_LIVE_WALLET_PRIVATE_KEY || "").trim()),
+        live_capable: liveCapable,
         raydium_route_enabled: true,
         jupiter_quote_enabled: true,
         base_asset_mint: getDoctorTradeBaseAssetMint(),
@@ -2879,6 +2898,7 @@ export async function registerRoutes(
       doctorCycleTimer = null;
     }
     if (doctorRuntime.enabled) {
+      await ensureDoctorLiveExecutionModeIfCapable();
       if (!doctorCycleRunning) {
         doctorCycleRunning = true;
         try {
@@ -3064,6 +3084,7 @@ export async function registerRoutes(
       doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 0);
     }
     doctorRuntime.ownerUserId = userId;
+    await ensureDoctorLiveExecutionModeIfCapable();
     await persistDoctorRuntime();
     await saveDoctorWalletForUser(userId);
     return res.json(await buildDoctorStatus());
@@ -3099,6 +3120,7 @@ export async function registerRoutes(
       return res.status(403).json({ result: { executed: false, reason: "doctortrade_owned_by_other_user" } });
     }
     await loadDoctorWalletForUser(userId);
+    await ensureDoctorLiveExecutionModeIfCapable();
 
     const result = await executeDoctorCycle("manual");
     await saveDoctorWalletForUser(userId);
@@ -3115,6 +3137,7 @@ export async function registerRoutes(
       return res.status(403).json({ result: { executed: false, reason: "doctortrade_owned_by_other_user" } });
     }
     await loadDoctorWalletForUser(userId);
+    await ensureDoctorLiveExecutionModeIfCapable();
 
     const contractAddress = String(req.body?.contract_address || req.body?.address || "").trim();
     const symbol = String(req.body?.symbol || "MANUAL").trim() || "MANUAL";
