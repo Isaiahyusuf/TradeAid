@@ -767,7 +767,7 @@ export async function registerRoutes(
       max_early_spike_pct: 200,
     },
     execution: {
-      mode: "paper" as "paper" | "live",
+      mode: "live" as "paper" | "live",
     },
     executionAudit: [] as Array<Record<string, any>>,
     positions: [] as Array<Record<string, any>>,
@@ -878,10 +878,14 @@ export async function registerRoutes(
     return String(process.env.DOCTORTRADE_LIVE_TRADING_ENABLED || "true").toLowerCase() !== "false";
   };
 
+  const isDoctorLiveOnlyMode = () => {
+    return String(process.env.DOCTORTRADE_LIVE_ONLY || "true").toLowerCase() !== "false";
+  };
+
   const ensureDoctorLiveExecutionModeIfCapable = async () => {
     const { walletPublicKey, walletPrivateKey } = await getDoctorLiveWalletCredentials();
     const liveCapable = isDoctorLiveTradingEnabled() && Boolean(walletPublicKey) && Boolean(walletPrivateKey);
-    if (liveCapable && doctorRuntime.execution.mode !== "live") {
+    if ((isDoctorLiveOnlyMode() || liveCapable) && doctorRuntime.execution.mode !== "live") {
       doctorRuntime.execution.mode = "live";
       await persistDoctorRuntime();
     }
@@ -976,8 +980,8 @@ export async function registerRoutes(
         doctorRuntime.performance = loaded.performance.slice(0, 40);
       }
       if (loaded.execution && typeof loaded.execution === "object") {
-        const mode = String((loaded.execution as Record<string, any>).mode || "paper").toLowerCase();
-        doctorRuntime.execution.mode = mode === "live" ? "live" : "paper";
+        const mode = String((loaded.execution as Record<string, any>).mode || "live").toLowerCase();
+        doctorRuntime.execution.mode = isDoctorLiveOnlyMode() ? "live" : (mode === "live" ? "live" : "paper");
       }
       if (Array.isArray(loaded.executionAudit)) {
         doctorRuntime.executionAudit = loaded.executionAudit.slice(0, 200);
@@ -1474,7 +1478,7 @@ export async function registerRoutes(
     baseMint?: string;
   }) => {
     const liveEnabled = isDoctorLiveTradingEnabled();
-    const mode = doctorRuntime.execution.mode;
+    const mode = isDoctorLiveOnlyMode() ? "live" : doctorRuntime.execution.mode;
 
     if (mode === "live") {
       if (!liveEnabled) {
@@ -1985,6 +1989,26 @@ export async function registerRoutes(
           executedAmountSol: 0,
         } as const;
       }
+    }
+
+    if (isDoctorLiveOnlyMode()) {
+      appendDoctorExecutionAudit({
+        action: params.action,
+        symbol: params.symbol,
+        mint: params.mint,
+        amount_sol: params.amountSol,
+        expected_price_usd: params.expectedPriceUsd,
+        expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+        trigger: params.trigger,
+        reason: params.reason,
+        status: "blocked",
+        block_reason: "live_only_mode_requires_onchain_execution",
+      });
+      return {
+        executed: false,
+        status: "blocked",
+        reason: "live_only_mode_requires_onchain_execution",
+      } as const;
     }
 
     const txHash = `paper_${params.action}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -2778,6 +2802,7 @@ export async function registerRoutes(
       },
       execution: {
         mode: doctorRuntime.execution.mode,
+        live_only: isDoctorLiveOnlyMode(),
         live_capable: liveCapable,
         raydium_route_enabled: true,
         jupiter_quote_enabled: true,
@@ -2937,7 +2962,7 @@ export async function registerRoutes(
     const payload = req.body || {};
     if (typeof payload.execution_mode === "string") {
       const mode = String(payload.execution_mode || "").toLowerCase();
-      doctorRuntime.execution.mode = mode === "live" ? "live" : "paper";
+      doctorRuntime.execution.mode = isDoctorLiveOnlyMode() ? "live" : (mode === "live" ? "live" : "paper");
     }
     if (typeof payload.kill_switch === "boolean") {
       doctorRuntime.killSwitch = payload.kill_switch;
