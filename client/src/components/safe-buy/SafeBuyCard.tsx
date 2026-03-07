@@ -30,15 +30,14 @@ export function SafeBuyCard({ item }: { item: SafeBuyItem }) {
     params.set("chain", requestedChain || "solana");
     params.set("contract", item.contract_address);
     params.set("amount", String(amountSol || "0.1"));
-    params.set("returnTo", "/safe-buy");
-    setLocation(`/wallet?${params.toString()}`);
-    toast({ title: "Open Wallet", description: "Redirected to Wallet with selected token and chain." });
+    setLocation(`/doctortrade?${params.toString()}`);
+    toast({ title: "Direct Buy Ready", description: "Redirected to DoctorTrade using your connected Doctor wallet." });
   };
 
   return (
     <Card
       className={cn(
-        "bg-card/60 backdrop-blur border-border/70 transition-all duration-300 hover:-translate-y-0.5 hover-elevate animate-in fade-in-0",
+        "bg-card/60 backdrop-blur border-border/70 transition-all duration-300 hover:-translate-y-0.5 hover-elevate animate-in fade-in-0 max-h-[calc(100vh-8rem)] overflow-hidden flex flex-col",
         item.safety_score >= 85 && "border-green-400/50 shadow-[0_0_24px_rgba(34,197,94,0.15)]"
       )}
       data-testid={`safe-buy-card-${item.id}`}
@@ -66,7 +65,7 @@ export function SafeBuyCard({ item }: { item: SafeBuyItem }) {
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 overflow-y-auto scroll-smooth flex-1">
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
           <div><p className="text-muted-foreground">Market Cap</p><p className="font-medium">{formatNumber(item.market_cap_usd)}</p></div>
           <div><p className="text-muted-foreground">Liquidity</p><p className="font-medium">{formatNumber(item.liquidity_usd)}</p></div>
@@ -101,8 +100,9 @@ export function SafeBuyCard({ item }: { item: SafeBuyItem }) {
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <div className="flex items-center gap-2">
+        <div className="sticky bottom-0 z-10 -mx-2 px-2 py-2 bg-card/95 backdrop-blur border-t border-border/60">
+          <div className="flex flex-wrap gap-2">
+            <div className="flex items-center gap-2">
             <Input
               value={amountSol}
               onChange={(event) => setAmountSol(event.target.value)}
@@ -112,22 +112,23 @@ export function SafeBuyCard({ item }: { item: SafeBuyItem }) {
               aria-label="SOL amount"
             />
             <Button size="sm" onClick={handleDirectBuy}>Direct Buy</Button>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => window.open(item.buy_links.pump_fun || `https://pump.fun/coin/${item.contract_address}`, "_blank")}>Buy on Pump.fun <ExternalLink className="w-3 h-3 ml-1" /></Button>
+            <Button size="sm" variant="outline" onClick={() => window.open(item.buy_links.raydium, "_blank")}>Buy on Raydium <ExternalLink className="w-3 h-3 ml-1" /></Button>
+            <Button size="sm" variant="outline" onClick={() => window.open(item.buy_links.jupiter, "_blank")}>Buy on Jupiter <ExternalLink className="w-3 h-3 ml-1" /></Button>
+            <Button size="sm" variant="outline" onClick={() => setLocation(`/rugshield?address=${encodeURIComponent(item.contract_address)}&auto=1`)}>Analyze in RugShield</Button>
+            <Button size="sm" variant="outline" onClick={() => window.open(item.buy_links.dexscreener, "_blank")}>View DexScreener <ExternalLink className="w-3 h-3 ml-1" /></Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                navigator.clipboard.writeText(item.contract_address);
+                toast({ title: "Copied", description: "Contract address copied" });
+              }}
+            >
+              Copy Contract <Copy className="w-3 h-3 ml-1" />
+            </Button>
           </div>
-          <Button size="sm" variant="outline" onClick={() => window.open(item.buy_links.pump_fun || `https://pump.fun/coin/${item.contract_address}`, "_blank")}>Buy on Pump.fun <ExternalLink className="w-3 h-3 ml-1" /></Button>
-          <Button size="sm" variant="outline" onClick={() => window.open(item.buy_links.raydium, "_blank")}>Buy on Raydium <ExternalLink className="w-3 h-3 ml-1" /></Button>
-          <Button size="sm" variant="outline" onClick={() => window.open(item.buy_links.jupiter, "_blank")}>Buy on Jupiter <ExternalLink className="w-3 h-3 ml-1" /></Button>
-          <Button size="sm" variant="outline" onClick={() => setLocation(`/rugshield?address=${encodeURIComponent(item.contract_address)}&auto=1`)}>Analyze in RugShield</Button>
-          <Button size="sm" variant="outline" onClick={() => window.open(item.buy_links.dexscreener, "_blank")}>View DexScreener <ExternalLink className="w-3 h-3 ml-1" /></Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              navigator.clipboard.writeText(item.contract_address);
-              toast({ title: "Copied", description: "Contract address copied" });
-            }}
-          >
-            Copy Contract <Copy className="w-3 h-3 ml-1" />
-          </Button>
         </div>
       </CardContent>
     </Card>

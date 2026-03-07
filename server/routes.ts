@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import type { Server } from "http";
-import { randomUUID } from "crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "crypto";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { resolve } from "path";
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, VersionedTransaction } from "@solana/web3.js";
@@ -736,6 +736,7 @@ export async function registerRoutes(
       ai_min_signals_required: 4,
       cooldown_minutes_per_mint: 30,
       min_wallet_fee_buffer_sol: 0.02,
+      gas_priority_lamports: Math.max(0, Math.trunc(Number(process.env.DOCTORTRADE_PRIORITY_FEE_LAMPORTS || 0))),
       live_sell_fraction_pct: 50,
       max_sell_notional_usd: 300,
       max_wallet_allocation_pct: 10,
@@ -784,6 +785,51 @@ export async function registerRoutes(
   const doctorRuntimeStateKey = "doctortrade.runtime.v1";
   const doctorWalletByUserStateKey = "doctortrade.wallets.by_user.v1";
   const assistantRuntimeStateKeyPrefix = "assistant.runtime.v1";
+
+  const encodeBase64 = (value: Uint8Array) => Buffer.from(value).toString("base64");
+  const decodeBase64 = (value: string) => Buffer.from(value, "base64");
+  const resolveDoctorWalletEncryptionSecret = () => {
+    return String(
+      process.env.DOCTORTRADE_WALLET_ENCRYPTION_KEY
+        || process.env.DOCTORTRADE_ENCRYPTION_KEY
+        || process.env.JWT_SECRET
+        || process.env.SESSION_SECRET
+        || "tradeaid-doctor-wallet-fallback-key",
+    ).trim();
+  };
+  const getDoctorWalletEncryptionKey = () => {
+    const secret = resolveDoctorWalletEncryptionSecret();
+    return createHash("sha256").update(secret, "utf8").digest();
+  };
+  const encryptDoctorPrivateKey = (privateKey: string) => {
+    const trimmed = String(privateKey || "").trim();
+    if (!trimmed) return "";
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", getDoctorWalletEncryptionKey(), iv);
+    const encrypted = Buffer.concat([cipher.update(trimmed, "utf8"), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+    return `enc:v1:${encodeBase64(iv)}:${encodeBase64(authTag)}:${encodeBase64(encrypted)}`;
+  };
+  const decryptDoctorPrivateKey = (value: string) => {
+    const trimmed = String(value || "").trim();
+    if (!trimmed) return "";
+    if (!trimmed.startsWith("enc:v1:")) {
+      return trimmed;
+    }
+    const parts = trimmed.split(":");
+    if (parts.length !== 5) return "";
+    try {
+      const iv = decodeBase64(parts[2]);
+      const authTag = decodeBase64(parts[3]);
+      const encrypted = decodeBase64(parts[4]);
+      const decipher = createDecipheriv("aes-256-gcm", getDoctorWalletEncryptionKey(), iv);
+      decipher.setAuthTag(authTag);
+      const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+      return decrypted.toString("utf8").trim();
+    } catch {
+      return "";
+    }
+  };
 
   const getRequestUserId = (req: any): string => {
     return String(req?.user?.claims?.sub || "").trim();
@@ -838,6 +884,7 @@ export async function registerRoutes(
   };
 
   const setDoctorLivePrivateKeyForUser = async (userId: string, privateKey: string) => {
+    const encryptedPrivateKey = encryptDoctorPrivateKey(privateKey);
     const wallets = await getStoredDoctorWalletsByUser();
     const current = wallets[userId] as Record<string, any> | undefined;
     wallets[userId] = {
@@ -845,7 +892,7 @@ export async function registerRoutes(
       address: String(doctorRuntime.wallet.address || current?.address || "").trim(),
       balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol ?? current?.balanceSol ?? 0)),
       separateWalletEnforced: (doctorRuntime.wallet.separateWalletEnforced ?? current?.separateWalletEnforced) !== false,
-      livePrivateKey: String(privateKey || "").trim(),
+      livePrivateKey: encryptedPrivateKey,
       updatedAt: nowIso(),
     };
     await setStoredDoctorWalletsByUser(wallets);
@@ -866,7 +913,7 @@ export async function registerRoutes(
     const wallets = await getStoredDoctorWalletsByUser();
     const ownerWallet = wallets[ownerUserId] as Record<string, any> | undefined;
     const userPublicKey = String(ownerWallet?.address || "").trim();
-    const userPrivateKey = String(ownerWallet?.livePrivateKey || "").trim();
+    const userPrivateKey = decryptDoctorPrivateKey(String(ownerWallet?.livePrivateKey || "").trim());
 
     if (userPublicKey && userPrivateKey) {
       return {
@@ -900,7 +947,7 @@ export async function registerRoutes(
   };
 
   const isDoctorLiveOnlyMode = () => {
-    return String(process.env.DOCTORTRADE_LIVE_ONLY || "true").toLowerCase() !== "false";
+    return true;
   };
 
   const isDoctorMultiUserMode = () => {
@@ -1006,8 +1053,7 @@ export async function registerRoutes(
         doctorRuntime.performance = loaded.performance.slice(0, 40);
       }
       if (loaded.execution && typeof loaded.execution === "object") {
-        const mode = String((loaded.execution as Record<string, any>).mode || "live").toLowerCase();
-        doctorRuntime.execution.mode = isDoctorLiveOnlyMode() ? "live" : (mode === "live" ? "live" : "paper");
+        doctorRuntime.execution.mode = "live";
       }
       if (Array.isArray(loaded.executionAudit)) {
         doctorRuntime.executionAudit = loaded.executionAudit.slice(0, 200);
@@ -1036,6 +1082,19 @@ export async function registerRoutes(
   let doctorCycleTimer: NodeJS.Timeout | null = null;
   let doctorEarlyScoredCache: { at: number; tokens: Array<Record<string, any>> } | null = null;
   const doctorTradeLogStateKey = "doctortrade.executions.v1";
+
+  const runDoctorCycleSafely = async (trigger: "manual" | "auto") => {
+    if (doctorCycleRunning) return;
+    doctorCycleRunning = true;
+    try {
+      await executeDoctorCycle(trigger);
+    } catch (error) {
+      doctorRuntime.lastError = error instanceof Error ? error.message : "doctor_cycle_failed";
+      await persistDoctorRuntime();
+    } finally {
+      doctorCycleRunning = false;
+    }
+  };
 
   const normalizeLaunchSource = (value: string) => {
     const normalized = String(value || "").toLowerCase();
@@ -1521,7 +1580,10 @@ export async function registerRoutes(
     return fetchRaydiumSwapPayload({
       quoteResponse: params.quoteResponse,
       userPublicKey: params.userPublicKey,
-      priorityFeeLamports: Number(process.env.DOCTORTRADE_PRIORITY_FEE_LAMPORTS || 0),
+      priorityFeeLamports: Math.max(
+        0,
+        Math.trunc(Number(doctorRuntime.controls.gas_priority_lamports || process.env.DOCTORTRADE_PRIORITY_FEE_LAMPORTS || 0)),
+      ),
     });
   };
 
@@ -1552,6 +1614,22 @@ export async function registerRoutes(
     }
 
     return null;
+  };
+
+  const deriveSolanaAddressFromPrivateKey = (value: string): string => {
+    const secretKey = parseSolanaSecretKey(value);
+    if (!secretKey) return "";
+    try {
+      if (secretKey.length >= 64) {
+        return Keypair.fromSecretKey(secretKey.slice(0, 64)).publicKey.toBase58();
+      }
+      if (secretKey.length === 32) {
+        return Keypair.fromSeed(secretKey).publicKey.toBase58();
+      }
+      return "";
+    } catch {
+      return "";
+    }
   };
 
   const executeDoctorOrder = async (params: {
@@ -2098,35 +2176,11 @@ export async function registerRoutes(
       } as const;
     }
 
-    const txHash = `paper_${params.action}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-    appendDoctorExecutionAudit({
-      action: params.action,
-      symbol: params.symbol,
-      mint: params.mint,
-      amount_sol: params.amountSol,
-      expected_price_usd: params.expectedPriceUsd,
-      expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
-      trigger: params.trigger,
-      reason: params.reason,
-      status: "executed",
-      tx_hash: txHash,
-    });
-
-    await appendDoctorTradeLog({
-      token_address: params.mint,
-      pool_address: null,
-      trade_amount: params.amountSol,
-      entry_price: params.expectedPriceUsd,
-      transaction_signature: txHash,
-      base_asset_mint: getDoctorTradeBaseAssetMint(),
-      timestamp: nowIso(),
-    });
-
     return {
-      executed: true,
-      status: "executed",
-      txHash,
-      executedAmountSol: params.amountSol,
+      executed: false,
+      status: "blocked",
+      reason: "live_execution_required",
+      executedAmountSol: 0,
     } as const;
   };
 
@@ -2993,23 +3047,10 @@ export async function registerRoutes(
     }
     if (doctorRuntime.enabled) {
       await ensureDoctorLiveExecutionModeIfCapable();
-      if (!doctorCycleRunning) {
-        doctorCycleRunning = true;
-        try {
-          await executeDoctorCycle("auto");
-        } finally {
-          doctorCycleRunning = false;
-        }
-      }
+      await runDoctorCycleSafely("auto");
 
       doctorCycleTimer = setInterval(async () => {
-        if (doctorCycleRunning) return;
-        doctorCycleRunning = true;
-        try {
-          await executeDoctorCycle("auto");
-        } finally {
-          doctorCycleRunning = false;
-        }
+        await runDoctorCycleSafely("auto");
       }, Math.max(2, doctorRuntime.scanIntervalSeconds) * 1000);
       doctorCycleTimer.unref?.();
     }
@@ -3033,8 +3074,7 @@ export async function registerRoutes(
 
     const payload = req.body || {};
     if (typeof payload.execution_mode === "string") {
-      const mode = String(payload.execution_mode || "").toLowerCase();
-      doctorRuntime.execution.mode = isDoctorLiveOnlyMode() ? "live" : (mode === "live" ? "live" : "paper");
+      doctorRuntime.execution.mode = "live";
     }
     if (typeof payload.kill_switch === "boolean") {
       doctorRuntime.killSwitch = payload.kill_switch;
@@ -3059,6 +3099,7 @@ export async function registerRoutes(
       "min_wallet_fee_buffer_sol",
       "live_sell_fraction_pct",
       "max_sell_notional_usd",
+      "gas_priority_lamports",
       "stop_loss_pct",
       "trailing_stop_pct",
       "min_liquidity_usd",
@@ -3103,13 +3144,7 @@ export async function registerRoutes(
     }
     if (doctorRuntime.enabled) {
       doctorCycleTimer = setInterval(async () => {
-        if (doctorCycleRunning) return;
-        doctorCycleRunning = true;
-        try {
-          await executeDoctorCycle("auto");
-        } finally {
-          doctorCycleRunning = false;
-        }
+        await runDoctorCycleSafely("auto");
       }, Math.max(2, doctorRuntime.scanIntervalSeconds) * 1000);
       doctorCycleTimer.unref?.();
     }
@@ -3135,13 +3170,20 @@ export async function registerRoutes(
     const explicitAddress = String(payload.public_address || "").trim();
     const explicitPrivateKey = String(payload.private_key || "").trim();
     const useExistingWallet = Boolean(payload.use_existing_wallet);
-    const configuredPaperBalance = Math.max(1, Number(process.env.DOCTORTRADE_PAPER_BALANCE_SOL || 5));
     const walletBalanceTimeoutMs = Math.max(300, Number(process.env.DOCTOR_WALLET_BALANCE_TIMEOUT_MS || 1200));
 
-    if (explicitAddress) {
-      doctorRuntime.wallet.address = explicitAddress;
+    let resolvedAddress = explicitAddress;
+    if (!resolvedAddress && explicitPrivateKey) {
+      resolvedAddress = deriveSolanaAddressFromPrivateKey(explicitPrivateKey);
+      if (!resolvedAddress) {
+        return res.status(400).json({ message: "Invalid Solana private key format" });
+      }
+    }
+
+    if (resolvedAddress) {
+      doctorRuntime.wallet.address = resolvedAddress;
       try {
-        const pubkey = new PublicKey(explicitAddress);
+        const pubkey = new PublicKey(resolvedAddress);
         const lamports = await Promise.race<number>([
           getSolanaConnection().getBalance(pubkey, "processed"),
           new Promise<number>((_resolve, reject) => setTimeout(() => reject(new Error("wallet_balance_timeout")), walletBalanceTimeoutMs)),
@@ -3167,8 +3209,6 @@ export async function registerRoutes(
 
       if (importedAddress) {
         doctorRuntime.wallet.address = importedAddress;
-      } else if (!doctorRuntime.wallet.address) {
-        doctorRuntime.wallet.address = "sim-wallet-local";
       }
 
       if (importedPrivateKey) {
@@ -3180,11 +3220,7 @@ export async function registerRoutes(
       await setDoctorLivePrivateKeyForUser(userId, explicitPrivateKey);
     }
 
-    if (doctorRuntime.wallet.address === "sim-wallet-local") {
-      doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, configuredPaperBalance);
-    } else {
-      doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 0);
-    }
+    doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 0);
     doctorRuntime.ownerUserId = userId;
     await ensureDoctorLiveExecutionModeIfCapable();
     await persistDoctorRuntime();
@@ -3364,23 +3400,10 @@ export async function registerRoutes(
   });
 
   if (doctorRuntime.enabled) {
-    if (!doctorCycleRunning) {
-      doctorCycleRunning = true;
-      executeDoctorCycle("auto")
-        .catch(() => undefined)
-        .finally(() => {
-          doctorCycleRunning = false;
-        });
-    }
+    void runDoctorCycleSafely("auto");
 
     doctorCycleTimer = setInterval(async () => {
-      if (doctorCycleRunning) return;
-      doctorCycleRunning = true;
-      try {
-        await executeDoctorCycle("auto");
-      } finally {
-        doctorCycleRunning = false;
-      }
+      await runDoctorCycleSafely("auto");
     }, Math.max(2, doctorRuntime.scanIntervalSeconds) * 1000);
     doctorCycleTimer.unref?.();
   }

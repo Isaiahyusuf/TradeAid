@@ -14,8 +14,8 @@ type SettingsMenuCardProps = {
 
 export function SettingsMenuCard({ title, description, open, onToggle, children }: SettingsMenuCardProps) {
   return (
-    <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60">
-      <div className="flex items-center justify-between gap-3 sticky top-0 z-10 bg-card/80 pb-2" style={{margin: '-1rem', padding: '1rem', paddingBottom: 0}}>
+    <Card className="bg-card/70 backdrop-blur-sm border-border/60 max-h-[calc(100vh-6.5rem)] overflow-hidden flex flex-col">
+      <div className="flex items-center justify-between gap-3 sticky top-0 z-10 bg-card/90 backdrop-blur px-4 py-3 border-b border-border/50 shrink-0">
         <div>
           <p className="text-sm font-semibold flex items-center gap-2">
             <Settings2 className="w-4 h-4" />
@@ -28,7 +28,7 @@ export function SettingsMenuCard({ title, description, open, onToggle, children 
         </Button>
       </div>
       {open ? (
-        <div className="mt-4 max-h-[70vh] overflow-y-auto pr-2">{children}</div>
+        <div className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth px-4 py-3 pr-3">{children}</div>
       ) : null}
     </Card>
   );

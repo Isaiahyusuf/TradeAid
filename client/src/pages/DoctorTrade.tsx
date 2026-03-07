@@ -3,9 +3,9 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio } from "lucide-react";
+import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy } from "lucide-react";
 import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDisconnectWallet, useDoctorHealth, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -23,6 +23,8 @@ function fmtTs(value?: string) {
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
+
+const DOCTOR_SETTINGS_LOCAL_KEY = "doctortrade.settings.local.v1";
 
 export default function DoctorTrade() {
     // Only show new launches on Solana (created within 24h and chain is solana)
@@ -55,8 +57,12 @@ export default function DoctorTrade() {
   const [minMomentumInput, setMinMomentumInput] = useState("4");
   const [qualityMinSpikeInput, setQualityMinSpikeInput] = useState("12");
   const [qualityMaxHolderInput, setQualityMaxHolderInput] = useState("35");
+  const [gasPriorityInput, setGasPriorityInput] = useState("0");
   const [liveSellFractionInput, setLiveSellFractionInput] = useState("50");
   const [maxSellNotionalInput, setMaxSellNotionalInput] = useState("300");
+  const [privateKeyInput, setPrivateKeyInput] = useState("");
+  const hydratedFromLocalRef = useRef(false);
+  const hydratedFromServerRef = useRef(false);
   const viewData = data;
   const hasData = Boolean(viewData);
   // Only show new launches on Solana (created within 24h and chain is solana)
@@ -79,6 +85,59 @@ export default function DoctorTrade() {
   const autoBuyContract = String(searchParams.get("contract") || "").trim();
   const autoBuyChain = String(searchParams.get("chain") || "solana").trim().toLowerCase();
   const [autoBuyHandled, setAutoBuyHandled] = useState(false);
+
+  const hydrateSettingsInputs = (controls: Record<string, any>) => {
+    setIntervalInput(String(controls.scan_interval_seconds ?? 20));
+    setBuyAmountInput(String(controls.buy_amount_sol ?? 0.1));
+    setMaxTradesInput(String(controls.max_trades_per_day ?? 12));
+    setTpMultInput(String(controls.take_profit_multiplier ?? 2));
+    setMinProfitInput(String(controls.min_profit_pct ?? 12));
+    setStopLossInput(String(controls.stop_loss_pct ?? 6));
+    setTrailInput(String(controls.trailing_stop_pct ?? 10));
+    setMinLiquidityInput(String(controls.min_liquidity_usd ?? 20000));
+    setMaxSlippageInput(String(controls.max_slippage_pct ?? 4));
+    setMaxSpreadInput(String(controls.max_spread_pct ?? 3));
+    setDailyLossInput(String(controls.daily_loss_limit_usd ?? 600));
+    setMaxConsecutiveLossesInput(String(controls.max_consecutive_losses ?? 3));
+    setStrongMoveInput(String(controls.strong_move_threshold_pct ?? 40));
+    setMaxHoldMinutesInput(String(controls.max_hold_minutes ?? 180));
+    setMinMomentumInput(String(controls.min_momentum_profit_pct ?? 4));
+    setQualityMinSpikeInput(String(controls.quality_min_volume_spike_pct ?? 12));
+    setQualityMaxHolderInput(String(controls.quality_max_top_holder_pct ?? 35));
+    setGasPriorityInput(String(controls.gas_priority_lamports ?? 0));
+    setLiveSellFractionInput(String(controls.live_sell_fraction_pct ?? 50));
+    setMaxSellNotionalInput(String(controls.max_sell_notional_usd ?? 300));
+  };
+
+  const persistSettingsLocalBackup = (payload: Record<string, any>) => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(DOCTOR_SETTINGS_LOCAL_KEY, JSON.stringify(payload));
+    } catch {
+    }
+  };
+
+  useEffect(() => {
+    const controls = viewData?.trade_controls as Record<string, any> | undefined;
+    if (controls && !hydratedFromServerRef.current) {
+      hydrateSettingsInputs(controls);
+      hydratedFromServerRef.current = true;
+      return;
+    }
+
+    if (!controls && !hydratedFromLocalRef.current && typeof window !== "undefined") {
+      hydratedFromLocalRef.current = true;
+      try {
+        const raw = window.localStorage.getItem(DOCTOR_SETTINGS_LOCAL_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as Record<string, any>;
+        if (parsed && typeof parsed === "object") {
+          hydrateSettingsInputs(parsed);
+        }
+      } catch {
+      }
+    }
+  }, [viewData?.trade_controls]);
 
   useEffect(() => {
     if (autoAction !== "buy" || autoBuyHandled || !autoBuyContract) {
@@ -176,6 +235,7 @@ export default function DoctorTrade() {
     const minMomentumProfitPct = Math.max(0, Number.parseFloat(minMomentumInput) || 4);
     const qualityMinVolumeSpikePct = Math.max(0, Number.parseFloat(qualityMinSpikeInput) || 12);
     const qualityMaxTopHolderPct = Math.max(1, Number.parseFloat(qualityMaxHolderInput) || 35);
+    const gasPriorityLamports = Math.max(0, Math.trunc(Number.parseFloat(gasPriorityInput) || 0));
     const liveSellFractionPct = Math.max(1, Math.min(100, Number.parseFloat(liveSellFractionInput) || 50));
     const maxSellNotionalUsd = Math.max(1, Number.parseFloat(maxSellNotionalInput) || 300);
 
@@ -198,11 +258,35 @@ export default function DoctorTrade() {
         min_momentum_profit_pct: minMomentumProfitPct,
         quality_min_volume_spike_pct: qualityMinVolumeSpikePct,
         quality_max_top_holder_pct: qualityMaxTopHolderPct,
+        gas_priority_lamports: gasPriorityLamports,
         live_sell_fraction_pct: liveSellFractionPct,
         max_sell_notional_usd: maxSellNotionalUsd,
       },
       {
         onSuccess: () => {
+          persistSettingsLocalBackup({
+            scan_interval_seconds: scanIntervalSeconds,
+            buy_amount_sol: buyAmountSol,
+            max_trades_per_day: maxTradesPerDay,
+            take_profit_multiplier: takeProfitMultiplier,
+            min_profit_pct: minProfitPct,
+            stop_loss_pct: stopLossPct,
+            trailing_stop_pct: trailingStopPct,
+            min_liquidity_usd: minLiquidityUsd,
+            max_slippage_pct: maxSlippagePct,
+            max_spread_pct: maxSpreadPct,
+            daily_loss_limit_usd: dailyLossLimitUsd,
+            max_consecutive_losses: maxConsecutiveLosses,
+            strong_move_threshold_pct: strongMoveThresholdPct,
+            max_hold_minutes: maxHoldMinutes,
+            min_momentum_profit_pct: minMomentumProfitPct,
+            quality_min_volume_spike_pct: qualityMinVolumeSpikePct,
+            quality_max_top_holder_pct: qualityMaxTopHolderPct,
+            gas_priority_lamports: gasPriorityLamports,
+            live_sell_fraction_pct: liveSellFractionPct,
+            max_sell_notional_usd: maxSellNotionalUsd,
+            wallet_address: String(viewData?.wallet?.address || ""),
+          });
           setSettingsOpen(false);
           toast({ title: "Risk rules saved", description: "DoctorTrade settings updated." });
         },
@@ -281,11 +365,55 @@ export default function DoctorTrade() {
     toast({ title: "Preset loaded", description: `${preset} profile applied. Save to activate.` });
   };
 
+  const handleManualPrivateKeyConnect = () => {
+    const trimmedPrivateKey = String(privateKeyInput || "").trim();
+    if (!trimmedPrivateKey) {
+      toast({
+        title: "Private key required",
+        description: "Paste a Solana private key to connect DoctorTrade wallet.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Private keys grant full wallet access.\n\nTradeAid encrypts keys before storage and decrypts only in memory for transaction signing. You are responsible for key security.\n\nConnect this wallet now?",
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    connectWalletMutation.mutate(
+      { private_key: trimmedPrivateKey },
+      {
+        onSuccess: (status) => {
+          setPrivateKeyInput("");
+          persistSettingsLocalBackup({
+            ...(viewData?.trade_controls || {}),
+            wallet_address: String(status?.wallet?.address || ""),
+          });
+          toast({ title: "Wallet connected", description: "DoctorTrade wallet connected from private key." });
+        },
+        onError: (error) => {
+          toast({
+            title: "Wallet connection failed",
+            description: error instanceof Error ? error.message : "Could not connect wallet.",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
+
   const handleConnectWallet = () => {
     connectWalletMutation.mutate(
       { use_existing_wallet: true },
       {
-        onSuccess: () => {
+        onSuccess: (status) => {
+          persistSettingsLocalBackup({
+            ...(viewData?.trade_controls || {}),
+            wallet_address: String(status?.wallet?.address || ""),
+          });
           toast({ title: "Wallet connected", description: "DoctorTrade is now linked to your wallet." });
         },
         onError: (error) => {
@@ -310,6 +438,10 @@ export default function DoctorTrade() {
   const handleDisconnectWallet = () => {
     disconnectWalletMutation.mutate(undefined, {
       onSuccess: () => {
+        persistSettingsLocalBackup({
+          ...(viewData?.trade_controls || {}),
+          wallet_address: "",
+        });
         toast({ title: "Wallet disconnected", description: "DoctorTrade wallet has been disconnected." });
       },
       onError: (error) => {
@@ -365,6 +497,7 @@ export default function DoctorTrade() {
           <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="outline">Solana Only</Badge>
             <Badge variant="outline">Independent Engine</Badge>
+            <Badge variant="outline" className="border-green-500/40 text-green-400">Trade Mode LIVE ONLY</Badge>
             <Badge variant="outline" className="border-accent/30 text-accent">Risk Locked</Badge>
             {!hasData && <Badge variant="outline">Syncing</Badge>}
           </div>
@@ -415,16 +548,80 @@ export default function DoctorTrade() {
 
         <SettingsMenuCard
           title="DoctorTrade Settings"
-          description="Configure scan interval, buy size, daily limit, take-profit and stop-loss."
+          description="Configure live-only trading, wallet session, and risk controls."
           open={settingsOpen}
           onToggle={() => setSettingsOpen((prev) => !prev)}
         >
-          <div className="flex flex-wrap gap-2 mb-3" style={{overflowX: 'auto'}}>
+          <div className="rounded-md border border-border/60 bg-muted/20 p-3 mb-3 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold">Doctor Wallet</p>
+              <Badge variant="outline" className="border-green-500/40 text-green-400">LIVE ONLY</Badge>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+              <div>
+                <p className="text-muted-foreground">Address</p>
+                <p className="font-medium truncate">{viewData?.wallet?.address || "Not connected"}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">SOL Balance</p>
+                <p className="font-medium">{Number(viewData?.wallet?.balance_sol || 0).toFixed(4)} SOL</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Network</p>
+                <p className="font-medium">Solana</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const address = String(viewData?.wallet?.address || "").trim();
+                  if (!address) return;
+                  navigator.clipboard.writeText(address);
+                  toast({ title: "Copied", description: "Wallet address copied." });
+                }}
+                disabled={!viewData?.wallet?.address}
+              >
+                <Copy className="w-4 h-4 mr-1" /> Copy Address
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDisconnectWallet}
+                disabled={disconnectWalletMutation.isPending || !viewData?.trade_controls?.wallet_connected}
+              >
+                Disconnect Wallet
+              </Button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2 items-end">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Manual Private Key Import</p>
+                <Input
+                  type="password"
+                  value={privateKeyInput}
+                  onChange={(event) => setPrivateKeyInput(event.target.value)}
+                  placeholder="Paste Solana private key"
+                />
+              </div>
+              <Button
+                onClick={handleManualPrivateKeyConnect}
+                disabled={connectWalletMutation.isPending}
+              >
+                Connect Wallet
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Warning: Private keys grant full wallet access. TradeAid encrypts keys before storage and decrypts only in memory to sign transactions.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2 mb-3 overflow-x-auto">
             <Button variant="outline" size="sm" onClick={() => applyPreset("conservative")}>Conservative</Button>
             <Button variant="outline" size="sm" onClick={() => applyPreset("balanced")}>Balanced</Button>
             <Button variant="outline" size="sm" onClick={() => applyPreset("aggressive")}>Aggressive</Button>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 items-end max-h-[60vh] overflow-y-auto pr-2">
+          <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 items-end">
             <div>
               <p className="text-xs text-muted-foreground mb-1">Scan Interval (sec)</p>
               <Input value={intervalInput} onChange={(e) => setIntervalInput(e.target.value)} placeholder="20" />
@@ -454,14 +651,6 @@ export default function DoctorTrade() {
                 <p className="text-xs text-muted-foreground mb-1">Trailing Stop %</p>
                 <Input value={trailInput} onChange={(e) => setTrailInput(e.target.value)} placeholder="10" />
               </div>
-              <Button
-                variant="outline"
-                className="self-end"
-                onClick={saveRiskRules}
-                disabled={configMutation.isPending}
-              >
-                Save
-              </Button>
             </div>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 items-end mt-2">
@@ -506,6 +695,10 @@ export default function DoctorTrade() {
               <Input value={qualityMaxHolderInput} onChange={(e) => setQualityMaxHolderInput(e.target.value)} placeholder="35" />
             </div>
             <div>
+              <p className="text-xs text-muted-foreground mb-1">Gas Priority (lamports)</p>
+              <Input value={gasPriorityInput} onChange={(e) => setGasPriorityInput(e.target.value)} placeholder="0" />
+            </div>
+            <div>
               <p className="text-xs text-muted-foreground mb-1">Live Sell Fraction %</p>
               <Input value={liveSellFractionInput} onChange={(e) => setLiveSellFractionInput(e.target.value)} placeholder="50" />
             </div>
@@ -513,6 +706,15 @@ export default function DoctorTrade() {
               <p className="text-xs text-muted-foreground mb-1">Max Sell Notional $</p>
               <Input value={maxSellNotionalInput} onChange={(e) => setMaxSellNotionalInput(e.target.value)} placeholder="300" />
             </div>
+          </div>
+          <div className="mt-3 flex justify-end sticky bottom-0 bg-card/95 backdrop-blur py-2 border-t border-border/40">
+            <Button
+              variant="outline"
+              onClick={saveRiskRules}
+              disabled={configMutation.isPending}
+            >
+              Save Settings
+            </Button>
           </div>
         </SettingsMenuCard>
 
@@ -640,8 +842,9 @@ export default function DoctorTrade() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">Engine</span><span>{viewData?.enabled ? "Live" : "Stopped"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Wallet Link</span><span>{viewData?.trade_controls?.wallet_connected ? "Connected" : "Missing"}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Execution Mode</span><span>{String(viewData?.execution?.mode || "unknown").toUpperCase()}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Execution Mode</span><span>LIVE ONLY</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Live Capable</span><span>{viewData?.execution?.live_capable ? "Yes" : "No"}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Network</span><span>Solana</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Wallet SOL</span><span>{(viewData?.wallet?.balance_sol || 0).toFixed(4)}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Trades Today</span><span>{viewData?.trade_controls?.trades_today || 0}/{viewData?.trade_controls?.max_trades_per_day || 12}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Buy Amount</span><span>{(viewData?.trade_controls?.buy_amount_sol || 0.1).toFixed(3)} SOL</span></div>
