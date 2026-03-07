@@ -18,6 +18,7 @@ import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
 import { useDoctorConfig, useDoctorStatus } from "@/hooks/use-doctortrade";
 import {
   useApproveAssistantConsent,
+  useAssistantWalletSwap,
   useAssistantContextOverview,
   useAssistantWalletTransactions,
   useAssistantWalletPortfolio,
@@ -72,6 +73,7 @@ export default function WalletPage() {
   const deleteWallet = useDeleteAssistantWallet();
   const exportWalletKey = useExportAssistantWalletKey();
   const transferWallet = useTransferAssistantWallet();
+  const walletSwap = useAssistantWalletSwap();
 
   const trading = tradingStatusQuery.data?.trading;
   const wallet = walletStatusQuery.data?.wallet;
@@ -91,6 +93,7 @@ export default function WalletPage() {
   const [revealPhrase, setRevealPhrase] = useState("I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS");
 
   const [sendOpen, setSendOpen] = useState(false);
+  const [swapOpen, setSwapOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [walletSettingsOpen, setWalletSettingsOpen] = useState(false);
@@ -121,6 +124,10 @@ export default function WalletPage() {
   const [sendRecipient, setSendRecipient] = useState("");
   const [sendAmount, setSendAmount] = useState("");
   const [sendAsset, setSendAsset] = useState("SOL");
+  const [swapSide, setSwapSide] = useState<"buy" | "sell">("buy");
+  const [swapTokenMint, setSwapTokenMint] = useState("");
+  const [swapNotionalUsd, setSwapNotionalUsd] = useState("25");
+  const [swapMode, setSwapMode] = useState<"paper" | "live">("live");
 
   const [exportedKey, setExportedKey] = useState<{ chain: string; address: string; private_key: string; warning: string } | null>(null);
 
@@ -287,6 +294,14 @@ export default function WalletPage() {
     setReceiveOpen(true);
   };
 
+  const handleOpenSwap = () => {
+    if (!wallet?.has_wallet) {
+      toast({ title: "Create wallet first", description: "Generate or import your wallet before swapping.", variant: "destructive" });
+      return;
+    }
+    setSwapOpen(true);
+  };
+
   const handleOpenExportKey = (chainName: string) => {
     setExportChain(chainName as SupportedWalletChain);
     setExportedKey(null);
@@ -329,6 +344,36 @@ export default function WalletPage() {
       setSendAmount("");
     } catch (error) {
       toast({ title: "Transfer failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
+  };
+
+  const handleSwapSubmit = async () => {
+    const tokenMint = swapTokenMint.trim();
+    const notionalUsd = Number(swapNotionalUsd);
+    if (!tokenMint) {
+      toast({ title: "Token mint required", description: "Enter a Solana token mint address.", variant: "destructive" });
+      return;
+    }
+    if (!Number.isFinite(notionalUsd) || notionalUsd <= 0) {
+      toast({ title: "Invalid amount", description: "Enter a valid USD amount for the swap.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const result = await walletSwap.mutateAsync({
+        side: swapSide,
+        token_mint: tokenMint,
+        notional_usd: notionalUsd,
+        mode: swapMode,
+      });
+      toast({ title: "Swap submitted", description: `Tx: ${result.trade.tx_hash.slice(0, 10)}...` });
+      if (result.trade.explorer_url) {
+        window.open(result.trade.explorer_url, "_blank");
+      }
+      setSwapOpen(false);
+      setSwapTokenMint("");
+    } catch (error) {
+      toast({ title: "Swap failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
     }
   };
 
@@ -651,9 +696,10 @@ export default function WalletPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
               <Button className="w-full" onClick={handleOpenSend}><ArrowUpRight className="w-4 h-4 mr-2" />Send</Button>
               <Button className="w-full" variant="secondary" onClick={handleOpenReceive}><ArrowDownLeft className="w-4 h-4 mr-2" />Receive</Button>
+              <Button className="w-full" variant="secondary" onClick={handleOpenSwap}>Swap</Button>
               <Button className="w-full" variant="outline" onClick={() => handleCreateWallet(false)} disabled={createWallet.isPending}>
                 {createWallet.isPending ? "Creating..." : "Create"}
               </Button>
@@ -909,6 +955,53 @@ export default function WalletPage() {
                 <Copy className="w-4 h-4 mr-2" /> Copy Address
               </Button>
             </div>
+          </SheetContent>
+        </Sheet>
+
+        <Sheet open={swapOpen} onOpenChange={setSwapOpen}>
+          <SheetContent side="right" className="sm:max-w-md">
+            <SheetHeader>
+              <SheetTitle>Swap</SheetTitle>
+              <SheetDescription>Swap SOL and Solana tokens directly from your in-app wallet.</SheetDescription>
+            </SheetHeader>
+            <div className="space-y-3 mt-4">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label>Side</Label>
+                  <select value={swapSide} onChange={(e) => setSwapSide(e.target.value as "buy" | "sell")} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+                    <option value="buy">Buy Token</option>
+                    <option value="sell">Sell Token</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Mode</Label>
+                  <select value={swapMode} onChange={(e) => setSwapMode(e.target.value as "paper" | "live")} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+                    <option value="live">Live</option>
+                    <option value="paper">Paper</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label>Token Mint</Label>
+                <Input placeholder="Enter Solana token mint address" value={swapTokenMint} onChange={(e) => setSwapTokenMint(e.target.value)} />
+              </div>
+
+              <div className="space-y-1">
+                <Label>Notional (USD)</Label>
+                <Input type="number" min={1} step="0.01" value={swapNotionalUsd} onChange={(e) => setSwapNotionalUsd(e.target.value)} />
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                {swapSide === "buy"
+                  ? "Buy uses SOL as input and swaps into the token mint."
+                  : "Sell swaps your token mint balance back into SOL."}
+              </p>
+            </div>
+            <SheetFooter className="mt-6">
+              <Button variant="outline" onClick={() => setSwapOpen(false)}>Cancel</Button>
+              <Button onClick={handleSwapSubmit} disabled={walletSwap.isPending}>{walletSwap.isPending ? "Swapping..." : "Swap"}</Button>
+            </SheetFooter>
           </SheetContent>
         </Sheet>
 

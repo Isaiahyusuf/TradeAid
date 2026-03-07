@@ -4136,6 +4136,197 @@ export async function registerRoutes(
     });
   });
 
+  app.post("/api/ai/wallets/swap", async (req, res) => {
+    const side = String(req.body?.side || "buy").toLowerCase() === "sell" ? "sell" : "buy";
+    const tokenMint = String(req.body?.token_mint || req.body?.contract_address || "").trim();
+    const notionalUsd = Number(req.body?.notional_usd || 0);
+    const mode = String(req.body?.mode || "live").toLowerCase() === "paper" ? "paper" : "live";
+
+    if (!tokenMint || !Number.isFinite(notionalUsd) || notionalUsd <= 0) {
+      return res.status(400).json({ message: "invalid swap payload" });
+    }
+    if (!validateAddressForChain("solana", tokenMint)) {
+      return res.status(400).json({ message: "invalid solana token mint" });
+    }
+    if (!ensureWalletExists()) {
+      return res.status(400).json({ message: "wallet not found" });
+    }
+
+    const walletAddress = String(assistantRuntime.wallet.addresses_by_chain.solana || "").trim();
+    const walletPrivateKey = String(assistantRuntime.wallet.private_keys_by_chain.solana || "").trim();
+    if (!walletAddress || !walletPrivateKey) {
+      return res.status(400).json({ message: "assistant solana wallet is not fully configured" });
+    }
+
+    if (mode === "live") {
+      const secretKey = parseSolanaSecretKey(walletPrivateKey);
+      if (!secretKey) {
+        return res.status(400).json({ message: "stored solana private key is invalid" });
+      }
+
+      const keypair = Keypair.fromSecretKey(secretKey);
+      if (keypair.publicKey.toBase58() !== walletAddress) {
+        return res.status(400).json({ message: "wallet address/private key mismatch" });
+      }
+
+      const prices = await fetchChainPricesUsd();
+      const solPriceUsd = Number(prices.solana || 0);
+      if (!(solPriceUsd > 0)) {
+        return res.status(503).json({ message: "solana price unavailable" });
+      }
+
+      const connection = getSolanaConnection();
+      const slippageBps = Math.max(25, Math.trunc(Number(doctorRuntime.controls.max_slippage_pct || 4) * 100));
+
+      try {
+        let quote: Record<string, any>;
+
+        if (side === "buy") {
+          const amountSol = Math.max(0.0001, notionalUsd / solPriceUsd);
+          const amountLamports = Math.max(1, Math.trunc(amountSol * 1_000_000_000));
+          quote = await fetchJupiterQuote({
+            inputMint: SOL_MINT,
+            outputMint: tokenMint,
+            amountAtomic: amountLamports,
+            slippageBps,
+          });
+        } else {
+          const ownerPk = new PublicKey(walletAddress);
+          const mintPk = new PublicKey(tokenMint);
+          const accounts = await connection.getParsedTokenAccountsByOwner(ownerPk, { mint: mintPk }, "confirmed");
+          const totalRaw = accounts.value.reduce((sum, entry) => {
+            const amountRaw = String((entry.account.data as any)?.parsed?.info?.tokenAmount?.amount || "0");
+            try {
+              return sum + BigInt(amountRaw);
+            } catch {
+              return sum;
+            }
+          }, BigInt(0));
+
+          if (totalRaw <= BigInt(0)) {
+            return res.status(400).json({ message: "insufficient token balance for sell" });
+          }
+
+          const fullQuote = await fetchJupiterQuote({
+            inputMint: tokenMint,
+            outputMint: SOL_MINT,
+            amountAtomic: totalRaw.toString(),
+            slippageBps,
+          });
+          const fullOutLamports = Number(fullQuote?.outAmount || 0);
+          const fullOutSol = fullOutLamports > 0 ? fullOutLamports / 1_000_000_000 : 0;
+          const fullOutUsd = fullOutSol * solPriceUsd;
+          const sellFraction = fullOutUsd > 0 ? Math.max(0.01, Math.min(1, notionalUsd / fullOutUsd)) : 1;
+          const scaledFraction = BigInt(Math.max(1, Math.floor(sellFraction * 1_000_000)));
+          const sellRaw = (totalRaw * scaledFraction) / BigInt(1_000_000);
+
+          quote = await fetchJupiterQuote({
+            inputMint: tokenMint,
+            outputMint: SOL_MINT,
+            amountAtomic: (sellRaw > BigInt(0) ? sellRaw : BigInt(1)).toString(),
+            slippageBps,
+          });
+        }
+
+        const swapPayload = await fetchJupiterSwapPayload({
+          quoteResponse: quote,
+          userPublicKey: walletAddress,
+        });
+
+        if (!swapPayload?.swapTransaction) {
+          return res.status(502).json({ message: "swap payload missing transaction" });
+        }
+
+        const swapTxBytes = Buffer.from(String(swapPayload.swapTransaction), "base64");
+        const versioned = VersionedTransaction.deserialize(swapTxBytes);
+        versioned.sign([keypair]);
+
+        const signature = await connection.sendRawTransaction(versioned.serialize(), {
+          skipPreflight: false,
+          maxRetries: 3,
+        });
+        const latestBlockhash = await connection.getLatestBlockhash("confirmed");
+        await connection.confirmTransaction(
+          {
+            signature,
+            blockhash: latestBlockhash.blockhash,
+            lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+          },
+          "confirmed",
+        );
+
+        const transaction = {
+          id: `swap_${Date.now()}`,
+          chain: "solana",
+          side,
+          status: "executed",
+          contract_address: tokenMint,
+          notional_usd: Number(notionalUsd.toFixed(2)),
+          quantity: null,
+          asset: "TOKEN",
+          tx_hash: signature,
+          explorer_url: `https://explorer.solana.com/tx/${signature}`,
+          from_address: walletAddress,
+          to_address: tokenMint,
+          created_at: nowIso(),
+          mode,
+        };
+        assistantRuntime.transactions.unshift(transaction);
+        assistantRuntime.transactions = assistantRuntime.transactions.slice(0, 200);
+        await persistAssistantRuntime();
+
+        return res.json({
+          trade: {
+            id: transaction.id,
+            chain: "solana",
+            mode,
+            side,
+            status: "executed",
+            tx_hash: signature,
+            explorer_url: transaction.explorer_url,
+          },
+        });
+      } catch (error) {
+        return res.status(502).json({
+          message: error instanceof Error ? error.message : "live swap failed",
+        });
+      }
+    }
+
+    const txHash = `swap_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const transaction = {
+      id: `swap_${Date.now()}`,
+      chain: "solana",
+      side,
+      status: "executed",
+      contract_address: tokenMint,
+      notional_usd: Number(notionalUsd.toFixed(2)),
+      quantity: null,
+      asset: "TOKEN",
+      tx_hash: txHash,
+      explorer_url: `https://explorer.solana.com/tx/${txHash}`,
+      from_address: assistantRuntime.wallet.addresses_by_chain.solana || "",
+      to_address: tokenMint,
+      created_at: nowIso(),
+      mode,
+    };
+    assistantRuntime.transactions.unshift(transaction);
+    assistantRuntime.transactions = assistantRuntime.transactions.slice(0, 200);
+    await persistAssistantRuntime();
+
+    return res.json({
+      trade: {
+        id: transaction.id,
+        chain: "solana",
+        mode,
+        side,
+        status: "executed",
+        tx_hash: txHash,
+        explorer_url: transaction.explorer_url,
+      },
+    });
+  });
+
   app.post("/api/ai/trading/consent/request", async (req, res) => {
     const mode = String(req.body?.mode || "paper").toLowerCase() === "live" ? "live" : "paper";
     const consentId = `consent_${Date.now().toString(36)}`;
