@@ -60,6 +60,7 @@ export default function DoctorTrade() {
   const [gasPriorityInput, setGasPriorityInput] = useState("0");
   const [liveSellFractionInput, setLiveSellFractionInput] = useState("50");
   const [maxSellNotionalInput, setMaxSellNotionalInput] = useState("300");
+  const [presetMode, setPresetMode] = useState<"default" | "custom">("default");
   const [privateKeyInput, setPrivateKeyInput] = useState("");
   const hydratedFromLocalRef = useRef(false);
   const hydratedFromServerRef = useRef(false);
@@ -301,7 +302,7 @@ export default function DoctorTrade() {
     );
   };
 
-  const applyPreset = (preset: "conservative" | "balanced" | "aggressive") => {
+  const applyPreset = (preset: "conservative" | "balanced" | "aggressive" | "insider_default") => {
     if (preset === "conservative") {
       setBuyAmountInput("0.1");
       setMaxTradesInput("6");
@@ -361,6 +362,27 @@ export default function DoctorTrade() {
       setQualityMaxHolderInput("40");
       setLiveSellFractionInput("75");
       setMaxSellNotionalInput("650");
+    }
+    if (preset === "insider_default") {
+      setBuyAmountInput("0.3");
+      setMaxTradesInput("20");
+      setTpMultInput("2.0");
+      setMinProfitInput("100");
+      setStopLossInput("35");
+      setTrailInput("10");
+      setMinLiquidityInput("300");
+      setMaxSlippageInput("20");
+      setMaxSpreadInput("10");
+      setDailyLossInput("1000");
+      setMaxConsecutiveLossesInput("5");
+      setStrongMoveInput("45");
+      setMaxHoldMinutesInput("120");
+      setMinMomentumInput("8");
+      setQualityMinSpikeInput("12");
+      setQualityMaxHolderInput("15");
+      setGasPriorityInput("500000");
+      setLiveSellFractionInput("50");
+      setMaxSellNotionalInput("10000");
     }
     toast({ title: "Preset loaded", description: `${preset} profile applied. Save to activate.` });
   };
@@ -620,6 +642,23 @@ export default function DoctorTrade() {
             <Button variant="outline" size="sm" onClick={() => applyPreset("conservative")}>Conservative</Button>
             <Button variant="outline" size="sm" onClick={() => applyPreset("balanced")}>Balanced</Button>
             <Button variant="outline" size="sm" onClick={() => applyPreset("aggressive")}>Aggressive</Button>
+            <Button
+              variant={presetMode === "default" ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setPresetMode("default");
+                applyPreset("insider_default");
+              }}
+            >
+              Insider Default
+            </Button>
+            <Button
+              variant={presetMode === "custom" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setPresetMode("custom")}
+            >
+              Custom
+            </Button>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 items-end">
             <div>
@@ -853,6 +892,27 @@ export default function DoctorTrade() {
                 <div className="flex justify-between"><span className="text-muted-foreground">Scanner Health</span><span>{scannerSuccessRate.toFixed(1)}%</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Max Slippage</span><span>{(viewData?.trade_controls?.max_slippage_pct || 0).toFixed(1)}%</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Daily Loss Limit</span><span>${(viewData?.trade_controls?.daily_loss_limit_usd || 0).toFixed(0)}</span></div>
+              </div>
+            </Card>
+
+            <Card className="p-4">
+              <h2 className="text-sm font-semibold mb-3">Sniper Logs</h2>
+              <div className="mb-2 text-[11px] text-muted-foreground">
+                <p>Source: {viewData?.discovery?.dexscreener_primary ? "Dexscreener Primary" : "Mixed"}</p>
+                <p>Worker: {viewData?.discovery?.worker_running ? "Running" : "Stopped"} · Poll {viewData?.discovery?.poll_interval_seconds || 7}s</p>
+              </div>
+              <div className="space-y-2 max-h-[220px] overflow-auto">
+                {(viewData?.sniper_logs || []).slice(0, 12).map((row, index) => (
+                  <div key={`${row?.mint || "sniper"}-${index}`} className="border rounded-md p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold truncate">{row?.symbol || "UNKNOWN"}</p>
+                      <Badge variant="outline" className="text-[10px]">{String(row?.event || "-")}</Badge>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate">{row?.reason || "-"}</p>
+                    <p className="text-[11px] text-muted-foreground">{fmtTs(row?.at)}</p>
+                  </div>
+                ))}
+                {!viewData?.sniper_logs?.length && <p className="text-sm text-muted-foreground">No sniper logs yet.</p>}
               </div>
             </Card>
 

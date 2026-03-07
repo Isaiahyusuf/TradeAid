@@ -126,14 +126,32 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
-    () => {
-      log(`serving on port ${port}`);
-    },
-  );
+
+  const listenWith = (host: string, reusePort: boolean) => {
+    httpServer.listen(
+      {
+        port,
+        host,
+        reusePort,
+      },
+      () => {
+        log(`serving on ${host}:${port}`);
+      },
+    );
+  };
+
+  httpServer.once("error", (error: NodeJS.ErrnoException) => {
+    if (error?.code === "ENOTSUP") {
+      log(`Primary bind failed on 0.0.0.0:${port}; retrying with 127.0.0.1`, "express");
+      try {
+        listenWith("127.0.0.1", false);
+      } catch (fallbackError) {
+        throw fallbackError;
+      }
+      return;
+    }
+    throw error;
+  });
+
+  listenWith("0.0.0.0", true);
 })();

@@ -729,31 +729,36 @@ export async function registerRoutes(
       separateWalletEnforced: true,
     },
     controls: {
-      max_trades_per_day: 12,
+      max_trades_per_day: 20,
       trades_today: 0,
       max_open_positions: 4,
       strategy_window_minutes: 5,
       ai_min_signals_required: 4,
       cooldown_minutes_per_mint: 30,
       min_wallet_fee_buffer_sol: 0.02,
-      gas_priority_lamports: Math.max(0, Math.trunc(Number(process.env.DOCTORTRADE_PRIORITY_FEE_LAMPORTS || 0))),
+      gas_priority_lamports: Math.max(0, Math.trunc(Number(process.env.DOCTORTRADE_PRIORITY_FEE_LAMPORTS || 500000))),
+      min_liquidity_sol: 2,
+      max_liquidity_sol: 50,
+      min_buys_5m: 3,
+      max_sells_5m: 1,
+      max_token_age_seconds: 30,
       live_sell_fraction_pct: 50,
       max_sell_notional_usd: 300,
       max_wallet_allocation_pct: 10,
       min_buy_amount_sol: 0.1,
-      buy_amount_sol: 0.2,
-      take_profit_multiplier: 3,
-      min_profit_pct: 12,
-      stop_loss_pct: 25,
+      buy_amount_sol: 0.3,
+      take_profit_multiplier: 2,
+      min_profit_pct: 100,
+      stop_loss_pct: 35,
       trailing_stop_pct: 10,
-      min_liquidity_usd: 5000,
-      max_liquidity_usd: 500000,
+      min_liquidity_usd: 300,
+      max_liquidity_usd: 7500,
       min_market_cap_usd: 8000,
       min_volume_24h_usd: 8000,
-      min_token_age_minutes: 3,
-      max_token_age_minutes: 10,
-      min_lock_hours: 24,
-      max_slippage_pct: 8,
+      min_token_age_minutes: 0,
+      max_token_age_minutes: 2,
+      min_lock_hours: 0,
+      max_slippage_pct: 20,
       max_spread_pct: 3,
       daily_loss_limit_usd: 600,
       max_consecutive_losses: 3,
@@ -761,10 +766,10 @@ export async function registerRoutes(
       max_hold_minutes: 180,
       min_momentum_profit_pct: 4,
       quality_min_volume_spike_pct: 12,
-      quality_max_top_holder_pct: 12,
+      quality_max_top_holder_pct: 15,
       max_dev_wallet_pct: 8,
-      min_unique_buyers: 20,
-      min_buy_ratio_pct: 55,
+      min_unique_buyers: 8,
+      min_buy_ratio_pct: 75,
       max_early_spike_pct: 200,
     },
     execution: {
@@ -1067,8 +1072,9 @@ export async function registerRoutes(
 
       doctorRuntime.controls.min_buy_amount_sol = Math.max(0.05, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
       doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
-      doctorRuntime.controls.min_token_age_minutes = Math.max(1, Number(doctorRuntime.controls.min_token_age_minutes || 3));
-      doctorRuntime.controls.max_token_age_minutes = Math.min(10, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 3), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
+      doctorRuntime.controls.min_token_age_minutes = Math.max(0, Number(doctorRuntime.controls.min_token_age_minutes || 0));
+      doctorRuntime.controls.max_token_age_minutes = Math.min(10, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
+      doctorRuntime.controls.max_token_age_seconds = Math.max(15, Number(doctorRuntime.controls.max_token_age_seconds || 30));
       if (doctorRuntime.killSwitch) {
         doctorRuntime.enabled = false;
       }
@@ -1082,6 +1088,64 @@ export async function registerRoutes(
   let doctorCycleTimer: NodeJS.Timeout | null = null;
   let doctorEarlyScoredCache: { at: number; tokens: Array<Record<string, any>> } | null = null;
   const doctorTradeLogStateKey = "doctortrade.executions.v1";
+  const doctorDexWorkerStateKey = "doctortrade.dex.worker.v1";
+  let doctorDexWorkerTimer: NodeJS.Timeout | null = null;
+  let doctorDexWorkerRunning = false;
+  let doctorDexWorkerLastPollAt: string | null = null;
+  const doctorProcessedMints = new Map<string, number>();
+  let doctorSniperLogs: Array<Record<string, any>> = [];
+
+  const appendDoctorSniperLog = (entry: Record<string, any>) => {
+    doctorSniperLogs.unshift({ at: nowIso(), ...entry });
+    doctorSniperLogs = doctorSniperLogs.slice(0, 200);
+  };
+
+  const persistDoctorDexWorkerState = async () => {
+    try {
+      const payload = {
+        processed_mints: Array.from(doctorProcessedMints.entries()),
+        logs: doctorSniperLogs.slice(0, 200),
+        last_poll_at: doctorDexWorkerLastPollAt,
+      };
+      await storage.setAppState(doctorDexWorkerStateKey, payload);
+    } catch {
+    }
+  };
+
+  const loadDoctorDexWorkerState = async () => {
+    try {
+      const payload = await storage.getAppState<Record<string, any>>(doctorDexWorkerStateKey);
+      const processed = Array.isArray(payload?.processed_mints) ? payload!.processed_mints : [];
+      const logs = Array.isArray(payload?.logs) ? payload!.logs : [];
+      doctorDexWorkerLastPollAt = typeof payload?.last_poll_at === "string" ? payload.last_poll_at : null;
+
+      const nowMs = Date.now();
+      const maxAgeMs = Math.max(60_000, Number(process.env.DOCTOR_DEX_PROCESSED_TTL_MS || 6 * 60 * 60 * 1000));
+      for (const row of processed) {
+        const mint = String(Array.isArray(row) ? row[0] : "").trim();
+        const ts = Number(Array.isArray(row) ? row[1] : 0);
+        if (!mint || !Number.isFinite(ts)) continue;
+        if (nowMs - ts <= maxAgeMs) {
+          doctorProcessedMints.set(mint, ts);
+        }
+      }
+      doctorSniperLogs = logs.slice(0, 200);
+    } catch {
+    }
+  };
+
+  const estimateLiquiditySolFromPair = (pair: Record<string, any>) => {
+    const baseAddress = String(pair?.baseToken?.address || "").trim();
+    const quoteAddress = String(pair?.quoteToken?.address || "").trim();
+    const baseLiquidity = Number(pair?.liquidity?.base || 0);
+    const quoteLiquidity = Number(pair?.liquidity?.quote || 0);
+    const liquidityUsd = Number(pair?.liquidity?.usd || 0);
+    const solPriceUsd = Math.max(1, Number(process.env.DOCTOR_SOL_PRICE_USD_DEFAULT || 150));
+
+    if (baseAddress === SOL_MINT && Number.isFinite(baseLiquidity) && baseLiquidity > 0) return baseLiquidity;
+    if (quoteAddress === SOL_MINT && Number.isFinite(quoteLiquidity) && quoteLiquidity > 0) return quoteLiquidity;
+    return Number((liquidityUsd / solPriceUsd).toFixed(6));
+  };
 
   const runDoctorCycleSafely = async (trigger: "manual" | "auto") => {
     if (doctorCycleRunning) return;
@@ -1094,6 +1158,110 @@ export async function registerRoutes(
     } finally {
       doctorCycleRunning = false;
     }
+  };
+
+  const runDoctorDexWorkerPoll = async () => {
+    if (doctorDexWorkerRunning) return;
+    doctorDexWorkerRunning = true;
+    try {
+      const nowMs = Date.now();
+      const maxPairAgeSeconds = Math.max(30, Number(process.env.DOCTOR_DEX_MAX_PAIR_AGE_SECONDS || 120));
+      const minLiquiditySol = Math.max(0.1, Number(doctorRuntime.controls.min_liquidity_sol || 2));
+      const maxLiquiditySol = Math.max(minLiquiditySol, Number(doctorRuntime.controls.max_liquidity_sol || 50));
+      const minBuys5m = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_buys_5m || 3)));
+      const maxSells5m = Math.max(0, Math.trunc(Number(doctorRuntime.controls.max_sells_5m || 1)));
+      const minVolumeSol = Math.max(0.1, Number(process.env.DOCTOR_DEX_MIN_VOLUME_SOL || 1));
+      const solPriceUsd = Math.max(1, Number(process.env.DOCTOR_SOL_PRICE_USD_DEFAULT || 150));
+      const processedTtlMs = Math.max(60_000, Number(process.env.DOCTOR_DEX_PROCESSED_TTL_MS || 6 * 60 * 60 * 1000));
+
+      for (const [mint, ts] of Array.from(doctorProcessedMints.entries())) {
+        if (nowMs - ts > processedTtlMs) {
+          doctorProcessedMints.delete(mint);
+        }
+      }
+
+      const pairs = await getNewPairs("solana", 1);
+      const freshPairs = pairs
+        .filter((pair) => String(pair?.chainId || "").toLowerCase() === "solana")
+        .filter((pair) => {
+          const createdAt = Number(pair?.pairCreatedAt || 0);
+          if (!Number.isFinite(createdAt) || createdAt <= 0) return false;
+          return nowMs - createdAt <= maxPairAgeSeconds * 1000;
+        })
+        .sort((a, b) => Number(b.pairCreatedAt || 0) - Number(a.pairCreatedAt || 0))
+        .slice(0, 150);
+
+      for (const pair of freshPairs) {
+        const mint = String(pair?.baseToken?.address || "").trim();
+        if (!mint || doctorProcessedMints.has(mint)) continue;
+        doctorProcessedMints.set(mint, nowMs);
+
+        const liquiditySol = estimateLiquiditySolFromPair(pair as Record<string, any>);
+        const buys5m = Number(pair?.txns?.m5?.buys || 0);
+        const sells5m = Number(pair?.txns?.m5?.sells || 0);
+        const volume5mUsd = Number(pair?.volume?.m5 || 0);
+        const volume5mSol = volume5mUsd > 0 ? Number((volume5mUsd / solPriceUsd).toFixed(6)) : 0;
+        const ageSeconds = Math.max(0, Math.trunc((nowMs - Number(pair?.pairCreatedAt || nowMs)) / 1000));
+        const smartWalletDetected = Number(pair?.boosts?.active || 0) > 0 || (buys5m >= 6 && sells5m <= 1);
+        const validLiquidity = liquiditySol >= minLiquiditySol && liquiditySol <= maxLiquiditySol;
+        const validPressure = buys5m >= minBuys5m && sells5m <= maxSells5m;
+        const validVolume = volume5mSol >= minVolumeSol;
+        const isCandidate = validLiquidity && validPressure && validVolume;
+
+        appendDoctorSniperLog({
+          event: isCandidate ? "detected" : "rejected",
+          source: "dexscreener",
+          symbol: String(pair?.baseToken?.symbol || "UNKNOWN"),
+          mint,
+          pair_address: String(pair?.pairAddress || ""),
+          age_seconds: ageSeconds,
+          liquidity_sol: liquiditySol,
+          buys_5m: buys5m,
+          sells_5m: sells5m,
+          volume_5m_sol: volume5mSol,
+          smart_wallet_detected: smartWalletDetected,
+          reason: isCandidate ? "insider_conditions_passed" : "insider_conditions_failed",
+        });
+
+        if (!isCandidate) {
+          continue;
+        }
+
+        const tokenData = pairToTokenData(pair);
+        try {
+          const existing = await storage.getScannedTokenByAddress(mint);
+          if (existing?.id) {
+            await storage.updateScannedToken(existing.id, tokenData as any);
+          } else {
+            await storage.createScannedToken(tokenData as any);
+          }
+        } catch {
+        }
+      }
+
+      doctorDexWorkerLastPollAt = nowIso();
+      await persistDoctorDexWorkerState();
+    } catch (error) {
+      doctorRuntime.lastError = error instanceof Error ? error.message : "doctor_dex_worker_failed";
+      await persistDoctorRuntime();
+    } finally {
+      doctorDexWorkerRunning = false;
+    }
+  };
+
+  const startDoctorDexWorker = () => {
+    if (doctorDexWorkerTimer) {
+      clearInterval(doctorDexWorkerTimer);
+      doctorDexWorkerTimer = null;
+    }
+
+    const intervalSeconds = Math.max(5, Math.trunc(Number(process.env.DOCTOR_DEX_POLL_SECONDS || 7)));
+    doctorDexWorkerTimer = setInterval(async () => {
+      await runDoctorDexWorkerPoll();
+    }, intervalSeconds * 1000);
+    doctorDexWorkerTimer.unref?.();
+
+    void runDoctorDexWorkerPoll();
   };
 
   const normalizeLaunchSource = (value: string) => {
@@ -1241,16 +1409,8 @@ export async function registerRoutes(
 
     const dexscreenerTokens = await (async () => {
       try {
-        const apifyUnavailable = apifyTokens.length === 0;
-        const dexscreenerLookbackHours = apifyUnavailable ? 12 : 6;
-        const dexscreenerMaxPairs = apifyUnavailable ? 220 : 160;
-        if (apifyUnavailable) {
-          logStructured("warn", "doctortrade.dexscreener_fallback_active", {
-            reason: "apify_unavailable_or_empty",
-            lookback_hours: dexscreenerLookbackHours,
-            max_pairs: dexscreenerMaxPairs,
-          });
-        }
+        const dexscreenerLookbackHours = 6;
+        const dexscreenerMaxPairs = 240;
 
         const pairs = await getNewPairs("solana", dexscreenerLookbackHours);
         return pairs
@@ -1273,6 +1433,7 @@ export async function registerRoutes(
               volume_5m: Number(pair.volume?.m5 || 0),
               buys_5m: Number(pair.txns?.m5?.buys || 0),
               sells_5m: Number(pair.txns?.m5?.sells || 0),
+              liquidity_sol: estimateLiquiditySolFromPair(pair as Record<string, any>),
               buy_ratio_pct: Number((((Number(pair.txns?.m5?.buys || 0) + 1) / Math.max(1, Number(pair.txns?.m5?.buys || 0) + Number(pair.txns?.m5?.sells || 0) + 2)) * 100).toFixed(2)),
               holders_count: 0,
               top_holder_pct: 0,
@@ -1326,7 +1487,7 @@ export async function registerRoutes(
     })();
 
     const byMint = new Map<string, Record<string, any>>();
-    for (const token of [...scannedTokens, ...apifyTokens, ...raydiumTokens, ...dexscreenerTokens]) {
+    for (const token of [...dexscreenerTokens, ...raydiumTokens, ...apifyTokens, ...scannedTokens]) {
       const tokenAny = token as Record<string, any>;
       const mint = String(token.mint || "").trim();
       if (!mint) continue;
@@ -1348,6 +1509,7 @@ export async function registerRoutes(
         buys_5m: Math.max(Number(prev.buys_5m || 0), Number(tokenAny.buys_5m || 0)),
         sells_5m: Math.max(Number(prev.sells_5m || 0), Number(tokenAny.sells_5m || 0)),
         buy_ratio_pct: Math.max(Number(prev.buy_ratio_pct || 0), Number(tokenAny.buy_ratio_pct || 0)),
+        liquidity_sol: Math.max(Number(prev.liquidity_sol || 0), Number(tokenAny.liquidity_sol || 0)),
         holders_count: Math.max(Number(prev.holders_count || 0), Number(tokenAny.holders_count || 0)),
         top_holder_pct: Number(tokenAny.top_holder_pct || prev.top_holder_pct || 0),
         dev_wallet_pct: Number(tokenAny.dev_wallet_pct || prev.dev_wallet_pct || 0),
@@ -1366,6 +1528,9 @@ export async function registerRoutes(
         const volume24h = Number(token.volume_24h || 0);
         const volume5m = Number(token.volume_5m || 0);
         const buyRatioPct = Number(token.buy_ratio_pct || 0);
+        const liquiditySol = Number(token.liquidity_sol || 0);
+        const buys5m = Number(token.buys_5m || 0);
+        const sells5m = Number(token.sells_5m || 0);
         const holdersCount = Number(token.holders_count || 0);
         const topHolderPct = Number(token.top_holder_pct || 0);
         const priceChange1h = Number(token.price_change_1h || 0);
@@ -1382,11 +1547,22 @@ export async function registerRoutes(
         const confidenceScore = Number((freshnessScore + liquidityScore + holderScore + concentrationScore + momentumScore).toFixed(2));
 
         const rejectReasons: string[] = [];
+        const minBuys5m = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_buys_5m || 3)));
+        const maxSells5m = Math.max(0, Math.trunc(Number(doctorRuntime.controls.max_sells_5m || 1)));
+        const maxTokenAgeSecondsControl = Math.max(15, Number(doctorRuntime.controls.max_token_age_seconds || 30));
+        const minLiquiditySol = Math.max(0.1, Number(doctorRuntime.controls.min_liquidity_sol || 2));
+        const maxLiquiditySol = Math.max(minLiquiditySol, Number(doctorRuntime.controls.max_liquidity_sol || 50));
         if (ageSeconds > windowSeconds) rejectReasons.push("outside_window");
-        if (ageSeconds < Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 3))) * 60) rejectReasons.push("below_min_age");
+        if (ageSeconds > maxTokenAgeSecondsControl) rejectReasons.push("above_sniper_max_age");
+        if (ageSeconds < Math.max(0, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 0))) * 60) rejectReasons.push("below_min_age");
         if (liquidityUsd < 1000) rejectReasons.push("low_liquidity");
+        if (liquiditySol > 0 && liquiditySol < minLiquiditySol) rejectReasons.push("below_min_liquidity_sol");
+        if (liquiditySol > maxLiquiditySol) rejectReasons.push("above_max_liquidity_sol");
+        if (buys5m > 0 && buys5m < minBuys5m) rejectReasons.push("insufficient_buys_5m");
+        if (sells5m > maxSells5m) rejectReasons.push("excess_sells_5m");
         if (marketCapUsd < Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000))) rejectReasons.push("low_market_cap");
         if (volume24h < Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000))) rejectReasons.push("low_volume_24h");
+        if (Number(token.dev_wallet_pct || 0) <= 0) rejectReasons.push("dev_commitment_missing");
         if (topHolderPct > 65) rejectReasons.push("holder_concentration_high");
         if (!liquidityLockPass) rejectReasons.push("liquidity_not_locked");
         if (buyRatioPct > 0 && buyRatioPct < Math.max(1, Number(doctorRuntime.controls.min_buy_ratio_pct || 65))) rejectReasons.push("buy_ratio_below_threshold");
@@ -1427,6 +1603,9 @@ export async function registerRoutes(
           liquidity: Number(token.liquidity_usd || 0),
           volume_5m: Number(token.volume_5m || 0),
           buy_ratio_pct: Number(token.buy_ratio_pct || 0),
+          buys_5m: Number(token.buys_5m || 0),
+          sells_5m: Number(token.sells_5m || 0),
+          liquidity_sol: Number(token.liquidity_sol || 0),
           volume_24h: Number(token.volume_24h || 0),
           market_cap_usd: Number(token.market_cap_usd || 0),
           score,
@@ -1641,6 +1820,7 @@ export async function registerRoutes(
     reason: string;
     trigger: "manual" | "auto";
     baseMint?: string;
+    sellFractionPct?: number;
   }) => {
     const liveEnabled = isDoctorLiveTradingEnabled();
     const mode = isDoctorLiveOnlyMode() ? "live" : doctorRuntime.execution.mode;
@@ -1784,7 +1964,10 @@ export async function registerRoutes(
             } as const;
           }
 
-          const configuredSellFraction = Math.max(1, Math.min(100, Number(doctorRuntime.controls.live_sell_fraction_pct || 100)));
+          const configuredSellFraction = Math.max(
+            1,
+            Math.min(100, Number((params.sellFractionPct ?? doctorRuntime.controls.live_sell_fraction_pct) || 100)),
+          );
           const maxSellNotionalUsd = Math.max(1, Number(doctorRuntime.controls.max_sell_notional_usd || Number.POSITIVE_INFINITY));
           const expectedNotionalUsd = Math.max(0, Number(params.amountSol * params.expectedPriceUsd || 0));
           const notionalFractionCap = Number.isFinite(maxSellNotionalUsd) && expectedNotionalUsd > 0
@@ -2227,9 +2410,17 @@ export async function registerRoutes(
       const marketHolders = Number(market?.holders_count || 0);
       const marketScore = Number(market?.score || 0);
       const topHolderPct = Number(market?.top_holder_pct || 0);
+      const tpStage = Math.max(0, Math.trunc(Number((position as any).tp_stage || 0)));
 
       let sellReason = "";
-      if (pnlPct >= takeProfitPct) {
+      let sellFractionPct = 100;
+      if (pnlPct >= 400 && tpStage < 2) {
+        sellReason = "take_profit_5x_partial";
+        sellFractionPct = 50;
+      } else if (pnlPct >= 100 && tpStage < 1) {
+        sellReason = "take_profit_2x_partial";
+        sellFractionPct = 50;
+      } else if (pnlPct >= takeProfitPct && tpStage >= 2) {
         sellReason = "take_profit_reached";
       } else if (pnlPct <= -Math.max(0.1, Number(doctorRuntime.controls.stop_loss_pct || 0))) {
         sellReason = "stop_loss_hit";
@@ -2276,6 +2467,7 @@ export async function registerRoutes(
         reason: sellReason,
         trigger,
         baseMint: String((position as any).base_mint || getDoctorTradeBaseAssetMint()),
+        sellFractionPct,
       });
       if (!sellExecution.executed) {
         updatedPositions.push({
@@ -2301,6 +2493,11 @@ export async function registerRoutes(
       sellCount += 1;
       const pnlUsd = Number(((soldAmountSol * currentPrice) - (soldAmountSol * entryPrice)).toFixed(2));
       const remainingAmountSol = Number((amountSol - soldAmountSol).toFixed(9));
+      const nextTpStage = sellReason === "take_profit_5x_partial"
+        ? Math.max(tpStage, 2)
+        : sellReason === "take_profit_2x_partial"
+          ? Math.max(tpStage, 1)
+          : tpStage;
 
       doctorRuntime.recentTrades.unshift({
         token: position.symbol,
@@ -2334,6 +2531,7 @@ export async function registerRoutes(
       if (remainingAmountSol > 0.000001) {
         updatedPositions.push({
           ...position,
+          tp_stage: nextTpStage,
           amount_sol: remainingAmountSol,
           current_price: currentPrice,
           peak_price: peakPrice,
@@ -2353,9 +2551,14 @@ export async function registerRoutes(
     const buyAmountSol = Math.max(0.01, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     const maxLiquidityUsd = Math.max(1, Number(doctorRuntime.controls.max_liquidity_usd || 500000));
     const maxTokenAgeSeconds = Math.max(60, Math.min(10, Math.trunc(Number(doctorRuntime.controls.max_token_age_minutes || 10))) * 60);
+    const strictMaxTokenAgeSeconds = Math.max(15, Number(doctorRuntime.controls.max_token_age_seconds || 30));
     const maxDevWalletPct = Math.max(0, Number(doctorRuntime.controls.max_dev_wallet_pct || 3));
     const minUniqueBuyers = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_unique_buyers || 40)));
     const minBuyRatioPct = Math.max(1, Number(doctorRuntime.controls.min_buy_ratio_pct || 65));
+    const minBuys5m = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_buys_5m || 3)));
+    const maxSells5m = Math.max(0, Math.trunc(Number(doctorRuntime.controls.max_sells_5m || 1)));
+    const minLiquiditySol = Math.max(0.1, Number(doctorRuntime.controls.min_liquidity_sol || 2));
+    const maxLiquiditySol = Math.max(minLiquiditySol, Number(doctorRuntime.controls.max_liquidity_sol || 50));
     const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours ?? 24)) > 0;
     const openAddresses = new Set(doctorRuntime.positions.map((position) => String(position.address || "")));
 
@@ -2366,8 +2569,15 @@ export async function registerRoutes(
       .filter((token) => Number(token.liquidity || 0) <= maxLiquidityUsd)
       .filter((token) => Number(token.market_cap_usd || 0) >= Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000)))
       .filter((token) => Number(token.volume_24h || 0) >= Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000)))
-      .filter((token) => Number(token.age_seconds || 0) >= Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 3))) * 60)
-      .filter((token) => Number(token.age_seconds || 0) <= maxTokenAgeSeconds)
+      .filter((token) => Number(token.age_seconds || 0) >= Math.max(0, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 0))) * 60)
+      .filter((token) => Number(token.age_seconds || 0) <= Math.min(maxTokenAgeSeconds, strictMaxTokenAgeSeconds))
+      .filter((token) => {
+        const liquiditySol = Number((token as any).liquidity_sol || 0);
+        if (liquiditySol <= 0) return true;
+        return liquiditySol >= minLiquiditySol && liquiditySol <= maxLiquiditySol;
+      })
+      .filter((token) => Number((token as any).buys_5m || 0) >= minBuys5m)
+      .filter((token) => Number((token as any).sells_5m || 0) <= maxSells5m)
       .filter((token) => isLiquidityLockSatisfied(requireLiquidityLock, Boolean(token.liquidity_locked), Number(token.age_seconds || 0), String(token.launch_source || token.source || "unknown")))
       .filter((token) => {
         const buyRatioPct = Number(token.buy_ratio_pct || 0);
@@ -2488,8 +2698,9 @@ export async function registerRoutes(
       const minUniqueBuyers = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_unique_buyers || 40)));
       const maxEarlySpikePct = Math.max(50, Number(doctorRuntime.controls.max_early_spike_pct || 200));
       const volumeSpikeMinPct = Math.max(1, Number(doctorRuntime.controls.quality_min_volume_spike_pct || 12));
-      const minTokenAgeSeconds = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 3))) * 60;
+      const minTokenAgeSeconds = Math.max(0, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 0))) * 60;
       const maxTokenAgeSeconds = Math.max(minTokenAgeSeconds, Math.min(10, Math.trunc(Number(doctorRuntime.controls.max_token_age_minutes || 10))) * 60);
+      const strictMaxTokenAgeSeconds = Math.max(15, Number(doctorRuntime.controls.max_token_age_seconds || 30));
       const minVolume24h = Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000));
       const minMarketCap = Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000));
       const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours ?? 24)) > 0;
@@ -2561,7 +2772,7 @@ export async function registerRoutes(
 
       const newTokenValidation =
         ageSeconds >= minTokenAgeSeconds &&
-        ageSeconds <= maxTokenAgeSeconds &&
+        ageSeconds <= Math.min(maxTokenAgeSeconds, strictMaxTokenAgeSeconds) &&
         ageSeconds <= strategyWindowSeconds &&
         liquidityUsd > 0 &&
         liquidityUsd <= liquidityMax &&
@@ -2782,6 +2993,7 @@ export async function registerRoutes(
         size_pct: 100,
         risk_status: String(buyCandidate.risk_level || "MEDIUM"),
         trailing_stop_pct: Number(doctorRuntime.controls.trailing_stop_pct || 10),
+        tp_stage: 0,
         amount_sol: buyAmountSol,
         base_mint: String(buyCandidate.base_mint || getDoctorTradeBaseAssetMint()),
         opened_at: nowIso(),
@@ -2808,6 +3020,17 @@ export async function registerRoutes(
         execution_mode: doctorRuntime.execution.mode,
         tx_hash: buyExecution.txHash,
         timestamp: nowIso(),
+      });
+
+      appendDoctorSniperLog({
+        event: "sniped",
+        source: String(buyCandidate.source || "scanner"),
+        symbol: position.symbol,
+        mint: position.address,
+        liquidity_sol: Number((buyCandidate as any).liquidity_sol || 0),
+        buys_5m: Number((buyCandidate as any).buys_5m || 0),
+        sells_5m: Number((buyCandidate as any).sells_5m || 0),
+        reason: "doctortrade_buy_executed",
       });
 
       doctorRuntime.decisionJournal.unshift({
@@ -2933,6 +3156,14 @@ export async function registerRoutes(
       decision_journal: doctorRuntime.decisionJournal.slice(0, 60),
       performance: doctorRuntime.performance.slice(0, 30),
       execution_audit: doctorRuntime.executionAudit.slice(0, 80),
+      sniper_logs: doctorSniperLogs.slice(0, 80),
+      discovery: {
+        dexscreener_primary: true,
+        poll_interval_seconds: Math.max(5, Math.trunc(Number(process.env.DOCTOR_DEX_POLL_SECONDS || 7))),
+        worker_running: Boolean(doctorDexWorkerTimer),
+        last_poll_at: doctorDexWorkerLastPollAt,
+        processed_mints: doctorProcessedMints.size,
+      },
       last_decision: doctorRuntime.lastDecision,
       tuning_suggestion: activeTokens.length < 5 ? "Lower minimum liquidity or widen scanner scope to increase candidates." : null,
       strategy_mode: "balanced",
@@ -3097,6 +3328,11 @@ export async function registerRoutes(
       "ai_min_signals_required",
       "cooldown_minutes_per_mint",
       "min_wallet_fee_buffer_sol",
+      "min_liquidity_sol",
+      "max_liquidity_sol",
+      "min_buys_5m",
+      "max_sells_5m",
+      "max_token_age_seconds",
       "live_sell_fraction_pct",
       "max_sell_notional_usd",
       "gas_priority_lamports",
@@ -3134,8 +3370,9 @@ export async function registerRoutes(
 
     doctorRuntime.controls.min_buy_amount_sol = Math.max(0.05, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
-    doctorRuntime.controls.min_token_age_minutes = Math.max(1, Number(doctorRuntime.controls.min_token_age_minutes || 3));
-    doctorRuntime.controls.max_token_age_minutes = Math.min(10, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 3), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
+    doctorRuntime.controls.min_token_age_minutes = Math.max(0, Number(doctorRuntime.controls.min_token_age_minutes || 0));
+    doctorRuntime.controls.max_token_age_minutes = Math.min(10, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
+    doctorRuntime.controls.max_token_age_seconds = Math.max(15, Number(doctorRuntime.controls.max_token_age_seconds || 30));
     await persistDoctorRuntime();
 
     if (doctorCycleTimer) {
@@ -3566,6 +3803,9 @@ export async function registerRoutes(
   const generateMnemonic = () => bip39.generateMnemonic(128);
   const nowIso = () => new Date().toISOString();
   const chainNativeSymbol = (_chain: AssistantChain) => "SOL";
+
+  await loadDoctorDexWorkerState();
+  startDoctorDexWorker();
 
   const chainExplorerTxUrl = (_chain: AssistantChain, txHash: string) => `https://explorer.solana.com/tx/${txHash}`;
 
@@ -5960,94 +6200,102 @@ export async function registerRoutes(
 }
 
 async function seedDatabase() {
-  const wallets = await storage.getTrackedWallets();
-  if (wallets.length === 0) {
-    await storage.createTrackedWallet({
-      address: "HN7cABPNH...k8j2xZp",
-      label: "Smart Money Alpha",
-      winRate: 87,
-      totalProfit: "1,250 SOL"
-    });
-    await storage.createTrackedWallet({
-      address: "Ab9qPmL...xY3zKvM",
-      label: "Insider Whale",
-      winRate: 92,
-      totalProfit: "3,400 SOL"
-    });
-    await storage.createTrackedWallet({
-      address: "Fg4rTyU...nM8pQwE",
-      label: "Degen King",
-      winRate: 78,
-      totalProfit: "890 SOL"
-    });
-    
-    const allWallets = await storage.getTrackedWallets();
-    if (allWallets.length > 0) {
-      await storage.createWalletAlert({
-        walletId: allWallets[0].id,
-        tokenSymbol: "$BONK",
-        type: "BUY",
-        amount: "150 SOL",
-        price: "0.0000123",
+  try {
+    const wallets = await storage.getTrackedWallets();
+    if (wallets.length === 0) {
+      await storage.createTrackedWallet({
+        address: "HN7cABPNH...k8j2xZp",
+        label: "Smart Money Alpha",
+        winRate: 87,
+        totalProfit: "1,250 SOL"
       });
-      await storage.createWalletAlert({
-        walletId: allWallets[1].id,
-        tokenSymbol: "$WIF",
-        type: "BUY",
-        amount: "500 SOL",
-        price: "2.34",
+      await storage.createTrackedWallet({
+        address: "Ab9qPmL...xY3zKvM",
+        label: "Insider Whale",
+        winRate: 92,
+        totalProfit: "3,400 SOL"
       });
-      await storage.createWalletAlert({
-        walletId: allWallets[0].id,
-        tokenSymbol: "$MOODENG",
-        type: "SELL",
-        amount: "80 SOL",
-        price: "0.00015",
+      await storage.createTrackedWallet({
+        address: "Fg4rTyU...nM8pQwE",
+        label: "Degen King",
+        winRate: 78,
+        totalProfit: "890 SOL"
       });
+
+      const allWallets = await storage.getTrackedWallets();
+      if (allWallets.length > 0) {
+        await storage.createWalletAlert({
+          walletId: allWallets[0].id,
+          tokenSymbol: "$BONK",
+          type: "BUY",
+          amount: "150 SOL",
+          price: "0.0000123",
+        });
+        await storage.createWalletAlert({
+          walletId: allWallets[1].id,
+          tokenSymbol: "$WIF",
+          type: "BUY",
+          amount: "500 SOL",
+          price: "2.34",
+        });
+        await storage.createWalletAlert({
+          walletId: allWallets[0].id,
+          tokenSymbol: "$MOODENG",
+          type: "SELL",
+          amount: "80 SOL",
+          price: "0.00015",
+        });
+      }
     }
+  } catch (error) {
+    console.warn("Skipping tracked wallet seed due to schema availability:", error instanceof Error ? error.message : error);
   }
 
-  const trends = await storage.getTrendingCoins();
-  if (trends.length === 0) {
-    await storage.createTrendingCoin({
-      symbol: "$BONK",
-      name: "Bonk",
-      price: "0.0000234",
-      volume24h: "$145M",
-      hypeScore: 95,
-      trend: "UP",
-    });
-    await storage.createTrendingCoin({
-      symbol: "$WIF",
-      name: "dogwifhat",
-      price: "2.89",
-      volume24h: "$320M",
-      hypeScore: 92,
-      trend: "UP",
-    });
-    await storage.createTrendingCoin({
-      symbol: "$POPCAT",
-      name: "Popcat",
-      price: "0.78",
-      volume24h: "$45M",
-      hypeScore: 78,
-      trend: "UP",
-    });
-    await storage.createTrendingCoin({
-      symbol: "$MOODENG",
-      name: "Moo Deng",
-      price: "0.00018",
-      volume24h: "$12M",
-      hypeScore: 88,
-      trend: "UP",
-    });
-    await storage.createTrendingCoin({
-      symbol: "$GOAT",
-      name: "Goatseus Maximus",
-      price: "0.56",
-      volume24h: "$89M",
-      hypeScore: 85,
-      trend: "FLAT",
-    });
+  try {
+    const trends = await storage.getTrendingCoins();
+    if (trends.length === 0) {
+      await storage.createTrendingCoin({
+        symbol: "$BONK",
+        name: "Bonk",
+        price: "0.0000234",
+        volume24h: "$145M",
+        hypeScore: 95,
+        trend: "UP",
+      });
+      await storage.createTrendingCoin({
+        symbol: "$WIF",
+        name: "dogwifhat",
+        price: "2.89",
+        volume24h: "$320M",
+        hypeScore: 92,
+        trend: "UP",
+      });
+      await storage.createTrendingCoin({
+        symbol: "$POPCAT",
+        name: "Popcat",
+        price: "0.78",
+        volume24h: "$45M",
+        hypeScore: 78,
+        trend: "UP",
+      });
+      await storage.createTrendingCoin({
+        symbol: "$MOODENG",
+        name: "Moo Deng",
+        price: "0.00018",
+        volume24h: "$12M",
+        hypeScore: 88,
+        trend: "UP",
+      });
+      await storage.createTrendingCoin({
+        symbol: "$GOAT",
+        name: "Goatseus Maximus",
+        price: "0.56",
+        volume24h: "$89M",
+        hypeScore: 85,
+        trend: "FLAT",
+      });
+    }
+  } catch (error) {
+    console.warn("Skipping trending coin seed due to schema availability:", error instanceof Error ? error.message : error);
   }
 }

@@ -81,6 +81,21 @@ export type DoctorStatus = {
     jupiter_quote_enabled?: boolean;
     base_asset_mint?: string;
   };
+  discovery?: {
+    dexscreener_primary?: boolean;
+    poll_interval_seconds?: number;
+    worker_running?: boolean;
+    last_poll_at?: string | null;
+    processed_mints?: number;
+  };
+  sniper_logs?: Array<{
+    at?: string;
+    event?: string;
+    source?: string;
+    symbol?: string;
+    mint?: string;
+    reason?: string;
+  }>;
   trade_controls?: {
     max_trades_per_day: number;
     trades_today: number;
@@ -100,6 +115,11 @@ export type DoctorStatus = {
     min_momentum_profit_pct?: number;
     quality_min_volume_spike_pct?: number;
     quality_max_top_holder_pct?: number;
+    min_liquidity_sol?: number;
+    max_liquidity_sol?: number;
+    min_buys_5m?: number;
+    max_sells_5m?: number;
+    max_token_age_seconds?: number;
     gas_priority_lamports?: number;
     live_sell_fraction_pct?: number;
     max_sell_notional_usd?: number;
