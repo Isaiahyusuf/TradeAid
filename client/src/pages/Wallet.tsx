@@ -29,6 +29,7 @@ import {
   useExecuteAssistantTrade,
   useExportAssistantWalletKey,
   useImportAssistantWallet,
+  useImportAssistantWalletPrivateKey,
   useRemoveAssistantWalletChain,
   useRequestAssistantConsent,
   useRevealAssistantWallet,
@@ -64,6 +65,7 @@ export default function WalletPage() {
 
   const createWallet = useCreateAssistantWallet();
   const importWallet = useImportAssistantWallet();
+  const importWalletPrivateKey = useImportAssistantWalletPrivateKey();
   const confirmBackup = useConfirmAssistantWalletBackup();
   const revealWallet = useRevealAssistantWallet();
   const removeWalletChain = useRemoveAssistantWalletChain();
@@ -85,6 +87,7 @@ export default function WalletPage() {
 
   const [backupPhraseInput, setBackupPhraseInput] = useState("");
   const [importMnemonic, setImportMnemonic] = useState("");
+  const [importPrivateKey, setImportPrivateKey] = useState("");
   const [revealPhrase, setRevealPhrase] = useState("I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS");
 
   const [sendOpen, setSendOpen] = useState(false);
@@ -363,6 +366,24 @@ export default function WalletPage() {
       }
     } catch (error) {
       toast({ title: "Wallet import failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
+  };
+
+  const handleImportWalletPrivateKey = async (overwrite: boolean) => {
+    const privateKey = importPrivateKey.trim();
+    if (!privateKey) {
+      toast({ title: "Private key required", description: "Enter your Solana private key to import.", variant: "destructive" });
+      return;
+    }
+    try {
+      const result = await importWalletPrivateKey.mutateAsync({ private_key: privateKey, overwrite });
+      setLatestBundle(result.bundle);
+      toast({ title: "Wallet connected", description: "Private key imported successfully." });
+      if (returnTo) {
+        setLocation(returnTo);
+      }
+    } catch (error) {
+      toast({ title: "Private key import failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
     }
   };
 
@@ -754,6 +775,25 @@ export default function WalletPage() {
                   </div>
 
                   <div className="space-y-2">
+                    <Label htmlFor="wallet-import-pk">Connect by private key</Label>
+                    <Textarea
+                      id="wallet-import-pk"
+                      value={importPrivateKey}
+                      onChange={(e) => setImportPrivateKey(e.target.value)}
+                      className="min-h-[90px]"
+                      placeholder="Paste Solana private key (base58, base64, or JSON array)"
+                    />
+                    <div className="flex gap-2">
+                      <Button variant="outline" onClick={() => handleImportWalletPrivateKey(false)} disabled={importWalletPrivateKey.isPending}>
+                        {importWalletPrivateKey.isPending ? "Connecting..." : "Connect Key"}
+                      </Button>
+                      <Button variant="outline" onClick={() => handleImportWalletPrivateKey(true)} disabled={importWalletPrivateKey.isPending}>
+                        Connect + Overwrite
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 md:col-span-2">
                     <Label htmlFor="wallet-backup-phrase">Confirm phrase backup</Label>
                     <Textarea id="wallet-backup-phrase" placeholder="Paste your phrase exactly to confirm backup" value={backupPhraseInput} onChange={(e) => setBackupPhraseInput(e.target.value)} className="min-h-[80px]" />
                     <Button variant="outline" onClick={handleConfirmBackup} disabled={confirmBackup.isPending || !backupPhraseInput.trim()}>{confirmBackup.isPending ? "Confirming..." : "Confirm Backup"}</Button>

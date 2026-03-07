@@ -48,6 +48,10 @@ export function clearToken() {
   localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
+export function hasRefreshToken(): boolean {
+  return Boolean(getRefreshToken());
+}
+
 async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = getRefreshToken();
   if (!refreshToken) {
@@ -92,6 +96,14 @@ async function refreshAccessToken(): Promise<string | null> {
   }
 
   return refreshInFlight;
+}
+
+export async function ensureAuthSession(): Promise<boolean> {
+  const token = getToken();
+  if (token) return true;
+  if (!getRefreshToken()) return false;
+  const refreshed = await refreshAccessToken();
+  return Boolean(refreshed);
 }
 
 export async function apiFetch<T = any>(

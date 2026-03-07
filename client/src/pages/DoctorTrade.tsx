@@ -24,9 +24,6 @@ function fmtTs(value?: string) {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-const DOCTOR_PERSIST_SETTINGS_KEY = "doctortrade:persist:settings:v1";
-const DOCTOR_PERSIST_WALLET_KEY = "doctortrade:persist:wallet:v1";
-
 export default function DoctorTrade() {
     // Only show new launches on Solana (created within 24h and chain is solana)
     // (Declarations moved below after viewData is defined)
@@ -41,7 +38,6 @@ export default function DoctorTrade() {
   const runMutation = useDoctorRunOnce();
   const directBuyMutation = useDoctorDirectBuy();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsHydrated, setSettingsHydrated] = useState(false);
   const [intervalInput, setIntervalInput] = useState("20");
   const [buyAmountInput, setBuyAmountInput] = useState("0.1");
   const [maxTradesInput, setMaxTradesInput] = useState("12");
@@ -61,8 +57,6 @@ export default function DoctorTrade() {
   const [qualityMaxHolderInput, setQualityMaxHolderInput] = useState("35");
   const [liveSellFractionInput, setLiveSellFractionInput] = useState("50");
   const [maxSellNotionalInput, setMaxSellNotionalInput] = useState("300");
-  const [restoreAttempted, setRestoreAttempted] = useState(false);
-  const [settingsRestoreAttempted, setSettingsRestoreAttempted] = useState(false);
   const viewData = data;
   const hasData = Boolean(viewData);
   // Only show new launches on Solana (created within 24h and chain is solana)
@@ -76,10 +70,6 @@ export default function DoctorTrade() {
     () => filterRecentSolana(viewData?.active_tokens || []).slice(0, 10),
     [viewData?.active_tokens],
   );
-  const recentActiveTokens = useMemo(
-    () => filterRecentSolana(viewData?.active_tokens || []).slice(0, 18),
-    [viewData?.active_tokens],
-  );
   const safeBuyTokens = useMemo(
     () => (viewData?.active_tokens || []).filter((token: any) => String(token.chain || "solana").toLowerCase() === "solana").slice(0, 20),
     [viewData?.active_tokens],
@@ -91,34 +81,7 @@ export default function DoctorTrade() {
   const [autoBuyHandled, setAutoBuyHandled] = useState(false);
 
   useEffect(() => {
-    if (!viewData?.trade_controls || settingsHydrated) return;
-    setIntervalInput(String(viewData.scan_interval_seconds ?? 20));
-    setBuyAmountInput(String(viewData.trade_controls.buy_amount_sol ?? 0.1));
-    setMaxTradesInput(String(viewData.trade_controls.max_trades_per_day ?? 12));
-    setTpMultInput(String(viewData.trade_controls.take_profit_multiplier ?? 2.0));
-    setMinProfitInput(String(viewData.trade_controls.min_profit_pct ?? 12));
-    setStopLossInput(String(viewData.trade_controls.stop_loss_pct ?? 6));
-    setTrailInput(String(viewData.trade_controls.trailing_stop_pct ?? 10));
-    setMinLiquidityInput(String(viewData.trade_controls.min_liquidity_usd ?? 20000));
-    setMaxSlippageInput(String(viewData.trade_controls.max_slippage_pct ?? 4));
-    setMaxSpreadInput(String(viewData.trade_controls.max_spread_pct ?? 3));
-    setDailyLossInput(String(viewData.trade_controls.daily_loss_limit_usd ?? 600));
-    setMaxConsecutiveLossesInput(String(viewData.trade_controls.max_consecutive_losses ?? 3));
-    setStrongMoveInput(String(viewData.trade_controls.strong_move_threshold_pct ?? 40));
-    setMaxHoldMinutesInput(String(viewData.trade_controls.max_hold_minutes ?? 180));
-    setMinMomentumInput(String(viewData.trade_controls.min_momentum_profit_pct ?? 4));
-    setQualityMinSpikeInput(String(viewData.trade_controls.quality_min_volume_spike_pct ?? 12));
-    setQualityMaxHolderInput(String(viewData.trade_controls.quality_max_top_holder_pct ?? 35));
-    setLiveSellFractionInput(String(viewData.trade_controls.live_sell_fraction_pct ?? 50));
-    setMaxSellNotionalInput(String(viewData.trade_controls.max_sell_notional_usd ?? 300));
-    setSettingsHydrated(true);
-  }, [settingsHydrated, viewData?.trade_controls]);
-
-  useEffect(() => {
-    if (autoBuyHandled) return;
-    if (autoAction !== "autobuy" && autoAction !== "auto-buy") return;
-    if (!autoBuyContract) {
-      setAutoBuyHandled(true);
+    if (autoAction !== "buy" || autoBuyHandled || !autoBuyContract) {
       return;
     }
 
@@ -240,35 +203,6 @@ export default function DoctorTrade() {
       },
       {
         onSuccess: () => {
-          if (typeof window !== "undefined") {
-            try {
-              window.localStorage.setItem(
-                DOCTOR_PERSIST_SETTINGS_KEY,
-                JSON.stringify({
-                  scan_interval_seconds: scanIntervalSeconds,
-                  buy_amount_sol: buyAmountSol,
-                  max_trades_per_day: maxTradesPerDay,
-                  take_profit_multiplier: takeProfitMultiplier,
-                  min_profit_pct: minProfitPct,
-                  stop_loss_pct: stopLossPct,
-                  trailing_stop_pct: trailingStopPct,
-                  min_liquidity_usd: minLiquidityUsd,
-                  max_slippage_pct: maxSlippagePct,
-                  max_spread_pct: maxSpreadPct,
-                  daily_loss_limit_usd: dailyLossLimitUsd,
-                  max_consecutive_losses: maxConsecutiveLosses,
-                  strong_move_threshold_pct: strongMoveThresholdPct,
-                  max_hold_minutes: maxHoldMinutes,
-                  min_momentum_profit_pct: minMomentumProfitPct,
-                  quality_min_volume_spike_pct: qualityMinVolumeSpikePct,
-                  quality_max_top_holder_pct: qualityMaxTopHolderPct,
-                  live_sell_fraction_pct: liveSellFractionPct,
-                  max_sell_notional_usd: maxSellNotionalUsd,
-                }),
-              );
-            } catch {
-            }
-          }
           setSettingsOpen(false);
           toast({ title: "Risk rules saved", description: "DoctorTrade settings updated." });
         },
@@ -351,17 +285,7 @@ export default function DoctorTrade() {
     connectWalletMutation.mutate(
       { use_existing_wallet: true },
       {
-        onSuccess: (status) => {
-          const persistedAddress = String(status?.wallet?.address || "").trim();
-          if (persistedAddress && typeof window !== "undefined") {
-            try {
-              window.localStorage.setItem(
-                DOCTOR_PERSIST_WALLET_KEY,
-                JSON.stringify({ address: persistedAddress, connected_at: new Date().toISOString() }),
-              );
-            } catch {
-            }
-          }
+        onSuccess: () => {
           toast({ title: "Wallet connected", description: "DoctorTrade is now linked to your wallet." });
         },
         onError: (error) => {
@@ -386,12 +310,6 @@ export default function DoctorTrade() {
   const handleDisconnectWallet = () => {
     disconnectWalletMutation.mutate(undefined, {
       onSuccess: () => {
-        if (typeof window !== "undefined") {
-          try {
-            window.localStorage.removeItem(DOCTOR_PERSIST_WALLET_KEY);
-          } catch {
-          }
-        }
         toast({ title: "Wallet disconnected", description: "DoctorTrade wallet has been disconnected." });
       },
       onError: (error) => {
@@ -432,65 +350,6 @@ export default function DoctorTrade() {
       },
     });
   };
-
-  useEffect(() => {
-    if (!viewData || restoreAttempted) return;
-    if (viewData?.trade_controls?.wallet_connected) {
-      setRestoreAttempted(true);
-      return;
-    }
-
-    let savedAddress = "";
-    if (typeof window !== "undefined") {
-      try {
-        const raw = window.localStorage.getItem(DOCTOR_PERSIST_WALLET_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw) as { address?: string };
-          savedAddress = String(parsed?.address || "").trim();
-        }
-      } catch {
-      }
-    }
-
-    if (!savedAddress) {
-      setRestoreAttempted(true);
-      return;
-    }
-
-    connectWalletMutation.mutate(
-      { public_address: savedAddress },
-      {
-        onSettled: () => setRestoreAttempted(true),
-      },
-    );
-  }, [restoreAttempted, viewData, connectWalletMutation]);
-
-  useEffect(() => {
-    if (!viewData || settingsRestoreAttempted) return;
-    if (typeof window === "undefined") {
-      setSettingsRestoreAttempted(true);
-      return;
-    }
-
-    let parsed: Record<string, number> | null = null;
-    try {
-      const raw = window.localStorage.getItem(DOCTOR_PERSIST_SETTINGS_KEY);
-      if (raw) {
-        parsed = JSON.parse(raw) as Record<string, number>;
-      }
-    } catch {
-      parsed = null;
-    }
-
-    if (!parsed) {
-      setSettingsRestoreAttempted(true);
-      return;
-    }
-
-    configMutation.mutate(parsed as any, {
-      onSettled: () => setSettingsRestoreAttempted(true),
-    });
-  }, [settingsRestoreAttempted, viewData, configMutation]);
 
   return (
     <Layout>

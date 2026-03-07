@@ -221,6 +221,19 @@ export function useImportAssistantWallet() {
   });
 }
 
+export function useImportAssistantWalletPrivateKey() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { private_key: string; overwrite?: boolean }) =>
+      apiPost<{ wallet: AssistantWalletStatus; bundle: AssistantWalletBundle }>("/api/ai/wallets/import-private-key", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-status"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-trading-status"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-portfolio"] });
+    },
+  });
+}
+
 export function useRemoveAssistantWalletChain() {
   const queryClient = useQueryClient();
   return useMutation({

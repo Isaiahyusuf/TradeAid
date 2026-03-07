@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, createContext, useContext } from "react";
-import { apiGet, apiPost, apiPatch, setAuthTokens, clearToken } from "@/lib/api";
+import { apiGet, apiPost, apiPatch, setAuthTokens, clearToken, ensureAuthSession } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 
 export type User = {
@@ -40,8 +40,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   const queryClient = useQueryClient();
 
   const checkAuth = useCallback(async () => {
-    const token = localStorage.getItem("trade_aid_token");
-    if (!token) {
+    const hasSession = await ensureAuthSession();
+    if (!hasSession) {
       setUser(null);
       setTokenState(false);
       setIsLoading(false);
@@ -51,10 +51,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     try {
       const data = await apiGet<User>("/api/auth/me");
       setUser(data);
-    } catch {
-      clearToken();
-      setUser(null);
-      setTokenState(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (message.includes("401") || message.toLowerCase().includes("not authenticated")) {
+        clearToken();
+        setUser(null);
+        setTokenState(false);
+      }
     } finally {
       setIsLoading(false);
     }

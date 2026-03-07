@@ -2293,7 +2293,7 @@ export async function registerRoutes(
 
     let buyCount = 0;
     const maxTradesPerDay = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_trades_per_day || 1)));
-    const maxOpenPositions = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_open_positions || 5)));
+    const maxOpenPositions = 1;
     const cooldownMinutes = Math.max(0, Number(doctorRuntime.controls.cooldown_minutes_per_mint || 0));
     const feeBufferSol = Math.max(0, Number(doctorRuntime.controls.min_wallet_fee_buffer_sol || 0));
     const buyAmountSol = Math.max(0.01, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
@@ -2340,7 +2340,7 @@ export async function registerRoutes(
       });
 
     const candidatePoolNonOpen = candidatePool.filter((token) => !openAddresses.has(String(token.address || "")));
-    const allowReentrySnipes = String(process.env.DOCTOR_ALLOW_REENTRY_SNIPES || "true").trim().toLowerCase() !== "false";
+    const allowReentrySnipes = false;
     const buyCandidate = candidatePoolNonOpen[0] || (allowReentrySnipes ? candidatePool[0] : undefined);
 
     const evaluatePreTradeGuard = (candidate: Record<string, any> | undefined) => {
@@ -2373,6 +2373,13 @@ export async function registerRoutes(
       });
       if (recentSameMintBuy) {
         return { allowed: false, reason: "mint_cooldown_active" };
+      }
+
+      const alreadyBoughtMint = doctorRuntime.recentTrades.find((trade) => {
+        return String(trade.action || "").toUpperCase() === "BUY" && String(trade.address || "") === String(candidate.address || "");
+      });
+      if (alreadyBoughtMint) {
+        return { allowed: false, reason: "token_already_bought_once" };
       }
 
       const baseAssetMint = getDoctorTradeBaseAssetMint();
@@ -3082,6 +3089,8 @@ export async function registerRoutes(
       }
     }
 
+    doctorRuntime.controls.max_open_positions = 1;
+
     doctorRuntime.controls.min_buy_amount_sol = Math.max(0.05, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
     doctorRuntime.controls.min_token_age_minutes = Math.max(1, Number(doctorRuntime.controls.min_token_age_minutes || 3));
@@ -3253,6 +3262,10 @@ export async function registerRoutes(
     const existingPosition = doctorRuntime.positions.find((position) => String(position.address || "") === contractAddress);
     if (existingPosition) {
       return res.json({ result: { executed: false, reason: "token_already_owned" } });
+    }
+
+    if (doctorRuntime.positions.length >= 1) {
+      return res.json({ result: { executed: false, reason: "single_position_mode_active" } });
     }
 
     const alreadyBought = doctorRuntime.recentTrades.find((trade) => (
@@ -3559,6 +3572,30 @@ export async function registerRoutes(
     };
   };
 
+  const buildAssistantWalletFromPrivateKey = (privateKeyInput: string) => {
+    const secretKey = parseSolanaSecretKey(privateKeyInput);
+    if (!secretKey) {
+      throw new Error("invalid private key");
+    }
+
+    let keypair: Keypair;
+    if (secretKey.length >= 64) {
+      keypair = Keypair.fromSecretKey(secretKey);
+    } else if (secretKey.length === 32) {
+      keypair = Keypair.fromSeed(secretKey);
+    } else {
+      throw new Error("invalid private key");
+    }
+
+    const address = keypair.publicKey.toBase58();
+    const privateKey = bs58Codec.encode(keypair.secretKey);
+    return {
+      mnemonic: "",
+      addresses_by_chain: { solana: address },
+      private_keys_by_chain: { solana: privateKey },
+    };
+  };
+
   const validateAddressForChain = (chain: string, address: string) => {
     const value = String(address || "").trim();
     if (!value) return false;
@@ -3862,6 +3899,38 @@ export async function registerRoutes(
     assistantRuntime.wallet.addresses_by_chain = walletBundle.addresses_by_chain;
     assistantRuntime.wallet.private_keys_by_chain = walletBundle.private_keys_by_chain;
     assistantRuntime.wallet.mnemonic = walletBundle.mnemonic;
+    assistantRuntime.trading.wallets_by_chain = walletBundle.addresses_by_chain;
+    assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
+
+    await persistAssistantRuntime();
+
+    return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
+  });
+
+  app.post("/api/ai/wallets/import-private-key", async (req, res) => {
+    const privateKey = String(req.body?.private_key || "").trim();
+    const overwrite = Boolean(req.body?.overwrite);
+    if (!privateKey) {
+      return res.status(400).json({ message: "private key required" });
+    }
+    if (assistantRuntime.wallet.has_wallet && !overwrite) {
+      return res.status(400).json({ message: "wallet already exists" });
+    }
+
+    let walletBundle: ReturnType<typeof buildAssistantWalletFromPrivateKey>;
+    try {
+      walletBundle = buildAssistantWalletFromPrivateKey(privateKey);
+    } catch {
+      return res.status(400).json({ message: "invalid private key" });
+    }
+
+    assistantRuntime.wallet.has_wallet = true;
+    assistantRuntime.wallet.backup_confirmed = true;
+    assistantRuntime.wallet.backup_confirmed_at = nowIso();
+    assistantRuntime.wallet.created_at = nowIso();
+    assistantRuntime.wallet.addresses_by_chain = walletBundle.addresses_by_chain;
+    assistantRuntime.wallet.private_keys_by_chain = walletBundle.private_keys_by_chain;
+    assistantRuntime.wallet.mnemonic = "";
     assistantRuntime.trading.wallets_by_chain = walletBundle.addresses_by_chain;
     assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
 
