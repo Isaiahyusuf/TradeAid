@@ -4862,6 +4862,200 @@ export async function registerRoutes(
   );
 
   // Get token list with AI scores
+  app.get("/api/safe-buy", async (req, res) => {
+    const limitRaw = Number(req.query.limit || 20);
+    const requestedLimit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(50, Math.trunc(limitRaw))) : 20;
+    const responseLimit = Math.max(5, requestedLimit);
+
+    const toSafeRisk = (value: string) => {
+      const normalized = String(value || "").toUpperCase();
+      if (normalized.includes("SAFE") || normalized.includes("LOW")) return "Low" as const;
+      if (normalized.includes("HIGH")) return "High" as const;
+      return "Medium" as const;
+    };
+
+    const buildBuyLinks = (contractAddress: string) => ({
+      pump_fun: `https://pump.fun/coin/${contractAddress}`,
+      raydium: `https://raydium.io/swap/?inputCurrency=sol&outputCurrency=${contractAddress}`,
+      jupiter: `https://jup.ag/swap/SOL-${contractAddress}`,
+      dexscreener: `https://dexscreener.com/solana/${contractAddress}`,
+    });
+
+    const toSafeBuyItem = (token: Record<string, any>, sourceTier: "strict" | "soft" | "fallback") => {
+      const contractAddress = String(token.address || token.contract_address || "").trim();
+      const score = Number(token.score || token.safetyScore || 0);
+      const liquidityUsd = Number(token.liquidity || token.liquidity_usd || 0);
+      const volume5m = Number(token.volume_5m || 0);
+      const volume1h = Number(token.volume_1h || Math.max(0, volume5m * 12));
+      const holders = Number(token.holders_count || token.holder_count || 0);
+      const topHoldersPct = Number(token.top_holder_pct || token.top_holders_pct || 0);
+      const devWalletPct = Number(token.dev_wallet_pct || 0);
+      const buyRatio = Number(token.buy_ratio_pct || 0);
+      const createdAt = String(token.created_at || nowIso());
+      const ageSeconds = Number(token.age_seconds || 0);
+
+      const recommendation = score >= 65 && sourceTier !== "fallback" ? "Safe Early Entry" : "Monitor";
+      const shortSummary = score >= 65
+        ? "High-confidence early token with healthy liquidity profile."
+        : "Promising token with improving metrics; monitor before entry.";
+
+      return {
+        id: `${sourceTier}_${contractAddress}`,
+        contract_address: contractAddress,
+        chain: "solana",
+        name: String(token.name || token.symbol || "Unknown"),
+        symbol: String(token.symbol || "UNKNOWN"),
+        market_cap_usd: Number(token.market_cap_usd || token.marketCap || 0),
+        liquidity_usd: liquidityUsd,
+        volume_5m: volume5m,
+        volume_1h: volume1h,
+        holder_count: Math.max(0, Math.trunc(holders)),
+        safety_score: Math.max(0, Math.min(100, score)),
+        risk_level: toSafeRisk(String(token.risk_level || "MEDIUM")),
+        short_summary: shortSummary,
+        recommendation,
+        confidence_score: Math.max(0, Math.min(100, score)),
+        trend: Number(token.price_change_1h || 0) > 0.5 ? "up" : Number(token.price_change_1h || 0) < -0.5 ? "down" : "flat",
+        recently_added: ageSeconds > 0 ? ageSeconds <= 2 * 60 * 60 : true,
+        buy_sell_ratio: buyRatio > 0 ? Number((buyRatio / Math.max(1, 100 - buyRatio)).toFixed(2)) : 0,
+        top_holders_pct: topHoldersPct,
+        dev_wallet_pct: devWalletPct,
+        wallet_growth_rate: Number(token.wallet_growth_rate || 0),
+        source_platform: String(token.launch_source || token.source || token.dexId || "scanner"),
+        logo_url: String(token.logo_url || token.logoUrl || "") || null,
+        buy_links: buildBuyLinks(contractAddress),
+        created_at: createdAt,
+      };
+    };
+
+    const strictCandidates = (await getDoctorActiveTokens())
+      .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
+      .map((token) => toSafeBuyItem(token, String(token.safety_tier || "strict").toLowerCase() === "soft" ? "soft" : "strict"));
+
+    const earlyCandidates = await getSolanaEarlyScoredTokens(120, 220);
+    const usedAddresses = new Set(strictCandidates.map((item) => String(item.contract_address || "")));
+
+    const fillerFromEarly = earlyCandidates
+      .filter((token) => {
+        const tokenAny = token as any;
+        return !usedAddresses.has(String(tokenAny.mint || ""));
+      })
+      .filter((token) => {
+        const tokenAny = token as any;
+        return Number(tokenAny.score || 0) >= 40;
+      })
+      .sort((a, b) => Number((b as any).score || 0) - Number((a as any).score || 0))
+      .map((token) => {
+        const tokenAny = token as any;
+        return (
+        toSafeBuyItem(
+          {
+            address: tokenAny.mint,
+            symbol: tokenAny.symbol,
+            name: tokenAny.name,
+            score: Number(tokenAny.score || 0),
+            liquidity: Number(tokenAny.liquidity_usd || 0),
+            volume_5m: Number(tokenAny.volume_5m || 0),
+            volume_1h: Number(tokenAny.volume_24h || 0) / 24,
+            market_cap_usd: Number(tokenAny.market_cap_usd || 0),
+            holders_count: Number(tokenAny.holders_count || 0),
+            top_holder_pct: Number(tokenAny.top_holder_pct || 0),
+            dev_wallet_pct: Number(tokenAny.dev_wallet_pct || 0),
+            risk_level: Number(tokenAny.score || 0) >= 65 ? "SAFE" : "MEDIUM",
+            launch_source: String(tokenAny.launch_source || "scanner"),
+            price_change_1h: Number(tokenAny.price_change_1h || 0),
+            age_seconds: Number(tokenAny.age_seconds || 0),
+            created_at: tokenAny.created_at || nowIso(),
+          },
+          "fallback",
+        )
+      );
+      });
+
+    const scannedFallback = await storage.getScannedTokens();
+    const fillerFromScanned = scannedFallback
+      .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
+      .filter((token) => !usedAddresses.has(String(token.address || "")))
+      .sort((a, b) => Number(b.safetyScore || 0) - Number(a.safetyScore || 0))
+      .map((token) =>
+        toSafeBuyItem(
+          {
+            address: token.address,
+            symbol: token.symbol,
+            name: token.name,
+            score: Number(token.safetyScore || 0),
+            liquidity: Number(token.liquidity || 0),
+            volume_5m: Number(token.volume24h || 0) / 288,
+            volume_1h: Number(token.volume24h || 0) / 24,
+            market_cap_usd: Number(token.marketCap || 0),
+            holders_count: 0,
+            top_holder_pct: Number(token.topHoldersPercentage || 0),
+            dev_wallet_pct: Number(token.devWalletPercentage || 0),
+            risk_level: String(token.riskLevel || "MEDIUM"),
+            launch_source: String(token.dexId || "scanner"),
+            price_change_1h: Number(token.priceChange1h || 0),
+            age_seconds: 0,
+            created_at: nowIso(),
+          },
+          "fallback",
+        ),
+      );
+
+    const safeByAddress = new Map<string, any>();
+    for (const item of [...strictCandidates, ...fillerFromEarly, ...fillerFromScanned]) {
+      const key = String(item.contract_address || "").trim();
+      if (!key || safeByAddress.has(key)) continue;
+      safeByAddress.set(key, item);
+      if (safeByAddress.size >= responseLimit) break;
+    }
+    const safeTokens = Array.from(safeByAddress.values());
+
+    const nearMissByAddress = new Map<string, any>();
+    for (const token of earlyCandidates
+      .filter((row) => {
+        const rowAny = row as any;
+        return Number(rowAny.score || 0) >= 40 && Number(rowAny.score || 0) < 50;
+      })
+      .sort((a, b) => Number((b as any).score || 0) - Number((a as any).score || 0))) {
+      const tokenAny = token as any;
+      const address = String(tokenAny.mint || "").trim();
+      if (!address || safeByAddress.has(address) || nearMissByAddress.has(address)) continue;
+      nearMissByAddress.set(
+        address,
+        toSafeBuyItem(
+          {
+            address,
+            symbol: tokenAny.symbol,
+            name: tokenAny.name,
+            score: Number(tokenAny.score || 0),
+            liquidity: Number(tokenAny.liquidity_usd || 0),
+            volume_5m: Number(tokenAny.volume_5m || 0),
+            volume_1h: Number(tokenAny.volume_24h || 0) / 24,
+            market_cap_usd: Number(tokenAny.market_cap_usd || 0),
+            holders_count: Number(tokenAny.holders_count || 0),
+            top_holder_pct: Number(tokenAny.top_holder_pct || 0),
+            dev_wallet_pct: Number(tokenAny.dev_wallet_pct || 0),
+            risk_level: "MEDIUM",
+            launch_source: String(tokenAny.launch_source || "scanner"),
+            price_change_1h: Number(tokenAny.price_change_1h || 0),
+            age_seconds: Number(tokenAny.age_seconds || 0),
+            created_at: tokenAny.created_at || nowIso(),
+          },
+          "fallback",
+        ),
+      );
+      if (nearMissByAddress.size >= responseLimit) break;
+    }
+
+    return res.json({
+      tokens: safeTokens,
+      count: safeTokens.length,
+      near_miss_tokens: Array.from(nearMissByAddress.values()),
+      near_miss_count: nearMissByAddress.size,
+      refreshed_at: nowIso(),
+    });
+  });
+
   app.get("/api/tokens/stats/overview", async (_req, res) => {
     const tokens = await storage.getScannedTokens();
     const byChain = tokens.reduce<Record<string, number>>((acc, token) => {
@@ -5049,7 +5243,11 @@ export async function registerRoutes(
               mintAuthorityActive: true,
               freezeAuthorityActive: true,
             }).score || 0),
-            mintAuthorityDisabled: false,
+            holdersCount: Number(raw.holdersCount || raw.holder_count || 0),
+            mintAuthorityDisabled:
+              typeof raw.mintAuthorityDisabled === "boolean"
+                ? Boolean(raw.mintAuthorityDisabled)
+                : (typeof raw.mintAuthorityActive === "boolean" ? !Boolean(raw.mintAuthorityActive) : undefined),
             topHoldersPercentage: Number(raw.topHoldersPercentage || raw.top_holder_pct || 0),
             devWalletPercentage: Number(raw.devWalletPercentage || raw.dev_wallet_pct || 0),
             logoUrl: logoUrl || null,
@@ -5087,7 +5285,8 @@ export async function registerRoutes(
                 buys24h: Number(pair.txns?.h24?.buys || token.buys24h || 0),
                 sells24h: Number(pair.txns?.h24?.sells || token.sells24h || 0),
                 safetyScore: Number(Math.max(0, Math.min(100, (token.liquidity || 0) >= 2000 ? 70 : 40))),
-                mintAuthorityDisabled: false,
+                holdersCount: Number((pair as any)?.info?.holdersCount || 0),
+                mintAuthorityDisabled: undefined,
                 topHoldersPercentage: 0,
                 devWalletPercentage: 0,
                 logoUrl: String(pair.info?.imageUrl || "").trim() || null,
@@ -5120,9 +5319,27 @@ export async function registerRoutes(
         }
         const prevCreated = previous?.createdAt ? new Date(previous.createdAt).getTime() : 0;
         const nextCreated = (token as any)?.createdAt ? new Date((token as any).createdAt).getTime() : 0;
-        if (nextCreated >= prevCreated) {
-          mergedByAddress.set(key, { ...previous, ...(token as any) });
-        }
+        const newerFirst = nextCreated >= prevCreated
+          ? { ...previous, ...(token as any) }
+          : { ...(token as any), ...previous };
+
+        const merged = {
+          ...newerFirst,
+          liquidity: Math.max(Number(previous?.liquidity || 0), Number((token as any)?.liquidity || 0)),
+          marketCap: Math.max(Number(previous?.marketCap || 0), Number((token as any)?.marketCap || 0)),
+          volume24h: Math.max(Number(previous?.volume24h || 0), Number((token as any)?.volume24h || 0)),
+          buys24h: Math.max(Number(previous?.buys24h || 0), Number((token as any)?.buys24h || 0)),
+          sells24h: Math.max(Number(previous?.sells24h || 0), Number((token as any)?.sells24h || 0)),
+          holdersCount: Math.max(Number(previous?.holdersCount || 0), Number((token as any)?.holdersCount || 0)),
+          topHoldersPercentage: Math.max(Number(previous?.topHoldersPercentage || 0), Number((token as any)?.topHoldersPercentage || 0)),
+          devWalletPercentage: Math.max(Number(previous?.devWalletPercentage || 0), Number((token as any)?.devWalletPercentage || 0)),
+          mintAuthorityDisabled:
+            typeof previous?.mintAuthorityDisabled === "boolean"
+              ? previous.mintAuthorityDisabled
+              : (typeof (token as any)?.mintAuthorityDisabled === "boolean" ? (token as any).mintAuthorityDisabled : undefined),
+        };
+
+        mergedByAddress.set(key, merged);
       }
       const baseRows = Array.from(mergedByAddress.values());
 
@@ -5202,9 +5419,9 @@ export async function registerRoutes(
             is_pump_fun: String(token.dexId || "").toLowerCase().includes("pump"),
             source_platform: token.dexId || null,
             buy_urls: undefined,
-            holder_count: 0,
-            is_mintable: !Boolean(token.mintAuthorityDisabled),
-            is_ownership_renounced: Boolean(token.mintAuthorityDisabled),
+            holder_count: Math.max(0, Math.trunc(Number(token.holdersCount || 0))),
+            is_mintable: Boolean((token as any).mintAuthorityActive === true),
+            is_ownership_renounced: Boolean(token.mintAuthorityDisabled === true),
             dex_id: String(token.dexId || "unknown"),
             pair_address: token.pairAddress || null,
             deployer_wallet: null,

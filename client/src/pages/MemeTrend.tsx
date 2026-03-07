@@ -36,6 +36,16 @@ function formatNumber(n: number) {
   return `$${n.toFixed(0)}`;
 }
 
+function formatMetricCurrency(n: number) {
+  if (!Number.isFinite(n) || n <= 0) return "N/A";
+  return formatNumber(n);
+}
+
+function formatMetricCount(n: number) {
+  if (!Number.isFinite(n) || n <= 0) return "N/A";
+  return Math.trunc(n).toLocaleString();
+}
+
 function normalizePct(value: number) {
   return value > 1 ? value : value * 100;
 }
@@ -170,14 +180,14 @@ export default function MemeTrend() {
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4 text-xs">
               <div className="rounded-md border border-border/60 p-2">Price: ${Number(selectedToken.current_price_usd || 0).toLocaleString()}</div>
-              <div className="rounded-md border border-border/60 p-2">Liq: {formatNumber(selectedToken.liquidity_usd)}</div>
+              <div className="rounded-md border border-border/60 p-2">Liq: {formatMetricCurrency(selectedToken.liquidity_usd)}</div>
               <div className="rounded-md border border-border/60 p-2">Vol 1h: {formatNumber(selectedToken.volume_1h)}</div>
               <div className="rounded-md border border-border/60 p-2">Vol 6h: {formatNumber(selectedToken.volume_6h)}</div>
               <div className="rounded-md border border-border/60 p-2">1h: {normalizePct(selectedToken.price_change_1h).toFixed(2)}%</div>
               <div className="rounded-md border border-border/60 p-2">6h: {normalizePct(selectedToken.price_change_6h).toFixed(2)}%</div>
               <div className="rounded-md border border-border/60 p-2">Buys 1h: {selectedToken.buys_1h}</div>
               <div className="rounded-md border border-border/60 p-2">Sells 1h: {selectedToken.sells_1h}</div>
-              <div className="rounded-md border border-border/60 p-2">Holders: {selectedToken.holder_count.toLocaleString()}</div>
+              <div className="rounded-md border border-border/60 p-2">Holders: {formatMetricCount(selectedToken.holder_count)}</div>
               <div className="rounded-md border border-border/60 p-2">DEX: {selectedToken.dex_id || "-"}</div>
               <div className="rounded-md border border-border/60 p-2">Source: {selectedToken.source_platform || "-"}</div>
               <div className="rounded-md border border-border/60 p-2">Supply: {selectedToken.total_supply || "-"}</div>
@@ -278,7 +288,7 @@ export default function MemeTrend() {
                     )}
                     <div className="mt-1 grid grid-cols-2 sm:grid-cols-4 gap-1 text-[11px] text-muted-foreground">
                       <span>Price ${Number(token.current_price_usd || 0).toLocaleString()}</span>
-                      <span>Liq {formatNumber(token.liquidity_usd || 0)}</span>
+                      <span>Liq {formatMetricCurrency(token.liquidity_usd || 0)}</span>
                       <span>Vol 1h {formatNumber(token.volume_1h || 0)}</span>
                       <span>1h {normalizePct(token.price_change_1h).toFixed(2)}%</span>
                       <span>Buys {token.buys_1h}</span>
@@ -289,11 +299,11 @@ export default function MemeTrend() {
                     <p className="text-xs text-muted-foreground">MCap</p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="font-mono text-sm">{formatNumber(token.liquidity_usd)}</p>
+                    <p className="font-mono text-sm">{formatMetricCurrency(token.liquidity_usd)}</p>
                     <p className="text-xs text-muted-foreground">Liquidity</p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="font-mono text-sm">{token.holder_count.toLocaleString()}</p>
+                    <p className="font-mono text-sm">{formatMetricCount(token.holder_count)}</p>
                     <p className="text-xs text-muted-foreground">Holders</p>
                   </div>
                 </div>
