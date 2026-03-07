@@ -733,7 +733,7 @@ export async function registerRoutes(
       trades_today: 0,
       max_open_positions: 4,
       strategy_window_minutes: 5,
-      ai_min_signals_required: 6,
+      ai_min_signals_required: 4,
       cooldown_minutes_per_mint: 30,
       min_wallet_fee_buffer_sol: 0.02,
       live_sell_fraction_pct: 50,
@@ -745,10 +745,10 @@ export async function registerRoutes(
       min_profit_pct: 12,
       stop_loss_pct: 25,
       trailing_stop_pct: 10,
-      min_liquidity_usd: 15000,
+      min_liquidity_usd: 5000,
       max_liquidity_usd: 500000,
-      min_market_cap_usd: 15000,
-      min_volume_24h_usd: 20000,
+      min_market_cap_usd: 8000,
+      min_volume_24h_usd: 8000,
       min_token_age_minutes: 3,
       max_token_age_minutes: 10,
       min_lock_hours: 24,
@@ -756,14 +756,14 @@ export async function registerRoutes(
       max_spread_pct: 3,
       daily_loss_limit_usd: 600,
       max_consecutive_losses: 3,
-      strong_move_threshold_pct: 40,
+      strong_move_threshold_pct: 25,
       max_hold_minutes: 180,
       min_momentum_profit_pct: 4,
       quality_min_volume_spike_pct: 12,
-      quality_max_top_holder_pct: 5,
-      max_dev_wallet_pct: 3,
-      min_unique_buyers: 40,
-      min_buy_ratio_pct: 65,
+      quality_max_top_holder_pct: 12,
+      max_dev_wallet_pct: 8,
+      min_unique_buyers: 20,
+      min_buy_ratio_pct: 55,
       max_early_spike_pct: 200,
     },
     execution: {
@@ -882,6 +882,10 @@ export async function registerRoutes(
     return String(process.env.DOCTORTRADE_LIVE_ONLY || "true").toLowerCase() !== "false";
   };
 
+  const isDoctorMultiUserMode = () => {
+    return String(process.env.DOCTORTRADE_MULTI_USER || "true").toLowerCase() !== "false";
+  };
+
   const ensureDoctorLiveExecutionModeIfCapable = async () => {
     const { walletPublicKey, walletPrivateKey } = await getDoctorLiveWalletCredentials();
     const liveCapable = isDoctorLiveTradingEnabled() && Boolean(walletPublicKey) && Boolean(walletPrivateKey);
@@ -899,6 +903,7 @@ export async function registerRoutes(
   };
 
   const isDoctorOwner = (userId: string) => {
+    if (isDoctorMultiUserMode()) return true;
     if (!doctorRuntime.ownerUserId) return true;
     return doctorRuntime.ownerUserId === userId;
   };
@@ -1299,14 +1304,14 @@ export async function registerRoutes(
         const rejectReasons: string[] = [];
         if (ageSeconds > windowSeconds) rejectReasons.push("outside_window");
         if (ageSeconds < Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 3))) * 60) rejectReasons.push("below_min_age");
-        if (liquidityUsd < 2000) rejectReasons.push("low_liquidity");
+        if (liquidityUsd < 1000) rejectReasons.push("low_liquidity");
         if (marketCapUsd < Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000))) rejectReasons.push("low_market_cap");
         if (volume24h < Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000))) rejectReasons.push("low_volume_24h");
-        if (topHolderPct > 45) rejectReasons.push("holder_concentration_high");
+        if (topHolderPct > 65) rejectReasons.push("holder_concentration_high");
         if (!liquidityLockPass) rejectReasons.push("liquidity_not_locked");
         if (buyRatioPct > 0 && buyRatioPct < Math.max(1, Number(doctorRuntime.controls.min_buy_ratio_pct || 65))) rejectReasons.push("buy_ratio_below_threshold");
         if (!isLaunchSourceAllowed(launchSource)) rejectReasons.push("launch_source_not_allowed");
-        if (confidenceScore < 55) rejectReasons.push("confidence_below_threshold");
+        if (confidenceScore < 45) rejectReasons.push("confidence_below_threshold");
 
         return {
           ...token,
@@ -2864,6 +2869,9 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
+    if (isDoctorMultiUserMode()) {
+      doctorRuntime.ownerUserId = userId;
+    }
     const ownerAccess = isDoctorOwner(userId);
     const userWallet = await getDoctorWalletSnapshotForUser(userId);
     if (ownerAccess) {
@@ -2893,6 +2901,9 @@ export async function registerRoutes(
     const userId = getRequestUserId(req);
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
+    }
+    if (isDoctorMultiUserMode()) {
+      doctorRuntime.ownerUserId = userId;
     }
     const requestedEnable = Boolean(req.body?.enabled);
     if (!isDoctorOwner(userId)) {
@@ -2953,6 +2964,9 @@ export async function registerRoutes(
     const userId = getRequestUserId(req);
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
+    }
+    if (isDoctorMultiUserMode()) {
+      doctorRuntime.ownerUserId = userId;
     }
     if (!isDoctorOwner(userId)) {
       return res.status(403).json({ message: "DoctorTrade settings are currently owned by another account" });
@@ -3049,6 +3063,9 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
+    if (isDoctorMultiUserMode()) {
+      doctorRuntime.ownerUserId = userId;
+    }
     if (!isDoctorOwner(userId)) {
       return res.status(403).json({ message: "DoctorTrade wallet is currently owned by another account" });
     }
@@ -3120,6 +3137,9 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
+    if (isDoctorMultiUserMode()) {
+      doctorRuntime.ownerUserId = userId;
+    }
     if (!isDoctorOwner(userId)) {
       return res.status(403).json({ message: "DoctorTrade wallet is currently owned by another account" });
     }
@@ -3141,6 +3161,9 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
+    if (isDoctorMultiUserMode()) {
+      doctorRuntime.ownerUserId = userId;
+    }
     if (!isDoctorOwner(userId)) {
       return res.status(403).json({ result: { executed: false, reason: "doctortrade_owned_by_other_user" } });
     }
@@ -3157,6 +3180,9 @@ export async function registerRoutes(
     const userId = getRequestUserId(req);
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
+    }
+    if (isDoctorMultiUserMode()) {
+      doctorRuntime.ownerUserId = userId;
     }
     if (!isDoctorOwner(userId)) {
       return res.status(403).json({ result: { executed: false, reason: "doctortrade_owned_by_other_user" } });
