@@ -80,6 +80,10 @@ export default function DoctorTrade() {
     () => filterRecentSolana(viewData?.active_tokens || []).slice(0, 18),
     [viewData?.active_tokens],
   );
+  const safeBuyTokens = useMemo(
+    () => (viewData?.active_tokens || []).filter((token: any) => String(token.chain || "solana").toLowerCase() === "solana").slice(0, 20),
+    [viewData?.active_tokens],
+  );
   const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
   const autoAction = String(searchParams.get("action") || "").trim().toLowerCase();
   const autoBuyContract = String(searchParams.get("contract") || "").trim();
@@ -187,7 +191,7 @@ export default function DoctorTrade() {
         : !viewData?.execution?.live_capable
           ? "Live wallet credentials missing"
           : (viewData?.active_tokens?.length || 0) <= 0
-            ? "No approved targets"
+            ? "Scanning market (no current targets)"
             : "Auto-snipe running";
   const lastSyncLabel = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : "-";
 
@@ -657,7 +661,7 @@ export default function DoctorTrade() {
           <div className="flex items-center justify-between gap-2 mb-2">
             <p className="text-xs font-semibold">Live Ticker</p>
             <Badge variant="outline" className={autoSnipeReady ? "border-green-500/40 text-green-400" : "border-yellow-500/40 text-yellow-400"}>
-              {autoSnipeReady ? "Auto-Snipe Active" : "Auto-Snipe Blocked"}
+              {autoSnipeReady ? "Auto-Snipe Active" : "Auto-Snipe Waiting"}
             </Badge>
           </div>
           <p className="text-[10px] text-muted-foreground mb-2">{autoSnipeStatusLabel}</p>
@@ -676,20 +680,24 @@ export default function DoctorTrade() {
         </Card>
 
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-          <Card className="p-4 xl:col-span-3">
-            <h2 className="text-sm font-semibold mb-3">Watchlist</h2>
+            <Card className="p-4 xl:col-span-3">
+            <h2 className="text-sm font-semibold mb-1">Safe Buys</h2>
+            <p className="text-[11px] text-muted-foreground mb-3">{safeBuyTokens.length} candidate{safeBuyTokens.length === 1 ? "" : "s"} ready for review</p>
             <div className="space-y-2 max-h-[640px] overflow-auto">
-              {recentActiveTokens.map((token) => (
+              {safeBuyTokens.map((token: any) => (
                 <div key={token.address} className="border rounded-md p-2">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-semibold">{token.symbol}</p>
-                    <Badge variant="outline" className="text-[10px]">{Math.round(token.score)}</Badge>
+                    <div className="flex items-center gap-1">
+                      <Badge variant="outline" className="text-[10px]">{Math.round(token.score)}</Badge>
+                      <Badge variant="outline" className="text-[10px]">{String(token.safety_tier || token.eligible ? "strict" : "soft")}</Badge>
+                    </div>
                   </div>
                   <p className="text-[11px] text-muted-foreground">Liq {fmtUsd(token.liquidity)} · Vol5m {fmtUsd(token.volume_5m)}</p>
                   <p className="text-[11px] text-muted-foreground truncate">{token.address}</p>
                 </div>
               ))}
-              {recentActiveTokens.length === 0 && <p className="text-sm text-muted-foreground">No new Solana launches to snipe (last 24h).</p>}
+              {safeBuyTokens.length === 0 && <p className="text-sm text-muted-foreground">No safe buys currently surfaced.</p>}
             </div>
           </Card>
 

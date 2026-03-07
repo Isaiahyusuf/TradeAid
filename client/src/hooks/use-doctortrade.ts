@@ -10,6 +10,9 @@ export type DoctorToken = {
   volume_5m: number;
   score: number;
   price_usd?: number;
+  eligible?: boolean;
+  safety_tier?: "strict" | "soft" | string;
+  reject_reasons?: string[];
 };
 
 export type DoctorPosition = {

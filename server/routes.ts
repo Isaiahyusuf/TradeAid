@@ -868,9 +868,30 @@ export async function registerRoutes(
     const userPublicKey = String(ownerWallet?.address || "").trim();
     const userPrivateKey = String(ownerWallet?.livePrivateKey || "").trim();
 
+    if (userPublicKey && userPrivateKey) {
+      return {
+        walletPublicKey: userPublicKey,
+        walletPrivateKey: userPrivateKey,
+      };
+    }
+
+    let assistantPublicKey = "";
+    let assistantPrivateKey = "";
+    try {
+      const assistantState = await storage.getAppState<Record<string, any>>(`${assistantRuntimeStateKeyPrefix}:${ownerUserId}`);
+      const assistantWallet = assistantState?.wallet as Record<string, any> | undefined;
+      if (assistantWallet && typeof assistantWallet === "object") {
+        const addresses = assistantWallet.addresses_by_chain as Record<string, any> | undefined;
+        const privateKeys = assistantWallet.private_keys_by_chain as Record<string, any> | undefined;
+        assistantPublicKey = String(addresses?.solana || "").trim();
+        assistantPrivateKey = String(privateKeys?.solana || "").trim();
+      }
+    } catch {
+    }
+
     return {
-      walletPublicKey: userPublicKey || envPublicKey,
-      walletPrivateKey: userPrivateKey || envPrivateKey,
+      walletPublicKey: userPublicKey || assistantPublicKey || envPublicKey,
+      walletPrivateKey: userPrivateKey || assistantPrivateKey || envPrivateKey,
     };
   };
 
