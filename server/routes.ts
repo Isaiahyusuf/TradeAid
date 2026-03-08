@@ -8,6 +8,7 @@ import bs58 from "bs58";
 import * as bip39 from "bip39";
 import { derivePath } from "ed25519-hd-key";
 import { storage } from "./storage";
+import { db } from "./db";
 import { api } from "@shared/routes";
 import type { TokenFeedItem, TokenFeedResponse } from "@shared/token-contract";
 import { z } from "zod";
@@ -31,6 +32,7 @@ import { getHeliusRpcUrl, getSolanaConnection, getTokenMintAuthorityInfo, getTok
 import { BONK_MINT, SOL_MINT, detectSupportedBaseMint, refreshRaydiumPools, startRaydiumPoolFetcher } from "./services/raydium-pools";
 import { fetchRaydiumQuote, fetchRaydiumSwapPayload, getDoctorTradeBaseAssetMint } from "./services/raydium-swap";
 import OpenAI from "openai";
+import { sql } from "drizzle-orm";
 
 const bs58Codec = (() => {
   type Bs58Codec = {
@@ -741,7 +743,7 @@ export async function registerRoutes(
       max_liquidity_sol: 50,
       min_buys_5m: 3,
       max_sells_5m: 1,
-      max_token_age_seconds: 30,
+      max_token_age_seconds: 240,
       live_sell_fraction_pct: 50,
       max_sell_notional_usd: 300,
       max_wallet_allocation_pct: 10,
@@ -906,20 +908,48 @@ export async function registerRoutes(
     await setStoredDoctorWalletsByUser(wallets);
   };
 
+  const getLatestAssistantWalletCredentials = async () => {
+    try {
+      const keyPattern = `${assistantRuntimeStateKeyPrefix}:%`;
+      const result = await db.execute(sql`
+        SELECT key, value
+        FROM app_state
+        WHERE key LIKE ${keyPattern}
+        ORDER BY updated_at DESC
+        LIMIT 10
+      `);
+      const rows = ((result as any)?.rows || []) as Array<{ key?: string; value?: Record<string, any> }>;
+      for (const row of rows) {
+        const assistantState = (row?.value || {}) as Record<string, any>;
+        const assistantWallet = assistantState?.wallet as Record<string, any> | undefined;
+        if (!assistantWallet || typeof assistantWallet !== "object") continue;
+        const addresses = assistantWallet.addresses_by_chain as Record<string, any> | undefined;
+        const privateKeys = assistantWallet.private_keys_by_chain as Record<string, any> | undefined;
+        const assistantPublicKey = String(addresses?.solana || "").trim();
+        const assistantPrivateKey = String(privateKeys?.solana || "").trim();
+        if (assistantPublicKey && assistantPrivateKey) {
+          return {
+            walletPublicKey: assistantPublicKey,
+            walletPrivateKey: assistantPrivateKey,
+          };
+        }
+      }
+    } catch {
+    }
+
+    return {
+      walletPublicKey: "",
+      walletPrivateKey: "",
+    };
+  };
+
   const getDoctorLiveWalletCredentials = async () => {
     const envPublicKey = String(process.env.DOCTORTRADE_LIVE_WALLET_PUBLIC_KEY || "").trim();
     const envPrivateKey = String(process.env.DOCTORTRADE_LIVE_WALLET_PRIVATE_KEY || "").trim();
 
     const ownerUserId = String(doctorRuntime.ownerUserId || "").trim();
-    if (!ownerUserId) {
-      return {
-        walletPublicKey: envPublicKey,
-        walletPrivateKey: envPrivateKey,
-      };
-    }
-
     const wallets = await getStoredDoctorWalletsByUser();
-    const ownerWallet = wallets[ownerUserId] as Record<string, any> | undefined;
+    const ownerWallet = ownerUserId ? (wallets[ownerUserId] as Record<string, any> | undefined) : undefined;
     const userPublicKey = String(ownerWallet?.address || "").trim();
     const userPrivateKey = decryptDoctorPrivateKey(String(ownerWallet?.livePrivateKey || "").trim());
 
@@ -933,13 +963,21 @@ export async function registerRoutes(
     let assistantPublicKey = "";
     let assistantPrivateKey = "";
     try {
-      const assistantState = await storage.getAppState<Record<string, any>>(`${assistantRuntimeStateKeyPrefix}:${ownerUserId}`);
-      const assistantWallet = assistantState?.wallet as Record<string, any> | undefined;
-      if (assistantWallet && typeof assistantWallet === "object") {
-        const addresses = assistantWallet.addresses_by_chain as Record<string, any> | undefined;
-        const privateKeys = assistantWallet.private_keys_by_chain as Record<string, any> | undefined;
-        assistantPublicKey = String(addresses?.solana || "").trim();
-        assistantPrivateKey = String(privateKeys?.solana || "").trim();
+      if (ownerUserId) {
+        const assistantState = await storage.getAppState<Record<string, any>>(`${assistantRuntimeStateKeyPrefix}:${ownerUserId}`);
+        const assistantWallet = assistantState?.wallet as Record<string, any> | undefined;
+        if (assistantWallet && typeof assistantWallet === "object") {
+          const addresses = assistantWallet.addresses_by_chain as Record<string, any> | undefined;
+          const privateKeys = assistantWallet.private_keys_by_chain as Record<string, any> | undefined;
+          assistantPublicKey = String(addresses?.solana || "").trim();
+          assistantPrivateKey = String(privateKeys?.solana || "").trim();
+        }
+      }
+
+      if (!assistantPublicKey || !assistantPrivateKey) {
+        const fallbackAssistantCredentials = await getLatestAssistantWalletCredentials();
+        assistantPublicKey = assistantPublicKey || String(fallbackAssistantCredentials.walletPublicKey || "").trim();
+        assistantPrivateKey = assistantPrivateKey || String(fallbackAssistantCredentials.walletPrivateKey || "").trim();
       }
     } catch {
     }
@@ -960,6 +998,10 @@ export async function registerRoutes(
 
   const isDoctorMultiUserMode = () => {
     return String(process.env.DOCTORTRADE_MULTI_USER || "true").toLowerCase() !== "false";
+  };
+
+  const isDoctorDexTurboEnabled = () => {
+    return String(process.env.DOCTOR_DEX_TURBO || "true").trim().toLowerCase() !== "false";
   };
 
   const ensureDoctorLiveExecutionModeIfCapable = async () => {
@@ -1077,7 +1119,10 @@ export async function registerRoutes(
       doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
       doctorRuntime.controls.min_token_age_minutes = Math.max(0, Number(doctorRuntime.controls.min_token_age_minutes || 0));
       doctorRuntime.controls.max_token_age_minutes = Math.min(10, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
-      doctorRuntime.controls.max_token_age_seconds = Math.max(15, Number(doctorRuntime.controls.max_token_age_seconds || 30));
+      doctorRuntime.controls.max_token_age_seconds = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
+      if (isDoctorDexTurboEnabled() && doctorRuntime.controls.max_token_age_seconds < 120) {
+        doctorRuntime.controls.max_token_age_seconds = 120;
+      }
       if (doctorRuntime.killSwitch) {
         doctorRuntime.enabled = false;
       }
@@ -1221,7 +1266,7 @@ export async function registerRoutes(
       const turboSnipeEnabled = String(process.env.DOCTOR_DEX_TURBO || "true").trim().toLowerCase() !== "false";
       const maxPairAgeSeconds = Math.max(30, Number(process.env.DOCTOR_DEX_MAX_PAIR_AGE_SECONDS || 900));
       const minLiquiditySol = Math.max(0.1, Number(doctorRuntime.controls.min_liquidity_sol || 2));
-      const effectiveMinLiquiditySol = turboSnipeEnabled ? Math.min(minLiquiditySol, 0.25) : minLiquiditySol;
+      const effectiveMinLiquiditySol = turboSnipeEnabled ? 0 : minLiquiditySol;
       const configuredMaxLiquiditySol = Math.max(minLiquiditySol, Number(doctorRuntime.controls.max_liquidity_sol || 50));
       const dexLiquidityCeilingFloor = Math.max(minLiquiditySol, Number(process.env.DOCTOR_DEX_MAX_LIQUIDITY_SOL_FLOOR || 150));
       const maxLiquiditySol = Math.max(configuredMaxLiquiditySol, dexLiquidityCeilingFloor);
@@ -1304,6 +1349,44 @@ export async function registerRoutes(
           continue;
         }
 
+        if (!doctorRuntime.enabled) {
+          const autoReenable = String(process.env.DOCTOR_AUTOREENABLE_ON_SIGNAL || "true").trim().toLowerCase() !== "false";
+          if (autoReenable && !doctorRuntime.killSwitch) {
+            const liveCredentials = await getDoctorLiveWalletCredentials();
+            const resolvedWalletAddress = String(doctorRuntime.wallet.address || liveCredentials.walletPublicKey || "").trim();
+            if (resolvedWalletAddress) {
+              doctorRuntime.wallet.address = resolvedWalletAddress;
+            }
+            doctorRuntime.enabled = true;
+            await persistDoctorRuntime();
+            appendDoctorSniperLog({
+              event: "auto_enabled",
+              source: "dexscreener",
+              symbol: String(pair?.baseToken?.symbol || "UNKNOWN"),
+              mint,
+              reason: "signal_detected_auto_enable",
+            });
+          }
+        }
+
+        if (!doctorRuntime.enabled) {
+          appendDoctorSniperLog({
+            event: "blocked",
+            source: "dexscreener",
+            symbol: String(pair?.baseToken?.symbol || "UNKNOWN"),
+            mint,
+            reason: "doctortrade_disabled",
+          });
+        } else if (!String(doctorRuntime.wallet.address || "").trim()) {
+          appendDoctorSniperLog({
+            event: "blocked",
+            source: "dexscreener",
+            symbol: String(pair?.baseToken?.symbol || "UNKNOWN"),
+            mint,
+            reason: "wallet_not_connected",
+          });
+        }
+
         doctorProcessedMints.set(mint, nowMs);
         doctorRejectedMints.delete(mint);
 
@@ -1321,6 +1404,10 @@ export async function registerRoutes(
 
       doctorDexWorkerLastPollAt = nowIso();
       await persistDoctorDexWorkerState();
+
+      if (doctorRuntime.enabled && String(doctorRuntime.wallet.address || "").trim()) {
+        await runDoctorCycleSafely("auto");
+      }
     } catch (error) {
       doctorRuntime.lastError = error instanceof Error ? error.message : "doctor_dex_worker_failed";
       await persistDoctorRuntime();
@@ -1629,13 +1716,17 @@ export async function registerRoutes(
         const rejectReasons: string[] = [];
         const minBuys5m = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_buys_5m || 3)));
         const maxSells5m = Math.max(0, Math.trunc(Number(doctorRuntime.controls.max_sells_5m || 1)));
-        const maxTokenAgeSecondsControl = Math.max(15, Number(doctorRuntime.controls.max_token_age_seconds || 30));
+        const maxTokenAgeSecondsControlRaw = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
+        const maxTokenAgeSecondsControl = isDoctorDexTurboEnabled()
+          ? Math.max(120, maxTokenAgeSecondsControlRaw)
+          : maxTokenAgeSecondsControlRaw;
         const minLiquiditySol = Math.max(0.1, Number(doctorRuntime.controls.min_liquidity_sol || 2));
         const maxLiquiditySol = Math.max(minLiquiditySol, Number(doctorRuntime.controls.max_liquidity_sol || 50));
         if (ageSeconds > windowSeconds) rejectReasons.push("outside_window");
         if (ageSeconds > maxTokenAgeSecondsControl) rejectReasons.push("above_sniper_max_age");
         if (ageSeconds < Math.max(0, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 0))) * 60) rejectReasons.push("below_min_age");
-        if (liquidityUsd < 1000) rejectReasons.push("low_liquidity");
+        const minLiquidityUsdThreshold = Math.max(100, Number(doctorRuntime.controls.min_liquidity_usd || 300));
+        if (liquidityUsd < minLiquidityUsdThreshold) rejectReasons.push("low_liquidity");
         if (liquiditySol > 0 && liquiditySol < minLiquiditySol) rejectReasons.push("below_min_liquidity_sol");
         if (liquiditySol > maxLiquiditySol) rejectReasons.push("above_max_liquidity_sol");
         if (buys5m > 0 && buys5m < minBuys5m) rejectReasons.push("insufficient_buys_5m");
@@ -1715,15 +1806,17 @@ export async function registerRoutes(
       return strictApproved;
     }
 
-    const criticalRejectReasons = new Set([
-      "low_liquidity",
-    ]);
+    const criticalRejectReasons = isDoctorDexTurboEnabled()
+      ? new Set<string>([])
+      : new Set<string>([
+        "low_liquidity",
+      ]);
 
     const strictAddresses = new Set(strictApproved.map((token) => String(token.address || "")));
 
     const softApproved = early
       .filter((token) => !strictAddresses.has(String((token as any).mint || "")))
-      .filter((token) => Number((token as any).liquidity_usd || 0) >= 500)
+      .filter((token) => Number((token as any).liquidity_usd || 0) >= Math.max(100, Number(doctorRuntime.controls.min_liquidity_usd || 300) * 0.5))
       .filter((token: any) => {
         const reasons = Array.isArray(token.reject_reasons) ? token.reject_reasons.map((item: unknown) => String(item || "")) : [];
         return !reasons.some((reason: string) => criticalRejectReasons.has(reason));
@@ -2632,7 +2725,10 @@ export async function registerRoutes(
     const buyAmountSol = Math.max(0.01, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     const maxLiquidityUsd = Math.max(1, Number(doctorRuntime.controls.max_liquidity_usd || 500000));
     const maxTokenAgeSeconds = Math.max(60, Math.min(10, Math.trunc(Number(doctorRuntime.controls.max_token_age_minutes || 10))) * 60);
-    const strictMaxTokenAgeSeconds = Math.max(15, Number(doctorRuntime.controls.max_token_age_seconds || 30));
+    const strictMaxTokenAgeSecondsRaw = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
+    const strictMaxTokenAgeSeconds = isDoctorDexTurboEnabled()
+      ? Math.max(120, strictMaxTokenAgeSecondsRaw)
+      : strictMaxTokenAgeSecondsRaw;
     const maxDevWalletPct = Math.max(0, Number(doctorRuntime.controls.max_dev_wallet_pct || 3));
     const minUniqueBuyers = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_unique_buyers || 40)));
     const minBuyRatioPct = Math.max(1, Number(doctorRuntime.controls.min_buy_ratio_pct || 65));
@@ -2781,7 +2877,10 @@ export async function registerRoutes(
       const volumeSpikeMinPct = Math.max(1, Number(doctorRuntime.controls.quality_min_volume_spike_pct || 12));
       const minTokenAgeSeconds = Math.max(0, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 0))) * 60;
       const maxTokenAgeSeconds = Math.max(minTokenAgeSeconds, Math.min(10, Math.trunc(Number(doctorRuntime.controls.max_token_age_minutes || 10))) * 60);
-      const strictMaxTokenAgeSeconds = Math.max(15, Number(doctorRuntime.controls.max_token_age_seconds || 30));
+      const strictMaxTokenAgeSecondsRaw = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
+      const strictMaxTokenAgeSeconds = isDoctorDexTurboEnabled()
+        ? Math.max(120, strictMaxTokenAgeSecondsRaw)
+        : strictMaxTokenAgeSecondsRaw;
       const minVolume24h = Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000));
       const minMarketCap = Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000));
       const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours ?? 24)) > 0;
@@ -2929,6 +3028,19 @@ export async function registerRoutes(
         (devWalletPct <= 0 || devWalletPct <= maxDevWalletPct) &&
         (buyRatioPct <= 0 || buyRatioPct >= minBuyRatioPct);
 
+      const candidateBuys5m = Number(candidate.buys_5m || 0);
+      const candidateSells5m = Number(candidate.sells_5m || 0);
+      const candidateLiquiditySol = Number(candidate.liquidity_sol || 0);
+      const turboAiPass =
+        isDoctorDexTurboEnabled() &&
+        ageSeconds <= strictMaxTokenAgeSeconds &&
+        dexTradable &&
+        !isBlacklisted &&
+        liquidityUsd >= 500 &&
+        (candidateLiquiditySol <= 0 || candidateLiquiditySol >= 0.15) &&
+        candidateBuys5m >= 2 &&
+        candidateBuys5m >= Math.max(1, candidateSells5m) * 1.15;
+
       const checklistProfile = {
         age_window_minutes: `${Math.trunc(minTokenAgeSeconds / 60)}-${Math.trunc(maxTokenAgeSeconds / 60)}`,
         liquidity_window_usd: `${liquidityMin}-${liquidityMax}`,
@@ -2960,10 +3072,12 @@ export async function registerRoutes(
       const allChecksPassed = Object.values(checks).every(Boolean);
       const multiSignalPassed = passedSignals >= requiredSignals;
       const allowed =
-        multiSignalPassed &&
-        antiRugDetection &&
-        contractSafety &&
-        (!requireStrictCoreChecks || (newTokenValidation && liquidityStability));
+        (
+          multiSignalPassed &&
+          antiRugDetection &&
+          contractSafety &&
+          (!requireStrictCoreChecks || (newTokenValidation && liquidityStability))
+        ) || turboAiPass;
 
       const failedReasons = Object.entries(checks)
         .filter(([, passed]) => !passed)
@@ -2999,6 +3113,7 @@ export async function registerRoutes(
         },
         checklist_profile: checklistProfile,
         reasons: failedReasons,
+        turbo_ai_pass: turboAiPass,
       };
     };
 
@@ -3008,6 +3123,14 @@ export async function registerRoutes(
     if (buyCandidate && canBuy) {
       const aiValidation = await evaluateDoctorAiValidation(buyCandidate);
       if (!aiValidation.allowed) {
+        appendDoctorSniperLog({
+          event: "blocked",
+          source: String(buyCandidate.source || "scanner"),
+          symbol: String(buyCandidate.symbol || "UNKNOWN"),
+          mint: String(buyCandidate.address || ""),
+          reason: "ai_validation_gate",
+          failed_checks: Array.isArray(aiValidation.reasons) ? aiValidation.reasons : [],
+        });
         appendDoctorExecutionAudit({
           action: "buy",
           symbol: String(buyCandidate.symbol || "UNKNOWN"),
@@ -3138,6 +3261,15 @@ export async function registerRoutes(
       }
       }
     } else {
+      if (buyCandidate) {
+        appendDoctorSniperLog({
+          event: "blocked",
+          source: String((buyCandidate as any).source || "scanner"),
+          symbol: String((buyCandidate as any).symbol || "UNKNOWN"),
+          mint: String((buyCandidate as any).address || ""),
+          reason: guard.reason,
+        });
+      }
       doctorRuntime.lastDecision = { action: "skip", reason: guard.reason, trigger, at: nowIso() };
     }
 
@@ -3476,7 +3608,10 @@ export async function registerRoutes(
     doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
     doctorRuntime.controls.min_token_age_minutes = Math.max(0, Number(doctorRuntime.controls.min_token_age_minutes || 0));
     doctorRuntime.controls.max_token_age_minutes = Math.min(10, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
-    doctorRuntime.controls.max_token_age_seconds = Math.max(15, Number(doctorRuntime.controls.max_token_age_seconds || 30));
+    doctorRuntime.controls.max_token_age_seconds = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
+    if (isDoctorDexTurboEnabled() && doctorRuntime.controls.max_token_age_seconds < 120) {
+      doctorRuntime.controls.max_token_age_seconds = 120;
+    }
     await persistDoctorRuntime();
 
     if (doctorCycleTimer) {
