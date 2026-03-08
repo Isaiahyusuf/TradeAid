@@ -733,7 +733,7 @@ export async function registerRoutes(
     controls: {
       max_trades_per_day: 20,
       trades_today: 0,
-      max_open_positions: 4,
+      max_open_positions: 3,
       strategy_window_minutes: 5,
       ai_min_signals_required: 4,
       cooldown_minutes_per_mint: 30,
@@ -748,7 +748,7 @@ export async function registerRoutes(
       max_sell_notional_usd: 300,
       max_wallet_allocation_pct: 10,
       min_buy_amount_sol: 0.1,
-      buy_amount_sol: 0.3,
+      buy_amount_sol: 0.1,
       take_profit_multiplier: 2,
       min_profit_pct: 100,
       stop_loss_pct: 35,
@@ -1316,7 +1316,8 @@ export async function registerRoutes(
       doctorRuntime.lastRunAt = typeof loaded.lastRunAt === "string" ? loaded.lastRunAt : null;
       doctorRuntime.lastError = typeof loaded.lastError === "string" ? loaded.lastError : null;
 
-      doctorRuntime.controls.min_buy_amount_sol = Math.max(0.05, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
+      doctorRuntime.controls.buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
+      doctorRuntime.controls.min_buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
       doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
       doctorRuntime.controls.min_token_age_minutes = Math.max(0, Number(doctorRuntime.controls.min_token_age_minutes || 0));
       doctorRuntime.controls.max_token_age_minutes = Math.min(10, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
@@ -2939,10 +2940,10 @@ export async function registerRoutes(
 
     let buyCount = 0;
     const maxTradesPerDay = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_trades_per_day || 1)));
-    const maxOpenPositions = 1;
+    const maxOpenPositions = 3;
     const cooldownMinutes = Math.max(0, Number(doctorRuntime.controls.cooldown_minutes_per_mint || 0));
     const feeBufferSol = Math.max(0, Number(doctorRuntime.controls.min_wallet_fee_buffer_sol || 0));
-    const buyAmountSol = Math.max(0.01, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
+    const buyAmountSol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     const maxLiquidityUsd = Math.max(1, Number(doctorRuntime.controls.max_liquidity_usd || 500000));
     const maxTokenAgeSeconds = Math.max(60, Math.min(10, Math.trunc(Number(doctorRuntime.controls.max_token_age_minutes || 10))) * 60);
     const strictMaxTokenAgeSecondsRaw = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
@@ -3004,9 +3005,16 @@ export async function registerRoutes(
     const allowReentrySnipes = false;
     const buyCandidate = candidatePoolNonOpen[0] || (allowReentrySnipes ? candidatePool[0] : undefined);
 
-    const evaluatePreTradeGuard = (candidate: Record<string, any> | undefined) => {
+    const evaluatePreTradeGuard = async (candidate: Record<string, any> | undefined) => {
       if (!candidate) {
         return { allowed: false, reason: "no_eligible_candidate" };
+      }
+
+      const liveCredentials = await getDoctorLiveWalletCredentials();
+      const hasWalletPublicKey = Boolean(String(liveCredentials.walletPublicKey || "").trim());
+      const hasWalletPrivateKey = Boolean(String(liveCredentials.walletPrivateKey || "").trim());
+      if (!hasWalletPublicKey || !hasWalletPrivateKey) {
+        return { allowed: false, reason: "wallet_key_not_connected" };
       }
 
       if (doctorRuntime.positions.length >= maxOpenPositions) {
@@ -3047,7 +3055,7 @@ export async function registerRoutes(
       if (baseAssetMint === "So11111111111111111111111111111111111111112") {
         const availableSol = Number(doctorRuntime.wallet.balanceSol || 0);
         if (availableSol < buyAmountSol + feeBufferSol) {
-          return { allowed: false, reason: "insufficient_wallet_balance_with_fee_buffer" };
+          return { allowed: false, reason: "insufficient_sol_add_funds" };
         }
 
         const maxWalletAllocationPct = Math.max(1, Number(doctorRuntime.controls.max_wallet_allocation_pct || 10));
@@ -3337,7 +3345,7 @@ export async function registerRoutes(
       };
     };
 
-    const guard = evaluatePreTradeGuard(buyCandidate);
+    const guard = await evaluatePreTradeGuard(buyCandidate);
     const canBuy = guard.allowed;
 
     if (buyCandidate && canBuy) {
@@ -3489,6 +3497,18 @@ export async function registerRoutes(
           mint: String((buyCandidate as any).address || ""),
           reason: guard.reason,
         });
+        if (guard.reason === "insufficient_sol_add_funds") {
+          doctorRuntime.lastError = "Insufficient SOL for snipes. Add SOL to your connected wallet.";
+          appendDoctorSniperLog({
+            event: "notify",
+            source: String((buyCandidate as any).source || "scanner"),
+            symbol: String((buyCandidate as any).symbol || "UNKNOWN"),
+            mint: String((buyCandidate as any).address || ""),
+            reason: "add_sol_for_snipes",
+          });
+        } else if (guard.reason === "wallet_key_not_connected") {
+          doctorRuntime.lastError = "Connect wallet private key before live sniping.";
+        }
       }
       doctorRuntime.lastDecision = { action: "skip", reason: guard.reason, trigger, at: nowIso() };
     }
@@ -3822,9 +3842,10 @@ export async function registerRoutes(
       }
     }
 
-    doctorRuntime.controls.max_open_positions = 1;
+    doctorRuntime.controls.max_open_positions = 3;
 
-    doctorRuntime.controls.min_buy_amount_sol = Math.max(0.05, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
+    doctorRuntime.controls.buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
+    doctorRuntime.controls.min_buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
     doctorRuntime.controls.min_token_age_minutes = Math.max(0, Number(doctorRuntime.controls.min_token_age_minutes || 0));
     doctorRuntime.controls.max_token_age_minutes = Math.min(10, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
@@ -4019,8 +4040,8 @@ export async function registerRoutes(
       return res.json({ result: { executed: false, reason: "token_already_owned" } });
     }
 
-    if (doctorRuntime.positions.length >= 1) {
-      return res.json({ result: { executed: false, reason: "single_position_mode_active" } });
+    if (doctorRuntime.positions.length >= 3) {
+      return res.json({ result: { executed: false, reason: "max_open_positions_reached" } });
     }
 
     const alreadyBought = doctorRuntime.recentTrades.find((trade) => (
@@ -4031,7 +4052,7 @@ export async function registerRoutes(
       return res.json({ result: { executed: false, reason: "token_already_bought_once" } });
     }
 
-    const buyAmount = Number(doctorRuntime.controls.buy_amount_sol || 0.1);
+    const buyAmount = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     const activeTokens = await getDoctorActiveTokens();
     const candidate = activeTokens.find((item) => String(item.address || "") === contractAddress);
     const expectedPriceUsd = resolveCurrentPriceUsd(candidate || {}, Number(req.body?.price_usd || 0));
