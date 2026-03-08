@@ -3178,11 +3178,6 @@ export async function registerRoutes(
           };
         }
 
-        const maxWalletAllocationPct = Math.max(1, Number(doctorRuntime.controls.max_wallet_allocation_pct || 10));
-        const maxAllowedBuy = Number((availableSol * (maxWalletAllocationPct / 100)).toFixed(9));
-        if (buyAmountSol > maxAllowedBuy) {
-          return { allowed: false, reason: "buy_amount_exceeds_wallet_allocation_limit" };
-        }
       }
 
       return { allowed: true, reason: "ok" };
