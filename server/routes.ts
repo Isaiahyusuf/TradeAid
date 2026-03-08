@@ -1092,6 +1092,7 @@ export async function registerRoutes(
   let doctorDexWorkerTimer: NodeJS.Timeout | null = null;
   let doctorDexWorkerRunning = false;
   let doctorDexWorkerLastPollAt: string | null = null;
+  let doctorWalletBalanceCache: { address: string; at: number; balanceSol: number } | null = null;
   const doctorProcessedMints = new Map<string, number>();
   let doctorSniperLogs: Array<Record<string, any>> = [];
 
@@ -1147,6 +1148,43 @@ export async function registerRoutes(
     return Number((liquidityUsd / solPriceUsd).toFixed(6));
   };
 
+  const refreshDoctorWalletBalanceFromChain = async (address?: string, force = false) => {
+    const walletAddress = String(address || doctorRuntime.wallet.address || "").trim();
+    if (!walletAddress) return doctorRuntime.wallet.balanceSol;
+
+    let pubkey: PublicKey;
+    try {
+      pubkey = new PublicKey(walletAddress);
+    } catch {
+      return doctorRuntime.wallet.balanceSol;
+    }
+
+    const nowMs = Date.now();
+    const ttlMs = Math.max(1000, Number(process.env.DOCTOR_WALLET_BALANCE_CACHE_MS || 7000));
+    if (!force && doctorWalletBalanceCache && doctorWalletBalanceCache.address === walletAddress && nowMs - doctorWalletBalanceCache.at < ttlMs) {
+      doctorRuntime.wallet.balanceSol = doctorWalletBalanceCache.balanceSol;
+      return doctorRuntime.wallet.balanceSol;
+    }
+
+    const walletBalanceTimeoutMs = Math.max(300, Number(process.env.DOCTOR_WALLET_BALANCE_TIMEOUT_MS || 1200));
+    try {
+      const lamports = await Promise.race<number>([
+        getSolanaConnection().getBalance(pubkey, "processed"),
+        new Promise<number>((_resolve, reject) => setTimeout(() => reject(new Error("wallet_balance_timeout")), walletBalanceTimeoutMs)),
+      ]);
+      const balanceSol = Number((lamports / 1_000_000_000).toFixed(6));
+      doctorRuntime.wallet.balanceSol = Math.max(0, balanceSol);
+      doctorWalletBalanceCache = {
+        address: walletAddress,
+        at: nowMs,
+        balanceSol: doctorRuntime.wallet.balanceSol,
+      };
+    } catch {
+    }
+
+    return doctorRuntime.wallet.balanceSol;
+  };
+
   const runDoctorCycleSafely = async (trigger: "manual" | "auto") => {
     if (doctorCycleRunning) return;
     doctorCycleRunning = true;
@@ -1167,9 +1205,13 @@ export async function registerRoutes(
       const nowMs = Date.now();
       const maxPairAgeSeconds = Math.max(30, Number(process.env.DOCTOR_DEX_MAX_PAIR_AGE_SECONDS || 120));
       const minLiquiditySol = Math.max(0.1, Number(doctorRuntime.controls.min_liquidity_sol || 2));
-      const maxLiquiditySol = Math.max(minLiquiditySol, Number(doctorRuntime.controls.max_liquidity_sol || 50));
+      const configuredMaxLiquiditySol = Math.max(minLiquiditySol, Number(doctorRuntime.controls.max_liquidity_sol || 50));
+      const dexLiquidityCeilingFloor = Math.max(minLiquiditySol, Number(process.env.DOCTOR_DEX_MAX_LIQUIDITY_SOL_FLOOR || 90));
+      const maxLiquiditySol = Math.max(configuredMaxLiquiditySol, dexLiquidityCeilingFloor);
       const minBuys5m = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_buys_5m || 3)));
-      const maxSells5m = Math.max(0, Math.trunc(Number(doctorRuntime.controls.max_sells_5m || 1)));
+      const configuredMaxSells5m = Math.max(0, Math.trunc(Number(doctorRuntime.controls.max_sells_5m || 1)));
+      const dexSellPressureFloor = Math.max(0, Math.trunc(Number(process.env.DOCTOR_DEX_MAX_SELLS_5M_FLOOR || 8)));
+      const maxSells5m = Math.max(configuredMaxSells5m, dexSellPressureFloor);
       const minVolumeSol = Math.max(0.1, Number(process.env.DOCTOR_DEX_MIN_VOLUME_SOL || 1));
       const solPriceUsd = Math.max(1, Number(process.env.DOCTOR_SOL_PRICE_USD_DEFAULT || 150));
       const processedTtlMs = Math.max(60_000, Number(process.env.DOCTOR_DEX_PROCESSED_TTL_MS || 6 * 60 * 60 * 1000));
@@ -1206,6 +1248,11 @@ export async function registerRoutes(
         const validLiquidity = liquiditySol >= minLiquiditySol && liquiditySol <= maxLiquiditySol;
         const validPressure = buys5m >= minBuys5m && sells5m <= maxSells5m;
         const validVolume = volume5mSol >= minVolumeSol;
+        const failedChecks = [
+          !validLiquidity ? "liquidity_window_failed" : null,
+          !validPressure ? "buy_sell_pressure_failed" : null,
+          !validVolume ? "volume_5m_failed" : null,
+        ].filter(Boolean) as string[];
         const isCandidate = validLiquidity && validPressure && validVolume;
 
         appendDoctorSniperLog({
@@ -1221,6 +1268,7 @@ export async function registerRoutes(
           volume_5m_sol: volume5mSol,
           smart_wallet_detected: smartWalletDetected,
           reason: isCandidate ? "insider_conditions_passed" : "insider_conditions_failed",
+          failed_checks: failedChecks,
         });
 
         if (!isCandidate) {
@@ -2371,6 +2419,7 @@ export async function registerRoutes(
     doctorRuntime.lastRunAt = nowIso();
 
     await ensureDoctorLiveExecutionModeIfCapable();
+    await refreshDoctorWalletBalanceFromChain();
 
     if (!doctorRuntime.enabled) {
       doctorRuntime.lastDecision = { action: "skip", reason: "doctortrade_disabled", trigger, at: nowIso() };
@@ -3095,6 +3144,7 @@ export async function registerRoutes(
   };
 
   const buildDoctorStatus = async () => {
+    await refreshDoctorWalletBalanceFromChain();
     const earlyTokens = await getSolanaEarlyScoredTokens(120, 220);
     const activeTokens = await getDoctorActiveTokens();
     const { dailyRealizedPnlUsd, consecutiveLosses } = computeDoctorRiskMetrics();
@@ -3219,8 +3269,12 @@ export async function registerRoutes(
     const userWallet = await getDoctorWalletSnapshotForUser(userId);
     if (ownerAccess) {
       await loadDoctorWalletForUser(userId);
+      await refreshDoctorWalletBalanceFromChain(undefined, true);
     }
     const status = await buildDoctorStatus();
+    if (ownerAccess) {
+      await saveDoctorWalletForUser(userId);
+    }
     if (!ownerAccess) {
       status.wallet = {
         address: userWallet.address,
@@ -3457,6 +3511,7 @@ export async function registerRoutes(
       await setDoctorLivePrivateKeyForUser(userId, explicitPrivateKey);
     }
 
+    await refreshDoctorWalletBalanceFromChain(doctorRuntime.wallet.address, true);
     doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 0);
     doctorRuntime.ownerUserId = userId;
     await ensureDoctorLiveExecutionModeIfCapable();

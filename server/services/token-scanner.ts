@@ -5,6 +5,11 @@ import { discoverHotTokens, getNewPairs, getTokenPairs, pairToTokenData, pickBes
 import { analyzeTokenSafety, calculateSignal } from "./safety-analyzer";
 import { analyzeTokenWithAI, generateQuickInsight } from "./ai-analyzer";
 
+const isMissingTokenSignalsTableError = (error: unknown) => {
+  const dbError = error as { code?: string; message?: string };
+  return dbError?.code === "42P01" && String(dbError?.message || "").toLowerCase().includes("token_signals");
+};
+
 export interface ScanResult {
   token: typeof scannedTokens.$inferSelect;
   isNew: boolean;
@@ -102,17 +107,23 @@ export async function scanAndAnalyzeToken(tokenAddress: string, chain: string = 
 
     let signal = null;
     if (basicSignal.signal === "buy" && basicSignal.confidence >= 60) {
-      const [created] = await db.insert(tokenSignals)
-        .values({
-          tokenAddress,
-          signalType: basicSignal.signal,
-          confidence: basicSignal.confidence,
-          entryPrice: pair.priceUsd,
-          reasoning: basicSignal.reasoning,
-          isActive: true,
-        })
-        .returning();
-      signal = created;
+      try {
+        const [created] = await db.insert(tokenSignals)
+          .values({
+            tokenAddress,
+            signalType: basicSignal.signal,
+            confidence: basicSignal.confidence,
+            entryPrice: pair.priceUsd,
+            reasoning: basicSignal.reasoning,
+            isActive: true,
+          })
+          .returning();
+        signal = created;
+      } catch (error) {
+        if (!isMissingTokenSignalsTableError(error)) {
+          throw error;
+        }
+      }
     }
 
     return { token, isNew, signal };
@@ -211,11 +222,18 @@ export async function getNewTokens(hours: number = 24, limit: number = 50): Prom
 }
 
 export async function getHotSignals(limit: number = 10): Promise<(typeof tokenSignals.$inferSelect)[]> {
-  return db.select()
-    .from(tokenSignals)
-    .where(eq(tokenSignals.isActive, true))
-    .orderBy(desc(tokenSignals.createdAt))
-    .limit(limit);
+  try {
+    return await db.select()
+      .from(tokenSignals)
+      .where(eq(tokenSignals.isActive, true))
+      .orderBy(desc(tokenSignals.createdAt))
+      .limit(limit);
+  } catch (error) {
+    if (isMissingTokenSignalsTableError(error)) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function performDeepAnalysis(tokenAddress: string): Promise<{
@@ -245,16 +263,22 @@ export async function performDeepAnalysis(tokenAddress: string): Promise<{
     .returning();
 
   if (aiAnalysis.signal === "strong_buy" || aiAnalysis.signal === "buy") {
-    await db.insert(tokenSignals).values({
-      tokenAddress,
-      signalType: aiAnalysis.signal,
-      confidence: aiAnalysis.confidence,
-      entryPrice: aiAnalysis.entryPrice || pair.priceUsd,
-      targetPrice: aiAnalysis.targetPrice,
-      stopLoss: aiAnalysis.stopLoss,
-      reasoning: aiAnalysis.reasoning,
-      isActive: true,
-    });
+    try {
+      await db.insert(tokenSignals).values({
+        tokenAddress,
+        signalType: aiAnalysis.signal,
+        confidence: aiAnalysis.confidence,
+        entryPrice: aiAnalysis.entryPrice || pair.priceUsd,
+        targetPrice: aiAnalysis.targetPrice,
+        stopLoss: aiAnalysis.stopLoss,
+        reasoning: aiAnalysis.reasoning,
+        isActive: true,
+      });
+    } catch (error) {
+      if (!isMissingTokenSignalsTableError(error)) {
+        throw error;
+      }
+    }
   }
 
   return { token, aiAnalysis };

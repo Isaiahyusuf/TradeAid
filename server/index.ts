@@ -121,37 +121,60 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || "5000", 10);
+  const basePort = parseInt(process.env.PORT || "5000", 10);
+  const maxPortAttempts = Math.max(1, Number(process.env.PORT_RETRY_ATTEMPTS || 10));
 
-  const listenWith = (host: string, reusePort: boolean) => {
-    httpServer.listen(
-      {
-        port,
-        host,
-        reusePort,
-      },
-      () => {
-        log(`serving on ${host}:${port}`);
-      },
+  const listenWithRetry = async () => {
+    const hostCandidates = [
+      { host: "0.0.0.0", reusePort: true },
+      { host: "127.0.0.1", reusePort: false },
+    ] as const;
+
+    const tryListen = async (host: string, port: number, reusePort: boolean) => {
+      await new Promise<void>((resolve, reject) => {
+        const onError = (error: NodeJS.ErrnoException) => {
+          httpServer.off("error", onError);
+          reject(error);
+        };
+
+        httpServer.once("error", onError);
+        httpServer.listen({ port, host, reusePort }, () => {
+          httpServer.off("error", onError);
+          resolve();
+        });
+      });
+    };
+
+    for (let offset = 0; offset < maxPortAttempts; offset += 1) {
+      const port = basePort + offset;
+
+      for (const candidate of hostCandidates) {
+        try {
+          await tryListen(candidate.host, port, candidate.reusePort);
+          if (offset > 0) {
+            log(`Port ${basePort} unavailable; serving on ${candidate.host}:${port}`, "express");
+          } else {
+            log(`serving on ${candidate.host}:${port}`);
+          }
+          return;
+        } catch (error) {
+          const err = error as NodeJS.ErrnoException;
+          if (err?.code === "ENOTSUP" && candidate.host === "0.0.0.0") {
+            log(`Primary bind failed on 0.0.0.0:${port}; retrying with 127.0.0.1`, "express");
+            continue;
+          }
+          if (err?.code === "EADDRINUSE") {
+            continue;
+          }
+          throw err;
+        }
+      }
+    }
+
+    throw new Error(
+      `Unable to bind server after ${maxPortAttempts} attempts starting at port ${basePort}`,
     );
   };
 
-  httpServer.once("error", (error: NodeJS.ErrnoException) => {
-    if (error?.code === "ENOTSUP") {
-      log(`Primary bind failed on 0.0.0.0:${port}; retrying with 127.0.0.1`, "express");
-      try {
-        listenWith("127.0.0.1", false);
-      } catch (fallbackError) {
-        throw fallbackError;
-      }
-      return;
-    }
-    throw error;
-  });
-
-  listenWith("0.0.0.0", true);
+  await listenWithRetry();
 })();
