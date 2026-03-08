@@ -3463,6 +3463,8 @@ export async function registerRoutes(
     const guard = await evaluatePreTradeGuard(buyCandidate);
     const canBuy = guard.allowed;
 
+    let hasBlockingError = false;
+
     if (buyCandidate && canBuy) {
       const skipAiGateForDetectedSignal = String((buyCandidate as any).source || "").includes("dexscreener_detected_signal");
       const aiValidation = skipAiGateForDetectedSignal
@@ -3640,6 +3642,7 @@ export async function registerRoutes(
           const available = Number((guard as any).available_sol || 0);
           const required = Number((guard as any).required_sol || 0);
           doctorRuntime.lastError = `Insufficient SOL to cover buy + swap fees. Need ${required.toFixed(4)} SOL, have ${available.toFixed(4)} SOL.`;
+          hasBlockingError = true;
           appendDoctorSniperLog({
             event: "notify",
             source: String((buyCandidate as any).source || "scanner"),
@@ -3653,6 +3656,7 @@ export async function registerRoutes(
           });
         } else if (guard.reason === "wallet_key_not_connected") {
           doctorRuntime.lastError = "Connect wallet private key before live sniping.";
+          hasBlockingError = true;
         }
       }
       doctorRuntime.lastDecision = { action: "skip", reason: guard.reason, trigger, at: nowIso() };
@@ -3681,7 +3685,9 @@ export async function registerRoutes(
       updated_at: nowIso(),
     });
     doctorRuntime.performance = doctorRuntime.performance.slice(0, 40);
-    doctorRuntime.lastError = null;
+    if (!hasBlockingError) {
+      doctorRuntime.lastError = null;
+    }
 
     await persistDoctorRuntime();
 
