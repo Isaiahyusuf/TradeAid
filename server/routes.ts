@@ -968,6 +968,10 @@ export async function registerRoutes(
       `);
       const rows = ((result as any)?.rows || []) as Array<{ key?: string; value?: Record<string, any> }>;
       for (const row of rows) {
+        const key = String(row?.key || "").trim();
+        const userId = key.startsWith(`${assistantRuntimeStateKeyPrefix}:`)
+          ? key.slice(`${assistantRuntimeStateKeyPrefix}:`.length).trim()
+          : "";
         const assistantState = (row?.value || {}) as Record<string, any>;
         const assistantWallet = assistantState?.wallet as Record<string, any> | undefined;
         if (!assistantWallet || typeof assistantWallet !== "object") continue;
@@ -977,6 +981,7 @@ export async function registerRoutes(
         const assistantPrivateKey = String(privateKeys?.solana || "").trim();
         if (assistantPublicKey && assistantPrivateKey) {
           return {
+            userId,
             walletPublicKey: assistantPublicKey,
             walletPrivateKey: assistantPrivateKey,
           };
@@ -986,12 +991,99 @@ export async function registerRoutes(
     }
 
     return {
+      userId: "",
       walletPublicKey: "",
       walletPrivateKey: "",
     };
   };
 
+  const getLatestDoctorWalletEntry = async () => {
+    const wallets = await getStoredDoctorWalletsByUser();
+    const entries = Object.entries(wallets || {}) as Array<[string, Record<string, any>]>;
+    if (!entries.length) {
+      return {
+        userId: "",
+        wallet: undefined as Record<string, any> | undefined,
+      };
+    }
+
+    const sorted = entries.sort((left, right) => {
+      const leftAt = new Date(String(left?.[1]?.updatedAt || 0)).getTime();
+      const rightAt = new Date(String(right?.[1]?.updatedAt || 0)).getTime();
+      return (Number.isFinite(rightAt) ? rightAt : 0) - (Number.isFinite(leftAt) ? leftAt : 0);
+    });
+
+    return {
+      userId: String(sorted[0]?.[0] || "").trim(),
+      wallet: sorted[0]?.[1],
+    };
+  };
+
+  const ensureDoctorOwnerAndWalletHydrated = async () => {
+    let hydrated = false;
+    const currentOwner = String(doctorRuntime.ownerUserId || "").trim();
+    const currentWalletAddress = String(doctorRuntime.wallet.address || "").trim();
+
+    const latestDoctor = await getLatestDoctorWalletEntry();
+    const latestDoctorWalletAddress = String(latestDoctor.wallet?.address || "").trim();
+    const latestDoctorPrivateKey = decryptDoctorPrivateKey(String(latestDoctor.wallet?.livePrivateKey || "").trim());
+    const latestDoctorHasCreds = Boolean(latestDoctorWalletAddress) && Boolean(latestDoctorPrivateKey);
+
+    if (!currentOwner && latestDoctorHasCreds && latestDoctor.userId) {
+      doctorRuntime.ownerUserId = latestDoctor.userId;
+      hydrated = true;
+    }
+
+    if (!currentWalletAddress && latestDoctorWalletAddress) {
+      doctorRuntime.wallet.address = latestDoctorWalletAddress;
+      hydrated = true;
+    }
+
+    if (!doctorRuntime.ownerUserId || !doctorRuntime.wallet.address) {
+      const fallbackAssistantCredentials = await getLatestAssistantWalletCredentials();
+      const assistantWalletAddress = String(fallbackAssistantCredentials.walletPublicKey || "").trim();
+      const assistantPrivateKey = String(fallbackAssistantCredentials.walletPrivateKey || "").trim();
+      const assistantUserId = String(fallbackAssistantCredentials.userId || "").trim();
+
+      if (!doctorRuntime.ownerUserId && assistantUserId) {
+        doctorRuntime.ownerUserId = assistantUserId;
+        hydrated = true;
+      }
+
+      if (!doctorRuntime.wallet.address && assistantWalletAddress) {
+        doctorRuntime.wallet.address = assistantWalletAddress;
+        hydrated = true;
+      }
+
+      if (assistantUserId && assistantWalletAddress && assistantPrivateKey) {
+        const wallets = await getStoredDoctorWalletsByUser();
+        const existing = wallets[assistantUserId] as Record<string, any> | undefined;
+        const hasStoredPrivateKey = Boolean(String(existing?.livePrivateKey || "").trim());
+        if (!hasStoredPrivateKey) {
+          wallets[assistantUserId] = {
+            ...(existing || {}),
+            address: assistantWalletAddress,
+            balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol ?? existing?.balanceSol ?? 0)),
+            separateWalletEnforced: (doctorRuntime.wallet.separateWalletEnforced ?? existing?.separateWalletEnforced) !== false,
+            livePrivateKey: encryptDoctorPrivateKey(assistantPrivateKey),
+            updatedAt: nowIso(),
+          };
+          await setStoredDoctorWalletsByUser(wallets);
+          hydrated = true;
+        }
+      }
+    }
+
+    if (hydrated) {
+      await persistDoctorRuntime();
+    }
+
+    return hydrated;
+  };
+
   const getDoctorLiveWalletCredentials = async () => {
+    await ensureDoctorOwnerAndWalletHydrated();
+
     const envPublicKey = String(process.env.DOCTORTRADE_LIVE_WALLET_PUBLIC_KEY || "").trim();
     const envPrivateKey = String(process.env.DOCTORTRADE_LIVE_WALLET_PRIVATE_KEY || "").trim();
 
@@ -1334,6 +1426,8 @@ export async function registerRoutes(
     if (doctorDexWorkerRunning) return;
     doctorDexWorkerRunning = true;
     try {
+      await ensureDoctorOwnerAndWalletHydrated();
+
       const nowMs = Date.now();
       const turboSnipeEnabled = String(process.env.DOCTOR_DEX_TURBO || "true").trim().toLowerCase() !== "false";
       const maxPairAgeSeconds = Math.max(30, Number(process.env.DOCTOR_DEX_MAX_PAIR_AGE_SECONDS || 900));
@@ -2627,6 +2721,8 @@ export async function registerRoutes(
 
   const executeDoctorCycle = async (trigger: "manual" | "auto" = "manual") => {
     doctorRuntime.lastRunAt = nowIso();
+
+    await ensureDoctorOwnerAndWalletHydrated();
 
     await ensureDoctorLiveExecutionModeIfCapable();
     await refreshDoctorWalletBalanceFromChain();
