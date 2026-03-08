@@ -19,6 +19,7 @@ import { useDoctorConfig, useDoctorStatus } from "@/hooks/use-doctortrade";
 import {
   useApproveAssistantConsent,
   useAssistantWalletSwap,
+  useAssistantWalletSwapQuote,
   useAssistantContextOverview,
   useAssistantWalletTransactions,
   useAssistantWalletPortfolio,
@@ -50,6 +51,8 @@ export default function WalletPage() {
   const prefillTradeChain = String(searchParams.get("chain") || "").trim().toLowerCase();
   const prefillTradeContract = String(searchParams.get("contract") || "").trim();
   const prefillTradeAmount = String(searchParams.get("amount") || "").trim();
+  const prefillSwapAmountSol = String(searchParams.get("amount_sol") || prefillTradeAmount || "").trim();
+  const prefillSwapSide = String(searchParams.get("side") || "buy").trim().toLowerCase() === "sell" ? "sell" : "buy";
 
   const tradingStatusQuery = useAssistantTradingStatus();
   const doctorStatusQuery = useDoctorStatus();
@@ -126,7 +129,7 @@ export default function WalletPage() {
   const [sendAsset, setSendAsset] = useState("SOL");
   const [swapSide, setSwapSide] = useState<"buy" | "sell">("buy");
   const [swapTokenMint, setSwapTokenMint] = useState("");
-  const [swapNotionalUsd, setSwapNotionalUsd] = useState("25");
+  const [swapAmountSol, setSwapAmountSol] = useState("0.1");
   const [swapMode, setSwapMode] = useState<"paper" | "live">("live");
 
   const [exportedKey, setExportedKey] = useState<{ chain: string; address: string; private_key: string; warning: string } | null>(null);
@@ -161,6 +164,19 @@ export default function WalletPage() {
       setTradeNotional(prefillTradeAmount);
     }
   }, [walletAction, prefillTradeChain, prefillTradeContract, prefillTradeAmount, enabledChains]);
+
+  useEffect(() => {
+    if (walletAction !== "swap") return;
+    setWalletTab("assets");
+    setSwapOpen(true);
+    setSwapSide(prefillSwapSide);
+    if (prefillTradeContract) {
+      setSwapTokenMint(prefillTradeContract);
+    }
+    if (prefillSwapAmountSol) {
+      setSwapAmountSol(prefillSwapAmountSol);
+    }
+  }, [walletAction, prefillTradeContract, prefillSwapAmountSol, prefillSwapSide]);
 
   useEffect(() => {
     const controls = doctorStatusQuery.data?.trade_controls;
@@ -277,6 +293,19 @@ export default function WalletPage() {
   };
 
   const selectedReceiveAddress = addressesByChain[receiveChain] || "";
+  const swapAmountSolValue = Number(swapAmountSol);
+  const swapQuoteQuery = useAssistantWalletSwapQuote(
+    {
+      side: swapSide,
+      token_mint: swapTokenMint.trim(),
+      amount_sol: Number.isFinite(swapAmountSolValue) && swapAmountSolValue > 0 ? swapAmountSolValue : 0,
+    },
+    swapOpen &&
+      swapSide === "buy" &&
+      Boolean(swapTokenMint.trim()) &&
+      Number.isFinite(swapAmountSolValue) &&
+      swapAmountSolValue > 0,
+  );
 
   const handleOpenSend = () => {
     if (!wallet?.has_wallet) {
@@ -349,20 +378,23 @@ export default function WalletPage() {
 
   const handleSwapSubmit = async () => {
     const tokenMint = swapTokenMint.trim();
-    const notionalUsd = Number(swapNotionalUsd);
+    const amountSol = Number(swapAmountSol);
     if (!tokenMint) {
       toast({ title: "Token mint required", description: "Enter a Solana token mint address.", variant: "destructive" });
       return;
     }
-    if (!Number.isFinite(notionalUsd) || notionalUsd <= 0) {
-      toast({ title: "Invalid amount", description: "Enter a valid USD amount for the swap.", variant: "destructive" });
+    if (!Number.isFinite(amountSol) || amountSol <= 0) {
+      toast({ title: "Invalid amount", description: "Enter a valid SOL amount for the swap.", variant: "destructive" });
       return;
     }
 
     try {
+      const solPriceUsd = Number(chainPrices.solana || 0);
+      const notionalUsd = solPriceUsd > 0 ? amountSol * solPriceUsd : undefined;
       const result = await walletSwap.mutateAsync({
         side: swapSide,
         token_mint: tokenMint,
+        amount_sol: amountSol,
         notional_usd: notionalUsd,
         mode: swapMode,
       });
@@ -372,6 +404,7 @@ export default function WalletPage() {
       }
       setSwapOpen(false);
       setSwapTokenMint("");
+      setSwapAmountSol("0.1");
     } catch (error) {
       toast({ title: "Swap failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
     }
@@ -988,13 +1021,34 @@ export default function WalletPage() {
               </div>
 
               <div className="space-y-1">
-                <Label>Notional (USD)</Label>
-                <Input type="number" min={1} step="0.01" value={swapNotionalUsd} onChange={(e) => setSwapNotionalUsd(e.target.value)} />
+                <Label>Amount (SOL)</Label>
+                <Input type="number" min={0.0001} step="0.0001" value={swapAmountSol} onChange={(e) => setSwapAmountSol(e.target.value)} />
               </div>
+
+              {swapSide === "buy" && (
+                <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs space-y-1">
+                  {swapQuoteQuery.isLoading ? (
+                    <p className="text-muted-foreground">Fetching quote…</p>
+                  ) : swapQuoteQuery.data?.quote ? (
+                    <>
+                      <p>
+                        Estimated receive: <span className="font-medium text-foreground">{Number(swapQuoteQuery.data.quote.output_amount_tokens || 0).toLocaleString(undefined, { maximumFractionDigits: 9 })}</span>
+                      </p>
+                      <p className="text-muted-foreground">
+                        Price impact: {Number(swapQuoteQuery.data.quote.price_impact_pct || 0).toFixed(4)}% · Routes: {Number(swapQuoteQuery.data.quote.route_count || 0)}
+                      </p>
+                    </>
+                  ) : swapQuoteQuery.isError ? (
+                    <p className="text-red-400">Quote unavailable for this token/amount right now.</p>
+                  ) : (
+                    <p className="text-muted-foreground">Enter token mint and SOL amount to preview output.</p>
+                  )}
+                </div>
+              )}
 
               <p className="text-xs text-muted-foreground">
                 {swapSide === "buy"
-                  ? "Buy uses SOL as input and swaps into the token mint."
+                  ? "Buy uses SOL input and shows estimated token output before submitting."
                   : "Sell swaps your token mint balance back into SOL."}
               </p>
             </div>

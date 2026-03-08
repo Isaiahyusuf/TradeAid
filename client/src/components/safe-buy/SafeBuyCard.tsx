@@ -26,12 +26,13 @@ export function SafeBuyCard({ item }: { item: SafeBuyItem }) {
   const handleDirectBuy = () => {
     const requestedChain = String(item.chain || "solana").trim().toLowerCase();
     const params = new URLSearchParams();
-    params.set("action", "buy");
+    params.set("action", "swap");
+    params.set("side", "buy");
     params.set("chain", requestedChain || "solana");
     params.set("contract", item.contract_address);
-    params.set("amount", String(amountSol || "0.1"));
-    setLocation(`/doctortrade?${params.toString()}`);
-    toast({ title: "Direct Buy Ready", description: "Redirected to DoctorTrade using your connected Doctor wallet." });
+    params.set("amount_sol", String(amountSol || "0.1"));
+    setLocation(`/wallet?${params.toString()}`);
+    toast({ title: "Direct Buy Ready", description: "Opened Wallet swap with token contract prefilled." });
   };
 
   return (

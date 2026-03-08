@@ -1206,11 +1206,11 @@ export async function registerRoutes(
       const maxPairAgeSeconds = Math.max(30, Number(process.env.DOCTOR_DEX_MAX_PAIR_AGE_SECONDS || 120));
       const minLiquiditySol = Math.max(0.1, Number(doctorRuntime.controls.min_liquidity_sol || 2));
       const configuredMaxLiquiditySol = Math.max(minLiquiditySol, Number(doctorRuntime.controls.max_liquidity_sol || 50));
-      const dexLiquidityCeilingFloor = Math.max(minLiquiditySol, Number(process.env.DOCTOR_DEX_MAX_LIQUIDITY_SOL_FLOOR || 90));
+      const dexLiquidityCeilingFloor = Math.max(minLiquiditySol, Number(process.env.DOCTOR_DEX_MAX_LIQUIDITY_SOL_FLOOR || 110));
       const maxLiquiditySol = Math.max(configuredMaxLiquiditySol, dexLiquidityCeilingFloor);
       const minBuys5m = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_buys_5m || 3)));
       const configuredMaxSells5m = Math.max(0, Math.trunc(Number(doctorRuntime.controls.max_sells_5m || 1)));
-      const dexSellPressureFloor = Math.max(0, Math.trunc(Number(process.env.DOCTOR_DEX_MAX_SELLS_5M_FLOOR || 8)));
+      const dexSellPressureFloor = Math.max(0, Math.trunc(Number(process.env.DOCTOR_DEX_MAX_SELLS_5M_FLOOR || 30)));
       const maxSells5m = Math.max(configuredMaxSells5m, dexSellPressureFloor);
       const minVolumeSol = Math.max(0.1, Number(process.env.DOCTOR_DEX_MIN_VOLUME_SOL || 1));
       const solPriceUsd = Math.max(1, Number(process.env.DOCTOR_SOL_PRICE_USD_DEFAULT || 150));
@@ -1246,7 +1246,8 @@ export async function registerRoutes(
         const ageSeconds = Math.max(0, Math.trunc((nowMs - Number(pair?.pairCreatedAt || nowMs)) / 1000));
         const smartWalletDetected = Number(pair?.boosts?.active || 0) > 0 || (buys5m >= 6 && sells5m <= 1);
         const validLiquidity = liquiditySol >= minLiquiditySol && liquiditySol <= maxLiquiditySol;
-        const validPressure = buys5m >= minBuys5m && sells5m <= maxSells5m;
+        const strongBuyDominance = buys5m >= Math.max(minBuys5m * 2, 10) && buys5m >= Math.max(1, sells5m) * 1.5;
+        const validPressure = (buys5m >= minBuys5m && sells5m <= maxSells5m) || strongBuyDominance;
         const validVolume = volume5mSol >= minVolumeSol;
         const failedChecks = [
           !validLiquidity ? "liquidity_window_failed" : null,
@@ -4458,9 +4459,12 @@ export async function registerRoutes(
     const side = String(req.body?.side || "buy").toLowerCase() === "sell" ? "sell" : "buy";
     const tokenMint = String(req.body?.token_mint || req.body?.contract_address || "").trim();
     const notionalUsd = Number(req.body?.notional_usd || 0);
+    const amountSolInput = Number(req.body?.amount_sol || 0);
     const mode = String(req.body?.mode || "live").toLowerCase() === "paper" ? "paper" : "live";
+    const hasNotionalUsd = Number.isFinite(notionalUsd) && notionalUsd > 0;
+    const hasAmountSolInput = Number.isFinite(amountSolInput) && amountSolInput > 0;
 
-    if (!tokenMint || !Number.isFinite(notionalUsd) || notionalUsd <= 0) {
+    if (!tokenMint || (side === "buy" ? (!hasNotionalUsd && !hasAmountSolInput) : !hasNotionalUsd)) {
       return res.status(400).json({ message: "invalid swap payload" });
     }
     if (!validateAddressForChain("solana", tokenMint)) {
@@ -4493,6 +4497,10 @@ export async function registerRoutes(
         return res.status(503).json({ message: "solana price unavailable" });
       }
 
+      const resolvedNotionalUsd = hasNotionalUsd
+        ? notionalUsd
+        : Math.max(0, amountSolInput * solPriceUsd);
+
       const connection = getSolanaConnection();
       const slippageBps = Math.max(25, Math.trunc(Number(doctorRuntime.controls.max_slippage_pct || 4) * 100));
 
@@ -4500,7 +4508,9 @@ export async function registerRoutes(
         let quote: Record<string, any>;
 
         if (side === "buy") {
-          const amountSol = Math.max(0.0001, notionalUsd / solPriceUsd);
+          const amountSol = hasAmountSolInput
+            ? Math.max(0.0001, amountSolInput)
+            : Math.max(0.0001, notionalUsd / solPriceUsd);
           const amountLamports = Math.max(1, Math.trunc(amountSol * 1_000_000_000));
           quote = await fetchJupiterQuote({
             inputMint: SOL_MINT,
@@ -4579,7 +4589,7 @@ export async function registerRoutes(
           side,
           status: "executed",
           contract_address: tokenMint,
-          notional_usd: Number(notionalUsd.toFixed(2)),
+          notional_usd: Number(resolvedNotionalUsd.toFixed(2)),
           quantity: null,
           asset: "TOKEN",
           tx_hash: signature,
@@ -4611,6 +4621,15 @@ export async function registerRoutes(
       }
     }
 
+    let resolvedPaperNotionalUsd = hasNotionalUsd ? notionalUsd : 0;
+    if (side === "buy" && !resolvedPaperNotionalUsd && hasAmountSolInput) {
+      const prices = await fetchChainPricesUsd();
+      const solPriceUsd = Number(prices.solana || 0);
+      if (solPriceUsd > 0) {
+        resolvedPaperNotionalUsd = amountSolInput * solPriceUsd;
+      }
+    }
+
     const txHash = `swap_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const transaction = {
       id: `swap_${Date.now()}`,
@@ -4618,7 +4637,7 @@ export async function registerRoutes(
       side,
       status: "executed",
       contract_address: tokenMint,
-      notional_usd: Number(notionalUsd.toFixed(2)),
+      notional_usd: Number((resolvedPaperNotionalUsd || 0).toFixed(2)),
       quantity: null,
       asset: "TOKEN",
       tx_hash: txHash,
@@ -4643,6 +4662,56 @@ export async function registerRoutes(
         explorer_url: transaction.explorer_url,
       },
     });
+  });
+
+  app.post("/api/ai/wallets/swap-quote", async (req, res) => {
+    const side = String(req.body?.side || "buy").toLowerCase() === "sell" ? "sell" : "buy";
+    const tokenMint = String(req.body?.token_mint || req.body?.contract_address || "").trim();
+    const amountSol = Number(req.body?.amount_sol || 0);
+    if (side !== "buy") {
+      return res.status(400).json({ message: "only buy quote is supported" });
+    }
+    if (!tokenMint || !validateAddressForChain("solana", tokenMint)) {
+      return res.status(400).json({ message: "invalid solana token mint" });
+    }
+    if (!Number.isFinite(amountSol) || amountSol <= 0) {
+      return res.status(400).json({ message: "invalid amount_sol" });
+    }
+
+    const slippageBps = Math.max(25, Math.trunc(Number(doctorRuntime.controls.max_slippage_pct || 4) * 100));
+    const inLamports = Math.max(1, Math.trunc(amountSol * 1_000_000_000));
+
+    try {
+      const quote = await fetchJupiterQuote({
+        inputMint: SOL_MINT,
+        outputMint: tokenMint,
+        amountAtomic: inLamports,
+        slippageBps,
+      });
+      const outAmountRaw = Number(quote?.outAmount || 0);
+      const tokenDecimals = await getTokenMintDecimals(tokenMint).catch(() => 6);
+      const outAmountTokens = outAmountRaw > 0
+        ? Number((outAmountRaw / Math.pow(10, Math.max(0, tokenDecimals))).toFixed(9))
+        : 0;
+
+      return res.json({
+        quote: {
+          side,
+          input_mint: SOL_MINT,
+          output_mint: tokenMint,
+          input_amount_sol: Number(amountSol.toFixed(9)),
+          output_amount_tokens: outAmountTokens,
+          output_amount_raw: String(quote?.outAmount || "0"),
+          output_decimals: tokenDecimals,
+          price_impact_pct: Number(quote?.priceImpactPct || 0),
+          route_count: Array.isArray(quote?.routePlan) ? quote.routePlan.length : 0,
+        },
+      });
+    } catch (error) {
+      return res.status(502).json({
+        message: error instanceof Error ? error.message : "swap quote failed",
+      });
+    }
   });
 
   app.post("/api/ai/trading/consent/request", async (req, res) => {

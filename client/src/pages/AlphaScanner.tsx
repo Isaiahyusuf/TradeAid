@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useTokens, type TokenItem } from "@/hooks/use-memetrend";
 import { useAlerts } from "@/hooks/use-alerts";
 import { useAIInsight } from "@/hooks/use-ai-insight";
@@ -72,8 +71,6 @@ export default function AlphaScanner() {
   const [scanAddress, setScanAddress] = useState("");
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
   const [tokenTab, setTokenTab] = useState<"all" | "5m" | "20m" | "40m" | "1h" | "5h" | "12h" | "24h">("all");
-  const [directBuyToken, setDirectBuyToken] = useState<TokenItem | null>(null);
-  const [directBuyOpen, setDirectBuyOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const { toast } = useToast();
@@ -221,40 +218,16 @@ export default function AlphaScanner() {
     }
   };
 
-  const openDirectBuyChooser = (token: TokenItem) => {
-    setDirectBuyToken(token);
-    setDirectBuyOpen(true);
-  };
-
-  const handleManualBuy = () => {
-    if (!directBuyToken) return;
+  const handleDirectBuy = (token: TokenItem) => {
     const params = new URLSearchParams();
-    params.set("action", "buy");
-    params.set("chain", String(directBuyToken.chain || routingChain).toLowerCase());
-    params.set("contract", directBuyToken.contract_address);
+    params.set("action", "swap");
+    params.set("side", "buy");
+    params.set("chain", String(token.chain || routingChain).toLowerCase());
+    params.set("contract", token.contract_address);
+    params.set("amount_sol", "0.1");
     params.set("returnTo", "/alphascanner");
-    setDirectBuyOpen(false);
     setLocation(`/wallet?${params.toString()}`);
-  };
-
-  const handleAutomaticBuy = () => {
-    if (!directBuyToken) return;
-    const tokenChain = String(directBuyToken.chain || "").toLowerCase();
-    if (tokenChain !== "solana") {
-      toast({
-        title: "Automatic buy unavailable",
-        description: "Automatic buy is currently supported for Solana tokens only.",
-        variant: "destructive",
-      });
-      return;
-    }
-    const params = new URLSearchParams();
-    params.set("action", "autobuy");
-    params.set("chain", tokenChain);
-    params.set("contract", directBuyToken.contract_address);
-    params.set("returnTo", "/alphascanner");
-    setDirectBuyOpen(false);
-    setLocation(`/doctortrade?${params.toString()}`);
+    toast({ title: "Direct Buy Ready", description: "Opened Wallet swap with token contract prefilled." });
   };
 
   return (
@@ -510,7 +483,7 @@ export default function AlphaScanner() {
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <Badge variant="outline">{aiRiskLabel || "Unknown"} Risk</Badge>
                         <div className="flex flex-wrap gap-2">
-                          <Button size="sm" onClick={() => openDirectBuyChooser(token)}>Direct Buy</Button>
+                          <Button size="sm" onClick={() => handleDirectBuy(token)}>Direct Buy</Button>
                           <Button size="sm" variant="outline" className="transition-all duration-300 hover:scale-105" onClick={() => window.open(token.buy_urls?.pump_fun || `https://pump.fun/coin/${token.contract_address}`, "_blank")}>Pump.fun <ExternalLink className="w-3 h-3 ml-1" /></Button>
                           <Button size="sm" variant="outline" className="transition-all duration-300 hover:scale-105" onClick={() => window.open(token.buy_urls?.axiom || `https://axiom.trade/t/${token.contract_address}`, "_blank")}>Axiom <ExternalLink className="w-3 h-3 ml-1" /></Button>
                           <Button size="sm" variant="outline" className="transition-all duration-300 hover:scale-105" onClick={() => window.open(token.buy_urls?.gmgn || `https://gmgn.ai/sol/token/${token.contract_address}`, "_blank")}>GMGN <ExternalLink className="w-3 h-3 ml-1" /></Button>
@@ -529,26 +502,6 @@ export default function AlphaScanner() {
           )}
         </div>
       </div>
-
-      <Dialog open={directBuyOpen} onOpenChange={setDirectBuyOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Direct Buy</DialogTitle>
-            <DialogDescription>
-              Choose how to buy {directBuyToken?.symbol || "this token"}. Manual opens Wallet. Automatic runs DoctorTrade using your configured buy amount.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 text-sm">
-            <p className="text-muted-foreground">Token: <span className="text-foreground font-medium">{directBuyToken?.symbol || directBuyToken?.name || "-"}</span></p>
-            <p className="text-muted-foreground">Chain: <span className="text-foreground font-medium uppercase">{directBuyToken?.chain || "-"}</span></p>
-            <p className="text-muted-foreground">Contract: <span className="text-foreground font-mono break-all">{directBuyToken?.contract_address || "-"}</span></p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={handleManualBuy}>Manual Buy (Wallet)</Button>
-            <Button onClick={handleAutomaticBuy}>Automatic Buy (DoctorTrade)</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </Layout>
   );
 }

@@ -288,7 +288,8 @@ export function useAssistantWalletSwap() {
     mutationFn: async (payload: {
       side: "buy" | "sell";
       token_mint: string;
-      notional_usd: number;
+      notional_usd?: number;
+      amount_sol?: number;
       mode?: "paper" | "live";
     }) => apiPost<{ trade: { id: string; chain: string; mode: string; side: string; status: string; tx_hash: string; explorer_url: string } }>("/api/ai/wallets/swap", payload),
     onSuccess: () => {
@@ -297,6 +298,36 @@ export function useAssistantWalletSwap() {
       queryClient.invalidateQueries({ queryKey: ["ai-context-overview"] });
       queryClient.invalidateQueries({ queryKey: ["ai-wallet-status"] });
     },
+  });
+}
+
+export function useAssistantWalletSwapQuote(
+  params: {
+    side: "buy" | "sell";
+    token_mint: string;
+    amount_sol: number;
+  },
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ["ai-wallet-swap-quote", params.side, params.token_mint, params.amount_sol],
+    queryFn: () => apiPost<{
+      quote: {
+        side: string;
+        input_mint: string;
+        output_mint: string;
+        input_amount_sol: number;
+        output_amount_tokens: number;
+        output_amount_raw: string;
+        output_decimals: number;
+        price_impact_pct: number;
+        route_count: number;
+      };
+    }>("/api/ai/wallets/swap-quote", params),
+    enabled,
+    staleTime: 10_000,
+    refetchInterval: false,
+    retry: 1,
   });
 }
 
