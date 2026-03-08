@@ -411,7 +411,21 @@ export default function DoctorTrade() {
       setLiveSellFractionInput("50");
       setMaxSellNotionalInput("10000");
     }
-    toast({ title: "Preset loaded", description: `${preset} profile applied. Save to activate.` });
+    configMutation.mutate(
+      { snipe_preset: preset },
+      {
+        onSuccess: () => {
+          toast({ title: "Preset applied", description: `${preset} preset is now active.` });
+        },
+        onError: (error) => {
+          toast({
+            title: "Preset save failed",
+            description: error instanceof Error ? error.message : "Could not persist preset.",
+            variant: "destructive",
+          });
+        },
+      },
+    );
   };
 
   const handleManualPrivateKeyConnect = () => {
@@ -747,6 +761,21 @@ export default function DoctorTrade() {
               onClick={() => {
                 setPresetMode("custom");
                 setSelectedSnipePreset("custom");
+                configMutation.mutate(
+                  { snipe_preset: "custom" },
+                  {
+                    onSuccess: () => {
+                      toast({ title: "Preset applied", description: "custom preset is now active." });
+                    },
+                    onError: (error) => {
+                      toast({
+                        title: "Preset save failed",
+                        description: error instanceof Error ? error.message : "Could not persist preset.",
+                        variant: "destructive",
+                      });
+                    },
+                  },
+                );
               }}
             >
               Custom
