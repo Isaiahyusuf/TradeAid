@@ -128,6 +128,7 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  const nowIso = () => new Date().toISOString();
   const serviceStartedAt = Date.now();
   const observability = {
     requestsTotal: 0,
@@ -767,6 +768,7 @@ export async function registerRoutes(
       max_consecutive_losses: 3,
       strong_move_threshold_pct: 25,
       max_hold_minutes: 180,
+      position_rotation_minutes: 1,
       min_momentum_profit_pct: 4,
       quality_min_volume_spike_pct: 12,
       quality_max_top_holder_pct: 15,
@@ -1187,7 +1189,7 @@ export async function registerRoutes(
   };
 
   const isDoctorLiveOnlyMode = () => {
-    return true;
+    return String(process.env.DOCTORTRADE_LIVE_ONLY_MODE || process.env.DOCTORTRADE_LIVE_ONLY || "false").trim().toLowerCase() === "true";
   };
 
   const isDoctorMultiUserMode = () => {
@@ -1214,10 +1216,26 @@ export async function registerRoutes(
   const ensureDoctorLiveExecutionModeIfCapable = async () => {
     const { walletPublicKey, walletPrivateKey } = await getDoctorLiveWalletCredentials();
     const liveCapable = isDoctorLiveTradingEnabled() && Boolean(walletPublicKey) && Boolean(walletPrivateKey);
-    if ((isDoctorLiveOnlyMode() || liveCapable) && doctorRuntime.execution.mode !== "live") {
+    const liveOnly = isDoctorLiveOnlyMode();
+    if (liveOnly) {
+      if (doctorRuntime.execution.mode !== "live") {
+        doctorRuntime.execution.mode = "live";
+        await persistDoctorRuntime();
+      }
+      return liveCapable;
+    }
+
+    if (liveCapable && doctorRuntime.execution.mode !== "live") {
       doctorRuntime.execution.mode = "live";
       await persistDoctorRuntime();
+      return liveCapable;
     }
+
+    if (!liveCapable && doctorRuntime.execution.mode === "live") {
+      doctorRuntime.execution.mode = "paper";
+      await persistDoctorRuntime();
+    }
+
     return liveCapable;
   };
 
@@ -1263,6 +1281,7 @@ export async function registerRoutes(
   const loadDoctorRuntime = async () => {
     try {
       let loaded: Record<string, any> | null = null;
+      let normalizedOnLoad = false;
 
       try {
         const state = await storage.getAppState<Record<string, any>>(doctorRuntimeStateKey);
@@ -1296,7 +1315,11 @@ export async function registerRoutes(
           doctorRuntime.wallet.address = wallet.address;
         }
         if (Number.isFinite(Number(wallet.balanceSol))) {
-          doctorRuntime.wallet.balanceSol = Number(wallet.balanceSol);
+          const normalizedBalance = Math.max(0, Number(wallet.balanceSol));
+          doctorRuntime.wallet.balanceSol = normalizedBalance;
+          if (normalizedBalance !== Number(wallet.balanceSol)) {
+            normalizedOnLoad = true;
+          }
         }
         if (typeof wallet.separateWalletEnforced === "boolean") {
           doctorRuntime.wallet.separateWalletEnforced = wallet.separateWalletEnforced;
@@ -1329,7 +1352,8 @@ export async function registerRoutes(
         doctorRuntime.performance = loaded.performance.slice(0, 40);
       }
       if (loaded.execution && typeof loaded.execution === "object") {
-        doctorRuntime.execution.mode = "live";
+        const loadedMode = String((loaded.execution as Record<string, any>).mode || "").trim().toLowerCase();
+        doctorRuntime.execution.mode = loadedMode === "paper" ? "paper" : "live";
       }
       if (Array.isArray(loaded.executionAudit)) {
         doctorRuntime.executionAudit = loaded.executionAudit.slice(0, 200);
@@ -1353,6 +1377,16 @@ export async function registerRoutes(
       }
       if (doctorRuntime.killSwitch) {
         doctorRuntime.enabled = false;
+      }
+      if (doctorRuntime.execution.mode === "paper") {
+        const normalizedPaperBalance = Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0));
+        if (normalizedPaperBalance !== Number(doctorRuntime.wallet.balanceSol || 0)) {
+          doctorRuntime.wallet.balanceSol = normalizedPaperBalance;
+          normalizedOnLoad = true;
+        }
+      }
+      if (normalizedOnLoad) {
+        await persistDoctorRuntime();
       }
     } catch {
     }
@@ -1483,7 +1517,16 @@ export async function registerRoutes(
     try {
       await executeDoctorCycle(trigger);
     } catch (error) {
-      doctorRuntime.lastError = error instanceof Error ? error.message : "doctor_cycle_failed";
+      const errorSummary = error instanceof Error
+        ? `${String(error.name || "Error").trim()}: ${String(error.message || "").trim()}`.trim()
+        : String(error || "").trim();
+      doctorRuntime.lastError = errorSummary || "doctor_cycle_failed";
+      doctorRuntime.lastDecision = {
+        action: "skip",
+        reason: doctorRuntime.lastError,
+        trigger,
+        at: nowIso(),
+      };
       await persistDoctorRuntime();
     } finally {
       doctorCycleRunning = false;
@@ -1761,7 +1804,13 @@ export async function registerRoutes(
         .slice(0, cappedLimit);
     }
 
-    const scanned = await storage.getScannedTokens();
+    const scanned = await (async () => {
+      try {
+        return await storage.getScannedTokens();
+      } catch {
+        return [] as Array<Record<string, any>>;
+      }
+    })();
     const scannedTokens = scanned
       .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
       .map((token) => {
@@ -2148,6 +2197,39 @@ export async function registerRoutes(
     };
   };
 
+  const pruneDoctorRecentExecutionState = (nowMs = Date.now()) => {
+    const retentionHours = Math.max(1, Number(process.env.DOCTORTRADE_RECENT_RETENTION_HOURS || 24));
+    const retentionMs = retentionHours * 60 * 60 * 1000;
+    const isFresh = (value: unknown) => {
+      const ts = new Date(String(value || "")).getTime();
+      if (!Number.isFinite(ts) || ts <= 0) return false;
+      return nowMs - ts <= retentionMs;
+    };
+
+    doctorRuntime.recentTrades = doctorRuntime.recentTrades.filter((trade) => isFresh((trade as any).timestamp)).slice(0, 50);
+    doctorRuntime.executionAudit = doctorRuntime.executionAudit.filter((item) => isFresh((item as any).at)).slice(0, 200);
+    doctorRuntime.decisionJournal = doctorRuntime.decisionJournal.filter((item) => isFresh((item as any).timestamp)).slice(0, 80);
+
+    const rollingDayMs = 24 * 60 * 60 * 1000;
+    const buysLast24h = doctorRuntime.recentTrades.filter((trade) => {
+      if (String((trade as any).action || "").toUpperCase() !== "BUY") return false;
+      const ts = new Date(String((trade as any).timestamp || "")).getTime();
+      return Number.isFinite(ts) && ts > 0 && nowMs - ts <= rollingDayMs;
+    }).length;
+    doctorRuntime.controls.trades_today = buysLast24h;
+  };
+
+  const getDoctorPositionRotationMinutes = () => {
+    const configured = Number((doctorRuntime.controls as any).position_rotation_minutes ?? process.env.DOCTOR_POSITION_ROTATION_MINUTES ?? 1);
+    return Math.max(0.25, configured);
+  };
+
+  const clampDoctorPaperBalance = () => {
+    if (doctorRuntime.execution.mode !== "paper") return;
+    const normalized = Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0));
+    doctorRuntime.wallet.balanceSol = Number(normalized.toFixed(6));
+  };
+
   const appendDoctorExecutionAudit = (entry: Record<string, any>) => {
     doctorRuntime.executionAudit.unshift({
       id: `exec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -2243,7 +2325,8 @@ export async function registerRoutes(
     sellFractionPct?: number;
   }) => {
     const liveEnabled = isDoctorLiveTradingEnabled();
-    const mode = isDoctorLiveOnlyMode() ? "live" : doctorRuntime.execution.mode;
+    const liveOnly = isDoctorLiveOnlyMode();
+    const mode = liveOnly ? "live" : doctorRuntime.execution.mode;
 
     if (mode === "live") {
       if (!liveEnabled) {
@@ -2759,7 +2842,7 @@ export async function registerRoutes(
       }
     }
 
-    if (isDoctorLiveOnlyMode()) {
+    if (liveOnly) {
       appendDoctorExecutionAudit({
         action: params.action,
         symbol: params.symbol,
@@ -2779,11 +2862,35 @@ export async function registerRoutes(
       } as const;
     }
 
+    const paperTxHash = `paper_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    appendDoctorExecutionAudit({
+      action: params.action,
+      symbol: params.symbol,
+      mint: params.mint,
+      amount_sol: params.amountSol,
+      expected_price_usd: params.expectedPriceUsd,
+      expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+      trigger: params.trigger,
+      reason: params.reason,
+      status: "executed",
+      router: "paper",
+      tx_hash: paperTxHash,
+    });
+    await appendDoctorTradeLog({
+      token_address: params.mint,
+      pool_address: null,
+      trade_amount: params.amountSol,
+      entry_price: params.expectedPriceUsd,
+      transaction_signature: paperTxHash,
+      base_asset_mint: String(params.baseMint || getDoctorTradeBaseAssetMint()),
+      timestamp: nowIso(),
+    });
+
     return {
-      executed: false,
-      status: "blocked",
-      reason: "live_execution_required",
-      executedAmountSol: 0,
+      executed: true,
+      status: "executed",
+      txHash: paperTxHash,
+      executedAmountSol: params.amountSol,
     } as const;
   };
 
@@ -2799,6 +2906,7 @@ export async function registerRoutes(
 
     await ensureDoctorLiveExecutionModeIfCapable();
     await refreshDoctorWalletBalanceFromChain();
+    clampDoctorPaperBalance();
 
     if (!doctorRuntime.enabled) {
       doctorRuntime.lastDecision = { action: "skip", reason: "doctortrade_disabled", trigger, at: nowIso() };
@@ -2808,7 +2916,8 @@ export async function registerRoutes(
       doctorRuntime.lastDecision = { action: "skip", reason: "kill_switch_enabled", trigger, at: nowIso() };
       return { executed: false, reason: "kill_switch_enabled", trigger };
     }
-    if (!doctorRuntime.wallet.address) {
+    const requiresLiveWallet = isDoctorLiveOnlyMode() || doctorRuntime.execution.mode === "live";
+    if (requiresLiveWallet && !doctorRuntime.wallet.address) {
       doctorRuntime.lastDecision = { action: "skip", reason: "live_wallet_credentials_missing", trigger, at: nowIso() };
       return { executed: false, reason: "live_wallet_credentials_missing", trigger };
     }
@@ -2816,6 +2925,7 @@ export async function registerRoutes(
     const activeTokens = await getDoctorActiveTokens();
     const tokenMap = new Map(activeTokens.map((token) => [String(token.address || ""), token]));
     const nowMs = Date.now();
+    pruneDoctorRecentExecutionState(nowMs);
 
     const { dailyRealizedPnlUsd, consecutiveLosses } = computeDoctorRiskMetrics(nowMs);
 
@@ -2826,7 +2936,8 @@ export async function registerRoutes(
       (Math.max(1.01, Number(doctorRuntime.controls.take_profit_multiplier || 2)) - 1) * 100,
     );
 
-    for (const position of doctorRuntime.positions) {
+    for (let positionIndex = 0; positionIndex < doctorRuntime.positions.length; positionIndex += 1) {
+      const position = doctorRuntime.positions[positionIndex];
       const market = tokenMap.get(String(position.address || "")) || null;
       const entryPrice = Number(position.entry_price || 0);
       const currentPrice = resolveCurrentPriceUsd(market || {}, entryPrice);
@@ -2858,8 +2969,7 @@ export async function registerRoutes(
       ) {
         sellReason = "trailing_stop_triggered";
       } else if (
-        holdMinutes >= Math.max(5, Number(doctorRuntime.controls.max_hold_minutes || 0)) &&
-        pnlPct >= Math.max(0, Number(doctorRuntime.controls.min_momentum_profit_pct || 0))
+        holdMinutes >= Math.max(5, Number(doctorRuntime.controls.max_hold_minutes || 0))
       ) {
         sellReason = "max_hold_reached";
       } else if (
@@ -2872,6 +2982,12 @@ export async function registerRoutes(
         )
       ) {
         sellReason = "momentum_or_holder_quality_drop";
+      } else if (
+        doctorRuntime.positions.length >= 3 &&
+        positionIndex === doctorRuntime.positions.length - 1 &&
+        holdMinutes >= getDoctorPositionRotationMinutes()
+      ) {
+        sellReason = "position_rotation";
       }
 
       if (!sellReason) {
@@ -2918,6 +3034,7 @@ export async function registerRoutes(
       const soldAmountSol = Math.max(0, Math.min(amountSol, Number((sellExecution as any).executedAmountSol || amountSol)));
       const estimatedExitSol = entryPrice > 0 && currentPrice > 0 ? soldAmountSol * (currentPrice / entryPrice) : soldAmountSol;
       doctorRuntime.wallet.balanceSol = Number((Number(doctorRuntime.wallet.balanceSol || 0) + Math.max(0, estimatedExitSol)).toFixed(6));
+      clampDoctorPaperBalance();
       sellCount += 1;
       const pnlUsd = Number(((soldAmountSol * currentPrice) - (soldAmountSol * entryPrice)).toFixed(2));
       const remainingAmountSol = Number((amountSol - soldAmountSol).toFixed(9));
@@ -3058,7 +3175,13 @@ export async function registerRoutes(
         });
         if (alreadyBoughtMint) continue;
 
-        const scanned = await storage.getScannedTokenByAddress(mint);
+        const scanned = await (async () => {
+          try {
+            return await storage.getScannedTokenByAddress(mint);
+          } catch {
+            return null;
+          }
+        })();
         if (!scanned) continue;
 
         const createdAtIso = scanned.createdAt ? new Date(scanned.createdAt).toISOString() : nowIso();
@@ -3101,6 +3224,23 @@ export async function registerRoutes(
     };
 
     let buyCandidate: Record<string, any> | undefined = candidatePoolNonOpen[0] || (allowReentrySnipes ? candidatePool[0] : undefined);
+    if (!buyCandidate && doctorRuntime.execution.mode === "paper") {
+      const softPaperPool = activeTokens
+        .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
+        .filter((token) => !openAddresses.has(String(token.address || "")))
+        .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+      buyCandidate = softPaperPool[0];
+      if (buyCandidate) {
+        appendDoctorSniperLog({
+          event: "candidate_selected",
+          source: String((buyCandidate as any).source || "scanner"),
+          symbol: String((buyCandidate as any).symbol || "UNKNOWN"),
+          mint: String((buyCandidate as any).address || ""),
+          reason: "paper_mode_soft_fallback_candidate",
+          preset: activeSnipePreset,
+        });
+      }
+    }
     if (!buyCandidate) {
       buyCandidate = await getFallbackDetectedCandidate();
       if (buyCandidate) {
@@ -3120,11 +3260,14 @@ export async function registerRoutes(
         return { allowed: false, reason: "no_eligible_candidate" };
       }
 
-      const liveCredentials = await getDoctorLiveWalletCredentials();
-      const hasWalletPublicKey = Boolean(String(liveCredentials.walletPublicKey || "").trim());
-      const hasWalletPrivateKey = Boolean(String(liveCredentials.walletPrivateKey || "").trim());
-      if (!hasWalletPublicKey || !hasWalletPrivateKey) {
-        return { allowed: false, reason: "wallet_key_not_connected" };
+      const requiresLiveWallet = isDoctorLiveOnlyMode() || doctorRuntime.execution.mode === "live";
+      if (requiresLiveWallet) {
+        const liveCredentials = await getDoctorLiveWalletCredentials();
+        const hasWalletPublicKey = Boolean(String(liveCredentials.walletPublicKey || "").trim());
+        const hasWalletPrivateKey = Boolean(String(liveCredentials.walletPrivateKey || "").trim());
+        if (!hasWalletPublicKey || !hasWalletPrivateKey) {
+          return { allowed: false, reason: "wallet_key_not_connected" };
+        }
       }
 
       if (doctorRuntime.positions.length >= maxOpenPositions) {
@@ -3154,15 +3297,8 @@ export async function registerRoutes(
         return { allowed: false, reason: "mint_cooldown_active" };
       }
 
-      const alreadyBoughtMint = doctorRuntime.recentTrades.find((trade) => {
-        return String(trade.action || "").toUpperCase() === "BUY" && String(trade.address || "") === String(candidate.address || "");
-      });
-      if (alreadyBoughtMint) {
-        return { allowed: false, reason: "token_already_bought_once" };
-      }
-
       const baseAssetMint = getDoctorTradeBaseAssetMint();
-      if (baseAssetMint === "So11111111111111111111111111111111111111112") {
+      if (requiresLiveWallet && baseAssetMint === "So11111111111111111111111111111111111111112") {
         const availableSol = Number(doctorRuntime.wallet.balanceSol || 0);
         const gasPriorityLamports = Math.max(0, Math.trunc(Number(doctorRuntime.controls.gas_priority_lamports || 0)));
         const baseSwapFeeLamports = Math.max(5000, Math.trunc(Number(process.env.DOCTOR_SWAP_BASE_FEE_LAMPORTS || 15000)));
@@ -3250,7 +3386,15 @@ export async function registerRoutes(
       const scoreFallback = contractAddress
         ? await buildDexScoreFallback(contractAddress, "solana")
         : null;
-      const scannedToken = contractAddress ? await storage.getScannedTokenByAddress(contractAddress) : undefined;
+      const scannedToken = contractAddress
+        ? await (async () => {
+            try {
+              return await storage.getScannedTokenByAddress(contractAddress);
+            } catch {
+              return undefined;
+            }
+          })()
+        : undefined;
       const mintAuthorityInfo = contractAddress
         ? await getTokenMintAuthorityInfo(contractAddress)
         : { mintAuthorityDisabled: false, freezeAuthorityDisabled: false };
@@ -3466,6 +3610,8 @@ export async function registerRoutes(
     let hasBlockingError = false;
 
     if (buyCandidate && canBuy) {
+      const enforceAiValidation = String(process.env.DOCTOR_ENFORCE_AI_VALIDATION || "").trim().toLowerCase() === "true"
+        || doctorRuntime.execution.mode === "live";
       const skipAiGateForDetectedSignal = String((buyCandidate as any).source || "").includes("dexscreener_detected_signal");
       const aiValidation = skipAiGateForDetectedSignal
         ? {
@@ -3487,7 +3633,7 @@ export async function registerRoutes(
             turbo_ai_pass: true,
           }
         : await evaluateDoctorAiValidation(buyCandidate);
-      if (!aiValidation.allowed) {
+      if (enforceAiValidation && !aiValidation.allowed) {
         appendDoctorSniperLog({
           event: "blocked",
           source: String(buyCandidate.source || "scanner"),
@@ -3571,7 +3717,8 @@ export async function registerRoutes(
       doctorRuntime.positions.unshift(position);
       doctorRuntime.positions = doctorRuntime.positions.slice(0, 30);
 
-      doctorRuntime.wallet.balanceSol = Number((Number(doctorRuntime.wallet.balanceSol || 0) - buyAmountSol).toFixed(6));
+      doctorRuntime.wallet.balanceSol = Number((Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0) - buyAmountSol)).toFixed(6));
+      clampDoctorPaperBalance();
       doctorRuntime.controls.trades_today = Number(doctorRuntime.controls.trades_today || 0) + 1;
       buyCount += 1;
 
@@ -3974,6 +4121,7 @@ export async function registerRoutes(
       "max_consecutive_losses",
       "strong_move_threshold_pct",
       "max_hold_minutes",
+      "position_rotation_minutes",
       "min_momentum_profit_pct",
       "quality_min_volume_spike_pct",
       "quality_max_top_holder_pct",
@@ -4164,14 +4312,15 @@ export async function registerRoutes(
     if (!contractAddress) {
       return res.status(400).json({ result: { executed: false, reason: "contract_address_required" } });
     }
-    if (!doctorRuntime.wallet.address) {
+    const requiresLiveWallet = isDoctorLiveOnlyMode() || doctorRuntime.execution.mode === "live";
+    if (requiresLiveWallet && !doctorRuntime.wallet.address) {
       const liveCredentials = await getDoctorLiveWalletCredentials();
       const resolvedWalletAddress = String(liveCredentials.walletPublicKey || "").trim();
       if (resolvedWalletAddress) {
         doctorRuntime.wallet.address = resolvedWalletAddress;
       }
     }
-    if (!doctorRuntime.wallet.address) {
+    if (requiresLiveWallet && !doctorRuntime.wallet.address) {
       return res.json({ result: { executed: false, reason: "live_wallet_credentials_missing" } });
     }
 
@@ -4182,14 +4331,6 @@ export async function registerRoutes(
 
     if (doctorRuntime.positions.length >= 3) {
       return res.json({ result: { executed: false, reason: "max_open_positions_reached" } });
-    }
-
-    const alreadyBought = doctorRuntime.recentTrades.find((trade) => (
-      String(trade.action || "").toUpperCase() === "BUY" &&
-      String(trade.address || "") === contractAddress
-    ));
-    if (alreadyBought) {
-      return res.json({ result: { executed: false, reason: "token_already_bought_once" } });
     }
 
     const buyAmount = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
@@ -4238,7 +4379,8 @@ export async function registerRoutes(
     doctorRuntime.controls.trades_today = Number(doctorRuntime.controls.trades_today || 0) + 1;
     doctorRuntime.positions.unshift(position);
     doctorRuntime.positions = doctorRuntime.positions.slice(0, 30);
-    doctorRuntime.wallet.balanceSol = Number((Number(doctorRuntime.wallet.balanceSol || 0) - buyAmount).toFixed(6));
+    doctorRuntime.wallet.balanceSol = Number((Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0) - buyAmount)).toFixed(6));
+    clampDoctorPaperBalance();
 
     doctorRuntime.recentTrades.unshift({
       token: symbol,
@@ -4444,9 +4586,6 @@ export async function registerRoutes(
   const SOLANA_DERIVATION_PATH = "m/44'/501'/0'/0'";
   const normalizeMnemonic = (value: string) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
   const generateMnemonic = () => bip39.generateMnemonic(128);
-  function nowIso() {
-    return new Date().toISOString();
-  }
   const chainNativeSymbol = (_chain: AssistantChain) => "SOL";
 
   await loadDoctorDexWorkerState();
