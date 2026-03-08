@@ -838,6 +838,53 @@ export async function registerRoutes(
     }
   };
 
+  const deriveWalletPublicKeyFromPrivateKey = (value: string) => {
+    const trimmed = String(value || "").trim();
+    if (!trimmed) return "";
+
+    const toAddress = (secret: Uint8Array) => {
+      try {
+        if (secret.length >= 64) {
+          return Keypair.fromSecretKey(secret.slice(0, 64)).publicKey.toBase58();
+        }
+        if (secret.length === 32) {
+          return Keypair.fromSeed(secret).publicKey.toBase58();
+        }
+      } catch {
+      }
+      return "";
+    };
+
+    try {
+      if (trimmed.startsWith("[")) {
+        const parsed = JSON.parse(trimmed) as number[];
+        if (Array.isArray(parsed) && parsed.length >= 32) {
+          const fromJson = toAddress(Uint8Array.from(parsed.map((item) => Number(item) & 0xff)));
+          if (fromJson) return fromJson;
+        }
+      }
+    } catch {
+    }
+
+    try {
+      const decoded = bs58Codec.decode(trimmed);
+      const fromBs58 = toAddress(decoded);
+      if (fromBs58) return fromBs58;
+    } catch {
+    }
+
+    try {
+      const decoded = Buffer.from(trimmed, "base64");
+      if (decoded.length >= 32) {
+        const fromBase64 = toAddress(new Uint8Array(decoded));
+        if (fromBase64) return fromBase64;
+      }
+    } catch {
+    }
+
+    return "";
+  };
+
   const getRequestUserId = (req: any): string => {
     return String(req?.user?.claims?.sub || "").trim();
   };
@@ -915,6 +962,7 @@ export async function registerRoutes(
         SELECT key, value
         FROM app_state
         WHERE key LIKE ${keyPattern}
+           OR key = ${assistantRuntimeStateKeyPrefix}
         ORDER BY updated_at DESC
         LIMIT 10
       `);
@@ -950,8 +998,21 @@ export async function registerRoutes(
     const ownerUserId = String(doctorRuntime.ownerUserId || "").trim();
     const wallets = await getStoredDoctorWalletsByUser();
     const ownerWallet = ownerUserId ? (wallets[ownerUserId] as Record<string, any> | undefined) : undefined;
-    const userPublicKey = String(ownerWallet?.address || "").trim();
-    const userPrivateKey = decryptDoctorPrivateKey(String(ownerWallet?.livePrivateKey || "").trim());
+    const pickLatestWalletEntry = () => {
+      const entries = Object.entries(wallets || {}) as Array<[string, Record<string, any>]>;
+      if (!entries.length) return undefined;
+      const sorted = entries.sort((left, right) => {
+        const leftAt = new Date(String(left?.[1]?.updatedAt || 0)).getTime();
+        const rightAt = new Date(String(right?.[1]?.updatedAt || 0)).getTime();
+        return (Number.isFinite(rightAt) ? rightAt : 0) - (Number.isFinite(leftAt) ? leftAt : 0);
+      });
+      return sorted[0]?.[1];
+    };
+
+    const fallbackWallet = pickLatestWalletEntry();
+    const resolvedWallet = ownerWallet || fallbackWallet;
+    const userPublicKey = String(resolvedWallet?.address || "").trim();
+    const userPrivateKey = decryptDoctorPrivateKey(String(resolvedWallet?.livePrivateKey || "").trim());
 
     if (userPublicKey && userPrivateKey) {
       return {
@@ -963,14 +1024,22 @@ export async function registerRoutes(
     let assistantPublicKey = "";
     let assistantPrivateKey = "";
     try {
+      const runtimeAssistantWallet = (assistantRuntime as any)?.wallet as Record<string, any> | undefined;
+      if (runtimeAssistantWallet && typeof runtimeAssistantWallet === "object") {
+        const runtimeAddresses = runtimeAssistantWallet.addresses_by_chain as Record<string, any> | undefined;
+        const runtimePrivateKeys = runtimeAssistantWallet.private_keys_by_chain as Record<string, any> | undefined;
+        assistantPublicKey = String(runtimeAddresses?.solana || "").trim();
+        assistantPrivateKey = String(runtimePrivateKeys?.solana || "").trim();
+      }
+
       if (ownerUserId) {
         const assistantState = await storage.getAppState<Record<string, any>>(`${assistantRuntimeStateKeyPrefix}:${ownerUserId}`);
         const assistantWallet = assistantState?.wallet as Record<string, any> | undefined;
         if (assistantWallet && typeof assistantWallet === "object") {
           const addresses = assistantWallet.addresses_by_chain as Record<string, any> | undefined;
           const privateKeys = assistantWallet.private_keys_by_chain as Record<string, any> | undefined;
-          assistantPublicKey = String(addresses?.solana || "").trim();
-          assistantPrivateKey = String(privateKeys?.solana || "").trim();
+          assistantPublicKey = assistantPublicKey || String(addresses?.solana || "").trim();
+          assistantPrivateKey = assistantPrivateKey || String(privateKeys?.solana || "").trim();
         }
       }
 
@@ -982,9 +1051,12 @@ export async function registerRoutes(
     } catch {
     }
 
+    const resolvedPrivateKey = userPrivateKey || assistantPrivateKey || envPrivateKey;
+    const resolvedPublicKey = userPublicKey || assistantPublicKey || envPublicKey || deriveWalletPublicKeyFromPrivateKey(resolvedPrivateKey);
+
     return {
-      walletPublicKey: userPublicKey || assistantPublicKey || envPublicKey,
-      walletPrivateKey: userPrivateKey || assistantPrivateKey || envPrivateKey,
+      walletPublicKey: resolvedPublicKey,
+      walletPrivateKey: resolvedPrivateKey,
     };
   };
 
@@ -1377,7 +1449,13 @@ export async function registerRoutes(
             mint,
             reason: "doctortrade_disabled",
           });
-        } else if (!String(doctorRuntime.wallet.address || "").trim()) {
+        } else {
+          const liveCredentials = await getDoctorLiveWalletCredentials();
+          const resolvedWalletAddress = String(doctorRuntime.wallet.address || liveCredentials.walletPublicKey || "").trim();
+          if (resolvedWalletAddress && !String(doctorRuntime.wallet.address || "").trim()) {
+            doctorRuntime.wallet.address = resolvedWalletAddress;
+          }
+          if (!resolvedWalletAddress) {
           appendDoctorSniperLog({
             event: "blocked",
             source: "dexscreener",
@@ -1385,6 +1463,7 @@ export async function registerRoutes(
             mint,
             reason: "wallet_not_connected",
           });
+          }
         }
 
         doctorProcessedMints.set(mint, nowMs);
@@ -1405,7 +1484,13 @@ export async function registerRoutes(
       doctorDexWorkerLastPollAt = nowIso();
       await persistDoctorDexWorkerState();
 
-      if (doctorRuntime.enabled && String(doctorRuntime.wallet.address || "").trim()) {
+      const liveCredentials = await getDoctorLiveWalletCredentials();
+      const resolvedWalletAddress = String(doctorRuntime.wallet.address || liveCredentials.walletPublicKey || "").trim();
+      if (resolvedWalletAddress && !String(doctorRuntime.wallet.address || "").trim()) {
+        doctorRuntime.wallet.address = resolvedWalletAddress;
+      }
+
+      if (doctorRuntime.enabled && resolvedWalletAddress) {
         await runDoctorCycleSafely("auto");
       }
     } catch (error) {
@@ -2553,6 +2638,13 @@ export async function registerRoutes(
     if (doctorRuntime.killSwitch) {
       doctorRuntime.lastDecision = { action: "skip", reason: "kill_switch_enabled", trigger, at: nowIso() };
       return { executed: false, reason: "kill_switch_enabled", trigger };
+    }
+    if (!doctorRuntime.wallet.address) {
+      const liveCredentials = await getDoctorLiveWalletCredentials();
+      const resolvedWalletAddress = String(liveCredentials.walletPublicKey || "").trim();
+      if (resolvedWalletAddress) {
+        doctorRuntime.wallet.address = resolvedWalletAddress;
+      }
     }
     if (!doctorRuntime.wallet.address) {
       doctorRuntime.lastDecision = { action: "skip", reason: "wallet_not_connected", trigger, at: nowIso() };
@@ -4041,7 +4133,9 @@ export async function registerRoutes(
   const SOLANA_DERIVATION_PATH = "m/44'/501'/0'/0'";
   const normalizeMnemonic = (value: string) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
   const generateMnemonic = () => bip39.generateMnemonic(128);
-  const nowIso = () => new Date().toISOString();
+  function nowIso() {
+    return new Date().toISOString();
+  }
   const chainNativeSymbol = (_chain: AssistantChain) => "SOL";
 
   await loadDoctorDexWorkerState();
