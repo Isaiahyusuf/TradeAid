@@ -1206,16 +1206,18 @@ export async function registerRoutes(
     doctorDexWorkerRunning = true;
     try {
       const nowMs = Date.now();
-      const maxPairAgeSeconds = Math.max(30, Number(process.env.DOCTOR_DEX_MAX_PAIR_AGE_SECONDS || 120));
+      const turboSnipeEnabled = String(process.env.DOCTOR_DEX_TURBO || "true").trim().toLowerCase() !== "false";
+      const maxPairAgeSeconds = Math.max(30, Number(process.env.DOCTOR_DEX_MAX_PAIR_AGE_SECONDS || 240));
       const minLiquiditySol = Math.max(0.1, Number(doctorRuntime.controls.min_liquidity_sol || 2));
+      const effectiveMinLiquiditySol = turboSnipeEnabled ? Math.min(minLiquiditySol, 0.25) : minLiquiditySol;
       const configuredMaxLiquiditySol = Math.max(minLiquiditySol, Number(doctorRuntime.controls.max_liquidity_sol || 50));
-      const dexLiquidityCeilingFloor = Math.max(minLiquiditySol, Number(process.env.DOCTOR_DEX_MAX_LIQUIDITY_SOL_FLOOR || 110));
+      const dexLiquidityCeilingFloor = Math.max(minLiquiditySol, Number(process.env.DOCTOR_DEX_MAX_LIQUIDITY_SOL_FLOOR || 150));
       const maxLiquiditySol = Math.max(configuredMaxLiquiditySol, dexLiquidityCeilingFloor);
-      const minBuys5m = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_buys_5m || 3)));
+      const minBuys5m = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_buys_5m || 1)));
       const configuredMaxSells5m = Math.max(0, Math.trunc(Number(doctorRuntime.controls.max_sells_5m || 1)));
       const dexSellPressureFloor = Math.max(0, Math.trunc(Number(process.env.DOCTOR_DEX_MAX_SELLS_5M_FLOOR || 30)));
       const maxSells5m = Math.max(configuredMaxSells5m, dexSellPressureFloor);
-      const minVolumeSol = Math.max(0.1, Number(process.env.DOCTOR_DEX_MIN_VOLUME_SOL || 1));
+      const minVolumeSol = Math.max(0.02, Number(process.env.DOCTOR_DEX_MIN_VOLUME_SOL || 0.05));
       const solPriceUsd = Math.max(1, Number(process.env.DOCTOR_SOL_PRICE_USD_DEFAULT || 150));
       const processedTtlMs = Math.max(60_000, Number(process.env.DOCTOR_DEX_PROCESSED_TTL_MS || 6 * 60 * 60 * 1000));
 
@@ -1248,9 +1250,10 @@ export async function registerRoutes(
         const volume5mSol = volume5mUsd > 0 ? Number((volume5mUsd / solPriceUsd).toFixed(6)) : 0;
         const ageSeconds = Math.max(0, Math.trunc((nowMs - Number(pair?.pairCreatedAt || nowMs)) / 1000));
         const smartWalletDetected = Number(pair?.boosts?.active || 0) > 0 || (buys5m >= 6 && sells5m <= 1);
-        const validLiquidity = liquiditySol >= minLiquiditySol && liquiditySol <= maxLiquiditySol;
+        const validLiquidity = liquiditySol >= effectiveMinLiquiditySol && liquiditySol <= maxLiquiditySol;
         const strongBuyDominance = buys5m >= Math.max(minBuys5m * 2, 10) && buys5m >= Math.max(1, sells5m) * 1.5;
-        const validPressure = (buys5m >= minBuys5m && sells5m <= maxSells5m) || strongBuyDominance;
+        const turboBuyFlow = turboSnipeEnabled && buys5m >= 2 && buys5m >= Math.max(1, sells5m) * 1.2;
+        const validPressure = (buys5m >= minBuys5m && sells5m <= maxSells5m) || strongBuyDominance || turboBuyFlow;
         const validVolume = volume5mSol >= minVolumeSol;
         const failedChecks = [
           !validLiquidity ? "liquidity_window_failed" : null,
@@ -1307,7 +1310,7 @@ export async function registerRoutes(
       doctorDexWorkerTimer = null;
     }
 
-    const intervalSeconds = Math.max(5, Math.trunc(Number(process.env.DOCTOR_DEX_POLL_SECONDS || 7)));
+    const intervalSeconds = Math.max(2, Math.trunc(Number(process.env.DOCTOR_DEX_POLL_SECONDS || 3)));
     doctorDexWorkerTimer = setInterval(async () => {
       await runDoctorDexWorkerPoll();
     }, intervalSeconds * 1000);
