@@ -1097,6 +1097,7 @@ export async function registerRoutes(
   let doctorDexWorkerLastPollAt: string | null = null;
   let doctorWalletBalanceCache: { address: string; at: number; balanceSol: number } | null = null;
   const doctorProcessedMints = new Map<string, number>();
+  const doctorRejectedMints = new Map<string, number>();
   let doctorSniperLogs: Array<Record<string, any>> = [];
 
   const appendDoctorSniperLog = (entry: Record<string, any>) => {
@@ -1108,6 +1109,7 @@ export async function registerRoutes(
     try {
       const payload = {
         processed_mints: Array.from(doctorProcessedMints.entries()),
+        rejected_mints: Array.from(doctorRejectedMints.entries()),
         logs: doctorSniperLogs.slice(0, 200),
         last_poll_at: doctorDexWorkerLastPollAt,
       };
@@ -1120,17 +1122,27 @@ export async function registerRoutes(
     try {
       const payload = await storage.getAppState<Record<string, any>>(doctorDexWorkerStateKey);
       const processed = Array.isArray(payload?.processed_mints) ? payload!.processed_mints : [];
+      const rejected = Array.isArray(payload?.rejected_mints) ? payload!.rejected_mints : [];
       const logs = Array.isArray(payload?.logs) ? payload!.logs : [];
       doctorDexWorkerLastPollAt = typeof payload?.last_poll_at === "string" ? payload.last_poll_at : null;
 
       const nowMs = Date.now();
       const maxAgeMs = Math.max(60_000, Number(process.env.DOCTOR_DEX_PROCESSED_TTL_MS || 6 * 60 * 60 * 1000));
+      const rejectedRetryMs = Math.max(2_000, Number(process.env.DOCTOR_DEX_REJECTED_RETRY_MS || 20_000));
       for (const row of processed) {
         const mint = String(Array.isArray(row) ? row[0] : "").trim();
         const ts = Number(Array.isArray(row) ? row[1] : 0);
         if (!mint || !Number.isFinite(ts)) continue;
         if (nowMs - ts <= maxAgeMs) {
           doctorProcessedMints.set(mint, ts);
+        }
+      }
+      for (const row of rejected) {
+        const mint = String(Array.isArray(row) ? row[0] : "").trim();
+        const ts = Number(Array.isArray(row) ? row[1] : 0);
+        if (!mint || !Number.isFinite(ts)) continue;
+        if (nowMs - ts <= rejectedRetryMs) {
+          doctorRejectedMints.set(mint, ts);
         }
       }
       doctorSniperLogs = logs.slice(0, 200);
@@ -1207,7 +1219,7 @@ export async function registerRoutes(
     try {
       const nowMs = Date.now();
       const turboSnipeEnabled = String(process.env.DOCTOR_DEX_TURBO || "true").trim().toLowerCase() !== "false";
-      const maxPairAgeSeconds = Math.max(30, Number(process.env.DOCTOR_DEX_MAX_PAIR_AGE_SECONDS || 240));
+      const maxPairAgeSeconds = Math.max(30, Number(process.env.DOCTOR_DEX_MAX_PAIR_AGE_SECONDS || 900));
       const minLiquiditySol = Math.max(0.1, Number(doctorRuntime.controls.min_liquidity_sol || 2));
       const effectiveMinLiquiditySol = turboSnipeEnabled ? Math.min(minLiquiditySol, 0.25) : minLiquiditySol;
       const configuredMaxLiquiditySol = Math.max(minLiquiditySol, Number(doctorRuntime.controls.max_liquidity_sol || 50));
@@ -1220,10 +1232,16 @@ export async function registerRoutes(
       const minVolumeSol = Math.max(0.02, Number(process.env.DOCTOR_DEX_MIN_VOLUME_SOL || 0.05));
       const solPriceUsd = Math.max(1, Number(process.env.DOCTOR_SOL_PRICE_USD_DEFAULT || 150));
       const processedTtlMs = Math.max(60_000, Number(process.env.DOCTOR_DEX_PROCESSED_TTL_MS || 6 * 60 * 60 * 1000));
+      const rejectedRetryMs = Math.max(2_000, Number(process.env.DOCTOR_DEX_REJECTED_RETRY_MS || 20_000));
 
       for (const [mint, ts] of Array.from(doctorProcessedMints.entries())) {
         if (nowMs - ts > processedTtlMs) {
           doctorProcessedMints.delete(mint);
+        }
+      }
+      for (const [mint, ts] of Array.from(doctorRejectedMints.entries())) {
+        if (nowMs - ts > rejectedRetryMs) {
+          doctorRejectedMints.delete(mint);
         }
       }
 
@@ -1241,7 +1259,10 @@ export async function registerRoutes(
       for (const pair of freshPairs) {
         const mint = String(pair?.baseToken?.address || "").trim();
         if (!mint || doctorProcessedMints.has(mint)) continue;
-        doctorProcessedMints.set(mint, nowMs);
+        const rejectedAt = doctorRejectedMints.get(mint) || 0;
+        if (rejectedAt > 0 && nowMs - rejectedAt <= rejectedRetryMs) {
+          continue;
+        }
 
         const liquiditySol = estimateLiquiditySolFromPair(pair as Record<string, any>);
         const buys5m = Number(pair?.txns?.m5?.buys || 0);
@@ -1279,8 +1300,12 @@ export async function registerRoutes(
         });
 
         if (!isCandidate) {
+          doctorRejectedMints.set(mint, nowMs);
           continue;
         }
+
+        doctorProcessedMints.set(mint, nowMs);
+        doctorRejectedMints.delete(mint);
 
         const tokenData = pairToTokenData(pair);
         try {
