@@ -3030,7 +3030,83 @@ export async function registerRoutes(
 
     const candidatePoolNonOpen = candidatePool.filter((token) => !openAddresses.has(String(token.address || "")));
     const allowReentrySnipes = false;
-    const buyCandidate = candidatePoolNonOpen[0] || (allowReentrySnipes ? candidatePool[0] : undefined);
+
+    const getFallbackDetectedCandidate = async () => {
+      const passReason = `${activeSnipePreset}_conditions_passed`;
+      const legacyPassReason = "insider_conditions_passed";
+      const fallbackLogs = doctorSniperLogs
+        .filter((log) => String(log?.event || "") === "detected")
+        .filter((log) => {
+          const reason = String(log?.reason || "");
+          return reason === passReason || reason === legacyPassReason;
+        })
+        .slice(0, 40);
+
+      for (const log of fallbackLogs) {
+        const mint = String(log?.mint || "").trim();
+        if (!mint || openAddresses.has(mint)) continue;
+
+        const alreadyBoughtMint = doctorRuntime.recentTrades.find((trade) => {
+          return String(trade.action || "").toUpperCase() === "BUY" && String(trade.address || "") === mint;
+        });
+        if (alreadyBoughtMint) continue;
+
+        const scanned = await storage.getScannedTokenByAddress(mint);
+        if (!scanned) continue;
+
+        const createdAtIso = scanned.createdAt ? new Date(scanned.createdAt).toISOString() : nowIso();
+        const createdAtMs = new Date(createdAtIso).getTime();
+        const ageSeconds = Number.isFinite(createdAtMs) && createdAtMs > 0
+          ? Math.max(0, Math.trunc((nowMs - createdAtMs) / 1000))
+          : 0;
+
+        return {
+          symbol: String(scanned.symbol || log?.symbol || "UNKNOWN"),
+          address: mint,
+          liquidity: Number(scanned.liquidity || 0),
+          volume_5m: Number((scanned as any).volume5m || 0),
+          buy_ratio_pct: Number((scanned as any).buyRatioPct || 0),
+          buys_5m: Number((scanned as any).buys5m || log?.buys_5m || 0),
+          sells_5m: Number((scanned as any).sells5m || log?.sells_5m || 0),
+          liquidity_sol: Number((scanned as any).liquiditySol || log?.liquidity_sol || 0),
+          volume_24h: Number(scanned.volume24h || 0),
+          market_cap_usd: Number(scanned.marketCap || 0),
+          score: Number((scanned as any).score || 75),
+          price_usd: Number((scanned as any).priceUsd || 0),
+          price_change_1h: Number((scanned as any).priceChange1h || 0),
+          age_seconds: ageSeconds,
+          chain: "solana",
+          created_at: createdAtIso,
+          holders_count: Number((scanned as any).holdersCount || 0),
+          top_holder_pct: Number((scanned as any).topHoldersPercentage || 0),
+          dev_wallet_pct: Number((scanned as any).devWalletPercentage || 0),
+          launch_source: String((scanned as any).dexId || log?.source || "dexscreener"),
+          liquidity_locked: Boolean((scanned as any).isLiquidityLocked),
+          base_mint: String((scanned as any).baseMint || getDoctorTradeBaseAssetMint()),
+          risk_level: "MEDIUM",
+          source: "dexscreener_detected_signal",
+          eligible: true,
+          safety_tier: "strict",
+        };
+      }
+
+      return undefined;
+    };
+
+    let buyCandidate: Record<string, any> | undefined = candidatePoolNonOpen[0] || (allowReentrySnipes ? candidatePool[0] : undefined);
+    if (!buyCandidate) {
+      buyCandidate = await getFallbackDetectedCandidate();
+      if (buyCandidate) {
+        appendDoctorSniperLog({
+          event: "candidate_selected",
+          source: String((buyCandidate as any).source || "scanner"),
+          symbol: String((buyCandidate as any).symbol || "UNKNOWN"),
+          mint: String((buyCandidate as any).address || ""),
+          reason: "fallback_detected_signal_candidate",
+          preset: activeSnipePreset,
+        });
+      }
+    }
 
     const evaluatePreTradeGuard = async (candidate: Record<string, any> | undefined) => {
       if (!candidate) {
@@ -3386,7 +3462,27 @@ export async function registerRoutes(
     const canBuy = guard.allowed;
 
     if (buyCandidate && canBuy) {
-      const aiValidation = await evaluateDoctorAiValidation(buyCandidate);
+      const skipAiGateForDetectedSignal = String((buyCandidate as any).source || "").includes("dexscreener_detected_signal");
+      const aiValidation = skipAiGateForDetectedSignal
+        ? {
+            allowed: true,
+            reason: "ai_validation_bypassed_for_detected_signal",
+            checks: {},
+            passed_signals: 0,
+            required_signals: 0,
+            required_all_checks: false,
+            all_checks_passed: true,
+            checked_at: nowIso(),
+            age_seconds: Number((buyCandidate as any).age_seconds || 0),
+            token: {
+              symbol: String((buyCandidate as any).symbol || "UNKNOWN"),
+              address: String((buyCandidate as any).address || ""),
+            },
+            checklist_profile: { bypassed: true },
+            reasons: [],
+            turbo_ai_pass: true,
+          }
+        : await evaluateDoctorAiValidation(buyCandidate);
       if (!aiValidation.allowed) {
         appendDoctorSniperLog({
           event: "blocked",
