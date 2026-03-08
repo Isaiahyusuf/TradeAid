@@ -589,9 +589,16 @@ export default function DoctorTrade() {
                 <p className="font-medium">{Number(viewData?.wallet?.balance_sol || 0).toFixed(4)} SOL</p>
               </div>
               <div>
-                <p className="text-muted-foreground">Network</p>
-                <p className="font-medium">Solana</p>
+                <p className="text-muted-foreground">Connection</p>
+                <p className="font-medium">
+                  {viewData?.wallet?.connection_status === "connected"
+                    ? "Connected"
+                    : "Disconnected"}
+                </p>
               </div>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Private key status: {viewData?.wallet?.private_key_configured ? "Configured (persisted)" : "Not configured"}
             </div>
             <div className="flex flex-wrap gap-2">
               <Button

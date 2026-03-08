@@ -868,10 +868,13 @@ export async function registerRoutes(
   const getDoctorWalletSnapshotForUser = async (userId: string) => {
     const wallets = await getStoredDoctorWalletsByUser();
     const userWallet = wallets[userId] as Record<string, any> | undefined;
+    const hasEncryptedPrivateKey = Boolean(String(userWallet?.livePrivateKey || "").trim());
     return {
       address: String(userWallet?.address || "").trim(),
       balanceSol: Math.max(0, Number(userWallet?.balanceSol || 0)),
       separateWalletEnforced: userWallet?.separateWalletEnforced !== false,
+      privateKeyConfigured: hasEncryptedPrivateKey,
+      connected: Boolean(String(userWallet?.address || "").trim()) && hasEncryptedPrivateKey,
     };
   };
 
@@ -3144,7 +3147,7 @@ export async function registerRoutes(
     return { executed: true, trigger, buys: buyCount, sells: sellCount };
   };
 
-  const buildDoctorStatus = async () => {
+  const buildDoctorStatus = async (userId?: string) => {
     await refreshDoctorWalletBalanceFromChain();
     const earlyTokens = await getSolanaEarlyScoredTokens(120, 220);
     const activeTokens = await getDoctorActiveTokens();
@@ -3158,6 +3161,20 @@ export async function registerRoutes(
       isDoctorLiveTradingEnabled() &&
       Boolean(String(liveCredentials.walletPublicKey || "").trim()) &&
       Boolean(String(liveCredentials.walletPrivateKey || "").trim());
+
+    const statusUserId = String(userId || doctorRuntime.ownerUserId || "").trim();
+    const walletSnapshot = statusUserId
+      ? await getDoctorWalletSnapshotForUser(statusUserId)
+      : {
+          address: String(doctorRuntime.wallet.address || "").trim(),
+          balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0)),
+          separateWalletEnforced: doctorRuntime.wallet.separateWalletEnforced !== false,
+          privateKeyConfigured: false,
+          connected: false,
+        };
+
+    const walletAddress = String(walletSnapshot.address || doctorRuntime.wallet.address || "").trim();
+    const walletConnected = Boolean(walletAddress) && Boolean(walletSnapshot.privateKeyConfigured);
 
     return {
       enabled: doctorRuntime.enabled,
@@ -3183,13 +3200,15 @@ export async function registerRoutes(
               : null)),
       },
       wallet: {
-        address: doctorRuntime.wallet.address,
-        balance_sol: doctorRuntime.wallet.balanceSol,
-        separate_wallet_enforced: doctorRuntime.wallet.separateWalletEnforced,
+        address: walletAddress,
+        balance_sol: walletSnapshot.balanceSol,
+        separate_wallet_enforced: walletSnapshot.separateWalletEnforced,
+        private_key_configured: Boolean(walletSnapshot.privateKeyConfigured),
+        connection_status: walletConnected ? "connected" : "disconnected",
       },
       trade_controls: {
         ...doctorRuntime.controls,
-        wallet_connected: Boolean(doctorRuntime.wallet.address),
+        wallet_connected: walletConnected,
       },
       execution: {
         mode: doctorRuntime.execution.mode,
@@ -3272,7 +3291,7 @@ export async function registerRoutes(
       await loadDoctorWalletForUser(userId);
       await refreshDoctorWalletBalanceFromChain(undefined, true);
     }
-    const status = await buildDoctorStatus();
+    const status = await buildDoctorStatus(userId);
     if (ownerAccess) {
       await saveDoctorWalletForUser(userId);
     }
@@ -3281,9 +3300,11 @@ export async function registerRoutes(
         address: userWallet.address,
         balance_sol: userWallet.balanceSol,
         separate_wallet_enforced: userWallet.separateWalletEnforced,
+        private_key_configured: userWallet.privateKeyConfigured,
+        connection_status: userWallet.connected ? "connected" : "disconnected",
       };
       if (status.trade_controls) {
-        status.trade_controls.wallet_connected = Boolean(userWallet.address);
+        status.trade_controls.wallet_connected = Boolean(userWallet.connected);
       }
       status.enabled = false;
       status.last_decision = {

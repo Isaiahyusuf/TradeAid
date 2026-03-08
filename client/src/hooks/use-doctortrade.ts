@@ -72,6 +72,8 @@ export type DoctorStatus = {
     address: string;
     balance_sol: number;
     separate_wallet_enforced: boolean;
+    private_key_configured?: boolean;
+    connection_status?: "connected" | "disconnected" | string;
   };
   execution?: {
     mode?: "paper" | "live" | string;
