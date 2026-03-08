@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy } from "lucide-react";
+import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy, BookOpen } from "lucide-react";
 import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDisconnectWallet, useDoctorHealth, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -566,6 +566,61 @@ export default function DoctorTrade() {
             <span>{isLoading ? "Loading DoctorTrade..." : isFetching ? "Updating live data..." : "Live sync active"}</span>
             <span>Last sync: {lastSyncLabel}</span>
           </div>
+        </Card>
+
+        <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60 space-y-3">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-primary" />
+            <p className="text-sm font-semibold">DoctorTrade Manual (In-App)</p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Quick step-by-step guide for setup, wallet connection, execution, and troubleshooting.
+          </p>
+
+          <details className="rounded-md border border-border/60 bg-muted/20 p-3">
+            <summary className="cursor-pointer text-sm font-medium">1) Connect wallet correctly</summary>
+            <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
+              <li>Use <span className="font-medium text-foreground">Connect Existing Wallet</span> or paste private key under Manual Private Key Import.</li>
+              <li>After connect, verify <span className="font-medium text-foreground">Connection = Connected</span>.</li>
+              <li>Private key is encrypted and persisted until you disconnect or replace it.</li>
+            </ul>
+          </details>
+
+          <details className="rounded-md border border-border/60 bg-muted/20 p-3">
+            <summary className="cursor-pointer text-sm font-medium">2) Configure risk controls</summary>
+            <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
+              <li>Pick a preset (Conservative, Balanced, Aggressive, Insider Default).</li>
+              <li>Adjust buy size, slippage, daily loss, hold time, and trade limits.</li>
+              <li>Click <span className="font-medium text-foreground">Save Settings</span> before starting DoctorTrade.</li>
+            </ul>
+          </details>
+
+          <details className="rounded-md border border-border/60 bg-muted/20 p-3">
+            <summary className="cursor-pointer text-sm font-medium">3) Start and monitor</summary>
+            <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
+              <li>Click <span className="font-medium text-foreground">Start DoctorTrade</span> to enable autonomous cycles.</li>
+              <li>Use <span className="font-medium text-foreground">Run Cycle</span> for an immediate evaluation pass.</li>
+              <li>Use <span className="font-medium text-foreground">Refresh Data</span> to pull latest status and logs.</li>
+            </ul>
+          </details>
+
+          <details className="rounded-md border border-border/60 bg-muted/20 p-3">
+            <summary className="cursor-pointer text-sm font-medium">4) Understand sniper rejections</summary>
+            <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
+              <li>If reason is <span className="font-medium text-foreground">insider_conditions_failed</span>, check <span className="font-medium text-foreground">failed_checks</span> in sniper logs.</li>
+              <li>Typical checks: liquidity window, buy/sell pressure, and 5m volume.</li>
+              <li>Tune settings gradually; avoid over-loosening risk controls.</li>
+            </ul>
+          </details>
+
+          <details className="rounded-md border border-border/60 bg-muted/20 p-3">
+            <summary className="cursor-pointer text-sm font-medium">5) Direct Buy behavior</summary>
+            <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
+              <li>Direct Buy opens Wallet swap with token contract prefilled.</li>
+              <li>Enter SOL amount and review estimated token output.</li>
+              <li>Submit swap from wallet flow.</li>
+            </ul>
+          </details>
         </Card>
 
         <SettingsMenuCard
