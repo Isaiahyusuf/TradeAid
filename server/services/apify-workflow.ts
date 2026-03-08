@@ -209,6 +209,12 @@ export function startApifyWorkflowScheduler(intervalMs: number = 5 * 60 * 1000):
     return;
   }
 
+  const apifyToken = String(process.env.APIFY_TOKEN || "").trim();
+  if (!apifyToken) {
+    logStructured("warn", "apify.workflow.disabled_missing_token", {});
+    return;
+  }
+
   const enabledRaw = String(process.env.APIFY_WORKFLOW_ENABLED || "true").trim().toLowerCase();
   if (["false", "0", "no", "off"].includes(enabledRaw)) {
     logStructured("warn", "apify.workflow.disabled", {});
