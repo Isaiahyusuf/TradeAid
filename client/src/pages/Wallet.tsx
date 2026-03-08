@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownLeft, ArrowUpRight, Bot, CheckCircle2, Copy, History, KeyRound, Settings2, Shield, Trash2, Wallet as WalletIcon } from "lucide-react";
 
 import { Layout } from "@/components/Layout";
@@ -133,8 +133,17 @@ export default function WalletPage() {
   const [swapMode, setSwapMode] = useState<"paper" | "live">("live");
 
   const [exportedKey, setExportedKey] = useState<{ chain: string; address: string; private_key: string; warning: string } | null>(null);
+  const walletSettingsScrollRef = useRef<HTMLDivElement | null>(null);
 
   const [latestBundle, setLatestBundle] = useState<{ mnemonic?: string; addresses_by_chain: Record<string, string>; private_keys_by_chain?: Record<string, string>; warning: string; } | null>(null);
+
+  const scrollWalletSettingsTo = (sectionId: string) => {
+    const container = walletSettingsScrollRef.current;
+    if (!container) return;
+    const target = container.querySelector<HTMLElement>(`[data-settings-section="${sectionId}"]`);
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   useEffect(() => {
     if (trading?.mode === "paper" || trading?.mode === "live") {
@@ -1091,28 +1100,73 @@ export default function WalletPage() {
         </Sheet>
 
         <Sheet open={walletSettingsOpen} onOpenChange={setWalletSettingsOpen}>
-          <SheetContent side="right" className="sm:max-w-md">
+          <SheetContent side="right" className="sm:max-w-md overflow-hidden">
             <SheetHeader>
               <SheetTitle>Wallet Settings</SheetTitle>
-              <SheetDescription>Manage private key export and wallet removal for one chain.</SheetDescription>
+              <SheetDescription>Manage wallet actions and DoctorTrade controls in one panel.</SheetDescription>
             </SheetHeader>
-            <div className="space-y-3 mt-4">
-              <Label>Chain</Label>
-              <select value={settingsChain} onChange={(e) => setSettingsChain(e.target.value as SupportedWalletChain)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
-                {enabledChains.map((chainName) => <option key={chainName} value={chainName}>{chainName}</option>)}
-              </select>
+            <div className="mt-4 space-y-3 h-[calc(100vh-10rem)] flex flex-col">
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                <Button size="sm" variant="outline" onClick={() => scrollWalletSettingsTo("wallet-actions")}>Wallet Actions</Button>
+                <Button size="sm" variant="outline" onClick={() => scrollWalletSettingsTo("doctortrade")}>DoctorTrade</Button>
+              </div>
 
-              <Button variant="outline" onClick={() => { setWalletSettingsOpen(false); handleOpenExportKey(settingsChain); }}>
-                <KeyRound className="w-4 h-4 mr-2" /> Export Private Key
-              </Button>
+              <div ref={walletSettingsScrollRef} className="space-y-4 overflow-y-auto pr-1 flex-1">
+                <div data-settings-section="wallet-actions" className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-3">
+                  <p className="text-sm font-semibold">Wallet Actions</p>
+                  <div>
+                    <Label>Chain</Label>
+                    <select value={settingsChain} onChange={(e) => setSettingsChain(e.target.value as SupportedWalletChain)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm mt-1">
+                      {enabledChains.map((chainName) => <option key={chainName} value={chainName}>{chainName}</option>)}
+                    </select>
+                  </div>
 
-              <Button variant="outline" onClick={() => handleRemoveWalletChain(settingsChain)} disabled={removeWalletChain.isPending || !addressesByChain[settingsChain]}>
-                <Trash2 className="w-4 h-4 mr-2" /> Remove Wallet
-              </Button>
+                  <Button variant="outline" onClick={() => { setWalletSettingsOpen(false); handleOpenExportKey(settingsChain); }}>
+                    <KeyRound className="w-4 h-4 mr-2" /> Export Private Key
+                  </Button>
 
-              <Button variant="destructive" onClick={handleDeleteWholeWallet} disabled={deleteWallet.isPending || !wallet?.has_wallet}>
-                <Trash2 className="w-4 h-4 mr-2" /> {deleteWallet.isPending ? "Deleting..." : "Delete Entire Wallet"}
-              </Button>
+                  <Button variant="outline" onClick={() => handleRemoveWalletChain(settingsChain)} disabled={removeWalletChain.isPending || !addressesByChain[settingsChain]}>
+                    <Trash2 className="w-4 h-4 mr-2" /> Remove Wallet
+                  </Button>
+
+                  <Button variant="destructive" onClick={handleDeleteWholeWallet} disabled={deleteWallet.isPending || !wallet?.has_wallet}>
+                    <Trash2 className="w-4 h-4 mr-2" /> {deleteWallet.isPending ? "Deleting..." : "Delete Entire Wallet"}
+                  </Button>
+                </div>
+
+                <div data-settings-section="doctortrade" className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-3">
+                  <p className="text-sm font-semibold text-primary">DoctorTrade Settings</p>
+                  <p className="text-xs text-muted-foreground">Tune DoctorTrade risk controls directly from Wallet.</p>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={() => applyDoctorPreset("conservative")}>Conservative</Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => applyDoctorPreset("balanced")}>Balanced</Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => applyDoctorPreset("aggressive")}>Aggressive</Button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <Input placeholder="Buy SOL" value={buyAmountInput} onChange={(e) => setBuyAmountInput(e.target.value)} />
+                    <Input placeholder="Trades/24h" value={maxTradesInput} onChange={(e) => setMaxTradesInput(e.target.value)} />
+                    <Input placeholder="TP Multiplier" value={tpMultInput} onChange={(e) => setTpMultInput(e.target.value)} />
+                    <Input placeholder="Min Profit %" value={minProfitInput} onChange={(e) => setMinProfitInput(e.target.value)} />
+                    <Input placeholder="Stop Loss %" value={stopLossInput} onChange={(e) => setStopLossInput(e.target.value)} />
+                    <Input placeholder="Trailing Stop %" value={trailInput} onChange={(e) => setTrailInput(e.target.value)} />
+                    <Input placeholder="Min Liquidity USD" value={minLiquidityInput} onChange={(e) => setMinLiquidityInput(e.target.value)} />
+                    <Input placeholder="Max Slippage %" value={maxSlippageInput} onChange={(e) => setMaxSlippageInput(e.target.value)} />
+                    <Input placeholder="Max Spread %" value={maxSpreadInput} onChange={(e) => setMaxSpreadInput(e.target.value)} />
+                    <Input placeholder="Daily Loss Limit $" value={dailyLossInput} onChange={(e) => setDailyLossInput(e.target.value)} />
+                    <Input placeholder="Max Consecutive Losses" value={maxConsecutiveLossesInput} onChange={(e) => setMaxConsecutiveLossesInput(e.target.value)} />
+                    <Input placeholder="Live Sell Fraction %" value={liveSellFractionInput} onChange={(e) => setLiveSellFractionInput(e.target.value)} />
+                    <Input placeholder="Max Sell Notional $" value={maxSellNotionalInput} onChange={(e) => setMaxSellNotionalInput(e.target.value)} />
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button type="button" variant="outline" onClick={saveAssistantDoctorSettings} disabled={doctorConfigMutation.isPending}>
+                      {doctorConfigMutation.isPending ? "Saving..." : "Save DoctorTrade Settings"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </div>
           </SheetContent>
         </Sheet>

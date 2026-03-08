@@ -568,16 +568,17 @@ export default function DoctorTrade() {
           </div>
         </Card>
 
-        <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60 space-y-3">
+        <Card className="p-4 bg-gradient-to-br from-primary/10 via-card/80 to-accent/10 backdrop-blur-sm border-primary/30 shadow-[0_0_20px_rgba(99,102,241,0.15)] space-y-3 animate-in fade-in-0">
           <div className="flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-primary" />
-            <p className="text-sm font-semibold">DoctorTrade Manual (In-App)</p>
+            <BookOpen className="w-4 h-4 text-primary animate-pulse" />
+            <p className="text-sm font-semibold text-primary">DoctorTrade Manual (In-App)</p>
+            <Badge variant="outline" className="ml-auto border-primary/40 text-primary">Quick Guide</Badge>
           </div>
           <p className="text-xs text-muted-foreground">
             Quick step-by-step guide for setup, wallet connection, execution, and troubleshooting.
           </p>
 
-          <details className="rounded-md border border-border/60 bg-muted/20 p-3">
+          <details className="group rounded-md border border-primary/25 bg-background/60 p-3 hover:border-primary/45 transition-colors">
             <summary className="cursor-pointer text-sm font-medium">1) Connect wallet correctly</summary>
             <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
               <li>Use <span className="font-medium text-foreground">Connect Existing Wallet</span> or paste private key under Manual Private Key Import.</li>
@@ -586,7 +587,7 @@ export default function DoctorTrade() {
             </ul>
           </details>
 
-          <details className="rounded-md border border-border/60 bg-muted/20 p-3">
+          <details className="group rounded-md border border-accent/25 bg-background/60 p-3 hover:border-accent/45 transition-colors">
             <summary className="cursor-pointer text-sm font-medium">2) Configure risk controls</summary>
             <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
               <li>Pick a preset (Conservative, Balanced, Aggressive, Insider Default).</li>
@@ -595,7 +596,7 @@ export default function DoctorTrade() {
             </ul>
           </details>
 
-          <details className="rounded-md border border-border/60 bg-muted/20 p-3">
+          <details className="group rounded-md border border-primary/25 bg-background/60 p-3 hover:border-primary/45 transition-colors">
             <summary className="cursor-pointer text-sm font-medium">3) Start and monitor</summary>
             <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
               <li>Click <span className="font-medium text-foreground">Start DoctorTrade</span> to enable autonomous cycles.</li>
@@ -604,7 +605,7 @@ export default function DoctorTrade() {
             </ul>
           </details>
 
-          <details className="rounded-md border border-border/60 bg-muted/20 p-3">
+          <details className="group rounded-md border border-accent/25 bg-background/60 p-3 hover:border-accent/45 transition-colors">
             <summary className="cursor-pointer text-sm font-medium">4) Understand sniper rejections</summary>
             <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
               <li>If reason is <span className="font-medium text-foreground">insider_conditions_failed</span>, check <span className="font-medium text-foreground">failed_checks</span> in sniper logs.</li>
@@ -613,7 +614,7 @@ export default function DoctorTrade() {
             </ul>
           </details>
 
-          <details className="rounded-md border border-border/60 bg-muted/20 p-3">
+          <details className="group rounded-md border border-primary/25 bg-background/60 p-3 hover:border-primary/45 transition-colors">
             <summary className="cursor-pointer text-sm font-medium">5) Direct Buy behavior</summary>
             <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
               <li>Direct Buy opens Wallet swap with token contract prefilled.</li>
