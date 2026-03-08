@@ -25,6 +25,7 @@ function fmtTs(value?: string) {
 }
 
 const DOCTOR_SETTINGS_LOCAL_KEY = "doctortrade.settings.local.v1";
+type SnipePreset = "conservative" | "balanced" | "aggressive" | "insider" | "custom";
 
 export default function DoctorTrade() {
     // Only show new launches on Solana (created within 24h and chain is solana)
@@ -61,6 +62,7 @@ export default function DoctorTrade() {
   const [liveSellFractionInput, setLiveSellFractionInput] = useState("50");
   const [maxSellNotionalInput, setMaxSellNotionalInput] = useState("300");
   const [presetMode, setPresetMode] = useState<"default" | "custom">("default");
+  const [selectedSnipePreset, setSelectedSnipePreset] = useState<SnipePreset>("insider");
   const [privateKeyInput, setPrivateKeyInput] = useState("");
   const hydratedFromLocalRef = useRef(false);
   const hydratedFromServerRef = useRef(false);
@@ -96,6 +98,15 @@ export default function DoctorTrade() {
   const autoBuyChain = String(searchParams.get("chain") || "solana").trim().toLowerCase();
   const [autoBuyHandled, setAutoBuyHandled] = useState(false);
 
+  const normalizePreset = (value: unknown): SnipePreset => {
+    const preset = String(value || "").trim().toLowerCase();
+    if (preset === "conservative") return "conservative";
+    if (preset === "balanced") return "balanced";
+    if (preset === "aggressive" || preset === "agressive") return "aggressive";
+    if (preset === "custom") return "custom";
+    return "insider";
+  };
+
   const hydrateSettingsInputs = (controls: Record<string, any>) => {
     setIntervalInput(String(controls.scan_interval_seconds ?? 20));
     setBuyAmountInput(String(controls.buy_amount_sol ?? 0.1));
@@ -117,6 +128,9 @@ export default function DoctorTrade() {
     setGasPriorityInput(String(controls.gas_priority_lamports ?? 0));
     setLiveSellFractionInput(String(controls.live_sell_fraction_pct ?? 50));
     setMaxSellNotionalInput(String(controls.max_sell_notional_usd ?? 300));
+    const preset = normalizePreset(controls.snipe_preset);
+    setSelectedSnipePreset(preset);
+    setPresetMode(preset === "custom" ? "custom" : "default");
   };
 
   const persistSettingsLocalBackup = (payload: Record<string, any>) => {
@@ -271,6 +285,7 @@ export default function DoctorTrade() {
         gas_priority_lamports: gasPriorityLamports,
         live_sell_fraction_pct: liveSellFractionPct,
         max_sell_notional_usd: maxSellNotionalUsd,
+        snipe_preset: selectedSnipePreset,
       },
       {
         onSuccess: () => {
@@ -295,6 +310,7 @@ export default function DoctorTrade() {
             gas_priority_lamports: gasPriorityLamports,
             live_sell_fraction_pct: liveSellFractionPct,
             max_sell_notional_usd: maxSellNotionalUsd,
+            snipe_preset: selectedSnipePreset,
             wallet_address: String(viewData?.wallet?.address || ""),
           });
           setSettingsOpen(false);
@@ -311,7 +327,9 @@ export default function DoctorTrade() {
     );
   };
 
-  const applyPreset = (preset: "conservative" | "balanced" | "aggressive" | "insider_default") => {
+  const applyPreset = (preset: Exclude<SnipePreset, "custom">) => {
+    setSelectedSnipePreset(preset);
+    setPresetMode("default");
     if (preset === "conservative") {
       setBuyAmountInput("0.1");
       setMaxTradesInput("6");
@@ -372,7 +390,7 @@ export default function DoctorTrade() {
       setLiveSellFractionInput("75");
       setMaxSellNotionalInput("650");
     }
-    if (preset === "insider_default") {
+    if (preset === "insider") {
       setBuyAmountInput("0.3");
       setMaxTradesInput("20");
       setTpMultInput("2.0");
@@ -617,7 +635,7 @@ export default function DoctorTrade() {
           <details className="group rounded-md border border-accent/25 bg-background/60 p-3 hover:border-accent/45 transition-colors">
             <summary className="cursor-pointer text-sm font-medium">4) Understand sniper rejections</summary>
             <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
-              <li>If reason is <span className="font-medium text-foreground">insider_conditions_failed</span>, check <span className="font-medium text-foreground">failed_checks</span> in sniper logs.</li>
+              <li>If reason ends with <span className="font-medium text-foreground">_conditions_failed</span>, check <span className="font-medium text-foreground">failed_checks</span> in sniper logs.</li>
               <li>Typical checks: liquidity window, buy/sell pressure, and 5m volume.</li>
               <li>Tune settings gradually; avoid over-loosening risk controls.</li>
             </ul>
@@ -718,16 +736,18 @@ export default function DoctorTrade() {
               variant={presetMode === "default" ? "default" : "outline"}
               size="sm"
               onClick={() => {
-                setPresetMode("default");
-                applyPreset("insider_default");
+                applyPreset("insider");
               }}
             >
-              Insider Default
+              Insider
             </Button>
             <Button
               variant={presetMode === "custom" ? "default" : "outline"}
               size="sm"
-              onClick={() => setPresetMode("custom")}
+              onClick={() => {
+                setPresetMode("custom");
+                setSelectedSnipePreset("custom");
+              }}
             >
               Custom
             </Button>
@@ -981,6 +1001,12 @@ export default function DoctorTrade() {
                       <Badge variant="outline" className="text-[10px]">{String(row?.event || "-")}</Badge>
                     </div>
                     <p className="text-[11px] text-muted-foreground truncate">{row?.reason || "-"}</p>
+                    <p className="text-[11px] text-muted-foreground">Preset: {String(row?.preset || viewData?.trade_controls?.snipe_preset || "insider")}</p>
+                    {(Number(row?.required_sol || 0) > 0 || Number(row?.available_sol || 0) > 0) && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Need {Number(row?.required_sol || 0).toFixed(4)} SOL · Have {Number(row?.available_sol || 0).toFixed(4)} SOL
+                      </p>
+                    )}
                     <p className="text-[11px] text-muted-foreground">{fmtTs(row?.at)}</p>
                   </div>
                 ))}

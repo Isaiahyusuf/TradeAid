@@ -731,6 +731,7 @@ export async function registerRoutes(
       separateWalletEnforced: true,
     },
     controls: {
+      snipe_preset: "insider",
       max_trades_per_day: 20,
       trades_today: 0,
       max_open_positions: 3,
@@ -1197,6 +1198,19 @@ export async function registerRoutes(
     return String(process.env.DOCTOR_DEX_TURBO || "true").trim().toLowerCase() !== "false";
   };
 
+  const normalizeDoctorSnipePreset = (value: unknown) => {
+    const preset = String(value || "").trim().toLowerCase();
+    if (preset === "conservative") return "conservative" as const;
+    if (preset === "balanced") return "balanced" as const;
+    if (preset === "aggressive" || preset === "agressive") return "aggressive" as const;
+    if (preset === "custom") return "custom" as const;
+    return "insider" as const;
+  };
+
+  const getDoctorActiveSnipePreset = () => {
+    return normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
+  };
+
   const ensureDoctorLiveExecutionModeIfCapable = async () => {
     const { walletPublicKey, walletPrivateKey } = await getDoctorLiveWalletCredentials();
     const liveCapable = isDoctorLiveTradingEnabled() && Boolean(walletPublicKey) && Boolean(walletPrivateKey);
@@ -1289,6 +1303,10 @@ export async function registerRoutes(
             (doctorRuntime.controls as any)[key] = Number(controls[key]);
           }
         }
+
+        if (typeof controls.snipe_preset === "string") {
+          (doctorRuntime.controls as any).snipe_preset = normalizeDoctorSnipePreset(controls.snipe_preset);
+        }
       }
 
       if (Array.isArray(loaded.recentTrades)) {
@@ -1322,6 +1340,7 @@ export async function registerRoutes(
       doctorRuntime.controls.min_token_age_minutes = Math.max(0, Number(doctorRuntime.controls.min_token_age_minutes || 0));
       doctorRuntime.controls.max_token_age_minutes = Math.min(10, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
       doctorRuntime.controls.max_token_age_seconds = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
+      (doctorRuntime.controls as any).snipe_preset = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
       if (isDoctorDexTurboEnabled() && doctorRuntime.controls.max_token_age_seconds < 120) {
         doctorRuntime.controls.max_token_age_seconds = 120;
       }
@@ -1348,7 +1367,11 @@ export async function registerRoutes(
   let doctorSniperLogs: Array<Record<string, any>> = [];
 
   const appendDoctorSniperLog = (entry: Record<string, any>) => {
-    doctorSniperLogs.unshift({ at: nowIso(), ...entry });
+    doctorSniperLogs.unshift({
+      at: nowIso(),
+      preset: getDoctorActiveSnipePreset(),
+      ...entry,
+    });
     doctorSniperLogs = doctorSniperLogs.slice(0, 200);
   };
 
@@ -1468,7 +1491,7 @@ export async function registerRoutes(
 
       const nowMs = Date.now();
       const turboSnipeEnabled = String(process.env.DOCTOR_DEX_TURBO || "true").trim().toLowerCase() !== "false";
-      const enforceInsiderGate = String(process.env.DOCTOR_DEX_ENFORCE_INSIDER_GATE || "false").trim().toLowerCase() === "true";
+      const activeSnipePreset = getDoctorActiveSnipePreset();
       const maxPairAgeSeconds = Math.max(30, Number(process.env.DOCTOR_DEX_MAX_PAIR_AGE_SECONDS || 900));
       const minLiquiditySol = Math.max(0, Number(doctorRuntime.controls.min_liquidity_sol || 0.05));
       const effectiveMinLiquiditySol = turboSnipeEnabled ? 0 : minLiquiditySol;
@@ -1527,7 +1550,9 @@ export async function registerRoutes(
           !validPressure ? "buy_sell_pressure_failed" : null,
           !validVolume ? "volume_5m_failed" : null,
         ].filter(Boolean) as string[];
-        const isCandidate = enforceInsiderGate ? (validLiquidity && validPressure && validVolume) : true;
+        const isCandidate = validLiquidity && validPressure && validVolume;
+        const passReason = `${activeSnipePreset}_conditions_passed`;
+        const failReason = `${activeSnipePreset}_conditions_failed`;
 
         appendDoctorSniperLog({
           event: isCandidate ? "detected" : "rejected",
@@ -1541,8 +1566,9 @@ export async function registerRoutes(
           sells_5m: sells5m,
           volume_5m_sol: volume5mSol,
           smart_wallet_detected: smartWalletDetected,
-          reason: isCandidate ? "insider_conditions_passed" : "insider_conditions_failed",
+          reason: isCandidate ? passReason : failReason,
           failed_checks: failedChecks,
+          preset: activeSnipePreset,
         });
 
         if (!isCandidate) {
@@ -2944,6 +2970,7 @@ export async function registerRoutes(
     const cooldownMinutes = Math.max(0, Number(doctorRuntime.controls.cooldown_minutes_per_mint || 0));
     const feeBufferSol = Math.max(0, Number(doctorRuntime.controls.min_wallet_fee_buffer_sol || 0));
     const buyAmountSol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
+    const activeSnipePreset = getDoctorActiveSnipePreset();
     const maxLiquidityUsd = Math.max(1, Number(doctorRuntime.controls.max_liquidity_usd || 500000));
     const maxTokenAgeSeconds = Math.max(60, Math.min(10, Math.trunc(Number(doctorRuntime.controls.max_token_age_minutes || 10))) * 60);
     const strictMaxTokenAgeSecondsRaw = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
@@ -3054,8 +3081,18 @@ export async function registerRoutes(
       const baseAssetMint = getDoctorTradeBaseAssetMint();
       if (baseAssetMint === "So11111111111111111111111111111111111111112") {
         const availableSol = Number(doctorRuntime.wallet.balanceSol || 0);
-        if (availableSol < buyAmountSol + feeBufferSol) {
-          return { allowed: false, reason: "insufficient_sol_add_funds" };
+        const gasPriorityLamports = Math.max(0, Math.trunc(Number(doctorRuntime.controls.gas_priority_lamports || 0)));
+        const baseSwapFeeLamports = Math.max(5000, Math.trunc(Number(process.env.DOCTOR_SWAP_BASE_FEE_LAMPORTS || 15000)));
+        const estimatedSwapFeeSol = Number(((gasPriorityLamports + baseSwapFeeLamports) / 1_000_000_000).toFixed(6));
+        const requiredSol = Number((buyAmountSol + feeBufferSol + estimatedSwapFeeSol).toFixed(6));
+        if (availableSol < requiredSol) {
+          return {
+            allowed: false,
+            reason: "insufficient_sol_for_swap_fees",
+            available_sol: availableSol,
+            required_sol: requiredSol,
+            estimated_fee_sol: estimatedSwapFeeSol,
+          };
         }
 
         const maxWalletAllocationPct = Math.max(1, Number(doctorRuntime.controls.max_wallet_allocation_pct || 10));
@@ -3496,15 +3533,25 @@ export async function registerRoutes(
           symbol: String((buyCandidate as any).symbol || "UNKNOWN"),
           mint: String((buyCandidate as any).address || ""),
           reason: guard.reason,
+          preset: activeSnipePreset,
+          available_sol: Number((guard as any).available_sol || 0),
+          required_sol: Number((guard as any).required_sol || 0),
+          estimated_fee_sol: Number((guard as any).estimated_fee_sol || 0),
         });
-        if (guard.reason === "insufficient_sol_add_funds") {
-          doctorRuntime.lastError = "Insufficient SOL for snipes. Add SOL to your connected wallet.";
+        if (guard.reason === "insufficient_sol_for_swap_fees") {
+          const available = Number((guard as any).available_sol || 0);
+          const required = Number((guard as any).required_sol || 0);
+          doctorRuntime.lastError = `Insufficient SOL to cover buy + swap fees. Need ${required.toFixed(4)} SOL, have ${available.toFixed(4)} SOL.`;
           appendDoctorSniperLog({
             event: "notify",
             source: String((buyCandidate as any).source || "scanner"),
             symbol: String((buyCandidate as any).symbol || "UNKNOWN"),
             mint: String((buyCandidate as any).address || ""),
-            reason: "add_sol_for_snipes",
+            reason: "no_enough_sol_to_cover_fees",
+            preset: activeSnipePreset,
+            available_sol: available,
+            required_sol: required,
+            estimated_fee_sol: Number((guard as any).estimated_fee_sol || 0),
           });
         } else if (guard.reason === "wallet_key_not_connected") {
           doctorRuntime.lastError = "Connect wallet private key before live sniping.";
@@ -3636,7 +3683,7 @@ export async function registerRoutes(
       },
       last_decision: doctorRuntime.lastDecision,
       tuning_suggestion: activeTokens.length < 5 ? "Lower minimum liquidity or widen scanner scope to increase candidates." : null,
-      strategy_mode: "balanced",
+      strategy_mode: getDoctorActiveSnipePreset(),
       safety: {
         api_error_count: doctorRuntime.lastError ? 1 : 0,
         paused: safetyPaused,
@@ -3783,6 +3830,9 @@ export async function registerRoutes(
     if (typeof payload.execution_mode === "string") {
       doctorRuntime.execution.mode = "live";
     }
+    if (typeof payload.snipe_preset === "string") {
+      (doctorRuntime.controls as any).snipe_preset = normalizeDoctorSnipePreset(payload.snipe_preset);
+    }
     if (typeof payload.kill_switch === "boolean") {
       doctorRuntime.killSwitch = payload.kill_switch;
       if (doctorRuntime.killSwitch) {
@@ -3846,6 +3896,7 @@ export async function registerRoutes(
 
     doctorRuntime.controls.buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     doctorRuntime.controls.min_buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
+    (doctorRuntime.controls as any).snipe_preset = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
     doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
     doctorRuntime.controls.min_token_age_minutes = Math.max(0, Number(doctorRuntime.controls.min_token_age_minutes || 0));
     doctorRuntime.controls.max_token_age_minutes = Math.min(10, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));

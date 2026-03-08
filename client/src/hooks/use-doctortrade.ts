@@ -97,6 +97,10 @@ export type DoctorStatus = {
     symbol?: string;
     mint?: string;
     reason?: string;
+    preset?: string;
+    available_sol?: number;
+    required_sol?: number;
+    estimated_fee_sol?: number;
   }>;
   trade_controls?: {
     max_trades_per_day: number;
@@ -125,6 +129,7 @@ export type DoctorStatus = {
     gas_priority_lamports?: number;
     live_sell_fraction_pct?: number;
     max_sell_notional_usd?: number;
+    snipe_preset?: "conservative" | "balanced" | "aggressive" | "insider" | "custom" | string;
     wallet_connected: boolean;
   };
   active_tokens: DoctorToken[];
@@ -222,6 +227,7 @@ export function useDoctorConfig() {
       gas_priority_lamports?: number;
       live_sell_fraction_pct?: number;
       max_sell_notional_usd?: number;
+      snipe_preset?: "conservative" | "balanced" | "aggressive" | "insider" | "custom" | string;
     }) => apiPost<DoctorStatus>("/api/doctor/config", payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade"] }),
   });
