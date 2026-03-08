@@ -1235,8 +1235,15 @@ export async function registerRoutes(
     await setStoredDoctorWalletsByUser(wallets);
   };
 
+  const claimDoctorOwnerIfUnowned = (userId: string) => {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return;
+    if (!String(doctorRuntime.ownerUserId || "").trim()) {
+      doctorRuntime.ownerUserId = normalizedUserId;
+    }
+  };
+
   const isDoctorOwner = (userId: string) => {
-    if (isDoctorMultiUserMode()) return true;
     if (!doctorRuntime.ownerUserId) return true;
     return doctorRuntime.ownerUserId === userId;
   };
@@ -3825,9 +3832,6 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    if (isDoctorMultiUserMode()) {
-      doctorRuntime.ownerUserId = userId;
-    }
     const ownerAccess = isDoctorOwner(userId);
     const userWallet = await getDoctorWalletSnapshotForUser(userId);
     if (ownerAccess) {
@@ -3864,9 +3868,7 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    if (isDoctorMultiUserMode()) {
-      doctorRuntime.ownerUserId = userId;
-    }
+    claimDoctorOwnerIfUnowned(userId);
     const requestedEnable = Boolean(req.body?.enabled);
     if (!isDoctorOwner(userId)) {
       const canTakeOverOwnership = requestedEnable && !doctorRuntime.enabled;
@@ -3914,9 +3916,7 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    if (isDoctorMultiUserMode()) {
-      doctorRuntime.ownerUserId = userId;
-    }
+    claimDoctorOwnerIfUnowned(userId);
     if (!isDoctorOwner(userId)) {
       return res.status(403).json({ message: "DoctorTrade settings are currently owned by another account" });
     }
@@ -4022,9 +4022,7 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    if (isDoctorMultiUserMode()) {
-      doctorRuntime.ownerUserId = userId;
-    }
+    claimDoctorOwnerIfUnowned(userId);
     if (!isDoctorOwner(userId)) {
       return res.status(403).json({ message: "DoctorTrade wallet is currently owned by another account" });
     }
@@ -4113,9 +4111,7 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    if (isDoctorMultiUserMode()) {
-      doctorRuntime.ownerUserId = userId;
-    }
+    claimDoctorOwnerIfUnowned(userId);
     if (!isDoctorOwner(userId)) {
       return res.status(403).json({ message: "DoctorTrade wallet is currently owned by another account" });
     }
@@ -4137,9 +4133,7 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    if (isDoctorMultiUserMode()) {
-      doctorRuntime.ownerUserId = userId;
-    }
+    claimDoctorOwnerIfUnowned(userId);
     if (!isDoctorOwner(userId)) {
       return res.status(403).json({ result: { executed: false, reason: "doctortrade_owned_by_other_user" } });
     }
@@ -4157,9 +4151,7 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    if (isDoctorMultiUserMode()) {
-      doctorRuntime.ownerUserId = userId;
-    }
+    claimDoctorOwnerIfUnowned(userId);
     if (!isDoctorOwner(userId)) {
       return res.status(403).json({ result: { executed: false, reason: "doctortrade_owned_by_other_user" } });
     }
