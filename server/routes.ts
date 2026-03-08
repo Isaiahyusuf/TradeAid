@@ -739,10 +739,10 @@ export async function registerRoutes(
       cooldown_minutes_per_mint: 30,
       min_wallet_fee_buffer_sol: 0.02,
       gas_priority_lamports: Math.max(0, Math.trunc(Number(process.env.DOCTORTRADE_PRIORITY_FEE_LAMPORTS || 500000))),
-      min_liquidity_sol: 2,
-      max_liquidity_sol: 50,
-      min_buys_5m: 3,
-      max_sells_5m: 1,
+      min_liquidity_sol: 0.05,
+      max_liquidity_sol: 500,
+      min_buys_5m: 1,
+      max_sells_5m: 50,
       max_token_age_seconds: 240,
       live_sell_fraction_pct: 50,
       max_sell_notional_usd: 300,
@@ -753,10 +753,10 @@ export async function registerRoutes(
       min_profit_pct: 100,
       stop_loss_pct: 35,
       trailing_stop_pct: 10,
-      min_liquidity_usd: 300,
+      min_liquidity_usd: 100,
       max_liquidity_usd: 7500,
-      min_market_cap_usd: 8000,
-      min_volume_24h_usd: 8000,
+      min_market_cap_usd: 1000,
+      min_volume_24h_usd: 100,
       min_token_age_minutes: 0,
       max_token_age_minutes: 2,
       min_lock_hours: 0,
@@ -1430,17 +1430,14 @@ export async function registerRoutes(
 
       const nowMs = Date.now();
       const turboSnipeEnabled = String(process.env.DOCTOR_DEX_TURBO || "true").trim().toLowerCase() !== "false";
+      const enforceInsiderGate = String(process.env.DOCTOR_DEX_ENFORCE_INSIDER_GATE || "false").trim().toLowerCase() === "true";
       const maxPairAgeSeconds = Math.max(30, Number(process.env.DOCTOR_DEX_MAX_PAIR_AGE_SECONDS || 900));
-      const minLiquiditySol = Math.max(0.1, Number(doctorRuntime.controls.min_liquidity_sol || 2));
+      const minLiquiditySol = Math.max(0, Number(doctorRuntime.controls.min_liquidity_sol || 0.05));
       const effectiveMinLiquiditySol = turboSnipeEnabled ? 0 : minLiquiditySol;
-      const configuredMaxLiquiditySol = Math.max(minLiquiditySol, Number(doctorRuntime.controls.max_liquidity_sol || 50));
-      const dexLiquidityCeilingFloor = Math.max(minLiquiditySol, Number(process.env.DOCTOR_DEX_MAX_LIQUIDITY_SOL_FLOOR || 150));
-      const maxLiquiditySol = Math.max(configuredMaxLiquiditySol, dexLiquidityCeilingFloor);
+      const maxLiquiditySol = Math.max(minLiquiditySol, Number(doctorRuntime.controls.max_liquidity_sol || 500));
       const minBuys5m = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_buys_5m || 1)));
-      const configuredMaxSells5m = Math.max(0, Math.trunc(Number(doctorRuntime.controls.max_sells_5m || 1)));
-      const dexSellPressureFloor = Math.max(0, Math.trunc(Number(process.env.DOCTOR_DEX_MAX_SELLS_5M_FLOOR || 30)));
-      const maxSells5m = Math.max(configuredMaxSells5m, dexSellPressureFloor);
-      const minVolumeSol = Math.max(0.02, Number(process.env.DOCTOR_DEX_MIN_VOLUME_SOL || 0.05));
+      const maxSells5m = Math.max(0, Math.trunc(Number(doctorRuntime.controls.max_sells_5m || 50)));
+      const minVolumeSol = Math.max(0, Number(process.env.DOCTOR_DEX_MIN_VOLUME_SOL || 0));
       const solPriceUsd = Math.max(1, Number(process.env.DOCTOR_SOL_PRICE_USD_DEFAULT || 150));
       const processedTtlMs = Math.max(60_000, Number(process.env.DOCTOR_DEX_PROCESSED_TTL_MS || 6 * 60 * 60 * 1000));
       const rejectedRetryMs = Math.max(2_000, Number(process.env.DOCTOR_DEX_REJECTED_RETRY_MS || 20_000));
@@ -1492,7 +1489,7 @@ export async function registerRoutes(
           !validPressure ? "buy_sell_pressure_failed" : null,
           !validVolume ? "volume_5m_failed" : null,
         ].filter(Boolean) as string[];
-        const isCandidate = validLiquidity && validPressure && validVolume;
+        const isCandidate = enforceInsiderGate ? (validLiquidity && validPressure && validVolume) : true;
 
         appendDoctorSniperLog({
           event: isCandidate ? "detected" : "rejected",

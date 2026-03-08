@@ -68,8 +68,14 @@ export default function DoctorTrade() {
   const hasData = Boolean(viewData);
   // Only show new launches on Solana (created within 24h and chain is solana)
   const now = Date.now();
+  const isHiddenToken = (token: any) => {
+    const symbol = String(token?.symbol || "").trim().toLowerCase();
+    return symbol === "xmoney" || symbol === "x-money";
+  };
+
   const filterRecentSolana = (tokens: any[] = []) => tokens.filter((token: any) => {
     if (!token.created_at || !token.chain) return false;
+    if (isHiddenToken(token)) return false;
     const ageMinutes = (now - new Date(token.created_at).getTime()) / 60000;
     return ageMinutes < 1440 && String(token.chain).toLowerCase() === "solana";
   });
@@ -78,7 +84,10 @@ export default function DoctorTrade() {
     [viewData?.active_tokens],
   );
   const safeBuyTokens = useMemo(
-    () => (viewData?.active_tokens || []).filter((token: any) => String(token.chain || "solana").toLowerCase() === "solana").slice(0, 20),
+    () => (viewData?.active_tokens || [])
+      .filter((token: any) => String(token.chain || "solana").toLowerCase() === "solana")
+      .filter((token: any) => !isHiddenToken(token))
+      .slice(0, 20),
     [viewData?.active_tokens],
   );
   const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
@@ -226,7 +235,7 @@ export default function DoctorTrade() {
     const minProfitPct = Math.max(0.1, Number.parseFloat(minProfitInput) || 12);
     const stopLossPct = Math.max(0.1, Number.parseFloat(stopLossInput) || 6);
     const trailingStopPct = Math.max(0.1, Number.parseFloat(trailInput) || 10);
-    const minLiquidityUsd = Math.max(1000, Number.parseFloat(minLiquidityInput) || 20000);
+    const minLiquidityUsd = Math.max(100, Number.parseFloat(minLiquidityInput) || 20000);
     const maxSlippagePct = Math.max(0.1, Number.parseFloat(maxSlippageInput) || 4);
     const maxSpreadPct = Math.max(0.1, Number.parseFloat(maxSpreadInput) || 3);
     const dailyLossLimitUsd = Math.max(10, Number.parseFloat(dailyLossInput) || 600);
