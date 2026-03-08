@@ -53,7 +53,15 @@ export function useSafeBuy(
 
   return useQuery({
     queryKey: ["safe-buy", limit, chain, chainList.join(",")],
-    queryFn: () => apiGet<{ tokens: SafeBuyItem[]; count: number; near_miss_tokens: SafeBuyItem[]; near_miss_count: number; refreshed_at: string }>(`/api/safe-buy?${params.toString()}`),
+    queryFn: () => apiGet<{
+      tokens: SafeBuyItem[];
+      count: number;
+      total_count: number;
+      near_miss_tokens: SafeBuyItem[];
+      near_miss_count: number;
+      near_miss_total_count: number;
+      refreshed_at: string;
+    }>(`/api/safe-buy?${params.toString()}`),
     staleTime: 10000,
     refetchInterval: 30000,
     enabled: true,

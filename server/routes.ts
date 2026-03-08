@@ -918,13 +918,23 @@ export async function registerRoutes(
     const wallets = await getStoredDoctorWalletsByUser();
     const userWallet = wallets[userId] as Record<string, any> | undefined;
     const hasEncryptedPrivateKey = Boolean(String(userWallet?.livePrivateKey || "").trim());
+    const autoHydrateBlocked = Boolean(userWallet?.autoHydrateBlocked);
     return {
       address: String(userWallet?.address || "").trim(),
       balanceSol: Math.max(0, Number(userWallet?.balanceSol || 0)),
       separateWalletEnforced: userWallet?.separateWalletEnforced !== false,
       privateKeyConfigured: hasEncryptedPrivateKey,
+      autoHydrateBlocked,
       connected: Boolean(String(userWallet?.address || "").trim()) && hasEncryptedPrivateKey,
     };
+  };
+
+  const isDoctorWalletAutoHydrateBlockedForUser = async (userId: string) => {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return false;
+    const wallets = await getStoredDoctorWalletsByUser();
+    const userWallet = wallets[normalizedUserId] as Record<string, any> | undefined;
+    return Boolean(userWallet?.autoHydrateBlocked);
   };
 
   const saveDoctorWalletForUser = async (userId: string) => {
@@ -935,9 +945,52 @@ export async function registerRoutes(
       balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0)),
       separateWalletEnforced: doctorRuntime.wallet.separateWalletEnforced !== false,
       livePrivateKey: String(current?.livePrivateKey || "").trim(),
+      autoHydrateBlocked: Boolean(current?.autoHydrateBlocked),
       updatedAt: nowIso(),
     };
     await setStoredDoctorWalletsByUser(wallets);
+  };
+
+  const syncDoctorWalletFromAssistantRuntime = async (userId: string) => {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) {
+      return { synced: false, reason: "missing_user_id" } as const;
+    }
+
+    const assistantAddress = String(assistantRuntime.wallet.addresses_by_chain?.solana || "").trim();
+    const assistantPrivateKey = String(assistantRuntime.wallet.private_keys_by_chain?.solana || "").trim();
+    if (!assistantAddress || !assistantPrivateKey) {
+      return { synced: false, reason: "assistant_wallet_incomplete" } as const;
+    }
+
+    const autoHydrateBlocked = await isDoctorWalletAutoHydrateBlockedForUser(normalizedUserId);
+    if (autoHydrateBlocked) {
+      return { synced: false, reason: "manual_disconnect_lock" } as const;
+    }
+
+    const currentOwner = String(doctorRuntime.ownerUserId || "").trim();
+    const canAssignOwner =
+      isDoctorMultiUserMode() ||
+      !currentOwner ||
+      currentOwner === normalizedUserId ||
+      !doctorRuntime.enabled;
+
+    if (canAssignOwner) {
+      doctorRuntime.ownerUserId = normalizedUserId;
+    }
+
+    doctorRuntime.wallet.address = assistantAddress;
+    await setDoctorLivePrivateKeyForUser(normalizedUserId, assistantPrivateKey);
+    await refreshDoctorWalletBalanceFromChain(assistantAddress, true);
+    await ensureDoctorLiveExecutionModeIfCapable();
+    await saveDoctorWalletForUser(normalizedUserId);
+    await persistDoctorRuntime();
+
+    return {
+      synced: true,
+      userId: normalizedUserId,
+      walletAddress: assistantAddress,
+    } as const;
   };
 
   const setDoctorLivePrivateKeyForUser = async (userId: string, privateKey: string) => {
@@ -950,6 +1003,7 @@ export async function registerRoutes(
       balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol ?? current?.balanceSol ?? 0)),
       separateWalletEnforced: (doctorRuntime.wallet.separateWalletEnforced ?? current?.separateWalletEnforced) !== false,
       livePrivateKey: encryptedPrivateKey,
+      autoHydrateBlocked: false,
       updatedAt: nowIso(),
     };
     await setStoredDoctorWalletsByUser(wallets);
@@ -997,75 +1051,54 @@ export async function registerRoutes(
     };
   };
 
-  const getLatestDoctorWalletEntry = async () => {
-    const wallets = await getStoredDoctorWalletsByUser();
-    const entries = Object.entries(wallets || {}) as Array<[string, Record<string, any>]>;
-    if (!entries.length) {
-      return {
-        userId: "",
-        wallet: undefined as Record<string, any> | undefined,
-      };
-    }
-
-    const sorted = entries.sort((left, right) => {
-      const leftAt = new Date(String(left?.[1]?.updatedAt || 0)).getTime();
-      const rightAt = new Date(String(right?.[1]?.updatedAt || 0)).getTime();
-      return (Number.isFinite(rightAt) ? rightAt : 0) - (Number.isFinite(leftAt) ? leftAt : 0);
-    });
-
-    return {
-      userId: String(sorted[0]?.[0] || "").trim(),
-      wallet: sorted[0]?.[1],
-    };
-  };
-
   const ensureDoctorOwnerAndWalletHydrated = async () => {
     let hydrated = false;
     const currentOwner = String(doctorRuntime.ownerUserId || "").trim();
     const currentWalletAddress = String(doctorRuntime.wallet.address || "").trim();
 
-    const latestDoctor = await getLatestDoctorWalletEntry();
-    const latestDoctorWalletAddress = String(latestDoctor.wallet?.address || "").trim();
-    const latestDoctorPrivateKey = decryptDoctorPrivateKey(String(latestDoctor.wallet?.livePrivateKey || "").trim());
-    const latestDoctorHasCreds = Boolean(latestDoctorWalletAddress) && Boolean(latestDoctorPrivateKey);
-
-    if (!currentOwner && latestDoctorHasCreds && latestDoctor.userId) {
-      doctorRuntime.ownerUserId = latestDoctor.userId;
-      hydrated = true;
+    if (!currentOwner) {
+      return false;
     }
 
-    if (!currentWalletAddress && latestDoctorWalletAddress) {
-      doctorRuntime.wallet.address = latestDoctorWalletAddress;
-      hydrated = true;
+    const autoHydrateBlocked = await isDoctorWalletAutoHydrateBlockedForUser(currentOwner);
+    if (autoHydrateBlocked) {
+      return false;
     }
 
-    if (!doctorRuntime.ownerUserId || !doctorRuntime.wallet.address) {
+    if (!doctorRuntime.wallet.address) {
+      const wallets = await getStoredDoctorWalletsByUser();
+      const ownerWallet = wallets[currentOwner] as Record<string, any> | undefined;
+      const ownerWalletAddress = String(ownerWallet?.address || "").trim();
+      const ownerPrivateKey = decryptDoctorPrivateKey(String(ownerWallet?.livePrivateKey || "").trim());
+      if (ownerWalletAddress && ownerPrivateKey) {
+        doctorRuntime.wallet.address = ownerWalletAddress;
+        hydrated = true;
+      }
+    }
+
+    if (!doctorRuntime.wallet.address) {
       const fallbackAssistantCredentials = await getLatestAssistantWalletCredentials();
       const assistantWalletAddress = String(fallbackAssistantCredentials.walletPublicKey || "").trim();
       const assistantPrivateKey = String(fallbackAssistantCredentials.walletPrivateKey || "").trim();
       const assistantUserId = String(fallbackAssistantCredentials.userId || "").trim();
 
-      if (!doctorRuntime.ownerUserId && assistantUserId) {
-        doctorRuntime.ownerUserId = assistantUserId;
-        hydrated = true;
-      }
-
-      if (!doctorRuntime.wallet.address && assistantWalletAddress) {
+      if (assistantUserId === currentOwner && assistantWalletAddress) {
         doctorRuntime.wallet.address = assistantWalletAddress;
         hydrated = true;
       }
 
-      if (assistantUserId && assistantWalletAddress && assistantPrivateKey) {
+      if (assistantUserId === currentOwner && assistantWalletAddress && assistantPrivateKey) {
         const wallets = await getStoredDoctorWalletsByUser();
-        const existing = wallets[assistantUserId] as Record<string, any> | undefined;
+        const existing = wallets[currentOwner] as Record<string, any> | undefined;
         const hasStoredPrivateKey = Boolean(String(existing?.livePrivateKey || "").trim());
         if (!hasStoredPrivateKey) {
-          wallets[assistantUserId] = {
+          wallets[currentOwner] = {
             ...(existing || {}),
             address: assistantWalletAddress,
             balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol ?? existing?.balanceSol ?? 0)),
             separateWalletEnforced: (doctorRuntime.wallet.separateWalletEnforced ?? existing?.separateWalletEnforced) !== false,
             livePrivateKey: encryptDoctorPrivateKey(assistantPrivateKey),
+            autoHydrateBlocked: false,
             updatedAt: nowIso(),
           };
           await setStoredDoctorWalletsByUser(wallets);
@@ -1090,19 +1123,7 @@ export async function registerRoutes(
     const ownerUserId = String(doctorRuntime.ownerUserId || "").trim();
     const wallets = await getStoredDoctorWalletsByUser();
     const ownerWallet = ownerUserId ? (wallets[ownerUserId] as Record<string, any> | undefined) : undefined;
-    const pickLatestWalletEntry = () => {
-      const entries = Object.entries(wallets || {}) as Array<[string, Record<string, any>]>;
-      if (!entries.length) return undefined;
-      const sorted = entries.sort((left, right) => {
-        const leftAt = new Date(String(left?.[1]?.updatedAt || 0)).getTime();
-        const rightAt = new Date(String(right?.[1]?.updatedAt || 0)).getTime();
-        return (Number.isFinite(rightAt) ? rightAt : 0) - (Number.isFinite(leftAt) ? leftAt : 0);
-      });
-      return sorted[0]?.[1];
-    };
-
-    const fallbackWallet = pickLatestWalletEntry();
-    const resolvedWallet = ownerWallet || fallbackWallet;
+    const resolvedWallet = ownerWallet;
     const userPublicKey = String(resolvedWallet?.address || "").trim();
     const userPrivateKey = decryptDoctorPrivateKey(String(resolvedWallet?.livePrivateKey || "").trim());
 
@@ -1135,16 +1156,24 @@ export async function registerRoutes(
         }
       }
 
-      if (!assistantPublicKey || !assistantPrivateKey) {
+      if ((!assistantPublicKey || !assistantPrivateKey) && ownerUserId) {
         const fallbackAssistantCredentials = await getLatestAssistantWalletCredentials();
-        assistantPublicKey = assistantPublicKey || String(fallbackAssistantCredentials.walletPublicKey || "").trim();
-        assistantPrivateKey = assistantPrivateKey || String(fallbackAssistantCredentials.walletPrivateKey || "").trim();
+        const assistantUserId = String(fallbackAssistantCredentials.userId || "").trim();
+        if (assistantUserId === ownerUserId) {
+          assistantPublicKey = assistantPublicKey || String(fallbackAssistantCredentials.walletPublicKey || "").trim();
+          assistantPrivateKey = assistantPrivateKey || String(fallbackAssistantCredentials.walletPrivateKey || "").trim();
+        }
       }
     } catch {
     }
 
     const resolvedPrivateKey = userPrivateKey || assistantPrivateKey || envPrivateKey;
     const resolvedPublicKey = userPublicKey || assistantPublicKey || envPublicKey || deriveWalletPublicKeyFromPrivateKey(resolvedPrivateKey);
+
+    if (resolvedPublicKey && resolvedPublicKey !== String(doctorRuntime.wallet.address || "").trim()) {
+      doctorRuntime.wallet.address = resolvedPublicKey;
+      await persistDoctorRuntime();
+    }
 
     return {
       walletPublicKey: resolvedPublicKey,
@@ -1180,7 +1209,15 @@ export async function registerRoutes(
 
   const clearDoctorWalletForUser = async (userId: string) => {
     const wallets = await getStoredDoctorWalletsByUser();
-    delete wallets[userId];
+    const existing = wallets[userId] as Record<string, any> | undefined;
+    wallets[userId] = {
+      ...(existing || {}),
+      address: "",
+      balanceSol: 0,
+      livePrivateKey: "",
+      autoHydrateBlocked: true,
+      updatedAt: nowIso(),
+    };
     await setStoredDoctorWalletsByUser(wallets);
   };
 
@@ -1542,8 +1579,8 @@ export async function registerRoutes(
           });
         } else {
           const liveCredentials = await getDoctorLiveWalletCredentials();
-          const resolvedWalletAddress = String(doctorRuntime.wallet.address || liveCredentials.walletPublicKey || "").trim();
-          if (resolvedWalletAddress && !String(doctorRuntime.wallet.address || "").trim()) {
+          const resolvedWalletAddress = String(liveCredentials.walletPublicKey || doctorRuntime.wallet.address || "").trim();
+          if (resolvedWalletAddress) {
             doctorRuntime.wallet.address = resolvedWalletAddress;
           }
           if (!resolvedWalletAddress) {
@@ -1552,7 +1589,7 @@ export async function registerRoutes(
             source: "dexscreener",
             symbol: String(pair?.baseToken?.symbol || "UNKNOWN"),
             mint,
-            reason: "wallet_not_connected",
+            reason: "live_wallet_credentials_missing",
           });
           }
         }
@@ -1576,8 +1613,8 @@ export async function registerRoutes(
       await persistDoctorDexWorkerState();
 
       const liveCredentials = await getDoctorLiveWalletCredentials();
-      const resolvedWalletAddress = String(doctorRuntime.wallet.address || liveCredentials.walletPublicKey || "").trim();
-      if (resolvedWalletAddress && !String(doctorRuntime.wallet.address || "").trim()) {
+      const resolvedWalletAddress = String(liveCredentials.walletPublicKey || doctorRuntime.wallet.address || "").trim();
+      if (resolvedWalletAddress) {
         doctorRuntime.wallet.address = resolvedWalletAddress;
       }
 
@@ -2720,6 +2757,11 @@ export async function registerRoutes(
     doctorRuntime.lastRunAt = nowIso();
 
     await ensureDoctorOwnerAndWalletHydrated();
+    const liveCredentials = await getDoctorLiveWalletCredentials();
+    const resolvedWalletAddress = String(liveCredentials.walletPublicKey || doctorRuntime.wallet.address || "").trim();
+    if (resolvedWalletAddress) {
+      doctorRuntime.wallet.address = resolvedWalletAddress;
+    }
 
     await ensureDoctorLiveExecutionModeIfCapable();
     await refreshDoctorWalletBalanceFromChain();
@@ -2733,15 +2775,8 @@ export async function registerRoutes(
       return { executed: false, reason: "kill_switch_enabled", trigger };
     }
     if (!doctorRuntime.wallet.address) {
-      const liveCredentials = await getDoctorLiveWalletCredentials();
-      const resolvedWalletAddress = String(liveCredentials.walletPublicKey || "").trim();
-      if (resolvedWalletAddress) {
-        doctorRuntime.wallet.address = resolvedWalletAddress;
-      }
-    }
-    if (!doctorRuntime.wallet.address) {
-      doctorRuntime.lastDecision = { action: "skip", reason: "wallet_not_connected", trigger, at: nowIso() };
-      return { executed: false, reason: "wallet_not_connected", trigger };
+      doctorRuntime.lastDecision = { action: "skip", reason: "live_wallet_credentials_missing", trigger, at: nowIso() };
+      return { executed: false, reason: "live_wallet_credentials_missing", trigger };
     }
 
     const activeTokens = await getDoctorActiveTokens();
@@ -3881,6 +3916,21 @@ export async function registerRoutes(
       await setDoctorLivePrivateKeyForUser(userId, explicitPrivateKey);
     }
 
+    {
+      const wallets = await getStoredDoctorWalletsByUser();
+      const existing = wallets[userId] as Record<string, any> | undefined;
+      wallets[userId] = {
+        ...(existing || {}),
+        address: String(doctorRuntime.wallet.address || existing?.address || "").trim(),
+        balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol ?? existing?.balanceSol ?? 0)),
+        separateWalletEnforced: (doctorRuntime.wallet.separateWalletEnforced ?? existing?.separateWalletEnforced) !== false,
+        livePrivateKey: String(existing?.livePrivateKey || "").trim(),
+        autoHydrateBlocked: false,
+        updatedAt: nowIso(),
+      };
+      await setStoredDoctorWalletsByUser(wallets);
+    }
+
     await refreshDoctorWalletBalanceFromChain(doctorRuntime.wallet.address, true);
     doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 0);
     doctorRuntime.ownerUserId = userId;
@@ -3954,7 +4004,14 @@ export async function registerRoutes(
       return res.status(400).json({ result: { executed: false, reason: "contract_address_required" } });
     }
     if (!doctorRuntime.wallet.address) {
-      return res.json({ result: { executed: false, reason: "wallet_not_connected" } });
+      const liveCredentials = await getDoctorLiveWalletCredentials();
+      const resolvedWalletAddress = String(liveCredentials.walletPublicKey || "").trim();
+      if (resolvedWalletAddress) {
+        doctorRuntime.wallet.address = resolvedWalletAddress;
+      }
+    }
+    if (!doctorRuntime.wallet.address) {
+      return res.json({ result: { executed: false, reason: "live_wallet_credentials_missing" } });
     }
 
     const existingPosition = doctorRuntime.positions.find((position) => String(position.address || "") === contractAddress);
@@ -4558,6 +4615,7 @@ export async function registerRoutes(
     assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
 
     await persistAssistantRuntime();
+    await syncDoctorWalletFromAssistantRuntime(getRequestUserId(req));
 
     return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
   });
@@ -4593,6 +4651,7 @@ export async function registerRoutes(
     assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
 
     await persistAssistantRuntime();
+    await syncDoctorWalletFromAssistantRuntime(getRequestUserId(req));
 
     return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
   });
@@ -4625,6 +4684,7 @@ export async function registerRoutes(
     assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
 
     await persistAssistantRuntime();
+    await syncDoctorWalletFromAssistantRuntime(getRequestUserId(req));
 
     return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
   });
@@ -5076,9 +5136,38 @@ export async function registerRoutes(
           output_decimals: tokenDecimals,
           price_impact_pct: Number(quote?.priceImpactPct || 0),
           route_count: Array.isArray(quote?.routePlan) ? quote.routePlan.length : 0,
+          estimate_source: "router_quote",
         },
       });
     } catch (error) {
+      try {
+        const activeTokens = await getDoctorActiveTokens();
+        const token = activeTokens.find((item) => String(item.address || "").trim() === tokenMint);
+        const tokenPriceUsd = Number(token?.price_usd || 0);
+        const prices = await fetchChainPricesUsd();
+        const solPriceUsd = Number(prices.solana || 0);
+
+        if (tokenPriceUsd > 0 && solPriceUsd > 0) {
+          const outputAmountTokens = Number(((amountSol * solPriceUsd) / tokenPriceUsd).toFixed(9));
+          const tokenDecimals = await getTokenMintDecimals(tokenMint).catch(() => 6);
+          return res.json({
+            quote: {
+              side,
+              input_mint: SOL_MINT,
+              output_mint: tokenMint,
+              input_amount_sol: Number(amountSol.toFixed(9)),
+              output_amount_tokens: outputAmountTokens,
+              output_amount_raw: "0",
+              output_decimals: tokenDecimals,
+              price_impact_pct: 0,
+              route_count: 0,
+              estimate_source: "price_fallback",
+            },
+          });
+        }
+      } catch {
+      }
+
       return res.status(502).json({
         message: error instanceof Error ? error.message : "swap quote failed",
       });
@@ -5764,9 +5853,9 @@ export async function registerRoutes(
       const key = String(item.contract_address || "").trim();
       if (!key || safeByAddress.has(key)) continue;
       safeByAddress.set(key, item);
-      if (safeByAddress.size >= responseLimit) break;
     }
-    const safeTokens = Array.from(safeByAddress.values());
+    const allSafeTokens = Array.from(safeByAddress.values());
+    const safeTokens = allSafeTokens.slice(0, responseLimit);
 
     const nearMissByAddress = new Map<string, any>();
     for (const token of earlyCandidates
@@ -5802,14 +5891,17 @@ export async function registerRoutes(
           "fallback",
         ),
       );
-      if (nearMissByAddress.size >= responseLimit) break;
     }
+    const allNearMissTokens = Array.from(nearMissByAddress.values());
+    const nearMissTokens = allNearMissTokens.slice(0, responseLimit);
 
     return res.json({
       tokens: safeTokens,
       count: safeTokens.length,
-      near_miss_tokens: Array.from(nearMissByAddress.values()),
-      near_miss_count: nearMissByAddress.size,
+      total_count: allSafeTokens.length,
+      near_miss_tokens: nearMissTokens,
+      near_miss_count: nearMissTokens.length,
+      near_miss_total_count: allNearMissTokens.length,
       refreshed_at: nowIso(),
     });
   });

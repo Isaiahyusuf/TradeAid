@@ -315,6 +315,8 @@ export default function WalletPage() {
       Number.isFinite(swapAmountSolValue) &&
       swapAmountSolValue > 0,
   );
+  const swapQuoteSource = String((swapQuoteQuery.data as any)?.quote?.estimate_source || "router_quote").trim().toLowerCase();
+  const swapQuoteIsFallback = swapQuoteSource === "price_fallback";
 
   const handleOpenSend = () => {
     if (!wallet?.has_wallet) {
@@ -389,7 +391,7 @@ export default function WalletPage() {
     const tokenMint = swapTokenMint.trim();
     const amountSol = Number(swapAmountSol);
     if (!tokenMint) {
-      toast({ title: "Token mint required", description: "Enter a Solana token mint address.", variant: "destructive" });
+      toast({ title: "CA required", description: "Enter a Solana token CA address.", variant: "destructive" });
       return;
     }
     if (!Number.isFinite(amountSol) || amountSol <= 0) {
@@ -1025,8 +1027,8 @@ export default function WalletPage() {
               </div>
 
               <div className="space-y-1">
-                <Label>Token Mint</Label>
-                <Input placeholder="Enter Solana token mint address" value={swapTokenMint} onChange={(e) => setSwapTokenMint(e.target.value)} />
+                <Label>CA</Label>
+                <Input placeholder="Enter Solana token CA address" value={swapTokenMint} onChange={(e) => setSwapTokenMint(e.target.value)} />
               </div>
 
               <div className="space-y-1">
@@ -1043,14 +1045,18 @@ export default function WalletPage() {
                       <p>
                         Estimated receive: <span className="font-medium text-foreground">{Number(swapQuoteQuery.data.quote.output_amount_tokens || 0).toLocaleString(undefined, { maximumFractionDigits: 9 })}</span>
                       </p>
-                      <p className="text-muted-foreground">
-                        Price impact: {Number(swapQuoteQuery.data.quote.price_impact_pct || 0).toFixed(4)}% · Routes: {Number(swapQuoteQuery.data.quote.route_count || 0)}
-                      </p>
+                      {swapQuoteIsFallback ? (
+                        <p className="text-amber-300">Estimate uses token price fallback (router quote unavailable right now).</p>
+                      ) : (
+                        <p className="text-muted-foreground">
+                          Price impact: {Number(swapQuoteQuery.data.quote.price_impact_pct || 0).toFixed(4)}% · Routes: {Number(swapQuoteQuery.data.quote.route_count || 0)}
+                        </p>
+                      )}
                     </>
                   ) : swapQuoteQuery.isError ? (
                     <p className="text-red-400">Quote unavailable for this token/amount right now.</p>
                   ) : (
-                    <p className="text-muted-foreground">Enter token mint and SOL amount to preview output.</p>
+                    <p className="text-muted-foreground">Enter token CA and SOL amount to preview output.</p>
                   )}
                 </div>
               )}
@@ -1058,7 +1064,7 @@ export default function WalletPage() {
               <p className="text-xs text-muted-foreground">
                 {swapSide === "buy"
                   ? "Buy uses SOL input and shows estimated token output before submitting."
-                  : "Sell swaps your token mint balance back into SOL."}
+                  : "Sell swaps your token CA balance back into SOL."}
               </p>
             </div>
             <SheetFooter className="mt-6">

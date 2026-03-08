@@ -132,6 +132,7 @@ export default function Dashboard() {
     if (!rows.length) return null;
     return [...rows].sort((a, b) => b.safety_score - a.safety_score)[0];
   }, [safeBuyData?.tokens]);
+  const safeBuyTotalCount = Number(safeBuyData?.total_count ?? safeBuyData?.count ?? 0);
   const selectedToken = useMemo(() => {
     if (!selectedTokenId) return null;
     return displayTokens.find((token) => token.id === selectedTokenId) || null;
@@ -300,7 +301,7 @@ export default function Dashboard() {
               <div>
                 <p className="text-sm text-muted-foreground">Safe Buy</p>
                 <p className="text-2xl font-bold">
-                  {safeBuyLoading ? <Skeleton className="h-7 w-12" /> : (safeBuyData?.count || 0)}
+                  {safeBuyLoading ? <Skeleton className="h-7 w-12" /> : safeBuyTotalCount}
                 </p>
               </div>
             </div>
@@ -321,7 +322,7 @@ export default function Dashboard() {
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="outline">Safe: {safeBuyData?.count || 0}</Badge>
+              <Badge variant="outline">Safe: {safeBuyTotalCount}</Badge>
               <Badge variant="outline">Near Miss: {safeBuyData?.near_miss_count || 0}</Badge>
               <Link href="/safebuy">
                 <Button size="sm" variant="outline" data-testid="button-open-safe-buy">Open Safe Buy</Button>
