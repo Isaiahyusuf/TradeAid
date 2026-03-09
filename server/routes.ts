@@ -977,8 +977,32 @@ export async function registerRoutes(
       return { synced: false, reason: "missing_user_id" } as const;
     }
 
-    const assistantAddress = String(assistantRuntime.wallet.addresses_by_chain?.solana || "").trim();
-    const assistantPrivateKey = String(assistantRuntime.wallet.private_keys_by_chain?.solana || "").trim();
+    let assistantAddress = String(assistantRuntime.wallet.addresses_by_chain?.solana || "").trim();
+    let assistantPrivateKey = String(assistantRuntime.wallet.private_keys_by_chain?.solana || "").trim();
+
+    if (!assistantAddress || !assistantPrivateKey) {
+      try {
+        const assistantState = await storage.getAppState<Record<string, any>>(`${assistantRuntimeStateKeyPrefix}:${normalizedUserId}`);
+        const assistantWallet = assistantState?.wallet as Record<string, any> | undefined;
+        if (assistantWallet && typeof assistantWallet === "object") {
+          const addresses = assistantWallet.addresses_by_chain as Record<string, any> | undefined;
+          const privateKeys = assistantWallet.private_keys_by_chain as Record<string, any> | undefined;
+          assistantAddress = assistantAddress || String(addresses?.solana || "").trim();
+          assistantPrivateKey = assistantPrivateKey || String(privateKeys?.solana || "").trim();
+        }
+      } catch {
+      }
+    }
+
+    if (!assistantAddress || !assistantPrivateKey) {
+      const latestAssistantWallet = await getLatestAssistantWalletCredentials();
+      const latestAssistantUserId = String(latestAssistantWallet.userId || "").trim();
+      if (latestAssistantUserId === normalizedUserId) {
+        assistantAddress = assistantAddress || String(latestAssistantWallet.walletPublicKey || "").trim();
+        assistantPrivateKey = assistantPrivateKey || String(latestAssistantWallet.walletPrivateKey || "").trim();
+      }
+    }
+
     if (!assistantAddress || !assistantPrivateKey) {
       return { synced: false, reason: "assistant_wallet_incomplete" } as const;
     }
@@ -1726,6 +1750,58 @@ export async function registerRoutes(
     }
 
     return doctorRuntime.wallet.balanceSol;
+  };
+
+  const getDoctorLiveTokenBalanceSnapshot = async (walletAddress: string, mintAddress: string) => {
+    const resolvedWallet = String(walletAddress || "").trim();
+    const resolvedMint = String(mintAddress || "").trim();
+    if (!resolvedWallet || !resolvedMint) {
+      return {
+        uiAmount: 0,
+        amountRaw: "0",
+        decimals: 0,
+      };
+    }
+
+    try {
+      const ownerPk = new PublicKey(resolvedWallet);
+      const mintPk = new PublicKey(resolvedMint);
+      const accounts = await getSolanaConnection().getParsedTokenAccountsByOwner(ownerPk, { mint: mintPk }, "confirmed");
+
+      let uiAmount = 0;
+      let decimals = 0;
+      let amountRawBigInt = BigInt(0);
+      for (const entry of accounts.value) {
+        const tokenAmount = (entry.account.data as any)?.parsed?.info?.tokenAmount as Record<string, any> | undefined;
+        const parsedUi = Number(tokenAmount?.uiAmount || 0);
+        if (Number.isFinite(parsedUi) && parsedUi > 0) {
+          uiAmount += parsedUi;
+        }
+        const parsedDecimals = Number(tokenAmount?.decimals || 0);
+        if (Number.isFinite(parsedDecimals) && parsedDecimals >= 0) {
+          decimals = Math.max(decimals, parsedDecimals);
+        }
+        const parsedRaw = String(tokenAmount?.amount || "0");
+        try {
+          amountRawBigInt += BigInt(parsedRaw);
+        } catch {
+        }
+      }
+
+      return {
+        balanceKnown: true,
+        uiAmount: Math.max(0, Number(uiAmount || 0)),
+        amountRaw: amountRawBigInt.toString(),
+        decimals: Math.max(0, Math.trunc(decimals || 0)),
+      };
+    } catch {
+      return {
+        balanceKnown: false,
+        uiAmount: 0,
+        amountRaw: "0",
+        decimals: 0,
+      };
+    }
   };
 
   const runDoctorCycleSafely = async (trigger: "manual" | "auto", userId?: string) => {
@@ -3151,6 +3227,7 @@ export async function registerRoutes(
 
     if (doctorRuntime.execution.mode === "live" && doctorRuntime.positions.length > 0) {
       const retainedPositions: Array<Record<string, any>> = [];
+      const liveWalletAddress = String(doctorRuntime.wallet.address || "").trim();
       for (const position of doctorRuntime.positions) {
         const executionMode = normalizeDoctorPositionExecutionMode(position);
         if (executionMode === "paper") {
@@ -3180,6 +3257,38 @@ export async function registerRoutes(
           });
           continue;
         }
+
+        const positionMint = String(position.address || "").trim();
+        if (liveWalletAddress && positionMint) {
+          const liveBalance = await getDoctorLiveTokenBalanceSnapshot(liveWalletAddress, positionMint);
+          if (liveBalance.balanceKnown && !(liveBalance.uiAmount > 0)) {
+            const symbol = String(position.symbol || "UNKNOWN");
+            doctorRuntime.decisionJournal.unshift({
+              token: symbol,
+              address: positionMint,
+              decision: "skip",
+              reason: "live_position_pruned_zero_balance",
+              confidence: Number((position as any).confidence || 0),
+              size_pct: Number((position as any).size_pct || 0),
+              strategy_mode: "autonomous",
+              timestamp: nowIso(),
+            });
+            appendDoctorExecutionAudit({
+              action: "sell",
+              symbol,
+              mint: positionMint,
+              amount_sol: Number(position.amount_sol || 0),
+              expected_price_usd: Number(position.current_price || position.entry_price || 0),
+              expected_notional_usd: 0,
+              trigger,
+              reason: "live_position_pruned_zero_balance",
+              status: "skipped",
+              router: "state_cleanup",
+            });
+            continue;
+          }
+        }
+
         retainedPositions.push({
           ...position,
           execution_mode: "live",
@@ -4113,6 +4222,7 @@ export async function registerRoutes(
     const earlyTokens = await getSolanaEarlyScoredTokens(120, 220);
     const activeTokens = await getDoctorActiveTokens();
     const { dailyRealizedPnlUsd, consecutiveLosses } = computeDoctorRiskMetrics();
+    const activeTokenMap = new Map(activeTokens.map((token) => [String(token.address || "").trim(), token]));
 
     const paused = doctorRuntime.killSwitch;
     const safetyPaused = paused || !doctorRuntime.enabled;
@@ -4138,9 +4248,61 @@ export async function registerRoutes(
     const walletConnected = Boolean(walletAddress) && Boolean(walletSnapshot.privateKeyConfigured);
     const requiresLiveWallet = isDoctorLiveOnlyMode() || doctorRuntime.execution.mode === "live";
     const maxTradesPerDay = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_trades_per_day || 1)));
+    const maxOpenPositions = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_open_positions || 3)));
     const schedulerJob = statusUserId ? await getDoctorSchedulerJobForUser(statusUserId) : null;
     const schedulerNextRunAtMs = Math.max(0, Number((schedulerJob as any)?.next_run_at || 0));
     const schedulerLagMs = schedulerNextRunAtMs > 0 ? Math.max(0, Date.now() - schedulerNextRunAtMs) : 0;
+
+    let statusPositions = doctorRuntime.positions.slice(0, 30);
+    if (doctorRuntime.execution.mode === "live") {
+      const walletForLivePositions = String(walletAddress || "").trim();
+      if (!walletForLivePositions) {
+        statusPositions = [];
+      } else {
+        const prices = await fetchChainPricesUsd().catch(() => ({ solana: 0 } as Record<string, number>));
+        const solPriceUsd = Math.max(1, Number((prices as any)?.solana || process.env.DOCTOR_SOL_PRICE_USD_DEFAULT || 150));
+        const livePositions = statusPositions
+          .filter((position) => normalizeDoctorPositionExecutionMode(position) === "live")
+          .slice(0, 30);
+
+        const enrichedLivePositions: Array<Record<string, any>> = [];
+        for (const position of livePositions) {
+          const mint = String(position.address || "").trim();
+          if (!mint) {
+            continue;
+          }
+
+          const tokenBalance = await getDoctorLiveTokenBalanceSnapshot(walletForLivePositions, mint);
+          if (!(tokenBalance.uiAmount > 0)) {
+            continue;
+          }
+
+          const marketToken = activeTokenMap.get(mint);
+          const entryPriceUsd = Number(position.entry_price || 0);
+          const currentPriceUsd = resolveCurrentPriceUsd(marketToken || {}, Number(position.current_price || entryPriceUsd || 0));
+          const walletValueUsd = Number((tokenBalance.uiAmount * Math.max(0, currentPriceUsd || 0)).toFixed(6));
+          const walletValueSol = Number((walletValueUsd / solPriceUsd).toFixed(6));
+          const pnlPct = entryPriceUsd > 0 && currentPriceUsd > 0
+            ? Number((((currentPriceUsd - entryPriceUsd) / entryPriceUsd) * 100).toFixed(2))
+            : Number(position.pnl_pct || 0);
+
+          enrichedLivePositions.push({
+            ...position,
+            execution_mode: "live",
+            current_price: Number(currentPriceUsd || 0),
+            pnl_pct: pnlPct,
+            amount_tokens: Number(tokenBalance.uiAmount.toFixed(9)),
+            token_decimals: tokenBalance.decimals,
+            amount_raw: tokenBalance.amountRaw,
+            worth_usd: walletValueUsd,
+            worth_sol: walletValueSol,
+          });
+        }
+
+        statusPositions = enrichedLivePositions;
+      }
+    }
+    const statusOpenPositions = statusPositions.length;
 
     let autoTradeBlockReason: string | null = null;
     if (!doctorRuntime.enabled) {
@@ -4149,7 +4311,7 @@ export async function registerRoutes(
       autoTradeBlockReason = "kill_switch_enabled";
     } else if (requiresLiveWallet && !walletConnected) {
       autoTradeBlockReason = "wallet_key_not_connected";
-    } else if (doctorRuntime.positions.length >= 3) {
+    } else if (statusOpenPositions >= maxOpenPositions) {
       autoTradeBlockReason = "max_open_positions_reached";
     } else if (Number(doctorRuntime.controls.trades_today || 0) >= maxTradesPerDay) {
       autoTradeBlockReason = "max_trades_reached";
@@ -4174,7 +4336,7 @@ export async function registerRoutes(
         drawdown_pct: 0,
         daily_realized_pnl_usd: dailyRealizedPnlUsd,
         high_watermark_usd: 0,
-        open_positions: doctorRuntime.positions.length,
+        open_positions: statusOpenPositions,
         open_exposure_pct: 0,
         consecutive_losses: consecutiveLosses,
         paused,
@@ -4225,7 +4387,7 @@ export async function registerRoutes(
         lease_holder: doctorSchedulerInstanceId,
       },
       active_tokens: activeTokens,
-      positions: doctorRuntime.positions.slice(0, 30),
+      positions: statusPositions,
       recent_trades: doctorRuntime.recentTrades.slice(0, 40),
       decision_journal: doctorRuntime.decisionJournal.slice(0, 60),
       performance: doctorRuntime.performance.slice(0, 30),
@@ -4287,6 +4449,8 @@ export async function registerRoutes(
       return res.status(401).json({ message: "Unauthorized" });
     }
     await loadDoctorRuntimeForUser(userId);
+    await syncDoctorWalletFromAssistantRuntime(userId);
+    await ensureDoctorLiveExecutionModeIfCapable();
     await refreshDoctorWalletBalanceFromChain(undefined, true);
     const status = await buildDoctorStatus(userId);
     await saveDoctorWalletForUser(userId);
@@ -4349,6 +4513,7 @@ export async function registerRoutes(
       return res.status(401).json({ message: "Unauthorized" });
     }
     await loadDoctorRuntimeForUser(userId);
+    await syncDoctorWalletFromAssistantRuntime(userId);
     const requestedEnable = Boolean(req.body?.enabled);
 
     const enabled = requestedEnable;
@@ -4571,6 +4736,7 @@ export async function registerRoutes(
       return res.status(401).json({ message: "Unauthorized" });
     }
     await loadDoctorRuntimeForUser(userId);
+    await syncDoctorWalletFromAssistantRuntime(userId);
     await ensureDoctorLiveExecutionModeIfCapable();
 
     const result = await executeDoctorCycle("manual");
