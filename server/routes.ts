@@ -795,7 +795,6 @@ export async function registerRoutes(
   const doctorRuntimeStateKey = "doctortrade.runtime.v1";
   const doctorRuntimeByUserStateKey = "doctortrade.runtime.by_user.v1";
   const doctorWalletByUserStateKey = "doctortrade.wallets.by_user.v1";
-  const assistantRuntimeStateKeyPrefix = "assistant.runtime.v1";
 
   const encodeBase64 = (value: Uint8Array) => Buffer.from(value).toString("base64");
   const decodeBase64 = (value: string) => Buffer.from(value, "base64");
@@ -983,89 +982,10 @@ export async function registerRoutes(
     if (!normalizedUserId) {
       return { synced: false, reason: "missing_user_id" } as const;
     }
-
-    let assistantAddress = String(assistantRuntime.wallet.addresses_by_chain?.solana || "").trim();
-    let assistantPrivateKey = String(assistantRuntime.wallet.private_keys_by_chain?.solana || "").trim();
-
-    if (!assistantAddress || !assistantPrivateKey) {
-      try {
-        const assistantState = await storage.getAppState<Record<string, any>>(`${assistantRuntimeStateKeyPrefix}:${normalizedUserId}`);
-        const assistantWallet = assistantState?.wallet as Record<string, any> | undefined;
-        if (assistantWallet && typeof assistantWallet === "object") {
-          const addresses = assistantWallet.addresses_by_chain as Record<string, any> | undefined;
-          const privateKeys = assistantWallet.private_keys_by_chain as Record<string, any> | undefined;
-          assistantAddress = assistantAddress || String(addresses?.solana || "").trim();
-          assistantPrivateKey = assistantPrivateKey || String(privateKeys?.solana || "").trim();
-        }
-      } catch {
-      }
-    }
-
-    if (!assistantAddress || !assistantPrivateKey) {
-      let legacyOwnerUserId = String(doctorRuntime.ownerUserId || "").trim();
-      if (!legacyOwnerUserId) {
-        try {
-          const legacyRuntime = await storage.getAppState<Record<string, any>>(doctorRuntimeStateKey);
-          legacyOwnerUserId = String(legacyRuntime?.ownerUserId || "").trim();
-        } catch {
-        }
-      }
-
-      if (legacyOwnerUserId && legacyOwnerUserId === normalizedUserId) {
-        try {
-          const assistantStateGlobal = await storage.getAppState<Record<string, any>>(assistantRuntimeStateKeyPrefix);
-          const assistantWalletGlobal = assistantStateGlobal?.wallet as Record<string, any> | undefined;
-          if (assistantWalletGlobal && typeof assistantWalletGlobal === "object") {
-            const addresses = assistantWalletGlobal.addresses_by_chain as Record<string, any> | undefined;
-            const privateKeys = assistantWalletGlobal.private_keys_by_chain as Record<string, any> | undefined;
-            assistantAddress = assistantAddress || String(addresses?.solana || "").trim();
-            assistantPrivateKey = assistantPrivateKey || String(privateKeys?.solana || "").trim();
-          }
-        } catch {
-        }
-      }
-    }
-
-    if (!assistantAddress || !assistantPrivateKey) {
-      const latestAssistantWallet = await getLatestAssistantWalletCredentials();
-      const latestAssistantUserId = String(latestAssistantWallet.userId || "").trim();
-      if (latestAssistantUserId === normalizedUserId) {
-        assistantAddress = assistantAddress || String(latestAssistantWallet.walletPublicKey || "").trim();
-        assistantPrivateKey = assistantPrivateKey || String(latestAssistantWallet.walletPrivateKey || "").trim();
-      }
-    }
-
-    if (!assistantAddress || !assistantPrivateKey) {
-      return { synced: false, reason: "assistant_wallet_incomplete" } as const;
-    }
-
-    const autoHydrateBlocked = await isDoctorWalletAutoHydrateBlockedForUser(normalizedUserId);
-    if (autoHydrateBlocked) {
-      return { synced: false, reason: "manual_disconnect_lock" } as const;
-    }
-
-    const currentOwner = String(doctorRuntime.ownerUserId || "").trim();
-    const canAssignOwner =
-      isDoctorMultiUserMode() ||
-      !currentOwner ||
-      currentOwner === normalizedUserId ||
-      !doctorRuntime.enabled;
-
-    if (canAssignOwner) {
-      doctorRuntime.ownerUserId = normalizedUserId;
-    }
-
-    doctorRuntime.wallet.address = assistantAddress;
-    await setDoctorLivePrivateKeyForUser(normalizedUserId, assistantPrivateKey);
-    await refreshDoctorWalletBalanceFromChain(assistantAddress, true);
-    await ensureDoctorLiveExecutionModeIfCapable();
-    await saveDoctorWalletForUser(normalizedUserId);
-    await persistDoctorRuntime(normalizedUserId);
-
     return {
-      synced: true,
+      synced: false,
+      reason: "manual_wallet_required",
       userId: normalizedUserId,
-      walletAddress: assistantAddress,
     } as const;
   };
 
@@ -1083,48 +1003,6 @@ export async function registerRoutes(
       updatedAt: nowIso(),
     };
     await setStoredDoctorWalletsByUser(wallets);
-  };
-
-  const getLatestAssistantWalletCredentials = async () => {
-    try {
-      const keyPattern = `${assistantRuntimeStateKeyPrefix}:%`;
-      const result = await db.execute(sql`
-        SELECT key, value
-        FROM app_state
-        WHERE key LIKE ${keyPattern}
-           OR key = ${assistantRuntimeStateKeyPrefix}
-        ORDER BY updated_at DESC
-        LIMIT 10
-      `);
-      const rows = ((result as any)?.rows || []) as Array<{ key?: string; value?: Record<string, any> }>;
-      for (const row of rows) {
-        const key = String(row?.key || "").trim();
-        const userId = key.startsWith(`${assistantRuntimeStateKeyPrefix}:`)
-          ? key.slice(`${assistantRuntimeStateKeyPrefix}:`.length).trim()
-          : "";
-        const assistantState = (row?.value || {}) as Record<string, any>;
-        const assistantWallet = assistantState?.wallet as Record<string, any> | undefined;
-        if (!assistantWallet || typeof assistantWallet !== "object") continue;
-        const addresses = assistantWallet.addresses_by_chain as Record<string, any> | undefined;
-        const privateKeys = assistantWallet.private_keys_by_chain as Record<string, any> | undefined;
-        const assistantPublicKey = String(addresses?.solana || "").trim();
-        const assistantPrivateKey = String(privateKeys?.solana || "").trim();
-        if (assistantPublicKey && assistantPrivateKey) {
-          return {
-            userId,
-            walletPublicKey: assistantPublicKey,
-            walletPrivateKey: assistantPrivateKey,
-          };
-        }
-      }
-    } catch {
-    }
-
-    return {
-      userId: "",
-      walletPublicKey: "",
-      walletPrivateKey: "",
-    };
   };
 
   const ensureDoctorOwnerAndWalletHydrated = async () => {
@@ -1152,37 +1030,6 @@ export async function registerRoutes(
       }
     }
 
-    if (!doctorRuntime.wallet.address) {
-      const fallbackAssistantCredentials = await getLatestAssistantWalletCredentials();
-      const assistantWalletAddress = String(fallbackAssistantCredentials.walletPublicKey || "").trim();
-      const assistantPrivateKey = String(fallbackAssistantCredentials.walletPrivateKey || "").trim();
-      const assistantUserId = String(fallbackAssistantCredentials.userId || "").trim();
-
-      if (assistantUserId === currentOwner && assistantWalletAddress) {
-        doctorRuntime.wallet.address = assistantWalletAddress;
-        hydrated = true;
-      }
-
-      if (assistantUserId === currentOwner && assistantWalletAddress && assistantPrivateKey) {
-        const wallets = await getStoredDoctorWalletsByUser();
-        const existing = wallets[currentOwner] as Record<string, any> | undefined;
-        const hasStoredPrivateKey = Boolean(String(existing?.livePrivateKey || "").trim());
-        if (!hasStoredPrivateKey) {
-          wallets[currentOwner] = {
-            ...(existing || {}),
-            address: assistantWalletAddress,
-            balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol ?? existing?.balanceSol ?? 0)),
-            separateWalletEnforced: (doctorRuntime.wallet.separateWalletEnforced ?? existing?.separateWalletEnforced) !== false,
-            livePrivateKey: encryptDoctorPrivateKey(assistantPrivateKey),
-            autoHydrateBlocked: false,
-            updatedAt: nowIso(),
-          };
-          await setStoredDoctorWalletsByUser(wallets);
-          hydrated = true;
-        }
-      }
-    }
-
     if (hydrated) {
       await persistDoctorRuntime();
     }
@@ -1192,9 +1039,6 @@ export async function registerRoutes(
 
   const getDoctorLiveWalletCredentials = async () => {
     await ensureDoctorOwnerAndWalletHydrated();
-
-    const envPublicKey = String(process.env.DOCTORTRADE_LIVE_WALLET_PUBLIC_KEY || "").trim();
-    const envPrivateKey = String(process.env.DOCTORTRADE_LIVE_WALLET_PRIVATE_KEY || "").trim();
 
     const ownerUserId = String(doctorRuntime.ownerUserId || "").trim();
     const wallets = await getStoredDoctorWalletsByUser();
@@ -1209,51 +1053,9 @@ export async function registerRoutes(
         walletPrivateKey: userPrivateKey,
       };
     }
-
-    let assistantPublicKey = "";
-    let assistantPrivateKey = "";
-    try {
-      const runtimeAssistantWallet = (assistantRuntime as any)?.wallet as Record<string, any> | undefined;
-      if (runtimeAssistantWallet && typeof runtimeAssistantWallet === "object") {
-        const runtimeAddresses = runtimeAssistantWallet.addresses_by_chain as Record<string, any> | undefined;
-        const runtimePrivateKeys = runtimeAssistantWallet.private_keys_by_chain as Record<string, any> | undefined;
-        assistantPublicKey = String(runtimeAddresses?.solana || "").trim();
-        assistantPrivateKey = String(runtimePrivateKeys?.solana || "").trim();
-      }
-
-      if (ownerUserId) {
-        const assistantState = await storage.getAppState<Record<string, any>>(`${assistantRuntimeStateKeyPrefix}:${ownerUserId}`);
-        const assistantWallet = assistantState?.wallet as Record<string, any> | undefined;
-        if (assistantWallet && typeof assistantWallet === "object") {
-          const addresses = assistantWallet.addresses_by_chain as Record<string, any> | undefined;
-          const privateKeys = assistantWallet.private_keys_by_chain as Record<string, any> | undefined;
-          assistantPublicKey = assistantPublicKey || String(addresses?.solana || "").trim();
-          assistantPrivateKey = assistantPrivateKey || String(privateKeys?.solana || "").trim();
-        }
-      }
-
-      if ((!assistantPublicKey || !assistantPrivateKey) && ownerUserId) {
-        const fallbackAssistantCredentials = await getLatestAssistantWalletCredentials();
-        const assistantUserId = String(fallbackAssistantCredentials.userId || "").trim();
-        if (assistantUserId === ownerUserId) {
-          assistantPublicKey = assistantPublicKey || String(fallbackAssistantCredentials.walletPublicKey || "").trim();
-          assistantPrivateKey = assistantPrivateKey || String(fallbackAssistantCredentials.walletPrivateKey || "").trim();
-        }
-      }
-    } catch {
-    }
-
-    const resolvedPrivateKey = userPrivateKey || assistantPrivateKey || envPrivateKey;
-    const resolvedPublicKey = userPublicKey || assistantPublicKey || envPublicKey || deriveWalletPublicKeyFromPrivateKey(resolvedPrivateKey);
-
-    if (resolvedPublicKey && resolvedPublicKey !== String(doctorRuntime.wallet.address || "").trim()) {
-      doctorRuntime.wallet.address = resolvedPublicKey;
-      await persistDoctorRuntime();
-    }
-
     return {
-      walletPublicKey: resolvedPublicKey,
-      walletPrivateKey: resolvedPrivateKey,
+      walletPublicKey: "",
+      walletPrivateKey: "",
     };
   };
 
@@ -4901,7 +4703,6 @@ export async function registerRoutes(
     const payload = req.body || {};
     const explicitAddress = String(payload.public_address || "").trim();
     const explicitPrivateKey = String(payload.private_key || "").trim();
-    const useExistingWallet = Boolean(payload.use_existing_wallet);
     const walletBalanceTimeoutMs = Math.max(300, Number(process.env.DOCTOR_WALLET_BALANCE_TIMEOUT_MS || 1200));
 
     let resolvedAddress = explicitAddress;
@@ -4923,28 +4724,6 @@ export async function registerRoutes(
         const onchainBalanceSol = Number((lamports / 1_000_000_000).toFixed(6));
         doctorRuntime.wallet.balanceSol = Math.max(0, onchainBalanceSol);
       } catch {
-      }
-    } else if (useExistingWallet) {
-      let importedAddress = "";
-      let importedPrivateKey = "";
-      try {
-        const assistantState = await storage.getAppState<Record<string, any>>(`${assistantRuntimeStateKeyPrefix}:${userId}`);
-        const assistantWallet = assistantState?.wallet as Record<string, any> | undefined;
-        if (assistantWallet && typeof assistantWallet === "object") {
-          const addresses = assistantWallet.addresses_by_chain as Record<string, any> | undefined;
-          const privateKeys = assistantWallet.private_keys_by_chain as Record<string, any> | undefined;
-          importedAddress = String(addresses?.solana || "").trim();
-          importedPrivateKey = String(privateKeys?.solana || "").trim();
-        }
-      } catch {
-      }
-
-      if (importedAddress) {
-        doctorRuntime.wallet.address = importedAddress;
-      }
-
-      if (importedPrivateKey) {
-        await setDoctorLivePrivateKeyForUser(userId, importedPrivateKey);
       }
     }
 
