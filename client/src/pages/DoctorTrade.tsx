@@ -473,6 +473,19 @@ export default function DoctorTrade() {
       { private_key: trimmedPrivateKey },
       {
         onSuccess: (status) => {
+          const persistedConnected = Boolean(
+            String(status?.wallet?.connection_status || "").toLowerCase() === "connected"
+            && status?.wallet?.private_key_configured
+            && String(status?.wallet?.address || "").trim(),
+          );
+          if (!persistedConnected) {
+            toast({
+              title: "Wallet not persisted",
+              description: "Connection response did not include saved wallet credentials. Please retry.",
+              variant: "destructive",
+            });
+            return;
+          }
           setPrivateKeyInput("");
           persistSettingsLocalBackup({
             ...(viewData?.trade_controls || {}),
@@ -492,10 +505,10 @@ export default function DoctorTrade() {
   };
 
   const handleConnectWallet = () => {
+    setSettingsOpen(true);
     toast({
       title: "Private key required",
-      description: "Use Manual Private Key Import to connect your DoctorTrade wallet.",
-      variant: "destructive",
+      description: "Use Manual Private Key Import in the settings panel to connect your DoctorTrade wallet.",
     });
   };
 
@@ -588,7 +601,7 @@ export default function DoctorTrade() {
               onClick={handleConnectWallet}
               disabled={connectWalletMutation.isPending || walletConnected}
             >
-              <Wallet className="w-4 h-4 mr-2" /> {walletConnected ? "Wallet Connected" : "Connect Wallet"}
+              <Wallet className="w-4 h-4 mr-2" /> {walletConnected ? "Wallet Connected" : "Use Private Key Below"}
             </Button>
             <Button
               variant="outline"
