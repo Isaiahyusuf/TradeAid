@@ -1254,6 +1254,117 @@ export async function registerRoutes(
     return normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
   };
 
+  const doctorPresetNumericProfiles: Record<"insider" | "conservative" | "balanced" | "aggressive", Record<string, number>> = {
+    insider: {
+      strong_move_threshold_pct: 25,
+      min_liquidity_usd: 300,
+      max_liquidity_usd: 7500,
+      min_market_cap_usd: 8000,
+      min_volume_24h_usd: 8000,
+      min_token_age_minutes: 0,
+      max_token_age_minutes: 2,
+      max_token_age_seconds: 240,
+      min_liquidity_sol: 2,
+      max_liquidity_sol: 50,
+      min_buys_5m: 3,
+      max_sells_5m: 1,
+      min_unique_buyers: 8,
+      min_buy_ratio_pct: 75,
+      quality_max_top_holder_pct: 15,
+      max_dev_wallet_pct: 8,
+      ai_min_signals_required: 4,
+      min_lock_hours: 0,
+      quality_min_volume_spike_pct: 12,
+      max_early_spike_pct: 200,
+      strategy_window_minutes: 5,
+    },
+    conservative: {
+      strong_move_threshold_pct: 45,
+      min_liquidity_usd: 2000,
+      max_liquidity_usd: 20000,
+      min_market_cap_usd: 25000,
+      min_volume_24h_usd: 25000,
+      min_token_age_minutes: 1,
+      max_token_age_minutes: 5,
+      max_token_age_seconds: 300,
+      min_liquidity_sol: 4,
+      max_liquidity_sol: 120,
+      min_buys_5m: 6,
+      max_sells_5m: 2,
+      min_unique_buyers: 30,
+      min_buy_ratio_pct: 78,
+      quality_max_top_holder_pct: 12,
+      max_dev_wallet_pct: 5,
+      ai_min_signals_required: 6,
+      min_lock_hours: 1,
+      quality_min_volume_spike_pct: 18,
+      max_early_spike_pct: 140,
+      strategy_window_minutes: 5,
+    },
+    balanced: {
+      strong_move_threshold_pct: 35,
+      min_liquidity_usd: 1000,
+      max_liquidity_usd: 15000,
+      min_market_cap_usd: 15000,
+      min_volume_24h_usd: 12000,
+      min_token_age_minutes: 0,
+      max_token_age_minutes: 4,
+      max_token_age_seconds: 240,
+      min_liquidity_sol: 2,
+      max_liquidity_sol: 90,
+      min_buys_5m: 4,
+      max_sells_5m: 2,
+      min_unique_buyers: 18,
+      min_buy_ratio_pct: 70,
+      quality_max_top_holder_pct: 15,
+      max_dev_wallet_pct: 7,
+      ai_min_signals_required: 5,
+      min_lock_hours: 0,
+      quality_min_volume_spike_pct: 14,
+      max_early_spike_pct: 180,
+      strategy_window_minutes: 5,
+    },
+    aggressive: {
+      strong_move_threshold_pct: 20,
+      min_liquidity_usd: 200,
+      max_liquidity_usd: 12000,
+      min_market_cap_usd: 5000,
+      min_volume_24h_usd: 4000,
+      min_token_age_minutes: 0,
+      max_token_age_minutes: 3,
+      max_token_age_seconds: 180,
+      min_liquidity_sol: 0.5,
+      max_liquidity_sol: 80,
+      min_buys_5m: 2,
+      max_sells_5m: 3,
+      min_unique_buyers: 5,
+      min_buy_ratio_pct: 60,
+      quality_max_top_holder_pct: 20,
+      max_dev_wallet_pct: 12,
+      ai_min_signals_required: 3,
+      min_lock_hours: 0,
+      quality_min_volume_spike_pct: 8,
+      max_early_spike_pct: 260,
+      strategy_window_minutes: 4,
+    },
+  };
+
+  const getDoctorEffectiveControlNumber = (key: string, fallbackValue: number) => {
+    const preset = getDoctorActiveSnipePreset();
+    if (preset !== "custom") {
+      const profileValue = Number((doctorPresetNumericProfiles as Record<string, Record<string, number>>)?.[preset]?.[key]);
+      if (Number.isFinite(profileValue)) {
+        return profileValue;
+      }
+    }
+
+    const runtimeValue = Number((doctorRuntime.controls as Record<string, any>)[key]);
+    if (Number.isFinite(runtimeValue)) {
+      return runtimeValue;
+    }
+    return fallbackValue;
+  };
+
   const ensureDoctorLiveExecutionModeIfCapable = async () => {
     const { walletPublicKey, walletPrivateKey } = await getDoctorLiveWalletCredentials();
     const liveCapable = isDoctorLiveTradingEnabled() && Boolean(walletPublicKey) && Boolean(walletPrivateKey);
@@ -3466,30 +3577,30 @@ export async function registerRoutes(
     const feeBufferSol = Math.max(0, Number(doctorRuntime.controls.min_wallet_fee_buffer_sol || 0));
     const buyAmountSol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     const activeSnipePreset = getDoctorActiveSnipePreset();
-    const maxLiquidityUsd = Math.max(1, Number(doctorRuntime.controls.max_liquidity_usd || 500000));
-    const maxTokenAgeSeconds = Math.max(60, Math.min(10, Math.trunc(Number(doctorRuntime.controls.max_token_age_minutes || 10))) * 60);
-    const strictMaxTokenAgeSecondsRaw = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
+    const maxLiquidityUsd = Math.max(1, getDoctorEffectiveControlNumber("max_liquidity_usd", 500000));
+    const maxTokenAgeSeconds = Math.max(60, Math.min(10, Math.trunc(getDoctorEffectiveControlNumber("max_token_age_minutes", 10))) * 60);
+    const strictMaxTokenAgeSecondsRaw = Math.max(30, getDoctorEffectiveControlNumber("max_token_age_seconds", 240));
     const strictMaxTokenAgeSeconds = isDoctorDexTurboEnabled()
       ? Math.max(120, strictMaxTokenAgeSecondsRaw)
       : strictMaxTokenAgeSecondsRaw;
-    const maxDevWalletPct = Math.max(0, Number(doctorRuntime.controls.max_dev_wallet_pct || 3));
-    const minUniqueBuyers = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_unique_buyers || 40)));
-    const minBuyRatioPct = Math.max(1, Number(doctorRuntime.controls.min_buy_ratio_pct || 65));
-    const minBuys5m = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_buys_5m || 3)));
-    const maxSells5m = Math.max(0, Math.trunc(Number(doctorRuntime.controls.max_sells_5m || 1)));
-    const minLiquiditySol = Math.max(0.1, Number(doctorRuntime.controls.min_liquidity_sol || 2));
-    const maxLiquiditySol = Math.max(minLiquiditySol, Number(doctorRuntime.controls.max_liquidity_sol || 50));
-    const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours ?? 24)) > 0;
+    const maxDevWalletPct = Math.max(0, getDoctorEffectiveControlNumber("max_dev_wallet_pct", 3));
+    const minUniqueBuyers = Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("min_unique_buyers", 40)));
+    const minBuyRatioPct = Math.max(1, getDoctorEffectiveControlNumber("min_buy_ratio_pct", 65));
+    const minBuys5m = Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("min_buys_5m", 3)));
+    const maxSells5m = Math.max(0, Math.trunc(getDoctorEffectiveControlNumber("max_sells_5m", 1)));
+    const minLiquiditySol = Math.max(0.1, getDoctorEffectiveControlNumber("min_liquidity_sol", 2));
+    const maxLiquiditySol = Math.max(minLiquiditySol, getDoctorEffectiveControlNumber("max_liquidity_sol", 50));
+    const requireLiquidityLock = Math.max(0, getDoctorEffectiveControlNumber("min_lock_hours", 24)) > 0;
     const openAddresses = new Set(doctorRuntime.positions.map((position) => String(position.address || "")));
 
     const candidatePool = activeTokens
       .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
-      .filter((token) => Number(token.score || 0) >= Math.max(1, Number(doctorRuntime.controls.strong_move_threshold_pct || 40)))
-      .filter((token) => Number(token.liquidity || 0) >= Math.max(1000, Number(doctorRuntime.controls.min_liquidity_usd || 0)))
+      .filter((token) => Number(token.score || 0) >= Math.max(1, getDoctorEffectiveControlNumber("strong_move_threshold_pct", 40)))
+      .filter((token) => Number(token.liquidity || 0) >= Math.max(1000, getDoctorEffectiveControlNumber("min_liquidity_usd", 0)))
       .filter((token) => Number(token.liquidity || 0) <= maxLiquidityUsd)
-      .filter((token) => Number(token.market_cap_usd || 0) >= Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000)))
-      .filter((token) => Number(token.volume_24h || 0) >= Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000)))
-      .filter((token) => Number(token.age_seconds || 0) >= Math.max(0, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 0))) * 60)
+      .filter((token) => Number(token.market_cap_usd || 0) >= Math.max(1, getDoctorEffectiveControlNumber("min_market_cap_usd", 15000)))
+      .filter((token) => Number(token.volume_24h || 0) >= Math.max(1, getDoctorEffectiveControlNumber("min_volume_24h_usd", 12000)))
+      .filter((token) => Number(token.age_seconds || 0) >= Math.max(0, Math.trunc(getDoctorEffectiveControlNumber("min_token_age_minutes", 0))) * 60)
       .filter((token) => Number(token.age_seconds || 0) <= Math.min(maxTokenAgeSeconds, strictMaxTokenAgeSeconds))
       .filter((token) => {
         const liquiditySol = Number((token as any).liquidity_sol || 0);
@@ -3515,7 +3626,7 @@ export async function registerRoutes(
       .filter((token) => {
         const topHolderPct = Number(token.top_holder_pct || 0);
         if (topHolderPct <= 0) return true;
-        return topHolderPct <= Math.max(1, Number(doctorRuntime.controls.quality_max_top_holder_pct || 24));
+        return topHolderPct <= Math.max(1, getDoctorEffectiveControlNumber("quality_max_top_holder_pct", 24));
       })
       .sort((a, b) => {
         const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
@@ -3716,29 +3827,29 @@ export async function registerRoutes(
         };
       }
 
-      const strategyWindowMinutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
+      const strategyWindowMinutes = Math.min(5, Math.max(3, getDoctorEffectiveControlNumber("strategy_window_minutes", 5)));
       const strategyWindowSeconds = Math.trunc(strategyWindowMinutes * 60);
-      const liquidityMin = Math.max(1000, Number(doctorRuntime.controls.min_liquidity_usd || 0));
-      const liquidityMax = Math.max(liquidityMin, Number(doctorRuntime.controls.max_liquidity_usd || 500000));
-      const topHolderMax = Math.max(1, Number(doctorRuntime.controls.quality_max_top_holder_pct || 24));
-      const maxDevWalletPct = Math.max(0, Number(doctorRuntime.controls.max_dev_wallet_pct || 3));
-      const minUniqueBuyers = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_unique_buyers || 40)));
-      const maxEarlySpikePct = Math.max(50, Number(doctorRuntime.controls.max_early_spike_pct || 200));
-      const volumeSpikeMinPct = Math.max(1, Number(doctorRuntime.controls.quality_min_volume_spike_pct || 12));
-      const minTokenAgeSeconds = Math.max(0, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 0))) * 60;
-      const maxTokenAgeSeconds = Math.max(minTokenAgeSeconds, Math.min(10, Math.trunc(Number(doctorRuntime.controls.max_token_age_minutes || 10))) * 60);
-      const strictMaxTokenAgeSecondsRaw = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
+      const liquidityMin = Math.max(1000, getDoctorEffectiveControlNumber("min_liquidity_usd", 0));
+      const liquidityMax = Math.max(liquidityMin, getDoctorEffectiveControlNumber("max_liquidity_usd", 500000));
+      const topHolderMax = Math.max(1, getDoctorEffectiveControlNumber("quality_max_top_holder_pct", 24));
+      const maxDevWalletPct = Math.max(0, getDoctorEffectiveControlNumber("max_dev_wallet_pct", 3));
+      const minUniqueBuyers = Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("min_unique_buyers", 40)));
+      const maxEarlySpikePct = Math.max(50, getDoctorEffectiveControlNumber("max_early_spike_pct", 200));
+      const volumeSpikeMinPct = Math.max(1, getDoctorEffectiveControlNumber("quality_min_volume_spike_pct", 12));
+      const minTokenAgeSeconds = Math.max(0, Math.trunc(getDoctorEffectiveControlNumber("min_token_age_minutes", 0))) * 60;
+      const maxTokenAgeSeconds = Math.max(minTokenAgeSeconds, Math.min(10, Math.trunc(getDoctorEffectiveControlNumber("max_token_age_minutes", 10))) * 60);
+      const strictMaxTokenAgeSecondsRaw = Math.max(30, getDoctorEffectiveControlNumber("max_token_age_seconds", 240));
       const strictMaxTokenAgeSeconds = isDoctorDexTurboEnabled()
         ? Math.max(120, strictMaxTokenAgeSecondsRaw)
         : strictMaxTokenAgeSecondsRaw;
-      const minVolume24h = Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000));
-      const minMarketCap = Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000));
-      const requireLiquidityLock = Math.max(0, Number(doctorRuntime.controls.min_lock_hours ?? 24)) > 0;
+      const minVolume24h = Math.max(1, getDoctorEffectiveControlNumber("min_volume_24h_usd", 12000));
+      const minMarketCap = Math.max(1, getDoctorEffectiveControlNumber("min_market_cap_usd", 15000));
+      const requireLiquidityLock = Math.max(0, getDoctorEffectiveControlNumber("min_lock_hours", 24)) > 0;
       const requireFreezeAuthorityDisabled = String(process.env.DOCTOR_REQUIRE_FREEZE_AUTHORITY_DISABLED || "true").trim().toLowerCase() !== "false";
       const strictContractSafety = String(process.env.DOCTOR_STRICT_CONTRACT_SAFETY || "true").trim().toLowerCase() !== "false";
       const strictLiquidityStability = String(process.env.DOCTOR_STRICT_LIQUIDITY_STABILITY || "false").trim().toLowerCase() === "true";
       const allowedLaunchSources = getAllowedLaunchSources();
-      const minBuyRatioPct = Math.max(1, Number(doctorRuntime.controls.min_buy_ratio_pct || 65));
+      const minBuyRatioPct = Math.max(1, getDoctorEffectiveControlNumber("min_buy_ratio_pct", 65));
 
       const createdAtMs = new Date(String(candidate.created_at || nowIso())).getTime();
       const fallbackAgeSeconds = Number.isFinite(createdAtMs) && createdAtMs > 0
@@ -3907,7 +4018,7 @@ export async function registerRoutes(
         min_buy_ratio_pct: minBuyRatioPct,
         max_top_holder_pct: topHolderMax,
         max_dev_wallet_pct: maxDevWalletPct,
-        min_lock_hours: Math.max(0, Number(doctorRuntime.controls.min_lock_hours ?? 24)),
+        min_lock_hours: Math.max(0, getDoctorEffectiveControlNumber("min_lock_hours", 24)),
         lock_launch_grace_minutes: Math.trunc(getLiquidityLockLaunchGraceSeconds() / 60),
         require_freeze_authority_disabled: requireFreezeAuthorityDisabled,
       };
@@ -3923,7 +4034,7 @@ export async function registerRoutes(
         anti_rug_detection: antiRugDetection,
       };
 
-      const requiredSignals = Math.max(1, Math.trunc(Number(doctorRuntime.controls.ai_min_signals_required || 8)));
+      const requiredSignals = Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("ai_min_signals_required", 8)));
       const requireStrictCoreChecks =
         String(process.env.DOCTOR_STRICT_AI_CORE_CHECKS || "false").trim().toLowerCase() === "true";
       const passedSignals = Object.values(checks).filter(Boolean).length;
