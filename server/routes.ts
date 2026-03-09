@@ -2054,9 +2054,7 @@ export async function registerRoutes(
         const validVolume = volume5mSol >= minVolumeSol;
         const insiderFastTrack =
           activeSnipePreset === "insider" &&
-          liquiditySol > 0 &&
-          buys5m >= 1 &&
-          buys5m >= Math.max(1, sells5m);
+          (liquiditySol > 0 || volume5mSol > 0 || buys5m >= 1);
         const failedChecks = [
           !validLiquidity ? "liquidity_window_failed" : null,
           !validPressure ? "buy_sell_pressure_failed" : null,
