@@ -4335,6 +4335,8 @@ export async function registerRoutes(
     }
 
     return {
+      user_id: statusUserId || null,
+      api_target: String(process.env.VITE_API_URL || process.env.TRADE_AID_BACKEND_URL || "").trim() || null,
       enabled: doctorRuntime.enabled,
       kill_switch: doctorRuntime.killSwitch,
       scan_interval_seconds: doctorRuntime.scanIntervalSeconds,
@@ -4731,6 +4733,12 @@ export async function registerRoutes(
     const explicitPrivateKey = String(payload.private_key || "").trim();
     const walletBalanceTimeoutMs = Math.max(300, Number(process.env.DOCTOR_WALLET_BALANCE_TIMEOUT_MS || 1200));
 
+    console.info("[doctor.connect-wallet] request", {
+      userId,
+      hasPrivateKey: Boolean(explicitPrivateKey),
+      explicitAddress: explicitAddress || null,
+    });
+
     if (!explicitPrivateKey) {
       return res.status(400).json({
         message: "manual_private_key_required",
@@ -4789,6 +4797,10 @@ export async function registerRoutes(
     await ensureDoctorLiveExecutionModeIfCapable();
     await persistDoctorRuntime(userId);
     await saveDoctorWalletForUser(userId);
+    console.info("[doctor.connect-wallet] success", {
+      userId,
+      walletAddress: String(doctorRuntime.wallet.address || "").trim() || null,
+    });
     return res.json(await buildDoctorStatus(userId));
   });
 

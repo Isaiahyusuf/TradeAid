@@ -1003,6 +1003,8 @@ export default function DoctorTrade() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">Engine</span><span>{viewData?.enabled ? "Live" : "Stopped"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Wallet Link</span><span>{walletConnected ? "Connected" : "Missing"}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">User ID</span><span className="truncate max-w-[220px] text-right">{viewData?.user_id || "unknown"}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">API Target</span><span className="truncate max-w-[220px] text-right">{viewData?.api_target || "same-origin"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Execution Mode</span><span>LIVE ONLY</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Live Capable</span><span>{viewData?.execution?.live_capable ? "Yes" : "No"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Network</span><span>Solana</span></div>

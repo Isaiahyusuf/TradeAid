@@ -52,6 +52,8 @@ export type DoctorDecisionJournalRow = {
 };
 
 export type DoctorStatus = {
+  user_id?: string | null;
+  api_target?: string | null;
   enabled: boolean;
   kill_switch: boolean;
   scan_interval_seconds?: number;
