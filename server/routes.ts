@@ -995,9 +995,23 @@ export async function registerRoutes(
     }
 
     if (!assistantAddress || !assistantPrivateKey) {
+      try {
+        const assistantStateGlobal = await storage.getAppState<Record<string, any>>(assistantRuntimeStateKeyPrefix);
+        const assistantWalletGlobal = assistantStateGlobal?.wallet as Record<string, any> | undefined;
+        if (assistantWalletGlobal && typeof assistantWalletGlobal === "object") {
+          const addresses = assistantWalletGlobal.addresses_by_chain as Record<string, any> | undefined;
+          const privateKeys = assistantWalletGlobal.private_keys_by_chain as Record<string, any> | undefined;
+          assistantAddress = assistantAddress || String(addresses?.solana || "").trim();
+          assistantPrivateKey = assistantPrivateKey || String(privateKeys?.solana || "").trim();
+        }
+      } catch {
+      }
+    }
+
+    if (!assistantAddress || !assistantPrivateKey) {
       const latestAssistantWallet = await getLatestAssistantWalletCredentials();
       const latestAssistantUserId = String(latestAssistantWallet.userId || "").trim();
-      if (latestAssistantUserId === normalizedUserId) {
+      if (!latestAssistantUserId || latestAssistantUserId === normalizedUserId) {
         assistantAddress = assistantAddress || String(latestAssistantWallet.walletPublicKey || "").trim();
         assistantPrivateKey = assistantPrivateKey || String(latestAssistantWallet.walletPrivateKey || "").trim();
       }
@@ -1126,12 +1140,12 @@ export async function registerRoutes(
       const assistantPrivateKey = String(fallbackAssistantCredentials.walletPrivateKey || "").trim();
       const assistantUserId = String(fallbackAssistantCredentials.userId || "").trim();
 
-      if (assistantUserId === currentOwner && assistantWalletAddress) {
+      if ((!assistantUserId || assistantUserId === currentOwner) && assistantWalletAddress) {
         doctorRuntime.wallet.address = assistantWalletAddress;
         hydrated = true;
       }
 
-      if (assistantUserId === currentOwner && assistantWalletAddress && assistantPrivateKey) {
+      if ((!assistantUserId || assistantUserId === currentOwner) && assistantWalletAddress && assistantPrivateKey) {
         const wallets = await getStoredDoctorWalletsByUser();
         const existing = wallets[currentOwner] as Record<string, any> | undefined;
         const hasStoredPrivateKey = Boolean(String(existing?.livePrivateKey || "").trim());
@@ -1203,7 +1217,7 @@ export async function registerRoutes(
       if ((!assistantPublicKey || !assistantPrivateKey) && ownerUserId) {
         const fallbackAssistantCredentials = await getLatestAssistantWalletCredentials();
         const assistantUserId = String(fallbackAssistantCredentials.userId || "").trim();
-        if (assistantUserId === ownerUserId) {
+        if (!assistantUserId || assistantUserId === ownerUserId) {
           assistantPublicKey = assistantPublicKey || String(fallbackAssistantCredentials.walletPublicKey || "").trim();
           assistantPrivateKey = assistantPrivateKey || String(fallbackAssistantCredentials.walletPrivateKey || "").trim();
         }
@@ -1592,6 +1606,15 @@ export async function registerRoutes(
 
     if (loaded) {
       applyDoctorRuntimeSnapshot(loaded);
+    } else {
+      try {
+        const legacy = await storage.getAppState<Record<string, any>>(doctorRuntimeStateKey);
+        if (legacy && typeof legacy === "object") {
+          applyDoctorRuntimeSnapshot(legacy);
+          await persistDoctorRuntime(normalizedUserId);
+        }
+      } catch {
+      }
     }
 
     doctorRuntime.ownerUserId = normalizedUserId;
@@ -4989,7 +5012,18 @@ export async function registerRoutes(
   const startDoctorCyclesForEnabledUsers = async () => {
     try {
       const runtimeByUser = await getStoredDoctorRuntimesByUser();
-      const userIds = Object.keys(runtimeByUser || {}).filter(Boolean);
+      let userIds = Object.keys(runtimeByUser || {}).filter(Boolean);
+
+      if (userIds.length === 0) {
+        const legacy = await storage.getAppState<Record<string, any>>(doctorRuntimeStateKey);
+        const legacyOwner = String(legacy?.ownerUserId || "").trim();
+        if (legacy && typeof legacy === "object" && legacyOwner) {
+          runtimeByUser[legacyOwner] = legacy;
+          await setStoredDoctorRuntimesByUser(runtimeByUser);
+          userIds = [legacyOwner];
+        }
+      }
+
       for (const userId of userIds) {
         const runtime = runtimeByUser[userId] as Record<string, any> | undefined;
         if (runtime && runtime.enabled) {
