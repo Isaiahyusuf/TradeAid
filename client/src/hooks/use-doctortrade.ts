@@ -183,7 +183,6 @@ export function useDoctorStatus() {
     },
     initialData: readCached,
     enabled: true,
-    placeholderData: (previousData) => previousData,
     staleTime: 5000,
     refetchInterval: 3000,
     refetchIntervalInBackground: true,
