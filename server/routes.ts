@@ -3981,13 +3981,20 @@ export async function registerRoutes(
     let hasBlockingError = false;
 
     if (buyCandidate && canBuy) {
-      const enforceAiValidation = String(process.env.DOCTOR_ENFORCE_AI_VALIDATION || "").trim().toLowerCase() === "true"
-        || doctorRuntime.execution.mode === "live";
-      const skipAiGateForDetectedSignal = String((buyCandidate as any).source || "").includes("dexscreener_detected_signal");
+      const isInsiderPreset = activeSnipePreset === "insider";
+      const enforceAiValidation = !isInsiderPreset && (
+        String(process.env.DOCTOR_ENFORCE_AI_VALIDATION || "").trim().toLowerCase() === "true"
+        || doctorRuntime.execution.mode === "live"
+      );
+      const skipAiGateForDetectedSignal =
+        isInsiderPreset ||
+        String((buyCandidate as any).source || "").includes("dexscreener_detected_signal");
       const aiValidation = skipAiGateForDetectedSignal
         ? {
             allowed: true,
-            reason: "ai_validation_bypassed_for_detected_signal",
+            reason: isInsiderPreset
+              ? "ai_validation_bypassed_for_insider_preset"
+              : "ai_validation_bypassed_for_detected_signal",
             checks: {},
             passed_signals: 0,
             required_signals: 0,
