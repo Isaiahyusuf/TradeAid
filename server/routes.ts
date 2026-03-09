@@ -4731,12 +4731,26 @@ export async function registerRoutes(
     const explicitPrivateKey = String(payload.private_key || "").trim();
     const walletBalanceTimeoutMs = Math.max(300, Number(process.env.DOCTOR_WALLET_BALANCE_TIMEOUT_MS || 1200));
 
+    if (!explicitPrivateKey) {
+      return res.status(400).json({
+        message: "manual_private_key_required",
+        detail: "Paste your wallet private key to connect DoctorTrade.",
+      });
+    }
+
     let resolvedAddress = explicitAddress;
     if (!resolvedAddress && explicitPrivateKey) {
       resolvedAddress = deriveSolanaAddressFromPrivateKey(explicitPrivateKey);
       if (!resolvedAddress) {
         return res.status(400).json({ message: "Invalid Solana private key format" });
       }
+    }
+
+    if (explicitAddress && resolvedAddress && explicitAddress !== resolvedAddress) {
+      return res.status(400).json({
+        message: "wallet_address_mismatch",
+        detail: "Provided public address does not match the private key.",
+      });
     }
 
     if (resolvedAddress) {
@@ -4753,9 +4767,7 @@ export async function registerRoutes(
       }
     }
 
-    if (explicitPrivateKey) {
-      await setDoctorLivePrivateKeyForUser(userId, explicitPrivateKey);
-    }
+    await setDoctorLivePrivateKeyForUser(userId, explicitPrivateKey);
 
     {
       const wallets = await getStoredDoctorWalletsByUser();

@@ -492,33 +492,11 @@ export default function DoctorTrade() {
   };
 
   const handleConnectWallet = () => {
-    connectWalletMutation.mutate(
-      { use_existing_wallet: true },
-      {
-        onSuccess: (status) => {
-          persistSettingsLocalBackup({
-            ...(viewData?.trade_controls || {}),
-            wallet_address: String(status?.wallet?.address || ""),
-          });
-          toast({ title: "Wallet connected", description: "DoctorTrade is now linked to your wallet." });
-        },
-        onError: (error) => {
-          const message = error instanceof Error ? error.message : "Wallet connect failed";
-          const lower = message.toLowerCase();
-          if (
-            lower.includes("wallet_setup_required_open_wallet_tab") ||
-            lower.includes("no wallet found") ||
-            lower.includes("wallet data missing") ||
-            lower.includes("wallet not created") ||
-            lower.includes("wallet")
-          ) {
-            setLocation("/wallet?action=connect&returnTo=%2Fdoctortrade");
-            return;
-          }
-          toast({ title: "Wallet connection failed", description: message, variant: "destructive" });
-        },
-      },
-    );
+    toast({
+      title: "Private key required",
+      description: "Use Manual Private Key Import to connect your DoctorTrade wallet.",
+      variant: "destructive",
+    });
   };
 
   const handleDisconnectWallet = () => {
