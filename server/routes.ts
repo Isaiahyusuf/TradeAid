@@ -995,23 +995,34 @@ export async function registerRoutes(
     }
 
     if (!assistantAddress || !assistantPrivateKey) {
-      try {
-        const assistantStateGlobal = await storage.getAppState<Record<string, any>>(assistantRuntimeStateKeyPrefix);
-        const assistantWalletGlobal = assistantStateGlobal?.wallet as Record<string, any> | undefined;
-        if (assistantWalletGlobal && typeof assistantWalletGlobal === "object") {
-          const addresses = assistantWalletGlobal.addresses_by_chain as Record<string, any> | undefined;
-          const privateKeys = assistantWalletGlobal.private_keys_by_chain as Record<string, any> | undefined;
-          assistantAddress = assistantAddress || String(addresses?.solana || "").trim();
-          assistantPrivateKey = assistantPrivateKey || String(privateKeys?.solana || "").trim();
+      let legacyOwnerUserId = String(doctorRuntime.ownerUserId || "").trim();
+      if (!legacyOwnerUserId) {
+        try {
+          const legacyRuntime = await storage.getAppState<Record<string, any>>(doctorRuntimeStateKey);
+          legacyOwnerUserId = String(legacyRuntime?.ownerUserId || "").trim();
+        } catch {
         }
-      } catch {
+      }
+
+      if (legacyOwnerUserId && legacyOwnerUserId === normalizedUserId) {
+        try {
+          const assistantStateGlobal = await storage.getAppState<Record<string, any>>(assistantRuntimeStateKeyPrefix);
+          const assistantWalletGlobal = assistantStateGlobal?.wallet as Record<string, any> | undefined;
+          if (assistantWalletGlobal && typeof assistantWalletGlobal === "object") {
+            const addresses = assistantWalletGlobal.addresses_by_chain as Record<string, any> | undefined;
+            const privateKeys = assistantWalletGlobal.private_keys_by_chain as Record<string, any> | undefined;
+            assistantAddress = assistantAddress || String(addresses?.solana || "").trim();
+            assistantPrivateKey = assistantPrivateKey || String(privateKeys?.solana || "").trim();
+          }
+        } catch {
+        }
       }
     }
 
     if (!assistantAddress || !assistantPrivateKey) {
       const latestAssistantWallet = await getLatestAssistantWalletCredentials();
       const latestAssistantUserId = String(latestAssistantWallet.userId || "").trim();
-      if (!latestAssistantUserId || latestAssistantUserId === normalizedUserId) {
+      if (latestAssistantUserId === normalizedUserId) {
         assistantAddress = assistantAddress || String(latestAssistantWallet.walletPublicKey || "").trim();
         assistantPrivateKey = assistantPrivateKey || String(latestAssistantWallet.walletPrivateKey || "").trim();
       }
@@ -1140,12 +1151,12 @@ export async function registerRoutes(
       const assistantPrivateKey = String(fallbackAssistantCredentials.walletPrivateKey || "").trim();
       const assistantUserId = String(fallbackAssistantCredentials.userId || "").trim();
 
-      if ((!assistantUserId || assistantUserId === currentOwner) && assistantWalletAddress) {
+      if (assistantUserId === currentOwner && assistantWalletAddress) {
         doctorRuntime.wallet.address = assistantWalletAddress;
         hydrated = true;
       }
 
-      if ((!assistantUserId || assistantUserId === currentOwner) && assistantWalletAddress && assistantPrivateKey) {
+      if (assistantUserId === currentOwner && assistantWalletAddress && assistantPrivateKey) {
         const wallets = await getStoredDoctorWalletsByUser();
         const existing = wallets[currentOwner] as Record<string, any> | undefined;
         const hasStoredPrivateKey = Boolean(String(existing?.livePrivateKey || "").trim());
@@ -1217,7 +1228,7 @@ export async function registerRoutes(
       if ((!assistantPublicKey || !assistantPrivateKey) && ownerUserId) {
         const fallbackAssistantCredentials = await getLatestAssistantWalletCredentials();
         const assistantUserId = String(fallbackAssistantCredentials.userId || "").trim();
-        if (!assistantUserId || assistantUserId === ownerUserId) {
+        if (assistantUserId === ownerUserId) {
           assistantPublicKey = assistantPublicKey || String(fallbackAssistantCredentials.walletPublicKey || "").trim();
           assistantPrivateKey = assistantPrivateKey || String(fallbackAssistantCredentials.walletPrivateKey || "").trim();
         }
