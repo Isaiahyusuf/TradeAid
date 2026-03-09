@@ -221,6 +221,24 @@ export default function DoctorTrade() {
     [viewData?.recent_trades],
   );
 
+  const decisionJournalRows = useMemo(() => {
+    const cutoffMs = Date.now() - (24 * 60 * 60 * 1000);
+    return (viewData?.decision_journal || [])
+      .filter((row: any) => {
+        const token = String(row?.token || "").trim().toLowerCase();
+        if (token === "xmoney" || token === "x-money") return false;
+
+        const decision = String(row?.decision || "").trim().toLowerCase();
+        if (decision !== "buy" && decision !== "sell" && decision !== "skip") return false;
+
+        const ts = new Date(String(row?.timestamp || "")).getTime();
+        if (!Number.isFinite(ts) || ts <= 0) return false;
+
+        return ts >= cutoffMs;
+      })
+      .slice(0, 16);
+  }, [viewData?.decision_journal]);
+
   const scannerSuccessRate = Number(viewData?.scanner_health?.overall?.success_rate_pct || 0);
   const autoSnipeReady = Boolean(
     viewData?.enabled &&
@@ -981,7 +999,7 @@ export default function DoctorTrade() {
             <Card className="p-4">
               <h2 className="text-sm font-semibold mb-3">Decision Journal</h2>
               <div className="space-y-2 max-h-56 overflow-auto">
-                {(viewData?.decision_journal || []).slice(0, 16).map((row, index) => (
+                {decisionJournalRows.map((row, index) => (
                   <div key={`${row.address || "journal"}-${index}`} className="border rounded-md p-2">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-sm font-semibold">{row.token || "UNKNOWN"}</p>
@@ -991,7 +1009,7 @@ export default function DoctorTrade() {
                     <p className="text-[11px] text-muted-foreground">{fmtTs(row.timestamp)} · size {(row.size_pct ?? 0).toFixed(2)}%</p>
                   </div>
                 ))}
-                {!viewData?.decision_journal?.length && <p className="text-sm text-muted-foreground">No decisions logged yet.</p>}
+                {!decisionJournalRows.length && <p className="text-sm text-muted-foreground">No decisions logged yet.</p>}
               </div>
             </Card>
           </div>

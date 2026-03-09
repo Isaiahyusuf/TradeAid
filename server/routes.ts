@@ -4238,6 +4238,23 @@ export async function registerRoutes(
     const schedulerJob = statusUserId ? await getDoctorSchedulerJobForUser(statusUserId) : null;
     const schedulerNextRunAtMs = Math.max(0, Number((schedulerJob as any)?.next_run_at || 0));
     const schedulerLagMs = schedulerNextRunAtMs > 0 ? Math.max(0, Date.now() - schedulerNextRunAtMs) : 0;
+    const decisionRetentionHours = Math.max(1, Number(process.env.DOCTORTRADE_RECENT_RETENTION_HOURS || 24));
+    const decisionRetentionMs = decisionRetentionHours * 60 * 60 * 1000;
+    const nowMs = Date.now();
+    const filteredDecisionJournal = doctorRuntime.decisionJournal
+      .filter((row) => {
+        const token = String((row as any)?.token || "").trim().toLowerCase();
+        if (token === "xmoney" || token === "x-money") return false;
+
+        const decision = String((row as any)?.decision || "").trim().toLowerCase();
+        if (decision !== "buy" && decision !== "sell" && decision !== "skip") return false;
+
+        const timestampMs = new Date(String((row as any)?.timestamp || "")).getTime();
+        if (!Number.isFinite(timestampMs) || timestampMs <= 0) return false;
+
+        return nowMs - timestampMs <= decisionRetentionMs;
+      })
+      .slice(0, 60);
 
     let statusPositions = doctorRuntime.positions.slice(0, 30);
     if (doctorRuntime.execution.mode === "live") {
@@ -4375,7 +4392,7 @@ export async function registerRoutes(
       active_tokens: activeTokens,
       positions: statusPositions,
       recent_trades: doctorRuntime.recentTrades.slice(0, 40),
-      decision_journal: doctorRuntime.decisionJournal.slice(0, 60),
+      decision_journal: filteredDecisionJournal,
       performance: doctorRuntime.performance.slice(0, 30),
       execution_audit: doctorRuntime.executionAudit.slice(0, 80),
       sniper_logs: doctorSniperLogs.slice(0, 80),
