@@ -3749,6 +3749,28 @@ export async function registerRoutes(
         });
       }
     }
+    if (!buyCandidate && activeSnipePreset === "insider") {
+      const insiderFallbackPool = activeTokens
+        .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
+        .filter((token) => !openAddresses.has(String(token.address || "")))
+        .sort((a, b) => {
+          const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+          if (scoreDiff !== 0) return scoreDiff;
+          return Number(b.volume_5m || 0) - Number(a.volume_5m || 0);
+        });
+
+      buyCandidate = insiderFallbackPool[0];
+      if (buyCandidate) {
+        appendDoctorSniperLog({
+          event: "candidate_selected",
+          source: String((buyCandidate as any).source || "scanner"),
+          symbol: String((buyCandidate as any).symbol || "UNKNOWN"),
+          mint: String((buyCandidate as any).address || ""),
+          reason: "insider_live_fallback_candidate",
+          preset: activeSnipePreset,
+        });
+      }
+    }
     if (!buyCandidate) {
       buyCandidate = await getFallbackDetectedCandidate();
       if (buyCandidate) {
