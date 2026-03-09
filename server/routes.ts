@@ -793,6 +793,7 @@ export async function registerRoutes(
   const doctorStateDir = resolve(process.cwd(), "server", "state");
   const doctorStateFile = resolve(doctorStateDir, "doctortrade.runtime.json");
   const doctorRuntimeStateKey = "doctortrade.runtime.v1";
+  const doctorRuntimeByUserStateKey = "doctortrade.runtime.by_user.v1";
   const doctorWalletByUserStateKey = "doctortrade.wallets.by_user.v1";
   const assistantRuntimeStateKeyPrefix = "assistant.runtime.v1";
 
@@ -908,6 +909,22 @@ export async function registerRoutes(
     await storage.setAppState(doctorWalletByUserStateKey, value);
   };
 
+  const getStoredDoctorRuntimesByUser = async (): Promise<Record<string, any>> => {
+    try {
+      const state = await storage.getAppState<Record<string, any>>(doctorRuntimeByUserStateKey);
+      if (state && typeof state === "object" && !Array.isArray(state)) {
+        return state;
+      }
+      return {};
+    } catch {
+      return {};
+    }
+  };
+
+  const setStoredDoctorRuntimesByUser = async (value: Record<string, any>) => {
+    await storage.setAppState(doctorRuntimeByUserStateKey, value);
+  };
+
   const loadDoctorWalletForUser = async (userId: string) => {
     const wallets = await getStoredDoctorWalletsByUser();
     const userWallet = wallets[userId] as Record<string, any> | undefined;
@@ -987,7 +1004,7 @@ export async function registerRoutes(
     await refreshDoctorWalletBalanceFromChain(assistantAddress, true);
     await ensureDoctorLiveExecutionModeIfCapable();
     await saveDoctorWalletForUser(normalizedUserId);
-    await persistDoctorRuntime();
+    await persistDoctorRuntime(normalizedUserId);
 
     return {
       synced: true,
@@ -1266,22 +1283,130 @@ export async function registerRoutes(
     return doctorRuntime.ownerUserId === userId;
   };
 
-  const persistDoctorRuntime = async () => {
+  let doctorActiveUserId = "";
+
+  const persistDoctorRuntime = async (userId?: string) => {
     const snapshot = JSON.parse(JSON.stringify(doctorRuntime));
+    const targetUserId = String(userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
     try {
       await mkdir(doctorStateDir, { recursive: true });
-      await Promise.allSettled([
-        writeFile(doctorStateFile, JSON.stringify(snapshot, null, 2), "utf8"),
-        storage.setAppState(doctorRuntimeStateKey, snapshot),
-      ]);
+      if (targetUserId) {
+        const runtimeByUser = await getStoredDoctorRuntimesByUser();
+        runtimeByUser[targetUserId] = snapshot;
+        await Promise.allSettled([
+          storage.setAppState(doctorRuntimeByUserStateKey, runtimeByUser),
+          writeFile(doctorStateFile, JSON.stringify(snapshot, null, 2), "utf8"),
+          storage.setAppState(doctorRuntimeStateKey, snapshot),
+        ]);
+      } else {
+        await Promise.allSettled([
+          writeFile(doctorStateFile, JSON.stringify(snapshot, null, 2), "utf8"),
+          storage.setAppState(doctorRuntimeStateKey, snapshot),
+        ]);
+      }
     } catch {
     }
+  };
+
+  const applyDoctorRuntimeSnapshot = (loaded: Record<string, any>) => {
+    let normalizedOnLoad = false;
+
+    if (typeof loaded.enabled === "boolean") {
+      doctorRuntime.enabled = loaded.enabled;
+    }
+    if (typeof loaded.ownerUserId === "string") {
+      doctorRuntime.ownerUserId = String(loaded.ownerUserId || "").trim();
+    }
+    if (typeof loaded.killSwitch === "boolean") {
+      doctorRuntime.killSwitch = loaded.killSwitch;
+    }
+    if (Number.isFinite(Number(loaded.scanIntervalSeconds))) {
+      doctorRuntime.scanIntervalSeconds = Math.max(2, Math.trunc(Number(loaded.scanIntervalSeconds)));
+    }
+
+    const wallet = loaded.wallet as Record<string, any> | undefined;
+    if (wallet && typeof wallet === "object") {
+      if (typeof wallet.address === "string") {
+        doctorRuntime.wallet.address = wallet.address;
+      }
+      if (Number.isFinite(Number(wallet.balanceSol))) {
+        const normalizedBalance = Math.max(0, Number(wallet.balanceSol));
+        doctorRuntime.wallet.balanceSol = normalizedBalance;
+        if (normalizedBalance !== Number(wallet.balanceSol)) {
+          normalizedOnLoad = true;
+        }
+      }
+      if (typeof wallet.separateWalletEnforced === "boolean") {
+        doctorRuntime.wallet.separateWalletEnforced = wallet.separateWalletEnforced;
+      }
+    }
+
+    const controls = loaded.controls as Record<string, any> | undefined;
+    if (controls && typeof controls === "object") {
+      for (const key of Object.keys(doctorRuntime.controls) as Array<keyof typeof doctorRuntime.controls>) {
+        if (Number.isFinite(Number(controls[key]))) {
+          (doctorRuntime.controls as any)[key] = Number(controls[key]);
+        }
+      }
+
+      if (typeof controls.snipe_preset === "string") {
+        (doctorRuntime.controls as any).snipe_preset = normalizeDoctorSnipePreset(controls.snipe_preset);
+      }
+    }
+
+    if (Array.isArray(loaded.recentTrades)) {
+      doctorRuntime.recentTrades = loaded.recentTrades.slice(0, 50);
+    }
+    if (Array.isArray(loaded.positions)) {
+      doctorRuntime.positions = loaded.positions.slice(0, 30);
+    }
+    if (Array.isArray(loaded.decisionJournal)) {
+      doctorRuntime.decisionJournal = loaded.decisionJournal.slice(0, 80);
+    }
+    if (Array.isArray(loaded.performance)) {
+      doctorRuntime.performance = loaded.performance.slice(0, 40);
+    }
+    if (loaded.execution && typeof loaded.execution === "object") {
+      const loadedMode = String((loaded.execution as Record<string, any>).mode || "").trim().toLowerCase();
+      doctorRuntime.execution.mode = loadedMode === "paper" ? "paper" : "live";
+    }
+    if (Array.isArray(loaded.executionAudit)) {
+      doctorRuntime.executionAudit = loaded.executionAudit.slice(0, 200);
+    }
+    if (loaded.lastDecision && typeof loaded.lastDecision === "object") {
+      doctorRuntime.lastDecision = loaded.lastDecision as Record<string, any>;
+    }
+
+    doctorRuntime.lastRunAt = typeof loaded.lastRunAt === "string" ? loaded.lastRunAt : null;
+    doctorRuntime.lastError = typeof loaded.lastError === "string" ? loaded.lastError : null;
+
+    doctorRuntime.controls.buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
+    doctorRuntime.controls.min_buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
+    doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
+    doctorRuntime.controls.min_token_age_minutes = Math.max(0, Number(doctorRuntime.controls.min_token_age_minutes || 0));
+    doctorRuntime.controls.max_token_age_minutes = Math.min(10, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
+    doctorRuntime.controls.max_token_age_seconds = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
+    (doctorRuntime.controls as any).snipe_preset = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
+    if (isDoctorDexTurboEnabled() && doctorRuntime.controls.max_token_age_seconds < 120) {
+      doctorRuntime.controls.max_token_age_seconds = 120;
+    }
+    if (doctorRuntime.killSwitch) {
+      doctorRuntime.enabled = false;
+    }
+    if (doctorRuntime.execution.mode === "paper") {
+      const normalizedPaperBalance = Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0));
+      if (normalizedPaperBalance !== Number(doctorRuntime.wallet.balanceSol || 0)) {
+        doctorRuntime.wallet.balanceSol = normalizedPaperBalance;
+        normalizedOnLoad = true;
+      }
+    }
+
+    return normalizedOnLoad;
   };
 
   const loadDoctorRuntime = async () => {
     try {
       let loaded: Record<string, any> | null = null;
-      let normalizedOnLoad = false;
 
       try {
         const state = await storage.getAppState<Record<string, any>>(doctorRuntimeStateKey);
@@ -1296,95 +1421,7 @@ export async function registerRoutes(
         loaded = JSON.parse(text) as Record<string, any>;
       }
 
-      if (typeof loaded.enabled === "boolean") {
-        doctorRuntime.enabled = loaded.enabled;
-      }
-      if (typeof loaded.ownerUserId === "string") {
-        doctorRuntime.ownerUserId = String(loaded.ownerUserId || "").trim();
-      }
-      if (typeof loaded.killSwitch === "boolean") {
-        doctorRuntime.killSwitch = loaded.killSwitch;
-      }
-      if (Number.isFinite(Number(loaded.scanIntervalSeconds))) {
-        doctorRuntime.scanIntervalSeconds = Math.max(2, Math.trunc(Number(loaded.scanIntervalSeconds)));
-      }
-
-      const wallet = loaded.wallet as Record<string, any> | undefined;
-      if (wallet && typeof wallet === "object") {
-        if (typeof wallet.address === "string") {
-          doctorRuntime.wallet.address = wallet.address;
-        }
-        if (Number.isFinite(Number(wallet.balanceSol))) {
-          const normalizedBalance = Math.max(0, Number(wallet.balanceSol));
-          doctorRuntime.wallet.balanceSol = normalizedBalance;
-          if (normalizedBalance !== Number(wallet.balanceSol)) {
-            normalizedOnLoad = true;
-          }
-        }
-        if (typeof wallet.separateWalletEnforced === "boolean") {
-          doctorRuntime.wallet.separateWalletEnforced = wallet.separateWalletEnforced;
-        }
-      }
-
-      const controls = loaded.controls as Record<string, any> | undefined;
-      if (controls && typeof controls === "object") {
-        for (const key of Object.keys(doctorRuntime.controls) as Array<keyof typeof doctorRuntime.controls>) {
-          if (Number.isFinite(Number(controls[key]))) {
-            (doctorRuntime.controls as any)[key] = Number(controls[key]);
-          }
-        }
-
-        if (typeof controls.snipe_preset === "string") {
-          (doctorRuntime.controls as any).snipe_preset = normalizeDoctorSnipePreset(controls.snipe_preset);
-        }
-      }
-
-      if (Array.isArray(loaded.recentTrades)) {
-        doctorRuntime.recentTrades = loaded.recentTrades.slice(0, 50);
-      }
-      if (Array.isArray(loaded.positions)) {
-        doctorRuntime.positions = loaded.positions.slice(0, 30);
-      }
-      if (Array.isArray(loaded.decisionJournal)) {
-        doctorRuntime.decisionJournal = loaded.decisionJournal.slice(0, 80);
-      }
-      if (Array.isArray(loaded.performance)) {
-        doctorRuntime.performance = loaded.performance.slice(0, 40);
-      }
-      if (loaded.execution && typeof loaded.execution === "object") {
-        const loadedMode = String((loaded.execution as Record<string, any>).mode || "").trim().toLowerCase();
-        doctorRuntime.execution.mode = loadedMode === "paper" ? "paper" : "live";
-      }
-      if (Array.isArray(loaded.executionAudit)) {
-        doctorRuntime.executionAudit = loaded.executionAudit.slice(0, 200);
-      }
-      if (loaded.lastDecision && typeof loaded.lastDecision === "object") {
-        doctorRuntime.lastDecision = loaded.lastDecision as Record<string, any>;
-      }
-
-      doctorRuntime.lastRunAt = typeof loaded.lastRunAt === "string" ? loaded.lastRunAt : null;
-      doctorRuntime.lastError = typeof loaded.lastError === "string" ? loaded.lastError : null;
-
-      doctorRuntime.controls.buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
-      doctorRuntime.controls.min_buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
-      doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
-      doctorRuntime.controls.min_token_age_minutes = Math.max(0, Number(doctorRuntime.controls.min_token_age_minutes || 0));
-      doctorRuntime.controls.max_token_age_minutes = Math.min(10, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
-      doctorRuntime.controls.max_token_age_seconds = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
-      (doctorRuntime.controls as any).snipe_preset = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
-      if (isDoctorDexTurboEnabled() && doctorRuntime.controls.max_token_age_seconds < 120) {
-        doctorRuntime.controls.max_token_age_seconds = 120;
-      }
-      if (doctorRuntime.killSwitch) {
-        doctorRuntime.enabled = false;
-      }
-      if (doctorRuntime.execution.mode === "paper") {
-        const normalizedPaperBalance = Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0));
-        if (normalizedPaperBalance !== Number(doctorRuntime.wallet.balanceSol || 0)) {
-          doctorRuntime.wallet.balanceSol = normalizedPaperBalance;
-          normalizedOnLoad = true;
-        }
-      }
+      const normalizedOnLoad = applyDoctorRuntimeSnapshot(loaded);
       if (normalizedOnLoad) {
         await persistDoctorRuntime();
       }
@@ -1394,8 +1431,44 @@ export async function registerRoutes(
 
   await loadDoctorRuntime();
 
-  let doctorCycleRunning = false;
-  let doctorCycleTimer: NodeJS.Timeout | null = null;
+  const doctorRuntimeTemplate = JSON.parse(JSON.stringify(doctorRuntime)) as Record<string, any>;
+
+  const hydrateDoctorRuntimeWithDefaults = () => {
+    const clone = JSON.parse(JSON.stringify(doctorRuntimeTemplate)) as Record<string, any>;
+    Object.keys(doctorRuntime).forEach((key) => {
+      (doctorRuntime as any)[key] = clone[key];
+    });
+  };
+
+  const loadDoctorRuntimeForUser = async (userId: string) => {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return;
+    hydrateDoctorRuntimeWithDefaults();
+
+    let loaded: Record<string, any> | null = null;
+    try {
+      const byUser = await getStoredDoctorRuntimesByUser();
+      const row = byUser[normalizedUserId] as Record<string, any> | undefined;
+      if (row && typeof row === "object") {
+        loaded = row;
+      }
+    } catch {
+    }
+
+    if (loaded) {
+      applyDoctorRuntimeSnapshot(loaded);
+    }
+
+    doctorRuntime.ownerUserId = normalizedUserId;
+    doctorActiveUserId = normalizedUserId;
+    await loadDoctorWalletForUser(normalizedUserId);
+  };
+
+  const doctorCycleRunningByUser = new Set<string>();
+  const doctorCycleTimerByUser = new Map<string, NodeJS.Timeout>();
+  const doctorSchedulerStateKey = "doctortrade.scheduler.v1";
+  const doctorSchedulerInstanceId = `${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
+  let doctorSchedulerTimer: NodeJS.Timeout | null = null;
   let doctorEarlyScoredCache: { at: number; tokens: Array<Record<string, any>> } | null = null;
   const doctorTradeLogStateKey = "doctortrade.executions.v1";
   const doctorDexWorkerStateKey = "doctortrade.dex.worker.v1";
@@ -1414,6 +1487,150 @@ export async function registerRoutes(
       ...entry,
     });
     doctorSniperLogs = doctorSniperLogs.slice(0, 200);
+  };
+
+  const getDoctorSchedulerState = async (): Promise<Record<string, any>> => {
+    try {
+      const value = await storage.getAppState<Record<string, any>>(doctorSchedulerStateKey);
+      if (value && typeof value === "object") {
+        return value;
+      }
+      return { jobs: {}, lease: {} };
+    } catch {
+      return { jobs: {}, lease: {} };
+    }
+  };
+
+  const setDoctorSchedulerState = async (state: Record<string, any>) => {
+    await storage.setAppState(doctorSchedulerStateKey, state);
+  };
+
+  const upsertDoctorSchedulerJob = async (userId: string, enabled: boolean, intervalSeconds: number, runNow = false) => {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return;
+    const state = await getDoctorSchedulerState();
+    const jobs = (state.jobs && typeof state.jobs === "object") ? state.jobs as Record<string, any> : {};
+
+    if (!enabled) {
+      delete jobs[normalizedUserId];
+    } else {
+      const existingJob = (jobs[normalizedUserId] && typeof jobs[normalizedUserId] === "object")
+        ? jobs[normalizedUserId] as Record<string, any>
+        : {};
+      const nowMs = Date.now();
+      const nextRunAt = runNow
+        ? nowMs
+        : Number(existingJob.next_run_at || (nowMs + (Math.max(2, intervalSeconds) * 1000)));
+      jobs[normalizedUserId] = {
+        ...existingJob,
+        user_id: normalizedUserId,
+        enabled: true,
+        interval_seconds: Math.max(2, Math.trunc(intervalSeconds || 20)),
+        next_run_at: Math.max(nowMs, nextRunAt),
+        updated_at: nowIso(),
+      };
+    }
+
+    state.jobs = jobs;
+    await setDoctorSchedulerState(state);
+  };
+
+  const getDoctorSchedulerJobForUser = async (userId: string) => {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return null;
+    const state = await getDoctorSchedulerState();
+    const jobs = (state.jobs && typeof state.jobs === "object") ? state.jobs as Record<string, any> : {};
+    const job = jobs[normalizedUserId];
+    if (!job || typeof job !== "object") return null;
+    return job as Record<string, any>;
+  };
+
+  const acquireDoctorSchedulerLease = async () => {
+    const leaseMs = Math.max(2_000, Number(process.env.DOCTOR_SCHEDULER_LEASE_MS || 8_000));
+    const nowMs = Date.now();
+    const state = await getDoctorSchedulerState();
+    const lease = (state.lease && typeof state.lease === "object") ? state.lease as Record<string, any> : {};
+    const holder = String(lease.holder || "").trim();
+    const expiresAt = Number(lease.expires_at || 0);
+
+    if (holder && holder !== doctorSchedulerInstanceId && expiresAt > nowMs) {
+      return { acquired: false, state } as const;
+    }
+
+    state.lease = {
+      holder: doctorSchedulerInstanceId,
+      expires_at: nowMs + leaseMs,
+      updated_at: nowIso(),
+    };
+    await setDoctorSchedulerState(state);
+    return { acquired: true, state } as const;
+  };
+
+  const runDoctorSchedulerTick = async () => {
+    const leaseResult = await acquireDoctorSchedulerLease();
+    if (!leaseResult.acquired) return;
+
+    const state = leaseResult.state;
+    const jobs = (state.jobs && typeof state.jobs === "object") ? state.jobs as Record<string, any> : {};
+    const nowMs = Date.now();
+
+    for (const userId of Object.keys(jobs)) {
+      const job = jobs[userId] as Record<string, any>;
+      const enabled = Boolean(job?.enabled);
+      if (!enabled) {
+        delete jobs[userId];
+        continue;
+      }
+
+      const intervalSeconds = Math.max(2, Math.trunc(Number(job?.interval_seconds || 20)));
+      const nextRunAt = Number(job?.next_run_at || 0);
+      if (nextRunAt > nowMs) {
+        continue;
+      }
+
+      const runStartedAt = Date.now();
+      const runResult = await runDoctorCycleSafely("auto", userId);
+      const runCompletedAtIso = nowIso();
+      const runDurationMs = Math.max(0, Date.now() - runStartedAt);
+      const previousRunCount = Math.max(0, Math.trunc(Number(job?.run_count || 0)));
+      const previousFailCount = Math.max(0, Math.trunc(Number(job?.fail_count || 0)));
+
+      jobs[userId] = {
+        ...(job || {}),
+        user_id: userId,
+        enabled: true,
+        interval_seconds: intervalSeconds,
+        next_run_at: nowMs + (intervalSeconds * 1000),
+        last_run_at: runCompletedAtIso,
+        last_run_duration_ms: runDurationMs,
+        last_success_at: runResult.ok ? runCompletedAtIso : String(job?.last_success_at || ""),
+        last_error: runResult.ok ? null : String(runResult.error || "scheduler_cycle_failed"),
+        run_count: previousRunCount + 1,
+        fail_count: runResult.ok ? previousFailCount : (previousFailCount + 1),
+        updated_at: nowIso(),
+      };
+    }
+
+    state.jobs = jobs;
+    state.lease = {
+      holder: doctorSchedulerInstanceId,
+      expires_at: Date.now() + Math.max(2_000, Number(process.env.DOCTOR_SCHEDULER_LEASE_MS || 8_000)),
+      updated_at: nowIso(),
+    };
+    await setDoctorSchedulerState(state);
+  };
+
+  const startDoctorScheduler = () => {
+    if (doctorSchedulerTimer) {
+      clearInterval(doctorSchedulerTimer);
+      doctorSchedulerTimer = null;
+    }
+    const pollMs = Math.max(1_000, Math.trunc(Number(process.env.DOCTOR_SCHEDULER_POLL_MS || 2_000)));
+    doctorSchedulerTimer = setInterval(async () => {
+      await runDoctorSchedulerTick();
+    }, pollMs);
+    doctorSchedulerTimer.unref?.();
+    void runDoctorSchedulerTick();
   };
 
   const persistDoctorDexWorkerState = async () => {
@@ -1511,11 +1728,16 @@ export async function registerRoutes(
     return doctorRuntime.wallet.balanceSol;
   };
 
-  const runDoctorCycleSafely = async (trigger: "manual" | "auto") => {
-    if (doctorCycleRunning) return;
-    doctorCycleRunning = true;
+  const runDoctorCycleSafely = async (trigger: "manual" | "auto", userId?: string) => {
+    const normalizedUserId = String(userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
+    if (!normalizedUserId) return { ok: false, error: "missing_user_id" } as const;
+    if (doctorCycleRunningByUser.has(normalizedUserId)) return { ok: false, error: "cycle_already_running" } as const;
+    doctorCycleRunningByUser.add(normalizedUserId);
     try {
+      await loadDoctorRuntimeForUser(normalizedUserId);
       await executeDoctorCycle(trigger);
+      await persistDoctorRuntime(normalizedUserId);
+      return { ok: true } as const;
     } catch (error) {
       const errorSummary = error instanceof Error
         ? `${String(error.name || "Error").trim()}: ${String(error.message || "").trim()}`.trim()
@@ -1527,18 +1749,43 @@ export async function registerRoutes(
         trigger,
         at: nowIso(),
       };
-      await persistDoctorRuntime();
+      await persistDoctorRuntime(normalizedUserId);
+      return { ok: false, error: doctorRuntime.lastError } as const;
     } finally {
-      doctorCycleRunning = false;
+      doctorCycleRunningByUser.delete(normalizedUserId);
     }
+  };
+
+  const stopDoctorCycleForUser = async (userId: string) => {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return;
+    const existing = doctorCycleTimerByUser.get(normalizedUserId);
+    if (existing) {
+      clearInterval(existing);
+      doctorCycleTimerByUser.delete(normalizedUserId);
+    }
+    await upsertDoctorSchedulerJob(normalizedUserId, false, 20, false);
+  };
+
+  const startDoctorCycleForUser = async (userId: string) => {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return;
+
+    await stopDoctorCycleForUser(normalizedUserId);
+    await loadDoctorRuntimeForUser(normalizedUserId);
+    if (!doctorRuntime.enabled) {
+      await upsertDoctorSchedulerJob(normalizedUserId, false, doctorRuntime.scanIntervalSeconds, false);
+      return;
+    }
+
+    await upsertDoctorSchedulerJob(normalizedUserId, true, doctorRuntime.scanIntervalSeconds, true);
+    await runDoctorSchedulerTick();
   };
 
   const runDoctorDexWorkerPoll = async () => {
     if (doctorDexWorkerRunning) return;
     doctorDexWorkerRunning = true;
     try {
-      await ensureDoctorOwnerAndWalletHydrated();
-
       const nowMs = Date.now();
       const turboSnipeEnabled = String(process.env.DOCTOR_DEX_TURBO || "true").trim().toLowerCase() !== "false";
       const activeSnipePreset = getDoctorActiveSnipePreset();
@@ -1626,51 +1873,6 @@ export async function registerRoutes(
           continue;
         }
 
-        if (!doctorRuntime.enabled) {
-          const autoReenable = String(process.env.DOCTOR_AUTOREENABLE_ON_SIGNAL || "true").trim().toLowerCase() !== "false";
-          if (autoReenable && !doctorRuntime.killSwitch) {
-            const liveCredentials = await getDoctorLiveWalletCredentials();
-            const resolvedWalletAddress = String(doctorRuntime.wallet.address || liveCredentials.walletPublicKey || "").trim();
-            if (resolvedWalletAddress) {
-              doctorRuntime.wallet.address = resolvedWalletAddress;
-            }
-            doctorRuntime.enabled = true;
-            await persistDoctorRuntime();
-            appendDoctorSniperLog({
-              event: "auto_enabled",
-              source: "dexscreener",
-              symbol: String(pair?.baseToken?.symbol || "UNKNOWN"),
-              mint,
-              reason: "signal_detected_auto_enable",
-            });
-          }
-        }
-
-        if (!doctorRuntime.enabled) {
-          appendDoctorSniperLog({
-            event: "blocked",
-            source: "dexscreener",
-            symbol: String(pair?.baseToken?.symbol || "UNKNOWN"),
-            mint,
-            reason: "doctortrade_disabled",
-          });
-        } else {
-          const liveCredentials = await getDoctorLiveWalletCredentials();
-          const resolvedWalletAddress = String(liveCredentials.walletPublicKey || doctorRuntime.wallet.address || "").trim();
-          if (resolvedWalletAddress) {
-            doctorRuntime.wallet.address = resolvedWalletAddress;
-          }
-          if (!resolvedWalletAddress) {
-          appendDoctorSniperLog({
-            event: "blocked",
-            source: "dexscreener",
-            symbol: String(pair?.baseToken?.symbol || "UNKNOWN"),
-            mint,
-            reason: "live_wallet_credentials_missing",
-          });
-          }
-        }
-
         doctorProcessedMints.set(mint, nowMs);
         doctorRejectedMints.delete(mint);
 
@@ -1688,19 +1890,9 @@ export async function registerRoutes(
 
       doctorDexWorkerLastPollAt = nowIso();
       await persistDoctorDexWorkerState();
-
-      const liveCredentials = await getDoctorLiveWalletCredentials();
-      const resolvedWalletAddress = String(liveCredentials.walletPublicKey || doctorRuntime.wallet.address || "").trim();
-      if (resolvedWalletAddress) {
-        doctorRuntime.wallet.address = resolvedWalletAddress;
-      }
-
-      if (doctorRuntime.enabled && resolvedWalletAddress) {
-        await runDoctorCycleSafely("auto");
-      }
+      await runDoctorSchedulerTick();
     } catch (error) {
       doctorRuntime.lastError = error instanceof Error ? error.message : "doctor_dex_worker_failed";
-      await persistDoctorRuntime();
     } finally {
       doctorDexWorkerRunning = false;
     }
@@ -2211,12 +2403,42 @@ export async function registerRoutes(
     doctorRuntime.decisionJournal = doctorRuntime.decisionJournal.filter((item) => isFresh((item as any).timestamp)).slice(0, 80);
 
     const rollingDayMs = 24 * 60 * 60 * 1000;
+    const activeExecutionMode = String(doctorRuntime.execution.mode || "paper").trim().toLowerCase();
     const buysLast24h = doctorRuntime.recentTrades.filter((trade) => {
       if (String((trade as any).action || "").toUpperCase() !== "BUY") return false;
+      const tradeExecutionMode = String((trade as any).execution_mode || "").trim().toLowerCase();
+      if (tradeExecutionMode && tradeExecutionMode !== activeExecutionMode) return false;
       const ts = new Date(String((trade as any).timestamp || "")).getTime();
       return Number.isFinite(ts) && ts > 0 && nowMs - ts <= rollingDayMs;
     }).length;
     doctorRuntime.controls.trades_today = buysLast24h;
+  };
+
+  const normalizeDoctorPositionExecutionMode = (position: Record<string, any>) => {
+    const explicitMode = String((position as any).execution_mode || "").trim().toLowerCase();
+    if (explicitMode === "paper" || explicitMode === "live") {
+      return explicitMode as "paper" | "live";
+    }
+
+    const address = String(position.address || "").trim();
+    if (!address) return "live" as const;
+
+    const relatedBuy = doctorRuntime.recentTrades.find((trade) => {
+      return String((trade as any).address || "").trim() === address
+        && String((trade as any).action || "").toUpperCase() === "BUY";
+    });
+
+    const inferredMode = String((relatedBuy as any)?.execution_mode || "").trim().toLowerCase();
+    if (inferredMode === "paper" || inferredMode === "live") {
+      return inferredMode as "paper" | "live";
+    }
+
+    const txHash = String((relatedBuy as any)?.tx_hash || "").trim().toLowerCase();
+    if (txHash.startsWith("paper_")) {
+      return "paper" as const;
+    }
+
+    return "live" as const;
   };
 
   const getDoctorPositionRotationMinutes = () => {
@@ -2926,6 +3148,46 @@ export async function registerRoutes(
     const tokenMap = new Map(activeTokens.map((token) => [String(token.address || ""), token]));
     const nowMs = Date.now();
     pruneDoctorRecentExecutionState(nowMs);
+
+    if (doctorRuntime.execution.mode === "live" && doctorRuntime.positions.length > 0) {
+      const retainedPositions: Array<Record<string, any>> = [];
+      for (const position of doctorRuntime.positions) {
+        const executionMode = normalizeDoctorPositionExecutionMode(position);
+        if (executionMode === "paper") {
+          const symbol = String(position.symbol || "UNKNOWN");
+          const address = String(position.address || "");
+          doctorRuntime.decisionJournal.unshift({
+            token: symbol,
+            address,
+            decision: "skip",
+            reason: "paper_position_removed_for_live_mode",
+            confidence: Number((position as any).confidence || 0),
+            size_pct: Number((position as any).size_pct || 0),
+            strategy_mode: "autonomous",
+            timestamp: nowIso(),
+          });
+          appendDoctorExecutionAudit({
+            action: "sell",
+            symbol,
+            mint: address,
+            amount_sol: Number(position.amount_sol || 0),
+            expected_price_usd: Number(position.current_price || position.entry_price || 0),
+            expected_notional_usd: 0,
+            trigger,
+            reason: "paper_position_removed_for_live_mode",
+            status: "skipped",
+            router: "state_cleanup",
+          });
+          continue;
+        }
+        retainedPositions.push({
+          ...position,
+          execution_mode: "live",
+        });
+      }
+      doctorRuntime.positions = retainedPositions.slice(0, 30);
+      doctorRuntime.decisionJournal = doctorRuntime.decisionJournal.slice(0, 80);
+    }
 
     const { dailyRealizedPnlUsd, consecutiveLosses } = computeDoctorRiskMetrics(nowMs);
 
@@ -3710,6 +3972,7 @@ export async function registerRoutes(
         trailing_stop_pct: Number(doctorRuntime.controls.trailing_stop_pct || 10),
         tp_stage: 0,
         amount_sol: buyAmountSol,
+        execution_mode: doctorRuntime.execution.mode,
         base_mint: String(buyCandidate.base_mint || getDoctorTradeBaseAssetMint()),
         opened_at: nowIso(),
         source: String(buyCandidate.source || "scanner"),
@@ -3860,7 +4123,7 @@ export async function registerRoutes(
       Boolean(String(liveCredentials.walletPublicKey || "").trim()) &&
       Boolean(String(liveCredentials.walletPrivateKey || "").trim());
 
-    const statusUserId = String(userId || doctorRuntime.ownerUserId || "").trim();
+    const statusUserId = String(userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
     const walletSnapshot = statusUserId
       ? await getDoctorWalletSnapshotForUser(statusUserId)
       : {
@@ -3873,6 +4136,33 @@ export async function registerRoutes(
 
     const walletAddress = String(walletSnapshot.address || doctorRuntime.wallet.address || "").trim();
     const walletConnected = Boolean(walletAddress) && Boolean(walletSnapshot.privateKeyConfigured);
+    const requiresLiveWallet = isDoctorLiveOnlyMode() || doctorRuntime.execution.mode === "live";
+    const maxTradesPerDay = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_trades_per_day || 1)));
+    const schedulerJob = statusUserId ? await getDoctorSchedulerJobForUser(statusUserId) : null;
+    const schedulerNextRunAtMs = Math.max(0, Number((schedulerJob as any)?.next_run_at || 0));
+    const schedulerLagMs = schedulerNextRunAtMs > 0 ? Math.max(0, Date.now() - schedulerNextRunAtMs) : 0;
+
+    let autoTradeBlockReason: string | null = null;
+    if (!doctorRuntime.enabled) {
+      autoTradeBlockReason = "doctortrade_disabled";
+    } else if (doctorRuntime.killSwitch) {
+      autoTradeBlockReason = "kill_switch_enabled";
+    } else if (requiresLiveWallet && !walletConnected) {
+      autoTradeBlockReason = "wallet_key_not_connected";
+    } else if (doctorRuntime.positions.length >= 3) {
+      autoTradeBlockReason = "max_open_positions_reached";
+    } else if (Number(doctorRuntime.controls.trades_today || 0) >= maxTradesPerDay) {
+      autoTradeBlockReason = "max_trades_reached";
+    } else if (dailyRealizedPnlUsd <= -Math.abs(Number(doctorRuntime.controls.daily_loss_limit_usd || 0))) {
+      autoTradeBlockReason = "daily_loss_limit_reached";
+    } else if (consecutiveLosses >= Math.max(1, Number(doctorRuntime.controls.max_consecutive_losses || 1))) {
+      autoTradeBlockReason = "max_consecutive_losses_reached";
+    } else if (String((doctorRuntime.lastDecision as any)?.action || "").toLowerCase() === "skip") {
+      const lastSkipReason = String((doctorRuntime.lastDecision as any)?.reason || "").trim();
+      if (lastSkipReason) {
+        autoTradeBlockReason = lastSkipReason;
+      }
+    }
 
     return {
       enabled: doctorRuntime.enabled,
@@ -3917,6 +4207,22 @@ export async function registerRoutes(
         base_asset_mint: getDoctorTradeBaseAssetMint(),
         bonk_mint: BONK_MINT,
         helius_rpc_url: getHeliusRpcUrl(),
+      },
+      auto_trade: {
+        blocked: Boolean(autoTradeBlockReason),
+        block_reason: autoTradeBlockReason,
+      },
+      scheduler: {
+        user_id: statusUserId || null,
+        scheduled: Boolean(schedulerJob?.enabled),
+        next_run_at: schedulerNextRunAtMs > 0 ? new Date(schedulerNextRunAtMs).toISOString() : null,
+        lag_ms: schedulerLagMs,
+        run_count: Math.max(0, Math.trunc(Number((schedulerJob as any)?.run_count || 0))),
+        fail_count: Math.max(0, Math.trunc(Number((schedulerJob as any)?.fail_count || 0))),
+        last_run_at: String((schedulerJob as any)?.last_run_at || "") || null,
+        last_success_at: String((schedulerJob as any)?.last_success_at || "") || null,
+        last_error: (schedulerJob as any)?.last_error || null,
+        lease_holder: doctorSchedulerInstanceId,
       },
       active_tokens: activeTokens,
       positions: doctorRuntime.positions.slice(0, 30),
@@ -3980,35 +4286,61 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    const ownerAccess = isDoctorOwner(userId);
-    const userWallet = await getDoctorWalletSnapshotForUser(userId);
-    if (ownerAccess) {
-      await loadDoctorWalletForUser(userId);
-      await refreshDoctorWalletBalanceFromChain(undefined, true);
-    }
+    await loadDoctorRuntimeForUser(userId);
+    await refreshDoctorWalletBalanceFromChain(undefined, true);
     const status = await buildDoctorStatus(userId);
-    if (ownerAccess) {
-      await saveDoctorWalletForUser(userId);
-    }
-    if (!ownerAccess) {
-      status.wallet = {
-        address: userWallet.address,
-        balance_sol: userWallet.balanceSol,
-        separate_wallet_enforced: userWallet.separateWalletEnforced,
-        private_key_configured: userWallet.privateKeyConfigured,
-        connection_status: userWallet.connected ? "connected" : "disconnected",
-      };
-      if (status.trade_controls) {
-        status.trade_controls.wallet_connected = Boolean(userWallet.connected);
-      }
-      status.enabled = false;
-      status.last_decision = {
-        action: "skip",
-        reason: "doctortrade_owned_by_other_user",
-        at: nowIso(),
-      };
-    }
+    await saveDoctorWalletForUser(userId);
     return res.json(status);
+  });
+
+  app.get("/api/doctor/scheduler", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const normalizedUserId = String(userId || "").trim();
+    const state = await getDoctorSchedulerState();
+    const jobs = (state.jobs && typeof state.jobs === "object") ? state.jobs as Record<string, any> : {};
+    const lease = (state.lease && typeof state.lease === "object") ? state.lease as Record<string, any> : {};
+    const userJob = jobs[normalizedUserId] as Record<string, any> | undefined;
+    const nowMs = Date.now();
+    const nextRunAtMs = Math.max(0, Number(userJob?.next_run_at || 0));
+    const lagMs = nextRunAtMs > 0 ? Math.max(0, nowMs - nextRunAtMs) : 0;
+
+    const allJobs = Object.values(jobs)
+      .filter((item) => item && typeof item === "object") as Array<Record<string, any>>;
+    const activeJobs = allJobs.filter((item) => Boolean(item.enabled));
+    const overdueJobs = activeJobs.filter((item) => {
+      const ts = Number(item.next_run_at || 0);
+      return ts > 0 && ts <= nowMs;
+    });
+
+    return res.json({
+      user: {
+        user_id: normalizedUserId,
+        scheduled: Boolean(userJob?.enabled),
+        interval_seconds: Math.max(2, Math.trunc(Number(userJob?.interval_seconds || 0))) || null,
+        next_run_at: nextRunAtMs > 0 ? new Date(nextRunAtMs).toISOString() : null,
+        lag_ms: lagMs,
+        run_count: Math.max(0, Math.trunc(Number(userJob?.run_count || 0))),
+        fail_count: Math.max(0, Math.trunc(Number(userJob?.fail_count || 0))),
+        last_run_at: String(userJob?.last_run_at || "") || null,
+        last_success_at: String(userJob?.last_success_at || "") || null,
+        last_error: userJob?.last_error || null,
+      },
+      queue: {
+        total_jobs: allJobs.length,
+        active_jobs: activeJobs.length,
+        overdue_jobs: overdueJobs.length,
+      },
+      lease: {
+        holder: String(lease.holder || "") || null,
+        is_local_holder: String(lease.holder || "") === doctorSchedulerInstanceId,
+        expires_at: Number(lease.expires_at || 0) > 0 ? new Date(Number(lease.expires_at)).toISOString() : null,
+      },
+      instance_id: doctorSchedulerInstanceId,
+    });
   });
 
   app.post("/api/doctor/control", isAuthenticated, async (req: any, res) => {
@@ -4016,47 +4348,24 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    claimDoctorOwnerIfUnowned(userId);
+    await loadDoctorRuntimeForUser(userId);
     const requestedEnable = Boolean(req.body?.enabled);
-    if (!isDoctorOwner(userId)) {
-      const canTakeOverOwnership = requestedEnable && !doctorRuntime.enabled;
-      if (canTakeOverOwnership) {
-        doctorRuntime.ownerUserId = userId;
-      } else {
-        return res.status(403).json({ message: "DoctorTrade engine is currently owned by another account" });
-      }
-    }
-    await loadDoctorWalletForUser(userId);
 
     const enabled = requestedEnable;
-    if (enabled && !doctorRuntime.ownerUserId) {
-      doctorRuntime.ownerUserId = userId;
-    }
     doctorRuntime.enabled = enabled && !doctorRuntime.killSwitch;
     if (enabled && doctorRuntime.killSwitch) {
       doctorRuntime.lastError = "Cannot enable while kill switch is active";
     }
-    if (!enabled && doctorRuntime.ownerUserId === userId) {
-      doctorRuntime.ownerUserId = "";
-    }
-    await persistDoctorRuntime();
+    await persistDoctorRuntime(userId);
 
-    if (doctorCycleTimer) {
-      clearInterval(doctorCycleTimer);
-      doctorCycleTimer = null;
-    }
+    await stopDoctorCycleForUser(userId);
     if (doctorRuntime.enabled) {
       await ensureDoctorLiveExecutionModeIfCapable();
-      await runDoctorCycleSafely("auto");
-
-      doctorCycleTimer = setInterval(async () => {
-        await runDoctorCycleSafely("auto");
-      }, Math.max(2, doctorRuntime.scanIntervalSeconds) * 1000);
-      doctorCycleTimer.unref?.();
+      await startDoctorCycleForUser(userId);
     }
 
     await saveDoctorWalletForUser(userId);
-    return res.json(await buildDoctorStatus());
+    return res.json(await buildDoctorStatus(userId));
   });
 
   app.post("/api/doctor/config", isAuthenticated, async (req: any, res) => {
@@ -4064,11 +4373,7 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    claimDoctorOwnerIfUnowned(userId);
-    if (!isDoctorOwner(userId)) {
-      return res.status(403).json({ message: "DoctorTrade settings are currently owned by another account" });
-    }
-    await loadDoctorWalletForUser(userId);
+    await loadDoctorRuntimeForUser(userId);
 
     const payload = req.body || {};
     if (typeof payload.execution_mode === "string") {
@@ -4149,21 +4454,15 @@ export async function registerRoutes(
     if (isDoctorDexTurboEnabled() && doctorRuntime.controls.max_token_age_seconds < 120) {
       doctorRuntime.controls.max_token_age_seconds = 120;
     }
-    await persistDoctorRuntime();
+    await persistDoctorRuntime(userId);
 
-    if (doctorCycleTimer) {
-      clearInterval(doctorCycleTimer);
-      doctorCycleTimer = null;
-    }
+    await stopDoctorCycleForUser(userId);
     if (doctorRuntime.enabled) {
-      doctorCycleTimer = setInterval(async () => {
-        await runDoctorCycleSafely("auto");
-      }, Math.max(2, doctorRuntime.scanIntervalSeconds) * 1000);
-      doctorCycleTimer.unref?.();
+      await startDoctorCycleForUser(userId);
     }
 
     await saveDoctorWalletForUser(userId);
-    return res.json(await buildDoctorStatus());
+    return res.json(await buildDoctorStatus(userId));
   });
 
   app.post("/api/doctor/connect-wallet", isAuthenticated, async (req: any, res) => {
@@ -4171,11 +4470,7 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    claimDoctorOwnerIfUnowned(userId);
-    if (!isDoctorOwner(userId)) {
-      return res.status(403).json({ message: "DoctorTrade wallet is currently owned by another account" });
-    }
-    await loadDoctorWalletForUser(userId);
+    await loadDoctorRuntimeForUser(userId);
 
     const payload = req.body || {};
     const explicitAddress = String(payload.public_address || "").trim();
@@ -4248,11 +4543,10 @@ export async function registerRoutes(
 
     await refreshDoctorWalletBalanceFromChain(doctorRuntime.wallet.address, true);
     doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 0);
-    doctorRuntime.ownerUserId = userId;
     await ensureDoctorLiveExecutionModeIfCapable();
-    await persistDoctorRuntime();
+    await persistDoctorRuntime(userId);
     await saveDoctorWalletForUser(userId);
-    return res.json(await buildDoctorStatus());
+    return res.json(await buildDoctorStatus(userId));
   });
 
   app.post("/api/doctor/disconnect-wallet", isAuthenticated, async (req: any, res) => {
@@ -4260,21 +4554,15 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    claimDoctorOwnerIfUnowned(userId);
-    if (!isDoctorOwner(userId)) {
-      return res.status(403).json({ message: "DoctorTrade wallet is currently owned by another account" });
-    }
-    await loadDoctorWalletForUser(userId);
+    await loadDoctorRuntimeForUser(userId);
 
     doctorRuntime.wallet.address = "";
     doctorRuntime.wallet.balanceSol = 0;
-    if (doctorRuntime.ownerUserId === userId) {
-      doctorRuntime.ownerUserId = "";
-      doctorRuntime.enabled = false;
-    }
+    doctorRuntime.enabled = false;
     await clearDoctorWalletForUser(userId);
-    await persistDoctorRuntime();
-    return res.json(await buildDoctorStatus());
+    await persistDoctorRuntime(userId);
+    await stopDoctorCycleForUser(userId);
+    return res.json(await buildDoctorStatus(userId));
   });
 
   app.post("/api/doctor/run-once", isAuthenticated, async (req: any, res) => {
@@ -4282,16 +4570,12 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    claimDoctorOwnerIfUnowned(userId);
-    if (!isDoctorOwner(userId)) {
-      return res.status(403).json({ result: { executed: false, reason: "doctortrade_owned_by_other_user" } });
-    }
-    await loadDoctorWalletForUser(userId);
+    await loadDoctorRuntimeForUser(userId);
     await ensureDoctorLiveExecutionModeIfCapable();
 
     const result = await executeDoctorCycle("manual");
     await saveDoctorWalletForUser(userId);
-    await persistDoctorRuntime();
+    await persistDoctorRuntime(userId);
     return res.json({ result });
   });
 
@@ -4300,11 +4584,7 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    claimDoctorOwnerIfUnowned(userId);
-    if (!isDoctorOwner(userId)) {
-      return res.status(403).json({ result: { executed: false, reason: "doctortrade_owned_by_other_user" } });
-    }
-    await loadDoctorWalletForUser(userId);
+    await loadDoctorRuntimeForUser(userId);
     await ensureDoctorLiveExecutionModeIfCapable();
 
     const contractAddress = String(req.body?.contract_address || req.body?.address || "").trim();
@@ -4371,6 +4651,7 @@ export async function registerRoutes(
       risk_status: String((candidate as any)?.risk_level || "MEDIUM"),
       trailing_stop_pct: Number(doctorRuntime.controls.trailing_stop_pct || 10),
       amount_sol: buyAmount,
+      execution_mode: doctorRuntime.execution.mode,
       base_mint: String((candidate as any)?.base_mint || getDoctorTradeBaseAssetMint()),
       opened_at: now,
       source: "manual",
@@ -4410,7 +4691,7 @@ export async function registerRoutes(
     doctorRuntime.recentTrades = doctorRuntime.recentTrades.slice(0, 50);
     doctorRuntime.decisionJournal = doctorRuntime.decisionJournal.slice(0, 80);
     await saveDoctorWalletForUser(userId);
-    await persistDoctorRuntime();
+    await persistDoctorRuntime(userId);
 
     return res.json({
       result: {
@@ -4421,14 +4702,22 @@ export async function registerRoutes(
     });
   });
 
-  if (doctorRuntime.enabled) {
-    void runDoctorCycleSafely("auto");
+  const startDoctorCyclesForEnabledUsers = async () => {
+    try {
+      const runtimeByUser = await getStoredDoctorRuntimesByUser();
+      const userIds = Object.keys(runtimeByUser || {}).filter(Boolean);
+      for (const userId of userIds) {
+        const runtime = runtimeByUser[userId] as Record<string, any> | undefined;
+        if (runtime && runtime.enabled) {
+          await upsertDoctorSchedulerJob(userId, true, Math.max(2, Math.trunc(Number(runtime.scanIntervalSeconds || 20))), false);
+        }
+      }
+    } catch {
+    }
+  };
 
-    doctorCycleTimer = setInterval(async () => {
-      await runDoctorCycleSafely("auto");
-    }, Math.max(2, doctorRuntime.scanIntervalSeconds) * 1000);
-    doctorCycleTimer.unref?.();
-  }
+  startDoctorScheduler();
+  void startDoctorCyclesForEnabledUsers();
 
   const assistantChains = ["solana"] as const;
   type AssistantChain = (typeof assistantChains)[number];
