@@ -2052,12 +2052,17 @@ export async function registerRoutes(
         const turboBuyFlow = turboSnipeEnabled && buys5m >= 2 && buys5m >= Math.max(1, sells5m) * 1.2;
         const validPressure = (buys5m >= minBuys5m && sells5m <= maxSells5m) || strongBuyDominance || turboBuyFlow;
         const validVolume = volume5mSol >= minVolumeSol;
+        const insiderFastTrack =
+          activeSnipePreset === "insider" &&
+          liquiditySol > 0 &&
+          buys5m >= 1 &&
+          buys5m >= Math.max(1, sells5m);
         const failedChecks = [
           !validLiquidity ? "liquidity_window_failed" : null,
           !validPressure ? "buy_sell_pressure_failed" : null,
           !validVolume ? "volume_5m_failed" : null,
         ].filter(Boolean) as string[];
-        const isCandidate = validLiquidity && validPressure && validVolume;
+        const isCandidate = insiderFastTrack || (validLiquidity && validPressure && validVolume);
         const passReason = `${activeSnipePreset}_conditions_passed`;
         const failReason = `${activeSnipePreset}_conditions_failed`;
 
