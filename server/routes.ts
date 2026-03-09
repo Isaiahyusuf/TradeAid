@@ -4230,8 +4230,13 @@ export async function registerRoutes(
           connected: false,
         };
 
-    const walletAddress = String(walletSnapshot.address || doctorRuntime.wallet.address || "").trim();
-    const walletConnected = Boolean(walletAddress) && Boolean(walletSnapshot.privateKeyConfigured);
+    const walletAddress = String(walletSnapshot.address || "").trim();
+    const walletConnected = Boolean(walletSnapshot.connected);
+
+    if (!walletConnected && String(doctorRuntime.wallet.address || "").trim()) {
+      doctorRuntime.wallet.address = "";
+      doctorRuntime.wallet.balanceSol = 0;
+    }
     const requiresLiveWallet = isDoctorLiveOnlyMode() || doctorRuntime.execution.mode === "live";
     const maxTradesPerDay = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_trades_per_day || 1)));
     const maxOpenPositions = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_open_positions || 3)));

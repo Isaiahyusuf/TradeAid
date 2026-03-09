@@ -254,7 +254,7 @@ export function useDoctorConnectWallet() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload?: { private_key?: string; public_address?: string; use_existing_wallet?: boolean }) =>
-      apiPost<DoctorStatus>("/api/doctor/connect-wallet", payload || { use_existing_wallet: true }),
+      apiPost<DoctorStatus>("/api/doctor/connect-wallet", payload || {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade"] }),
   });
 }

@@ -240,15 +240,20 @@ export default function DoctorTrade() {
   }, [viewData?.decision_journal]);
 
   const scannerSuccessRate = Number(viewData?.scanner_health?.overall?.success_rate_pct || 0);
+  const walletConnected = Boolean(
+    String(viewData?.wallet?.connection_status || "").toLowerCase() === "connected"
+    && viewData?.wallet?.private_key_configured
+    && String(viewData?.wallet?.address || "").trim(),
+  );
   const autoSnipeReady = Boolean(
     viewData?.enabled &&
-    viewData?.trade_controls?.wallet_connected &&
+    walletConnected &&
     String(viewData?.execution?.mode || "").toLowerCase() === "live" &&
     Boolean(viewData?.execution?.live_capable),
   );
   const autoSnipeStatusLabel = !viewData?.enabled
     ? "Doctor stopped"
-    : !viewData?.trade_controls?.wallet_connected
+    : !walletConnected
       ? "Wallet not connected"
       : String(viewData?.execution?.mode || "").toLowerCase() !== "live"
         ? "Execution mode is not live"
@@ -603,14 +608,14 @@ export default function DoctorTrade() {
             <Button
               variant="outline"
               onClick={handleConnectWallet}
-              disabled={connectWalletMutation.isPending || !!viewData?.trade_controls?.wallet_connected}
+              disabled={connectWalletMutation.isPending || walletConnected}
             >
-              <Wallet className="w-4 h-4 mr-2" /> {viewData?.trade_controls?.wallet_connected ? "Wallet Connected" : "Connect Existing Wallet"}
+              <Wallet className="w-4 h-4 mr-2" /> {walletConnected ? "Wallet Connected" : "Connect Wallet"}
             </Button>
             <Button
               variant="outline"
               onClick={handleDisconnectWallet}
-              disabled={disconnectWalletMutation.isPending || !viewData?.trade_controls?.wallet_connected}
+              disabled={disconnectWalletMutation.isPending || !walletConnected}
             >
               Disconnect Wallet
             </Button>
@@ -733,7 +738,7 @@ export default function DoctorTrade() {
                 size="sm"
                 variant="outline"
                 onClick={handleDisconnectWallet}
-                disabled={disconnectWalletMutation.isPending || !viewData?.trade_controls?.wallet_connected}
+                disabled={disconnectWalletMutation.isPending || !walletConnected}
               >
                 Disconnect Wallet
               </Button>
@@ -1019,7 +1024,7 @@ export default function DoctorTrade() {
               <h2 className="text-sm font-semibold mb-3">Account</h2>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">Engine</span><span>{viewData?.enabled ? "Live" : "Stopped"}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Wallet Link</span><span>{viewData?.trade_controls?.wallet_connected ? "Connected" : "Missing"}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Wallet Link</span><span>{walletConnected ? "Connected" : "Missing"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Execution Mode</span><span>LIVE ONLY</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Live Capable</span><span>{viewData?.execution?.live_capable ? "Yes" : "No"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Network</span><span>Solana</span></div>
