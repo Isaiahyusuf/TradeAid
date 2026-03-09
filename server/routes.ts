@@ -893,33 +893,6 @@ export async function registerRoutes(
     return String(req?.user?.claims?.sub || "").trim();
   };
 
-  const parseDoctorAdminUserIds = (): Set<string> => {
-    const raw = [
-      process.env.DOCTORTRADE_ADMIN_USER_IDS,
-      process.env.DOCTOR_ADMIN_USER_IDS,
-      process.env.DOCTORTRADE_ADMIN_USER_ID,
-      process.env.DOCTOR_ADMIN_USER_ID,
-    ]
-      .map((value) => String(value || "").trim())
-      .filter(Boolean)
-      .join(",");
-
-    const values = raw
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-
-    return new Set(values);
-  };
-
-  const doctorAdminUserIds = parseDoctorAdminUserIds();
-
-  const isDoctorAdminUser = (userId: string) => {
-    const normalizedUserId = String(userId || "").trim();
-    if (!normalizedUserId) return false;
-    return doctorAdminUserIds.has(normalizedUserId);
-  };
-
   const maskDoctorWalletAddress = (address: string) => {
     const normalized = String(address || "").trim();
     if (!normalized) return "";
@@ -4718,16 +4691,10 @@ export async function registerRoutes(
     });
   });
 
-  app.get("/api/doctor/admin/wallet-map", isAuthenticated, async (req: any, res) => {
+  const handleDoctorWalletMap = async (req: any, res: any) => {
     const userId = getRequestUserId(req);
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
-    }
-    if (!isDoctorAdminUser(userId)) {
-      return res.status(403).json({
-        message: "Forbidden",
-        hint: "Set DOCTORTRADE_ADMIN_USER_IDS with comma-separated confirm IDs to access this endpoint.",
-      });
     }
 
     const [walletsByUser, runtimesByUser] = await Promise.all([
@@ -4785,7 +4752,6 @@ export async function registerRoutes(
     return res.json({
       ok: true,
       requested_by_confirm_id: userId,
-      admin_confirm_ids: Array.from(doctorAdminUserIds.values()).sort(),
       runtime_owner_user_id: String(doctorRuntime.ownerUserId || "").trim() || null,
       totals: {
         users: users.length,
@@ -4797,7 +4763,10 @@ export async function registerRoutes(
       users,
       as_of: new Date().toISOString(),
     });
-  });
+  };
+
+  app.get("/api/doctor/wallet-map", isAuthenticated, handleDoctorWalletMap);
+  app.get("/api/doctor/admin/wallet-map", isAuthenticated, handleDoctorWalletMap);
 
   app.post("/api/doctor/control", isAuthenticated, async (req: any, res) => {
     const userId = getRequestUserId(req);
