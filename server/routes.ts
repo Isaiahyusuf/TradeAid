@@ -893,6 +893,40 @@ export async function registerRoutes(
     return String(req?.user?.claims?.sub || "").trim();
   };
 
+  const parseDoctorAdminUserIds = (): Set<string> => {
+    const raw = [
+      process.env.DOCTORTRADE_ADMIN_USER_IDS,
+      process.env.DOCTOR_ADMIN_USER_IDS,
+      process.env.DOCTORTRADE_ADMIN_USER_ID,
+      process.env.DOCTOR_ADMIN_USER_ID,
+    ]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+      .join(",");
+
+    const values = raw
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    return new Set(values);
+  };
+
+  const doctorAdminUserIds = parseDoctorAdminUserIds();
+
+  const isDoctorAdminUser = (userId: string) => {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return false;
+    return doctorAdminUserIds.has(normalizedUserId);
+  };
+
+  const maskDoctorWalletAddress = (address: string) => {
+    const normalized = String(address || "").trim();
+    if (!normalized) return "";
+    if (normalized.length <= 12) return normalized;
+    return `${normalized.slice(0, 6)}...${normalized.slice(-4)}`;
+  };
+
   const getStoredDoctorWalletsByUser = async (): Promise<Record<string, any>> => {
     try {
       const state = await storage.getAppState<Record<string, any>>(doctorWalletByUserStateKey);
@@ -4681,6 +4715,87 @@ export async function registerRoutes(
         expires_at: Number(lease.expires_at || 0) > 0 ? new Date(Number(lease.expires_at)).toISOString() : null,
       },
       instance_id: doctorSchedulerInstanceId,
+    });
+  });
+
+  app.get("/api/doctor/admin/wallet-map", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    if (!isDoctorAdminUser(userId)) {
+      return res.status(403).json({
+        message: "Forbidden",
+        hint: "Set DOCTORTRADE_ADMIN_USER_IDS with comma-separated confirm IDs to access this endpoint.",
+      });
+    }
+
+    const [walletsByUser, runtimesByUser] = await Promise.all([
+      getStoredDoctorWalletsByUser(),
+      getStoredDoctorRuntimesByUser(),
+    ]);
+
+    const allUserIds = Array.from(new Set([
+      ...Object.keys(walletsByUser || {}),
+      ...Object.keys(runtimesByUser || {}),
+    ]));
+
+    const users = allUserIds
+      .map((confirmId) => {
+        const wallet = (walletsByUser?.[confirmId] || {}) as Record<string, any>;
+        const runtime = (runtimesByUser?.[confirmId] || {}) as Record<string, any>;
+        const walletAddress = String(wallet.address || "").trim();
+        const livePrivateKeyValue = String(wallet.livePrivateKey || "").trim();
+        const hasPrivateKey = Boolean(livePrivateKeyValue);
+
+        return {
+          confirm_id: confirmId,
+          runtime_owner_user_id: String(runtime.ownerUserId || "").trim() || null,
+          enabled: Boolean(runtime.enabled),
+          execution_mode: String(runtime?.execution?.mode || "").trim() || "paper",
+          wallet_address: walletAddress || null,
+          wallet_address_masked: walletAddress ? maskDoctorWalletAddress(walletAddress) : null,
+          has_private_key: hasPrivateKey,
+          auto_hydrate_blocked: Boolean(wallet.autoHydrateBlocked),
+          separate_wallet_enforced: wallet.separateWalletEnforced !== false,
+          last_run_at: String(runtime.lastRunAt || "").trim() || null,
+          last_error: String(runtime.lastError || "").trim() || null,
+        };
+      })
+      .sort((a, b) => a.confirm_id.localeCompare(b.confirm_id));
+
+    const walletAddressToUsers = new Map<string, string[]>();
+    for (const item of users) {
+      const address = String(item.wallet_address || "").trim();
+      if (!address) continue;
+      const currentUsers = walletAddressToUsers.get(address) || [];
+      currentUsers.push(item.confirm_id);
+      walletAddressToUsers.set(address, currentUsers);
+    }
+
+    const sharedWallets = Array.from(walletAddressToUsers.entries())
+      .filter(([, userIds]) => userIds.length > 1)
+      .map(([address, confirmIds]) => ({
+        wallet_address: address,
+        wallet_address_masked: maskDoctorWalletAddress(address),
+        confirm_ids: confirmIds.sort(),
+      }))
+      .sort((a, b) => a.wallet_address.localeCompare(b.wallet_address));
+
+    return res.json({
+      ok: true,
+      requested_by_confirm_id: userId,
+      admin_confirm_ids: Array.from(doctorAdminUserIds.values()).sort(),
+      runtime_owner_user_id: String(doctorRuntime.ownerUserId || "").trim() || null,
+      totals: {
+        users: users.length,
+        with_wallet: users.filter((item) => Boolean(item.wallet_address)).length,
+        with_private_key: users.filter((item) => item.has_private_key).length,
+        shared_wallet_groups: sharedWallets.length,
+      },
+      shared_wallets: sharedWallets,
+      users,
+      as_of: new Date().toISOString(),
     });
   });
 
