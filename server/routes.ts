@@ -4721,88 +4721,146 @@ export async function registerRoutes(
     return res.json(await buildDoctorStatus(userId));
   });
 
-  app.post("/api/doctor/connect-wallet", isAuthenticated, async (req: any, res) => {
-    const userId = getRequestUserId(req);
-    if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-    await loadDoctorRuntimeForUser(userId);
-
-    const payload = req.body || {};
-    const explicitAddress = String(payload.public_address || "").trim();
-    const explicitPrivateKey = String(payload.private_key || "").trim();
-    const walletBalanceTimeoutMs = Math.max(300, Number(process.env.DOCTOR_WALLET_BALANCE_TIMEOUT_MS || 1200));
-
-    console.info("[doctor.connect-wallet] request", {
-      userId,
-      hasPrivateKey: Boolean(explicitPrivateKey),
-      explicitAddress: explicitAddress || null,
-    });
-
-    if (!explicitPrivateKey) {
-      return res.status(400).json({
-        message: "manual_private_key_required",
-        detail: "Paste your wallet private key to connect DoctorTrade.",
+  app.post(
+    "/api/doctor/connect-wallet",
+    (req: any, _res, next) => {
+      console.info("[doctor.connect-wallet] incoming", {
+        method: req.method,
+        path: req.path,
+        hasAuthHeader: Boolean(req.headers?.authorization),
+        hasSessionUser: Boolean(req.user?.id),
       });
-    }
-
-    let resolvedAddress = explicitAddress;
-    if (!resolvedAddress && explicitPrivateKey) {
-      resolvedAddress = deriveSolanaAddressFromPrivateKey(explicitPrivateKey);
-      if (!resolvedAddress) {
-        return res.status(400).json({ message: "Invalid Solana private key format" });
-      }
-    }
-
-    if (explicitAddress && resolvedAddress && explicitAddress !== resolvedAddress) {
-      return res.status(400).json({
-        message: "wallet_address_mismatch",
-        detail: "Provided public address does not match the private key.",
-      });
-    }
-
-    if (resolvedAddress) {
-      doctorRuntime.wallet.address = resolvedAddress;
+      next();
+    },
+    isAuthenticated,
+    async (req: any, res) => {
       try {
-        const pubkey = new PublicKey(resolvedAddress);
-        const lamports = await Promise.race<number>([
-          getSolanaConnection().getBalance(pubkey, "processed"),
-          new Promise<number>((_resolve, reject) => setTimeout(() => reject(new Error("wallet_balance_timeout")), walletBalanceTimeoutMs)),
-        ]);
-        const onchainBalanceSol = Number((lamports / 1_000_000_000).toFixed(6));
-        doctorRuntime.wallet.balanceSol = Math.max(0, onchainBalanceSol);
-      } catch {
+        const userId = getRequestUserId(req);
+        if (!userId) {
+          console.warn("[doctor.connect-wallet] denied", { reason: "missing_user_id" });
+          return res.status(401).json({ message: "Unauthorized" });
+        }
+        await loadDoctorRuntimeForUser(userId);
+
+        const payload = req.body || {};
+        const explicitAddress = String(payload.public_address || "").trim();
+        const explicitPrivateKey = String(payload.private_key || "").trim();
+        const walletBalanceTimeoutMs = Math.max(300, Number(process.env.DOCTOR_WALLET_BALANCE_TIMEOUT_MS || 1200));
+
+        console.info("[doctor.connect-wallet] request", {
+          userId,
+          hasPrivateKey: Boolean(explicitPrivateKey),
+          privateKeyLength: explicitPrivateKey.length,
+          explicitAddress: explicitAddress || null,
+        });
+
+        if (!explicitPrivateKey) {
+          console.warn("[doctor.connect-wallet] rejected", {
+            userId,
+            reason: "manual_private_key_required",
+          });
+          return res.status(400).json({
+            message: "manual_private_key_required",
+            detail: "Paste your wallet private key to connect DoctorTrade.",
+          });
+        }
+
+        let resolvedAddress = explicitAddress;
+        if (!resolvedAddress && explicitPrivateKey) {
+          resolvedAddress = deriveSolanaAddressFromPrivateKey(explicitPrivateKey);
+          if (!resolvedAddress) {
+            console.warn("[doctor.connect-wallet] rejected", {
+              userId,
+              reason: "invalid_private_key_format",
+            });
+            return res.status(400).json({ message: "Invalid Solana private key format" });
+          }
+        }
+
+        if (explicitAddress && resolvedAddress && explicitAddress !== resolvedAddress) {
+          console.warn("[doctor.connect-wallet] rejected", {
+            userId,
+            reason: "wallet_address_mismatch",
+            explicitAddress,
+            resolvedAddress,
+          });
+          return res.status(400).json({
+            message: "wallet_address_mismatch",
+            detail: "Provided public address does not match the private key.",
+          });
+        }
+
+        if (resolvedAddress) {
+          doctorRuntime.wallet.address = resolvedAddress;
+          try {
+            const pubkey = new PublicKey(resolvedAddress);
+            const lamports = await Promise.race<number>([
+              getSolanaConnection().getBalance(pubkey, "processed"),
+              new Promise<number>((_resolve, reject) => setTimeout(() => reject(new Error("wallet_balance_timeout")), walletBalanceTimeoutMs)),
+            ]);
+            const onchainBalanceSol = Number((lamports / 1_000_000_000).toFixed(6));
+            doctorRuntime.wallet.balanceSol = Math.max(0, onchainBalanceSol);
+          } catch (error: any) {
+            console.warn("[doctor.connect-wallet] balance_refresh_failed", {
+              userId,
+              walletAddress: resolvedAddress,
+              message: String(error?.message || "unknown_error"),
+            });
+          }
+        }
+
+        await setDoctorLivePrivateKeyForUser(userId, explicitPrivateKey);
+        console.info("[doctor.connect-wallet] live_private_key_set", {
+          userId,
+          walletAddress: String(doctorRuntime.wallet.address || "").trim() || null,
+        });
+
+        {
+          const wallets = await getStoredDoctorWalletsByUser();
+          const existing = wallets[userId] as Record<string, any> | undefined;
+          wallets[userId] = {
+            ...(existing || {}),
+            address: String(doctorRuntime.wallet.address || existing?.address || "").trim(),
+            balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol ?? existing?.balanceSol ?? 0)),
+            separateWalletEnforced: (doctorRuntime.wallet.separateWalletEnforced ?? existing?.separateWalletEnforced) !== false,
+            livePrivateKey: String(existing?.livePrivateKey || "").trim(),
+            autoHydrateBlocked: false,
+            updatedAt: nowIso(),
+          };
+          await setStoredDoctorWalletsByUser(wallets);
+          console.info("[doctor.connect-wallet] wallet_map_persisted", {
+            userId,
+            walletAddress: String(wallets[userId]?.address || "").trim() || null,
+            autoHydrateBlocked: wallets[userId]?.autoHydrateBlocked === true,
+          });
+        }
+
+        await refreshDoctorWalletBalanceFromChain(doctorRuntime.wallet.address, true);
+        doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 0);
+        await ensureDoctorLiveExecutionModeIfCapable();
+        await persistDoctorRuntime(userId);
+        console.info("[doctor.connect-wallet] runtime_persisted", {
+          userId,
+          walletAddress: String(doctorRuntime.wallet.address || "").trim() || null,
+        });
+        await saveDoctorWalletForUser(userId);
+        console.info("[doctor.connect-wallet] success", {
+          userId,
+          walletAddress: String(doctorRuntime.wallet.address || "").trim() || null,
+        });
+        return res.json(await buildDoctorStatus(userId));
+      } catch (error: any) {
+        console.error("[doctor.connect-wallet] failed", {
+          message: String(error?.message || "unknown_error"),
+          stack: String(error?.stack || ""),
+        });
+        return res.status(500).json({
+          message: "wallet_connect_failed",
+          detail: "Failed to connect wallet. Please try again.",
+        });
       }
-    }
-
-    await setDoctorLivePrivateKeyForUser(userId, explicitPrivateKey);
-
-    {
-      const wallets = await getStoredDoctorWalletsByUser();
-      const existing = wallets[userId] as Record<string, any> | undefined;
-      wallets[userId] = {
-        ...(existing || {}),
-        address: String(doctorRuntime.wallet.address || existing?.address || "").trim(),
-        balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol ?? existing?.balanceSol ?? 0)),
-        separateWalletEnforced: (doctorRuntime.wallet.separateWalletEnforced ?? existing?.separateWalletEnforced) !== false,
-        livePrivateKey: String(existing?.livePrivateKey || "").trim(),
-        autoHydrateBlocked: false,
-        updatedAt: nowIso(),
-      };
-      await setStoredDoctorWalletsByUser(wallets);
-    }
-
-    await refreshDoctorWalletBalanceFromChain(doctorRuntime.wallet.address, true);
-    doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 0);
-    await ensureDoctorLiveExecutionModeIfCapable();
-    await persistDoctorRuntime(userId);
-    await saveDoctorWalletForUser(userId);
-    console.info("[doctor.connect-wallet] success", {
-      userId,
-      walletAddress: String(doctorRuntime.wallet.address || "").trim() || null,
-    });
-    return res.json(await buildDoctorStatus(userId));
-  });
+    },
+  );
 
   app.post("/api/doctor/disconnect-wallet", isAuthenticated, async (req: any, res) => {
     const userId = getRequestUserId(req);

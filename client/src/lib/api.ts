@@ -18,6 +18,21 @@ function normalizeApiUrl(rawValue: unknown): string {
 }
 
 const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL);
+const API_DOMAIN_OVERRIDE = "https://api.tradeaid.ink";
+
+function resolveApiBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    const hostname = String(window.location.hostname || "").toLowerCase();
+    if (hostname === "tradeaid.ink" || hostname === "www.tradeaid.ink") {
+      return API_DOMAIN_OVERRIDE;
+    }
+    if (!API_URL) {
+      return window.location.origin;
+    }
+  }
+
+  return API_URL;
+}
 const ACCESS_TOKEN_KEY = "trade_aid_token";
 const REFRESH_TOKEN_KEY = "trade_aid_refresh_token";
 
@@ -63,7 +78,9 @@ async function refreshAccessToken(): Promise<string | null> {
     refreshInFlight = (async () => {
       let response: Response;
       try {
-        response = await fetch(`${API_URL}/api/auth/refresh`, {
+        const apiBase = resolveApiBaseUrl();
+        const refreshUrl = apiBase ? `${apiBase}/api/auth/refresh` : "/api/auth/refresh";
+        response = await fetch(refreshUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ refresh_token: refreshToken }),
@@ -125,7 +142,8 @@ export async function apiFetch<T = any>(
   const timeoutId = window.setTimeout(() => timeoutController.abort(), API_TIMEOUT_MS);
   const mergedSignal = options.signal ?? timeoutController.signal;
   try {
-    const target = API_URL ? `${API_URL}${path}` : path;
+    const apiBase = resolveApiBaseUrl();
+    const target = apiBase ? `${apiBase}${path}` : path;
     res = await fetch(target, {
       ...options,
       headers,

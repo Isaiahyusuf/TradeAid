@@ -1,10 +1,6 @@
 import os
 from pydantic_settings import BaseSettings
 from functools import lru_cache
-from dotenv import load_dotenv
-
-
-load_dotenv()
 
 
 def build_database_url(async_driver: bool = False) -> str:
@@ -129,7 +125,6 @@ class Settings(BaseSettings):
     TELEMETRY_HASH_SALT: str = "change-this-telemetry-salt"
 
     class Config:
-        env_file = ".env"
         case_sensitive = True
 
 

@@ -159,7 +159,11 @@ export default function AuthPage() {
   }, [consumeOAuthTokens, toast]);
 
   const startOAuthSignIn = (provider: "google" | "apple") => {
-    const apiBase = (import.meta.env.VITE_API_URL || "").trim();
+    const configuredBase = String(import.meta.env.VITE_API_URL || "").trim();
+    const hostname = String(window.location.hostname || "").toLowerCase();
+    const apiBase = (hostname === "tradeaid.ink" || hostname === "www.tradeaid.ink")
+      ? "https://api.tradeaid.ink"
+      : configuredBase;
     if (!apiBase) {
       toast({ title: "Configuration required", description: "OAuth sign-in is unavailable. Missing VITE_API_URL.", variant: "destructive" });
       return;

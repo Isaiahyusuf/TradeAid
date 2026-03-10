@@ -19,6 +19,21 @@ function normalizeApiUrl(rawValue: unknown): string {
 }
 
 const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL);
+const API_DOMAIN_OVERRIDE = "https://api.tradeaid.ink";
+
+function resolveApiBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    const hostname = String(window.location.hostname || "").toLowerCase();
+    if (hostname === "tradeaid.ink" || hostname === "www.tradeaid.ink") {
+      return API_DOMAIN_OVERRIDE;
+    }
+    if (!API_URL) {
+      return window.location.origin;
+    }
+  }
+
+  return API_URL;
+}
 
 function getToken(): string | null {
   return localStorage.getItem("trade_aid_token");
@@ -41,7 +56,8 @@ export async function apiRequest(
   if (data) headers["Content-Type"] = "application/json";
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const fullUrl = url.startsWith("http") ? url : `${API_URL}${url}`;
+  const apiBase = resolveApiBaseUrl();
+  const fullUrl = url.startsWith("http") ? url : `${apiBase}${url}`;
   const res = await fetch(fullUrl, {
     method,
     headers,
@@ -59,7 +75,8 @@ export const getQueryFn: <T>(options: {
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
     const path = queryKey.join("/") as string;
-    const fullUrl = path.startsWith("http") ? path : `${API_URL}${path}`;
+    const apiBase = resolveApiBaseUrl();
+    const fullUrl = path.startsWith("http") ? path : `${apiBase}${path}`;
     const token = getToken();
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
