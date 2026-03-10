@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { SUPPORTED_CHAINS } from "@/hooks/use-chain";
 import { useLocation } from "wouter";
 import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
-import { useDoctorConfig, useDoctorStatus } from "@/hooks/use-doctortrade";
+import { useDoctorConfig, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import {
   useApproveAssistantConsent,
   useAssistantWalletSwap,
@@ -28,7 +28,6 @@ import {
   useConfirmAssistantWalletBackup,
   useCreateAssistantWallet,
   useDeleteAssistantWallet,
-  useExecuteAssistantTrade,
   useExportAssistantWalletKey,
   useImportAssistantWallet,
   useImportAssistantWalletPrivateKey,
@@ -56,6 +55,7 @@ export default function WalletPage() {
 
   const tradingStatusQuery = useAssistantTradingStatus();
   const doctorStatusQuery = useDoctorStatus();
+  const doctorRunOnce = useDoctorRunOnce();
   const doctorConfigMutation = useDoctorConfig();
   const walletStatusQuery = useAssistantWalletStatus();
   const walletPortfolioQuery = useAssistantWalletPortfolio();
@@ -65,8 +65,6 @@ export default function WalletPage() {
   const requestConsent = useRequestAssistantConsent();
   const approveConsent = useApproveAssistantConsent();
   const revokeConsent = useRevokeAssistantConsent();
-  const executeTrade = useExecuteAssistantTrade();
-
   const createWallet = useCreateAssistantWallet();
   const importWallet = useImportAssistantWallet();
   const importWalletPrivateKey = useImportAssistantWalletPrivateKey();
@@ -584,23 +582,15 @@ export default function WalletPage() {
   };
 
   const handleExecuteAssistantTrade = async () => {
-    const notionalValue = Number(tradeNotional);
-    if (!tradeContract.trim() || !Number.isFinite(notionalValue) || notionalValue <= 0) {
-      toast({ title: "Invalid trade", description: "Set contract and a valid notional amount.", variant: "destructive" });
+    if (!trading?.enabled) {
+      toast({ title: "DoctorTrade disabled", description: "Enable DoctorTrade first.", variant: "destructive" });
       return;
     }
     try {
-      await executeTrade.mutateAsync({
-        chain: tradeChain,
-        contract_address: tradeContract.trim(),
-        side: tradeSide,
-        notional_usd: notionalValue,
-        mode: assistantMode,
-      });
-      toast({ title: "Trade submitted", description: `Assistant ${tradeSide.toUpperCase()} processed for ${tradeChain}.` });
-      setTradeContract("");
+      await doctorRunOnce.mutateAsync();
+      toast({ title: "Auto cycle started", description: "DoctorTrade is scanning and executing automatically." });
     } catch (error) {
-      toast({ title: "Trade blocked", description: error instanceof Error ? error.message : "Execution failed", variant: "destructive" });
+      toast({ title: "Auto cycle failed", description: error instanceof Error ? error.message : "Execution failed", variant: "destructive" });
     }
   };
 
@@ -1244,19 +1234,11 @@ export default function WalletPage() {
               </SettingsMenuCard>
 
               <div className="rounded-lg border border-border/60 p-3 space-y-3">
-                <p className="text-sm font-medium flex items-center gap-2"><KeyRound className="w-4 h-4" />Execute Trade</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <select value={tradeChain} onChange={(e) => setTradeChain(e.target.value as SupportedWalletChain)} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
-                    {enabledChains.map((chainName) => <option key={chainName} value={chainName}>{chainName}</option>)}
-                  </select>
-                  <select value={tradeSide} onChange={(e) => setTradeSide(e.target.value as "buy" | "sell")} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
-                    <option value="buy">BUY</option>
-                    <option value="sell">SELL</option>
-                  </select>
-                </div>
-                <Input placeholder="Contract address" value={tradeContract} onChange={(e) => setTradeContract(e.target.value)} />
-                <Input type="number" min={1} step="0.01" placeholder="Notional USD" value={tradeNotional} onChange={(e) => setTradeNotional(e.target.value)} />
-                <Button onClick={handleExecuteAssistantTrade} disabled={executeTrade.isPending || !trading?.enabled}>{executeTrade.isPending ? "Executing..." : `Execute ${tradeSide.toUpperCase()}`}</Button>
+                <p className="text-sm font-medium flex items-center gap-2"><KeyRound className="w-4 h-4" />Auto Trade Cycle</p>
+                <p className="text-xs text-muted-foreground">
+                  DoctorTrade selects tokens automatically from scanner signals. No manual contract address input is required.
+                </p>
+                <Button onClick={handleExecuteAssistantTrade} disabled={doctorRunOnce.isPending || !trading?.enabled}>{doctorRunOnce.isPending ? "Running..." : "Run Auto Cycle"}</Button>
               </div>
             </div>
           </SheetContent>
