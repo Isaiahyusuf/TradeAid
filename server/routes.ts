@@ -3460,6 +3460,7 @@ export async function registerRoutes(
     const maxTradesPerDay = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_trades_per_day || 1)));
     const maxOpenPositions = 3;
     const cooldownMinutes = Math.max(0, Number(doctorRuntime.controls.cooldown_minutes_per_mint || 0));
+    const routeRejectRetryMs = Math.max(10_000, Number(process.env.DOCTOR_ROUTE_REJECTED_RETRY_MS || 120_000));
     const feeBufferSol = Math.max(0, Number(doctorRuntime.controls.min_wallet_fee_buffer_sol || 0));
     const buyAmountSol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     const activeSnipePreset = getDoctorActiveSnipePreset();
@@ -3520,7 +3521,15 @@ export async function registerRoutes(
         return Number(b.volume_5m || 0) - Number(a.volume_5m || 0);
       });
 
-    const candidatePoolNonOpen = candidatePool.filter((token) => !openAddresses.has(String(token.address || "")));
+    const candidatePoolNonOpen = candidatePool
+      .filter((token) => !openAddresses.has(String(token.address || "")))
+      .filter((token) => {
+        const mint = String(token.address || "").trim();
+        if (!mint) return false;
+        const rejectedAt = doctorRejectedMints.get(mint) || 0;
+        if (!rejectedAt) return true;
+        return nowMs - rejectedAt > routeRejectRetryMs;
+      });
     const allowReentrySnipes = false;
 
     const getFallbackDetectedCandidate = async () => {
@@ -4086,6 +4095,10 @@ export async function registerRoutes(
         baseMint: String(buyCandidate.base_mint || getDoctorTradeBaseAssetMint()),
       });
       if (!buyExecution.executed) {
+        const failedMint = String(buyCandidate.address || "").trim();
+        if (failedMint && String((buyExecution as any).reason || "").startsWith("raydium_quote_failed_")) {
+          doctorRejectedMints.set(failedMint, nowMs);
+        }
         doctorRuntime.lastDecision = {
           action: "skip",
           reason: buyExecution.reason,
