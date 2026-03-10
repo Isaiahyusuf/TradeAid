@@ -1114,6 +1114,15 @@ export async function registerRoutes(
 
   const doctorPresetNumericProfiles: Record<"insider" | "conservative" | "balanced" | "aggressive", Record<string, number>> = {
     insider: {
+      max_open_positions: 3,
+      take_profit_multiplier: 2,
+      min_profit_pct: 100,
+      stop_loss_pct: 35,
+      trailing_stop_pct: 10,
+      max_hold_minutes: 180,
+      position_rotation_minutes: 1,
+      live_sell_fraction_pct: 50,
+      max_sell_notional_usd: 300,
       strong_move_threshold_pct: 15,
       min_liquidity_usd: 150,
       max_liquidity_usd: 25000,
@@ -1138,6 +1147,15 @@ export async function registerRoutes(
       strategy_window_minutes: 5,
     },
     conservative: {
+      max_open_positions: 2,
+      take_profit_multiplier: 1.6,
+      min_profit_pct: 24,
+      stop_loss_pct: 8,
+      trailing_stop_pct: 5,
+      max_hold_minutes: 120,
+      position_rotation_minutes: 5,
+      live_sell_fraction_pct: 100,
+      max_sell_notional_usd: 500,
       strong_move_threshold_pct: 45,
       min_liquidity_usd: 2000,
       max_liquidity_usd: 20000,
@@ -1162,6 +1180,15 @@ export async function registerRoutes(
       strategy_window_minutes: 5,
     },
     balanced: {
+      max_open_positions: 3,
+      take_profit_multiplier: 1.8,
+      min_profit_pct: 40,
+      stop_loss_pct: 12,
+      trailing_stop_pct: 7,
+      max_hold_minutes: 150,
+      position_rotation_minutes: 3,
+      live_sell_fraction_pct: 75,
+      max_sell_notional_usd: 400,
       strong_move_threshold_pct: 35,
       min_liquidity_usd: 1000,
       max_liquidity_usd: 15000,
@@ -1186,6 +1213,15 @@ export async function registerRoutes(
       strategy_window_minutes: 5,
     },
     aggressive: {
+      max_open_positions: 4,
+      take_profit_multiplier: 2.2,
+      min_profit_pct: 70,
+      stop_loss_pct: 20,
+      trailing_stop_pct: 10,
+      max_hold_minutes: 180,
+      position_rotation_minutes: 2,
+      live_sell_fraction_pct: 60,
+      max_sell_notional_usd: 350,
       strong_move_threshold_pct: 20,
       min_liquidity_usd: 200,
       max_liquidity_usd: 12000,
@@ -1225,6 +1261,10 @@ export async function registerRoutes(
       return runtimeValue;
     }
     return fallbackValue;
+  };
+
+  const getDoctorEffectiveMaxOpenPositions = () => {
+    return Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("max_open_positions", Number(doctorRuntime.controls.max_open_positions || 3))));
   };
 
   const ensureDoctorLiveExecutionModeIfCapable = async (preferredUserId?: string) => {
@@ -3515,9 +3555,18 @@ export async function registerRoutes(
 
     let sellCount = 0;
     const updatedPositions: Array<Record<string, any>> = [];
+    const maxOpenPositions = getDoctorEffectiveMaxOpenPositions();
+    const configuredMinProfitPct = Math.max(0.1, getDoctorEffectiveControlNumber("min_profit_pct", Number(doctorRuntime.controls.min_profit_pct || 0)));
+    const configuredTakeProfitMultiplier = Math.max(1.01, getDoctorEffectiveControlNumber("take_profit_multiplier", Number(doctorRuntime.controls.take_profit_multiplier || 2)));
+    const configuredStopLossPct = Math.max(0.1, getDoctorEffectiveControlNumber("stop_loss_pct", Number(doctorRuntime.controls.stop_loss_pct || 0)));
+    const configuredTrailingStopPct = Math.max(0.1, getDoctorEffectiveControlNumber("trailing_stop_pct", Number(doctorRuntime.controls.trailing_stop_pct || 0)));
+    const configuredMaxHoldMinutes = Math.max(5, getDoctorEffectiveControlNumber("max_hold_minutes", Number(doctorRuntime.controls.max_hold_minutes || 0)));
+    const configuredMinMomentumProfitPct = Math.max(0, getDoctorEffectiveControlNumber("min_momentum_profit_pct", Number(doctorRuntime.controls.min_momentum_profit_pct || 0)));
+    const configuredStrongMoveThresholdPct = Math.max(1, getDoctorEffectiveControlNumber("strong_move_threshold_pct", Number(doctorRuntime.controls.strong_move_threshold_pct || 40)));
+    const configuredMaxTopHolderPct = Math.max(1, getDoctorEffectiveControlNumber("quality_max_top_holder_pct", Number(doctorRuntime.controls.quality_max_top_holder_pct || 24)));
     const takeProfitPct = Math.max(
-      Number(doctorRuntime.controls.min_profit_pct || 0),
-      (Math.max(1.01, Number(doctorRuntime.controls.take_profit_multiplier || 2)) - 1) * 100,
+      configuredMinProfitPct,
+      (configuredTakeProfitMultiplier - 1) * 100,
     );
 
     for (let positionIndex = 0; positionIndex < doctorRuntime.positions.length; positionIndex += 1) {
@@ -3545,29 +3594,29 @@ export async function registerRoutes(
         sellFractionPct = 50;
       } else if (pnlPct >= takeProfitPct && tpStage >= 2) {
         sellReason = "take_profit_reached";
-      } else if (pnlPct <= -Math.max(0.1, Number(doctorRuntime.controls.stop_loss_pct || 0))) {
+      } else if (pnlPct <= -configuredStopLossPct) {
         sellReason = "stop_loss_hit";
       } else if (
         pnlPct > 0 &&
-        drawdownFromPeakPct >= Math.max(0.1, Number(doctorRuntime.controls.trailing_stop_pct || 0))
+        drawdownFromPeakPct >= configuredTrailingStopPct
       ) {
         sellReason = "trailing_stop_triggered";
       } else if (
-        holdMinutes >= Math.max(5, Number(doctorRuntime.controls.max_hold_minutes || 0))
+        holdMinutes >= configuredMaxHoldMinutes
       ) {
         sellReason = "max_hold_reached";
       } else if (
-        pnlPct >= Math.max(0, Number(doctorRuntime.controls.min_momentum_profit_pct || 0)) &&
+        pnlPct >= configuredMinMomentumProfitPct &&
         (
           marketVolume5m <= 0 ||
-          marketScore < Math.max(1, Number(doctorRuntime.controls.strong_move_threshold_pct || 40)) * 0.7 ||
+          marketScore < configuredStrongMoveThresholdPct * 0.7 ||
           (marketHolders > 0 && marketHolders < 120) ||
-          (topHolderPct > 0 && topHolderPct > Math.max(1, Number(doctorRuntime.controls.quality_max_top_holder_pct || 24)))
+          (topHolderPct > 0 && topHolderPct > configuredMaxTopHolderPct)
         )
       ) {
         sellReason = "momentum_or_holder_quality_drop";
       } else if (
-        doctorRuntime.positions.length >= 3 &&
+        doctorRuntime.positions.length >= maxOpenPositions &&
         positionIndex === doctorRuntime.positions.length - 1 &&
         holdMinutes >= getDoctorPositionRotationMinutes()
       ) {
@@ -3675,7 +3724,6 @@ export async function registerRoutes(
 
     let buyCount = 0;
     const maxTradesPerDay = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_trades_per_day || 1)));
-    const maxOpenPositions = 3;
     const cooldownMinutes = Math.max(0, Number(doctorRuntime.controls.cooldown_minutes_per_mint || 0));
     const routeRejectRetryMs = Math.max(10_000, Number(process.env.DOCTOR_ROUTE_REJECTED_RETRY_MS || 120_000));
     const feeBufferSol = Math.max(0, Number(doctorRuntime.controls.min_wallet_fee_buffer_sol || 0));
@@ -4681,7 +4729,7 @@ export async function registerRoutes(
       : [];
     const requiresLiveWallet = isDoctorLiveOnlyMode() || doctorRuntime.execution.mode === "live";
     const maxTradesPerDay = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_trades_per_day || 1)));
-    const maxOpenPositions = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_open_positions || 3)));
+    const maxOpenPositions = getDoctorEffectiveMaxOpenPositions();
     const schedulerJob = statusUserId ? await getDoctorSchedulerJobForUser(statusUserId) : null;
     const schedulerNextRunAtMs = Math.max(0, Number((schedulerJob as any)?.next_run_at || 0));
     const schedulerLagMs = schedulerNextRunAtMs > 0 ? Math.max(0, Date.now() - schedulerNextRunAtMs) : 0;
@@ -4813,6 +4861,15 @@ export async function registerRoutes(
       },
       trade_controls: {
         ...doctorRuntime.controls,
+        max_open_positions: getDoctorEffectiveMaxOpenPositions(),
+        take_profit_multiplier: Math.max(1.01, getDoctorEffectiveControlNumber("take_profit_multiplier", Number(doctorRuntime.controls.take_profit_multiplier || 2))),
+        min_profit_pct: Math.max(0.1, getDoctorEffectiveControlNumber("min_profit_pct", Number(doctorRuntime.controls.min_profit_pct || 0.1))),
+        stop_loss_pct: Math.max(0.1, getDoctorEffectiveControlNumber("stop_loss_pct", Number(doctorRuntime.controls.stop_loss_pct || 0.1))),
+        trailing_stop_pct: Math.max(0.1, getDoctorEffectiveControlNumber("trailing_stop_pct", Number(doctorRuntime.controls.trailing_stop_pct || 0.1))),
+        max_hold_minutes: Math.max(5, getDoctorEffectiveControlNumber("max_hold_minutes", Number(doctorRuntime.controls.max_hold_minutes || 5))),
+        position_rotation_minutes: Math.max(1, getDoctorEffectiveControlNumber("position_rotation_minutes", Number(doctorRuntime.controls.position_rotation_minutes || 1))),
+        live_sell_fraction_pct: Math.max(1, Math.min(100, getDoctorEffectiveControlNumber("live_sell_fraction_pct", Number(doctorRuntime.controls.live_sell_fraction_pct || 100)))),
+        max_sell_notional_usd: Math.max(1, getDoctorEffectiveControlNumber("max_sell_notional_usd", Number(doctorRuntime.controls.max_sell_notional_usd || 1))),
         wallet_connected: walletConnected,
       },
       execution: {
@@ -5083,7 +5140,7 @@ export async function registerRoutes(
 
     const payload = req.body || {};
     if (typeof payload.execution_mode === "string") {
-      doctorRuntime.execution.mode = "live";
+      doctorRuntime.execution.mode = String(payload.execution_mode).trim().toLowerCase() === "paper" ? "paper" : "live";
     }
     if (typeof payload.snipe_preset === "string") {
       (doctorRuntime.controls as any).snipe_preset = normalizeDoctorSnipePreset(payload.snipe_preset);
@@ -5149,7 +5206,7 @@ export async function registerRoutes(
       }
     }
 
-    doctorRuntime.controls.max_open_positions = 3;
+    doctorRuntime.controls.max_open_positions = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_open_positions || 3)));
 
     doctorRuntime.controls.buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     doctorRuntime.controls.min_buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
@@ -5348,9 +5405,8 @@ export async function registerRoutes(
     await syncDoctorWalletFromAssistantRuntime(userId);
     await ensureDoctorLiveExecutionModeIfCapable(userId);
 
-    const result = await executeDoctorCycle("manual", userId);
+    const result = await runDoctorCycleSafely("manual", userId);
     await saveDoctorWalletForUser(userId);
-    await persistDoctorRuntime(userId);
     return res.json({ result });
   });
 
@@ -5388,7 +5444,7 @@ export async function registerRoutes(
       return res.json({ result: { executed: false, reason: "duplicate_buy_blocked" } });
     }
 
-    if (doctorRuntime.positions.length >= 3) {
+    if (doctorRuntime.positions.length >= getDoctorEffectiveMaxOpenPositions()) {
       return res.json({ result: { executed: false, reason: "max_open_positions_reached" } });
     }
 
