@@ -966,8 +966,11 @@ export async function registerRoutes(
   const saveDoctorWalletForUser = async (userId: string) => {
     const wallets = await getStoredDoctorWalletsByUser();
     const current = wallets[userId] as Record<string, any> | undefined;
+    const runtimeAddress = String(doctorRuntime.wallet.address || "").trim();
+    const existingAddress = String(current?.address || "").trim();
+    const resolvedAddress = runtimeAddress || existingAddress;
     wallets[userId] = {
-      address: String(doctorRuntime.wallet.address || "").trim(),
+      address: resolvedAddress,
       balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0)),
       separateWalletEnforced: doctorRuntime.wallet.separateWalletEnforced !== false,
       livePrivateKey: String(current?.livePrivateKey || "").trim(),

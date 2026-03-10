@@ -1178,12 +1178,12 @@ export default function WalletPage() {
         </Sheet>
 
         <Sheet open={assistantOpen} onOpenChange={setAssistantOpen}>
-          <SheetContent side="right" className="sm:max-w-md">
-            <SheetHeader>
+          <SheetContent side="right" className="sm:max-w-md h-dvh overflow-hidden flex flex-col">
+            <SheetHeader className="shrink-0">
               <SheetTitle>Assistant Permission & Execution</SheetTitle>
               <SheetDescription>Enable/disable assistant permission and run assistant execution from one place.</SheetDescription>
             </SheetHeader>
-            <div className="space-y-3 mt-4">
+            <div className="space-y-3 mt-4 overflow-y-auto pr-1 pb-6 flex-1">
               <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
                 <span className="text-sm">DoctorTrade Status</span>
                 <Badge variant={trading?.enabled ? "default" : "outline"}>{trading?.enabled ? "Enabled" : trading?.pending_approval ? "Pending Approval" : "Disabled"}</Badge>
