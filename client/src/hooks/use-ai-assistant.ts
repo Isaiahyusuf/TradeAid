@@ -78,7 +78,10 @@ export type AssistantWalletTransaction = {
   contract_address: string;
   notional_usd: number;
   quantity?: number | null;
+  quantity_unit?: string;
   asset?: string;
+  token_symbol?: string;
+  worth_sol?: number;
   tx_hash?: string;
   explorer_url?: string;
   from_address?: string;

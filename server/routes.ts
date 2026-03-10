@@ -5971,28 +5971,97 @@ export async function registerRoutes(
     }
 
     try {
+      const prices = await fetchChainPricesUsd().catch(() => ({ solana: 0 } as Record<string, number>));
+      const solPriceUsd = Math.max(0, Number((prices as any)?.solana || 0));
+      const activeTokens = await getDoctorActiveTokens().catch(() => [] as Array<Record<string, any>>);
+      const activeTokenMap = new Map(activeTokens.map((token) => [String(token.address || "").trim(), token]));
       const ownerPk = new PublicKey(walletAddress);
       const signatures = await getSolanaConnection().getSignaturesForAddress(
         ownerPk,
         { limit: Math.max(1, Math.min(200, Math.trunc(limit || 50))) },
         "confirmed",
       );
+      const signatureValues = signatures.map((item) => String(item.signature || "").trim()).filter(Boolean);
+      const parsedTransactions = signatureValues.length > 0
+        ? await getSolanaConnection().getParsedTransactions(signatureValues, { commitment: "confirmed", maxSupportedTransactionVersion: 0 })
+        : [];
 
-      return signatures.map((item) => {
+      return signatures.map((item, index) => {
         const signature = String(item.signature || "").trim();
         const createdAt = Number(item.blockTime || 0) > 0
           ? new Date(Number(item.blockTime) * 1000).toISOString()
           : nowIso();
+        const parsed = (parsedTransactions[index] as any) || null;
+        const accountKeys = Array.isArray(parsed?.transaction?.message?.accountKeys) ? parsed.transaction.message.accountKeys : [];
+        const ownerIndex = accountKeys.findIndex((entry: any) => {
+          const key = String(entry?.pubkey?.toBase58?.() || entry?.pubkey || entry || "").trim();
+          return key === walletAddress;
+        });
+
+        const preBalances = Array.isArray(parsed?.meta?.preBalances) ? parsed.meta.preBalances : [];
+        const postBalances = Array.isArray(parsed?.meta?.postBalances) ? parsed.meta.postBalances : [];
+        const preLamports = ownerIndex >= 0 ? Number(preBalances[ownerIndex] || 0) : 0;
+        const postLamports = ownerIndex >= 0 ? Number(postBalances[ownerIndex] || 0) : 0;
+        const solDelta = Number((((postLamports - preLamports) || 0) / 1_000_000_000).toFixed(9));
+
+        const tokenDeltaByMint = new Map<string, number>();
+        const applyTokenRows = (rows: any[], factor: number) => {
+          for (const row of rows) {
+            const owner = String(row?.owner || "").trim();
+            if (owner !== walletAddress) continue;
+            const mint = String(row?.mint || "").trim();
+            if (!mint) continue;
+            const uiAmount = Number(
+              row?.uiTokenAmount?.uiAmountString
+                ?? row?.uiTokenAmount?.uiAmount
+                ?? 0,
+            );
+            const current = Number(tokenDeltaByMint.get(mint) || 0);
+            tokenDeltaByMint.set(mint, Number((current + (factor * (Number.isFinite(uiAmount) ? uiAmount : 0))).toFixed(9)));
+          }
+        };
+        applyTokenRows(Array.isArray(parsed?.meta?.postTokenBalances) ? parsed.meta.postTokenBalances : [], 1);
+        applyTokenRows(Array.isArray(parsed?.meta?.preTokenBalances) ? parsed.meta.preTokenBalances : [], -1);
+
+        let dominantMint = "";
+        let dominantDelta = 0;
+        tokenDeltaByMint.forEach((delta, mint) => {
+          if (Math.abs(delta) > Math.abs(dominantDelta)) {
+            dominantMint = mint;
+            dominantDelta = delta;
+          }
+        });
+
+        const marketToken = dominantMint ? activeTokenMap.get(dominantMint) as Record<string, any> | undefined : undefined;
+        const tokenSymbol = dominantMint
+          ? (String(marketToken?.symbol || marketToken?.token || "").trim() || `${dominantMint.slice(0, 4)}...${dominantMint.slice(-4)}`)
+          : "SOL";
+        const tokenPriceUsd = dominantMint ? Math.max(0, Number(resolveCurrentPriceUsd(marketToken || {}, 0) || 0)) : 0;
+        const quantity = dominantMint ? Math.abs(dominantDelta) : Math.abs(solDelta);
+        const quantityUnit = dominantMint ? "TOKEN" : "SOL";
+        const worthSol = dominantMint
+          ? (tokenPriceUsd > 0 && solPriceUsd > 0 ? Number(((Math.abs(dominantDelta) * tokenPriceUsd) / solPriceUsd).toFixed(9)) : 0)
+          : Math.abs(solDelta);
+        const notionalUsd = dominantMint
+          ? Number((Math.abs(dominantDelta) * tokenPriceUsd).toFixed(2))
+          : Number((Math.abs(solDelta) * solPriceUsd).toFixed(2));
+        const txSide = dominantMint
+          ? (dominantDelta >= 0 ? "buy" : "sell")
+          : (solDelta >= 0 ? "receive" : "send");
+
         return {
           id: `onchain:${signature}`,
           chain: "solana",
-          side: "onchain",
+          side: txSide,
           status: item.err ? "failed" : "confirmed",
           source: "onchain",
-          contract_address: walletAddress,
-          notional_usd: 0,
-          quantity: null,
-          asset: "SOL",
+          contract_address: dominantMint || walletAddress,
+          notional_usd: notionalUsd,
+          quantity: Number.isFinite(quantity) ? Number(quantity.toFixed(9)) : null,
+          quantity_unit: quantityUnit,
+          asset: quantityUnit,
+          token_symbol: tokenSymbol,
+          worth_sol: Number.isFinite(worthSol) ? Number(worthSol.toFixed(9)) : 0,
           tx_hash: signature,
           explorer_url: signature ? chainExplorerTxUrl("solana", signature) : null,
           from_address: walletAddress,
@@ -6437,7 +6506,10 @@ export async function registerRoutes(
       contract_address: asset,
       notional_usd: Number((amount * chainPrice).toFixed(2)),
       quantity: amount,
+      quantity_unit: "SOL",
       asset,
+      token_symbol: asset,
+      worth_sol: Number(amount.toFixed(9)),
       tx_hash: txHash,
       explorer_url: chainExplorerTxUrl(chain as AssistantChain, txHash),
       from_address: senderAddress,
@@ -6533,7 +6605,6 @@ export async function registerRoutes(
               return sum;
             }
           }, BigInt(0));
-
           if (totalRaw <= BigInt(0)) {
             return res.status(400).json({ message: "insufficient token balance for sell" });
           }
@@ -6558,6 +6629,17 @@ export async function registerRoutes(
             slippageBps,
           });
         }
+
+        const tokenDecimals = await getTokenMintDecimals(tokenMint).catch(() => 6);
+        const quoteOutRaw = Number(quote?.outAmount || 0);
+        const quoteInRaw = Number(quote?.inAmount || 0);
+        const tokenQty = side === "buy"
+          ? (quoteOutRaw > 0 ? quoteOutRaw / Math.pow(10, Math.max(0, tokenDecimals)) : 0)
+          : (quoteInRaw > 0 ? quoteInRaw / Math.pow(10, Math.max(0, tokenDecimals)) : 0);
+        const activeTokens = await getDoctorActiveTokens().catch(() => [] as Array<Record<string, any>>);
+        const tokenMeta = activeTokens.find((item) => String(item.address || "").trim() === tokenMint) as Record<string, any> | undefined;
+        const tokenSymbol = String(tokenMeta?.symbol || tokenMeta?.token || "").trim() || `${tokenMint.slice(0, 4)}...${tokenMint.slice(-4)}`;
+        const worthSol = solPriceUsd > 0 ? Number((resolvedNotionalUsd / solPriceUsd).toFixed(9)) : 0;
 
         const swapPayload = await fetchJupiterSwapPayload({
           quoteResponse: quote,
@@ -6593,8 +6675,11 @@ export async function registerRoutes(
           status: "executed",
           contract_address: tokenMint,
           notional_usd: Number(resolvedNotionalUsd.toFixed(2)),
-          quantity: null,
+          quantity: Number(tokenQty.toFixed(9)),
+          quantity_unit: "TOKEN",
           asset: "TOKEN",
+          token_symbol: tokenSymbol,
+          worth_sol: worthSol,
           tx_hash: signature,
           explorer_url: `https://explorer.solana.com/tx/${signature}`,
           from_address: walletAddress,
@@ -6634,6 +6719,11 @@ export async function registerRoutes(
     }
 
     const txHash = `swap_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const prices = await fetchChainPricesUsd().catch(() => ({ solana: 0 } as Record<string, number>));
+    const solPriceUsd = Number((prices as any)?.solana || 0);
+    const activeTokens = await getDoctorActiveTokens().catch(() => [] as Array<Record<string, any>>);
+    const tokenMeta = activeTokens.find((item) => String(item.address || "").trim() === tokenMint) as Record<string, any> | undefined;
+    const tokenSymbol = String(tokenMeta?.symbol || tokenMeta?.token || "").trim() || `${tokenMint.slice(0, 4)}...${tokenMint.slice(-4)}`;
     const transaction = {
       id: `swap_${Date.now()}`,
       chain: "solana",
@@ -6642,7 +6732,10 @@ export async function registerRoutes(
       contract_address: tokenMint,
       notional_usd: Number((resolvedPaperNotionalUsd || 0).toFixed(2)),
       quantity: null,
+      quantity_unit: "TOKEN",
       asset: "TOKEN",
+      token_symbol: tokenSymbol,
+      worth_sol: solPriceUsd > 0 ? Number(((resolvedPaperNotionalUsd || 0) / solPriceUsd).toFixed(9)) : 0,
       tx_hash: txHash,
       explorer_url: `https://explorer.solana.com/tx/${txHash}`,
       from_address: assistantRuntime.wallet.addresses_by_chain.solana || "",
@@ -6862,7 +6955,6 @@ export async function registerRoutes(
               return sum;
             }
           }, BigInt(0));
-
           if (totalRaw <= BigInt(0)) {
             return res.status(400).json({ message: "insufficient token balance for sell" });
           }
@@ -6887,6 +6979,17 @@ export async function registerRoutes(
             slippageBps,
           });
         }
+
+        const tokenDecimals = await getTokenMintDecimals(contractAddress).catch(() => 6);
+        const quoteOutRaw = Number(quote?.outAmount || 0);
+        const quoteInRaw = Number(quote?.inAmount || 0);
+        const tokenQty = side === "buy"
+          ? (quoteOutRaw > 0 ? quoteOutRaw / Math.pow(10, Math.max(0, tokenDecimals)) : 0)
+          : (quoteInRaw > 0 ? quoteInRaw / Math.pow(10, Math.max(0, tokenDecimals)) : 0);
+        const activeTokens = await getDoctorActiveTokens().catch(() => [] as Array<Record<string, any>>);
+        const tokenMeta = activeTokens.find((item) => String(item.address || "").trim() === contractAddress) as Record<string, any> | undefined;
+        const tokenSymbol = String(tokenMeta?.symbol || tokenMeta?.token || "").trim() || `${contractAddress.slice(0, 4)}...${contractAddress.slice(-4)}`;
+        const worthSol = solPriceUsd > 0 ? Number((notionalUsd / solPriceUsd).toFixed(9)) : 0;
 
         const swapPayload = await fetchJupiterSwapPayload({
           quoteResponse: quote,
@@ -6922,8 +7025,11 @@ export async function registerRoutes(
           status: "executed",
           contract_address: contractAddress,
           notional_usd: Number(notionalUsd.toFixed(2)),
-          quantity: null,
+          quantity: Number(tokenQty.toFixed(9)),
+          quantity_unit: "TOKEN",
           asset: "TOKEN",
+          token_symbol: tokenSymbol,
+          worth_sol: worthSol,
           tx_hash: signature,
           explorer_url: `https://explorer.solana.com/tx/${signature}`,
           from_address: walletAddress,
@@ -6954,6 +7060,11 @@ export async function registerRoutes(
     }
 
     const txHash = `trade_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const prices = await fetchChainPricesUsd().catch(() => ({ solana: 0 } as Record<string, number>));
+    const solPriceUsd = Number((prices as any)?.solana || 0);
+    const activeTokens = await getDoctorActiveTokens().catch(() => [] as Array<Record<string, any>>);
+    const tokenMeta = activeTokens.find((item) => String(item.address || "").trim() === contractAddress) as Record<string, any> | undefined;
+    const tokenSymbol = String(tokenMeta?.symbol || tokenMeta?.token || "").trim() || `${contractAddress.slice(0, 4)}...${contractAddress.slice(-4)}`;
     const transaction = {
       id: `trade_${Date.now()}`,
       chain: "solana",
@@ -6962,7 +7073,10 @@ export async function registerRoutes(
       contract_address: contractAddress,
       notional_usd: Number(notionalUsd.toFixed(2)),
       quantity: null,
+      quantity_unit: "TOKEN",
       asset: "TOKEN",
+      token_symbol: tokenSymbol,
+      worth_sol: solPriceUsd > 0 ? Number((notionalUsd / solPriceUsd).toFixed(9)) : 0,
       tx_hash: txHash,
       explorer_url: `https://explorer.solana.com/tx/${txHash}`,
       from_address: assistantRuntime.wallet.addresses_by_chain[chain] || assistantRuntime.wallet.addresses_by_chain.solana || "",
