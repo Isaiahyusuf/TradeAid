@@ -136,6 +136,19 @@ export type DoctorStatus = {
   };
   active_tokens: DoctorToken[];
   positions: DoctorPosition[];
+  wallet_tokens?: Array<{
+    mint: string;
+    ui_amount: number;
+    amount_raw?: string;
+    decimals?: number;
+  }>;
+  wallet_transactions?: Array<{
+    signature: string;
+    block_time?: string | null;
+    err?: unknown;
+    memo?: string | null;
+    confirmation_status?: string;
+  }>;
   recent_trades: DoctorRecentTrade[];
   decision_journal?: DoctorDecisionJournalRow[];
   performance?: Array<Record<string, any>>;

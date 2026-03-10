@@ -1118,6 +1118,33 @@ export default function DoctorTrade() {
               </div>
             </Card>
 
+            <Card className="p-4">
+              <h2 className="text-sm font-semibold mb-3">Wallet Tokens</h2>
+              <div className="space-y-2 max-h-[240px] overflow-auto">
+                {(viewData?.wallet_tokens || []).map((token) => (
+                  <div key={token.mint} className="border rounded-md p-2">
+                    <p className="text-xs font-semibold break-all">{token.mint}</p>
+                    <p className="text-[11px] text-muted-foreground">Balance {Number(token.ui_amount || 0).toFixed(6)}</p>
+                  </div>
+                ))}
+                {!viewData?.wallet_tokens?.length && <p className="text-sm text-muted-foreground">No SPL tokens detected in connected wallet.</p>}
+              </div>
+            </Card>
+
+            <Card className="p-4">
+              <h2 className="text-sm font-semibold mb-3">Wallet Transactions</h2>
+              <div className="space-y-2 max-h-[240px] overflow-auto">
+                {(viewData?.wallet_transactions || []).map((tx) => (
+                  <div key={tx.signature} className="border rounded-md p-2">
+                    <p className="text-xs font-semibold break-all">{tx.signature}</p>
+                    <p className="text-[11px] text-muted-foreground">{fmtTs(tx.block_time || undefined)} · {String(tx.confirmation_status || "unknown")}</p>
+                    {tx.err ? <p className="text-[11px] text-red-500">Failed</p> : <p className="text-[11px] text-emerald-500">Confirmed</p>}
+                  </div>
+                ))}
+                {!viewData?.wallet_transactions?.length && <p className="text-sm text-muted-foreground">No recent on-chain transactions found.</p>}
+              </div>
+            </Card>
+
             {viewData?.tuning_suggestion && (
               <Card className="p-4 border-accent/30 bg-accent/5">
                 <p className="text-xs text-muted-foreground">Tuning Suggestion</p>

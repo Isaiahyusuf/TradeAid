@@ -758,6 +758,7 @@ export async function registerRoutes(
       min_liquidity_usd: 100,
       max_liquidity_usd: 7500,
       min_market_cap_usd: 1000,
+      max_market_cap_usd: 250000,
       min_volume_24h_usd: 100,
       min_token_age_minutes: 0,
       max_token_age_minutes: 2,
@@ -1098,6 +1099,7 @@ export async function registerRoutes(
       min_liquidity_usd: 150,
       max_liquidity_usd: 25000,
       min_market_cap_usd: 2000,
+      max_market_cap_usd: 180000,
       min_volume_24h_usd: 2000,
       min_token_age_minutes: 0,
       max_token_age_minutes: 5,
@@ -1121,6 +1123,7 @@ export async function registerRoutes(
       min_liquidity_usd: 2000,
       max_liquidity_usd: 20000,
       min_market_cap_usd: 25000,
+      max_market_cap_usd: 300000,
       min_volume_24h_usd: 25000,
       min_token_age_minutes: 1,
       max_token_age_minutes: 5,
@@ -1144,6 +1147,7 @@ export async function registerRoutes(
       min_liquidity_usd: 1000,
       max_liquidity_usd: 15000,
       min_market_cap_usd: 15000,
+      max_market_cap_usd: 220000,
       min_volume_24h_usd: 12000,
       min_token_age_minutes: 0,
       max_token_age_minutes: 4,
@@ -1167,6 +1171,7 @@ export async function registerRoutes(
       min_liquidity_usd: 200,
       max_liquidity_usd: 12000,
       min_market_cap_usd: 5000,
+      max_market_cap_usd: 250000,
       min_volume_24h_usd: 4000,
       min_token_age_minutes: 0,
       max_token_age_minutes: 3,
@@ -1458,6 +1463,8 @@ export async function registerRoutes(
   let doctorDexWorkerRunning = false;
   let doctorDexWorkerLastPollAt: string | null = null;
   let doctorWalletBalanceCache: { address: string; at: number; balanceSol: number } | null = null;
+  let doctorWalletTokensCache: { address: string; at: number; tokens: Array<Record<string, any>> } | null = null;
+  let doctorWalletTransactionsCache: { address: string; at: number; transactions: Array<Record<string, any>> } | null = null;
   const doctorProcessedMints = new Map<string, number>();
   const doctorRejectedMints = new Map<string, number>();
   let doctorSniperLogs: Array<Record<string, any>> = [];
@@ -1759,6 +1766,84 @@ export async function registerRoutes(
         amountRaw: "0",
         decimals: 0,
       };
+    }
+  };
+
+  const getDoctorLiveWalletTokenSnapshots = async (walletAddress: string, limit = 20, force = false) => {
+    const resolvedWallet = String(walletAddress || "").trim();
+    if (!resolvedWallet) return [] as Array<Record<string, any>>;
+
+    const nowMs = Date.now();
+    const ttlMs = Math.max(1500, Number(process.env.DOCTOR_WALLET_TOKENS_CACHE_MS || 10_000));
+    if (!force && doctorWalletTokensCache && doctorWalletTokensCache.address === resolvedWallet && nowMs - doctorWalletTokensCache.at < ttlMs) {
+      return doctorWalletTokensCache.tokens.slice(0, Math.max(1, Math.trunc(limit || 20)));
+    }
+
+    try {
+      const ownerPk = new PublicKey(resolvedWallet);
+      const tokenProgram = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+      const accounts = await getSolanaConnection().getParsedTokenAccountsByOwner(ownerPk, { programId: tokenProgram }, "confirmed");
+
+      const tokens: Array<Record<string, any>> = [];
+      for (const entry of accounts.value) {
+        const parsedInfo = (entry.account.data as any)?.parsed?.info as Record<string, any> | undefined;
+        const tokenAmount = (parsedInfo?.tokenAmount || {}) as Record<string, any>;
+        const mint = String(parsedInfo?.mint || "").trim();
+        const uiAmount = Number(tokenAmount?.uiAmount || 0);
+        const amountRaw = String(tokenAmount?.amount || "0");
+        const decimals = Math.max(0, Math.trunc(Number(tokenAmount?.decimals || 0)));
+        if (!mint || !(uiAmount > 0)) continue;
+        tokens.push({
+          mint,
+          ui_amount: Number(uiAmount.toFixed(9)),
+          amount_raw: amountRaw,
+          decimals,
+        });
+      }
+      tokens.sort((a, b) => Number(b.ui_amount || 0) - Number(a.ui_amount || 0));
+
+      doctorWalletTokensCache = {
+        address: resolvedWallet,
+        at: nowMs,
+        tokens: tokens.slice(0, 80),
+      };
+
+      return tokens.slice(0, Math.max(1, Math.trunc(limit || 20)));
+    } catch {
+      return [] as Array<Record<string, any>>;
+    }
+  };
+
+  const getDoctorWalletRecentTransactions = async (walletAddress: string, limit = 20, force = false) => {
+    const resolvedWallet = String(walletAddress || "").trim();
+    if (!resolvedWallet) return [] as Array<Record<string, any>>;
+
+    const nowMs = Date.now();
+    const ttlMs = Math.max(2000, Number(process.env.DOCTOR_WALLET_TX_CACHE_MS || 12_000));
+    if (!force && doctorWalletTransactionsCache && doctorWalletTransactionsCache.address === resolvedWallet && nowMs - doctorWalletTransactionsCache.at < ttlMs) {
+      return doctorWalletTransactionsCache.transactions.slice(0, Math.max(1, Math.trunc(limit || 20)));
+    }
+
+    try {
+      const ownerPk = new PublicKey(resolvedWallet);
+      const signatures = await getSolanaConnection().getSignaturesForAddress(ownerPk, { limit: Math.max(1, Math.min(40, Math.trunc(limit || 20))) }, "confirmed");
+      const transactions = signatures.map((item) => ({
+        signature: String(item.signature || ""),
+        block_time: Number(item.blockTime || 0) > 0 ? new Date(Number(item.blockTime) * 1000).toISOString() : null,
+        err: item.err || null,
+        memo: item.memo || null,
+        confirmation_status: String(item.confirmationStatus || "unknown"),
+      }));
+
+      doctorWalletTransactionsCache = {
+        address: resolvedWallet,
+        at: nowMs,
+        transactions,
+      };
+
+      return transactions;
+    } catch {
+      return [] as Array<Record<string, any>>;
     }
   };
 
@@ -3509,6 +3594,8 @@ export async function registerRoutes(
     const minBuyRatioPct = Math.max(1, getDoctorEffectiveControlNumber("min_buy_ratio_pct", 65));
     const minBuys5m = Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("min_buys_5m", 3)));
     const maxSells5m = Math.max(0, Math.trunc(getDoctorEffectiveControlNumber("max_sells_5m", 1)));
+    const minMarketCapUsd = Math.max(1, getDoctorEffectiveControlNumber("min_market_cap_usd", 15000));
+    const maxMarketCapUsd = Math.max(minMarketCapUsd, getDoctorEffectiveControlNumber("max_market_cap_usd", 250000));
     const minLiquiditySol = Math.max(0.1, getDoctorEffectiveControlNumber("min_liquidity_sol", 2));
     const maxLiquiditySol = Math.max(minLiquiditySol, getDoctorEffectiveControlNumber("max_liquidity_sol", 50));
     const requireLiquidityLock = Math.max(0, getDoctorEffectiveControlNumber("min_lock_hours", 24)) > 0;
@@ -3519,7 +3606,10 @@ export async function registerRoutes(
       .filter((token) => Number(token.score || 0) >= Math.max(1, getDoctorEffectiveControlNumber("strong_move_threshold_pct", 40)))
       .filter((token) => Number(token.liquidity || 0) >= Math.max(1000, getDoctorEffectiveControlNumber("min_liquidity_usd", 0)))
       .filter((token) => Number(token.liquidity || 0) <= maxLiquidityUsd)
-      .filter((token) => Number(token.market_cap_usd || 0) >= Math.max(1, getDoctorEffectiveControlNumber("min_market_cap_usd", 15000)))
+      .filter((token) => {
+        const marketCapUsd = Number(token.market_cap_usd || 0);
+        return marketCapUsd >= minMarketCapUsd && marketCapUsd <= maxMarketCapUsd;
+      })
       .filter((token) => Number(token.volume_24h || 0) >= Math.max(1, getDoctorEffectiveControlNumber("min_volume_24h_usd", 12000)))
       .filter((token) => Number(token.age_seconds || 0) >= Math.max(0, Math.trunc(getDoctorEffectiveControlNumber("min_token_age_minutes", 0))) * 60)
       .filter((token) => Number(token.age_seconds || 0) <= Math.min(maxTokenAgeSeconds, strictMaxTokenAgeSeconds))
@@ -3656,6 +3746,12 @@ export async function registerRoutes(
       const insiderFallbackPool = activeTokens
         .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
         .filter((token) => !openAddresses.has(String(token.address || "")))
+        .filter((token) => Number(token.age_seconds || 0) <= strictMaxTokenAgeSeconds)
+        .filter((token) => {
+          const marketCapUsd = Number(token.market_cap_usd || 0);
+          return marketCapUsd >= minMarketCapUsd && marketCapUsd <= maxMarketCapUsd;
+        })
+        .filter((token) => isLaunchSourceAllowed(String(token.launch_source || token.source || "unknown")))
         .sort((a, b) => {
           const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
           if (scoreDiff !== 0) return scoreDiff;
@@ -3705,6 +3801,27 @@ export async function registerRoutes(
 
       if (doctorRuntime.positions.length >= maxOpenPositions) {
         return { allowed: false, reason: "max_open_positions_reached" };
+      }
+
+      if (String(candidate.chain || "solana").toLowerCase() !== "solana") {
+        return { allowed: false, reason: "chain_not_solana" };
+      }
+
+      const candidateAgeSeconds = Math.max(0, Number(candidate.age_seconds || 0));
+      if (candidateAgeSeconds > strictMaxTokenAgeSeconds) {
+        return { allowed: false, reason: "token_too_old_for_sniping" };
+      }
+
+      const candidateMarketCapUsd = Number(candidate.market_cap_usd || 0);
+      if (candidateMarketCapUsd < minMarketCapUsd) {
+        return { allowed: false, reason: "low_market_cap" };
+      }
+      if (candidateMarketCapUsd > maxMarketCapUsd) {
+        return { allowed: false, reason: "high_market_cap" };
+      }
+
+      if (!isLaunchSourceAllowed(String(candidate.launch_source || candidate.source || "unknown"))) {
+        return { allowed: false, reason: "unsupported_launch_source" };
       }
 
       if (Number(doctorRuntime.controls.trades_today || 0) >= maxTradesPerDay) {
@@ -4328,10 +4445,12 @@ export async function registerRoutes(
       }
     }
 
-    if (!walletConnected && String(doctorRuntime.wallet.address || "").trim()) {
-      doctorRuntime.wallet.address = "";
-      doctorRuntime.wallet.balanceSol = 0;
-    }
+    const statusWalletTokens = walletConnected
+      ? await getDoctorLiveWalletTokenSnapshots(walletAddress, 20)
+      : [];
+    const statusWalletTransactions = walletConnected
+      ? await getDoctorWalletRecentTransactions(walletAddress, 20)
+      : [];
     const requiresLiveWallet = isDoctorLiveOnlyMode() || doctorRuntime.execution.mode === "live";
     const maxTradesPerDay = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_trades_per_day || 1)));
     const maxOpenPositions = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_open_positions || 3)));
@@ -4376,14 +4495,16 @@ export async function registerRoutes(
           }
 
           const tokenBalance = await getDoctorLiveTokenBalanceSnapshot(walletForLivePositions, mint);
-          if (!(tokenBalance.uiAmount > 0)) {
+          if (tokenBalance.balanceKnown && !(tokenBalance.uiAmount > 0)) {
             continue;
           }
 
           const marketToken = activeTokenMap.get(mint);
           const entryPriceUsd = Number(position.entry_price || 0);
           const currentPriceUsd = resolveCurrentPriceUsd(marketToken || {}, Number(position.current_price || entryPriceUsd || 0));
-          const walletValueUsd = Number((tokenBalance.uiAmount * Math.max(0, currentPriceUsd || 0)).toFixed(6));
+          const fallbackAmountTokens = Math.max(0, Number(position.amount_tokens || 0));
+          const amountTokens = tokenBalance.balanceKnown ? tokenBalance.uiAmount : fallbackAmountTokens;
+          const walletValueUsd = Number((amountTokens * Math.max(0, currentPriceUsd || 0)).toFixed(6));
           const walletValueSol = Number((walletValueUsd / solPriceUsd).toFixed(6));
           const pnlPct = entryPriceUsd > 0 && currentPriceUsd > 0
             ? Number((((currentPriceUsd - entryPriceUsd) / entryPriceUsd) * 100).toFixed(2))
@@ -4394,11 +4515,12 @@ export async function registerRoutes(
             execution_mode: "live",
             current_price: Number(currentPriceUsd || 0),
             pnl_pct: pnlPct,
-            amount_tokens: Number(tokenBalance.uiAmount.toFixed(9)),
-            token_decimals: tokenBalance.decimals,
-            amount_raw: tokenBalance.amountRaw,
+            amount_tokens: Number(amountTokens.toFixed(9)),
+            token_decimals: tokenBalance.balanceKnown ? tokenBalance.decimals : Number(position.token_decimals || 0),
+            amount_raw: tokenBalance.balanceKnown ? tokenBalance.amountRaw : String(position.amount_raw || "0"),
             worth_usd: walletValueUsd,
             worth_sol: walletValueSol,
+            balance_known: tokenBalance.balanceKnown,
           });
         }
 
@@ -4493,6 +4615,8 @@ export async function registerRoutes(
       },
       active_tokens: activeTokens,
       positions: statusPositions,
+      wallet_tokens: statusWalletTokens,
+      wallet_transactions: statusWalletTransactions,
       recent_trades: doctorRuntime.recentTrades.slice(0, 40),
       decision_journal: filteredDecisionJournal,
       performance: doctorRuntime.performance.slice(0, 30),
@@ -4770,6 +4894,7 @@ export async function registerRoutes(
       "min_liquidity_usd",
       "max_liquidity_usd",
       "min_market_cap_usd",
+      "max_market_cap_usd",
       "min_volume_24h_usd",
       "min_token_age_minutes",
       "max_token_age_minutes",
