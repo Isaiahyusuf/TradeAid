@@ -4245,6 +4245,14 @@ export async function registerRoutes(
     const walletAddress = String(walletSnapshot.address || "").trim();
     const walletConnected = Boolean(walletSnapshot.connected);
 
+    if (!doctorRuntime.enabled && !doctorRuntime.killSwitch && doctorRuntime.execution.mode === "live" && liveCapable && walletConnected) {
+      doctorRuntime.enabled = true;
+      await persistDoctorRuntime(statusUserId || undefined);
+      if (statusUserId) {
+        await startDoctorCycleForUser(statusUserId);
+      }
+    }
+
     if (!walletConnected && String(doctorRuntime.wallet.address || "").trim()) {
       doctorRuntime.wallet.address = "";
       doctorRuntime.wallet.balanceSol = 0;
