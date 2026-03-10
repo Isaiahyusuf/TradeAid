@@ -4608,7 +4608,10 @@ export async function registerRoutes(
     }
     await loadDoctorRuntimeForUser(userId);
     await syncDoctorWalletFromAssistantRuntime(userId);
-    const requestedEnable = Boolean(req.body?.enabled);
+    if (typeof req.body?.enabled !== "boolean") {
+      return res.status(400).json({ message: "enabled_boolean_required" });
+    }
+    const requestedEnable = req.body.enabled as boolean;
 
     const enabled = requestedEnable;
     doctorRuntime.enabled = enabled && !doctorRuntime.killSwitch;
@@ -4898,6 +4901,15 @@ export async function registerRoutes(
     await loadDoctorRuntimeForUser(userId);
     await syncDoctorWalletFromAssistantRuntime(userId);
     await ensureDoctorLiveExecutionModeIfCapable();
+
+    if (!doctorRuntime.enabled && !doctorRuntime.killSwitch) {
+      const liveCredentials = await getDoctorLiveWalletCredentials();
+      const hasLiveWallet = Boolean(String(liveCredentials.walletPublicKey || "").trim())
+        && Boolean(String(liveCredentials.walletPrivateKey || "").trim());
+      if (hasLiveWallet) {
+        doctorRuntime.enabled = true;
+      }
+    }
 
     const result = await executeDoctorCycle("manual");
     await saveDoctorWalletForUser(userId);
