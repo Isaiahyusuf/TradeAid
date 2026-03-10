@@ -3312,15 +3312,6 @@ export async function registerRoutes(
     await refreshDoctorWalletBalanceFromChain();
     clampDoctorPaperBalance();
 
-    if (!doctorRuntime.enabled && !doctorRuntime.killSwitch && doctorRuntime.execution.mode === "live") {
-      const liveCredentials = await getDoctorLiveWalletCredentials(scopedUserId);
-      const hasLiveWallet = Boolean(String(liveCredentials.walletPublicKey || "").trim())
-        && Boolean(String(liveCredentials.walletPrivateKey || "").trim());
-      if (hasLiveWallet) {
-        doctorRuntime.enabled = true;
-      }
-    }
-
     if (!doctorRuntime.enabled) {
       doctorRuntime.lastDecision = { action: "skip", reason: "doctortrade_disabled", trigger, at: nowIso() };
       return { executed: false, reason: "doctortrade_disabled", trigger };
@@ -4437,14 +4428,6 @@ export async function registerRoutes(
     const walletAddress = String(walletSnapshot.address || "").trim();
     const walletConnected = Boolean(walletSnapshot.connected);
 
-    if (!doctorRuntime.enabled && !doctorRuntime.killSwitch && doctorRuntime.execution.mode === "live" && liveCapable && walletConnected) {
-      doctorRuntime.enabled = true;
-      await persistDoctorRuntime(statusUserId || undefined);
-      if (statusUserId) {
-        await startDoctorCycleForUser(statusUserId);
-      }
-    }
-
     const statusWalletTokens = walletConnected
       ? await getDoctorLiveWalletTokenSnapshots(walletAddress, 20)
       : [];
@@ -5119,15 +5102,6 @@ export async function registerRoutes(
     await loadDoctorRuntimeForUser(userId);
     await syncDoctorWalletFromAssistantRuntime(userId);
     await ensureDoctorLiveExecutionModeIfCapable(userId);
-
-    if (!doctorRuntime.enabled && !doctorRuntime.killSwitch) {
-      const liveCredentials = await getDoctorLiveWalletCredentials(userId);
-      const hasLiveWallet = Boolean(String(liveCredentials.walletPublicKey || "").trim())
-        && Boolean(String(liveCredentials.walletPrivateKey || "").trim());
-      if (hasLiveWallet) {
-        doctorRuntime.enabled = true;
-      }
-    }
 
     const result = await executeDoctorCycle("manual", userId);
     await saveDoctorWalletForUser(userId);
