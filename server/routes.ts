@@ -782,6 +782,7 @@ export async function registerRoutes(
       mode: "live" as "paper" | "live",
     },
     executionAudit: [] as Array<Record<string, any>>,
+    boughtMints: [] as string[],
     positions: [] as Array<Record<string, any>>,
     recentTrades: [] as Array<Record<string, any>>,
     decisionJournal: [] as Array<Record<string, any>>,
@@ -1368,6 +1369,12 @@ export async function registerRoutes(
     }
     if (Array.isArray(loaded.executionAudit)) {
       doctorRuntime.executionAudit = loaded.executionAudit.slice(0, 200);
+    }
+    if (Array.isArray((loaded as any).boughtMints)) {
+      doctorRuntime.boughtMints = (loaded as any).boughtMints
+        .map((item: any) => String(item || "").trim())
+        .filter(Boolean)
+        .slice(0, 500);
     }
     if (loaded.lastDecision && typeof loaded.lastDecision === "object") {
       doctorRuntime.lastDecision = loaded.lastDecision as Record<string, any>;
@@ -2602,6 +2609,44 @@ export async function registerRoutes(
     doctorRuntime.executionAudit = doctorRuntime.executionAudit.slice(0, 200);
   };
 
+  const normalizeDoctorMint = (value: string) => String(value || "").trim();
+
+  const hasDoctorBoughtMintBefore = (mint: string) => {
+    const normalizedMint = normalizeDoctorMint(mint);
+    if (!normalizedMint) return false;
+
+    if (Array.isArray(doctorRuntime.boughtMints) && doctorRuntime.boughtMints.includes(normalizedMint)) {
+      return true;
+    }
+
+    const tradedBefore = doctorRuntime.recentTrades.some((trade) => {
+      const action = String((trade as any)?.action || "").trim().toUpperCase();
+      const address = normalizeDoctorMint(String((trade as any)?.address || ""));
+      return action === "BUY" && address === normalizedMint;
+    });
+    if (tradedBefore) return true;
+
+    const auditedBefore = doctorRuntime.executionAudit.some((entry) => {
+      const action = String((entry as any)?.action || "").trim().toLowerCase();
+      const tokenMint = normalizeDoctorMint(String((entry as any)?.mint || ""));
+      const status = String((entry as any)?.status || "").trim().toLowerCase();
+      return action === "buy" && tokenMint === normalizedMint && (status === "executed" || status === "simulated");
+    });
+    return auditedBefore;
+  };
+
+  const markDoctorMintAsBought = (mint: string) => {
+    const normalizedMint = normalizeDoctorMint(mint);
+    if (!normalizedMint) return;
+    if (!Array.isArray(doctorRuntime.boughtMints)) {
+      doctorRuntime.boughtMints = [];
+    }
+    if (!doctorRuntime.boughtMints.includes(normalizedMint)) {
+      doctorRuntime.boughtMints.unshift(normalizedMint);
+      doctorRuntime.boughtMints = doctorRuntime.boughtMints.slice(0, 500);
+    }
+  };
+
   const fetchJupiterQuote = async (params: {
     inputMint: string;
     outputMint: string;
@@ -2687,6 +2732,26 @@ export async function registerRoutes(
     baseMint?: string;
     sellFractionPct?: number;
   }) => {
+    if (params.action === "buy" && hasDoctorBoughtMintBefore(params.mint)) {
+      appendDoctorExecutionAudit({
+        action: params.action,
+        symbol: params.symbol,
+        mint: params.mint,
+        amount_sol: params.amountSol,
+        expected_price_usd: params.expectedPriceUsd,
+        expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+        trigger: params.trigger,
+        reason: params.reason,
+        status: "blocked",
+        block_reason: "duplicate_buy_blocked",
+      });
+      return {
+        executed: false,
+        status: "blocked",
+        reason: "duplicate_buy_blocked",
+      } as const;
+    }
+
     const liveEnabled = isDoctorLiveTradingEnabled();
     const liveOnly = isDoctorLiveOnlyMode();
     const scopedUserId = String(params.userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
@@ -3880,6 +3945,10 @@ export async function registerRoutes(
         return { allowed: false, reason: "mint_cooldown_active" };
       }
 
+      if (hasDoctorBoughtMintBefore(String(candidate.address || ""))) {
+        return { allowed: false, reason: "duplicate_buy_blocked" };
+      }
+
       const baseAssetMint = getDoctorTradeBaseAssetMint();
       if (requiresLiveWallet && baseAssetMint === "So11111111111111111111111111111111111111112") {
         const availableSol = Number(doctorRuntime.wallet.balanceSol || 0);
@@ -4333,6 +4402,7 @@ export async function registerRoutes(
         tx_hash: buyExecution.txHash,
         timestamp: nowIso(),
       });
+      markDoctorMintAsBought(position.address);
 
       appendDoctorSniperLog({
         event: "sniped",
@@ -5181,6 +5251,10 @@ export async function registerRoutes(
       return res.json({ result: { executed: false, reason: "token_already_owned" } });
     }
 
+    if (hasDoctorBoughtMintBefore(contractAddress)) {
+      return res.json({ result: { executed: false, reason: "duplicate_buy_blocked" } });
+    }
+
     if (doctorRuntime.positions.length >= 3) {
       return res.json({ result: { executed: false, reason: "max_open_positions_reached" } });
     }
@@ -5251,6 +5325,7 @@ export async function registerRoutes(
       execution_mode: doctorRuntime.execution.mode,
       timestamp: now,
     });
+    markDoctorMintAsBought(contractAddress);
     doctorRuntime.decisionJournal.unshift({
       token: symbol,
       address: contractAddress,
