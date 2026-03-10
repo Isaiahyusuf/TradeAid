@@ -47,10 +47,8 @@ export default function WalletPage() {
   const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
   const returnTo = String(searchParams.get("returnTo") || "").trim();
   const walletAction = String(searchParams.get("action") || "").trim().toLowerCase();
-  const prefillTradeChain = String(searchParams.get("chain") || "").trim().toLowerCase();
-  const prefillTradeContract = String(searchParams.get("contract") || "").trim();
-  const prefillTradeAmount = String(searchParams.get("amount") || "").trim();
-  const prefillSwapAmountSol = String(searchParams.get("amount_sol") || prefillTradeAmount || "").trim();
+  const prefillSwapTokenMint = String(searchParams.get("contract") || "").trim();
+  const prefillSwapAmountSol = String(searchParams.get("amount_sol") || searchParams.get("amount") || "").trim();
   const prefillSwapSide = String(searchParams.get("side") || "buy").trim().toLowerCase() === "sell" ? "sell" : "buy";
 
   const tradingStatusQuery = useAssistantTradingStatus();
@@ -82,11 +80,6 @@ export default function WalletPage() {
 
   const [assistantMode, setAssistantMode] = useState<"paper" | "live">("paper");
   const [confirmationText, setConfirmationText] = useState("I_APPROVE_ASSISTANT_TRADING");
-
-  const [tradeChain, setTradeChain] = useState<SupportedWalletChain>(enabledChains[0] || "solana");
-  const [tradeContract, setTradeContract] = useState("");
-  const [tradeSide, setTradeSide] = useState<"buy" | "sell">("buy");
-  const [tradeNotional, setTradeNotional] = useState("25");
 
   const [backupPhraseInput, setBackupPhraseInput] = useState("");
   const [importMnemonic, setImportMnemonic] = useState("");
@@ -156,34 +149,17 @@ export default function WalletPage() {
   }, [walletAction, location]);
 
   useEffect(() => {
-    if (walletAction !== "buy") return;
-    const requestedChain = enabledChains.includes(prefillTradeChain as SupportedWalletChain)
-      ? (prefillTradeChain as SupportedWalletChain)
-      : (enabledChains[0] || "solana");
-    setWalletTab("assets");
-    setAssistantOpen(true);
-    setTradeSide("buy");
-    setTradeChain(requestedChain);
-    if (prefillTradeContract) {
-      setTradeContract(prefillTradeContract);
-    }
-    if (prefillTradeAmount) {
-      setTradeNotional(prefillTradeAmount);
-    }
-  }, [walletAction, prefillTradeChain, prefillTradeContract, prefillTradeAmount, enabledChains]);
-
-  useEffect(() => {
     if (walletAction !== "swap") return;
     setWalletTab("assets");
     setSwapOpen(true);
     setSwapSide(prefillSwapSide);
-    if (prefillTradeContract) {
-      setSwapTokenMint(prefillTradeContract);
+    if (prefillSwapTokenMint) {
+      setSwapTokenMint(prefillSwapTokenMint);
     }
     if (prefillSwapAmountSol) {
       setSwapAmountSol(prefillSwapAmountSol);
     }
-  }, [walletAction, prefillTradeContract, prefillSwapAmountSol, prefillSwapSide]);
+  }, [walletAction, prefillSwapTokenMint, prefillSwapAmountSol, prefillSwapSide]);
 
   useEffect(() => {
     const controls = doctorStatusQuery.data?.trade_controls;
