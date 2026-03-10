@@ -3166,6 +3166,15 @@ export async function registerRoutes(
     await refreshDoctorWalletBalanceFromChain();
     clampDoctorPaperBalance();
 
+    if (!doctorRuntime.enabled && !doctorRuntime.killSwitch && doctorRuntime.execution.mode === "live") {
+      const liveCredentials = await getDoctorLiveWalletCredentials();
+      const hasLiveWallet = Boolean(String(liveCredentials.walletPublicKey || "").trim())
+        && Boolean(String(liveCredentials.walletPrivateKey || "").trim());
+      if (hasLiveWallet) {
+        doctorRuntime.enabled = true;
+      }
+    }
+
     if (!doctorRuntime.enabled) {
       doctorRuntime.lastDecision = { action: "skip", reason: "doctortrade_disabled", trigger, at: nowIso() };
       return { executed: false, reason: "doctortrade_disabled", trigger };
