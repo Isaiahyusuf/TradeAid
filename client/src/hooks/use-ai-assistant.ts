@@ -74,6 +74,7 @@ export type AssistantWalletTransaction = {
   chain: string;
   side: string;
   status: string;
+  source?: "assistant" | "onchain" | string;
   contract_address: string;
   notional_usd: number;
   quantity?: number | null;
@@ -82,6 +83,7 @@ export type AssistantWalletTransaction = {
   explorer_url?: string;
   from_address?: string;
   to_address?: string;
+  confirmation_status?: string;
   created_at?: string | null;
 };
 

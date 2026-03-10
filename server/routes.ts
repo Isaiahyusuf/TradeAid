@@ -5964,6 +5964,48 @@ export async function registerRoutes(
     }
   };
 
+  const fetchSolanaOnchainTransactions = async (address: string, limit = 50) => {
+    const walletAddress = String(address || "").trim();
+    if (!validateAddressForChain("solana", walletAddress)) {
+      return [] as Array<Record<string, any>>;
+    }
+
+    try {
+      const ownerPk = new PublicKey(walletAddress);
+      const signatures = await getSolanaConnection().getSignaturesForAddress(
+        ownerPk,
+        { limit: Math.max(1, Math.min(200, Math.trunc(limit || 50))) },
+        "confirmed",
+      );
+
+      return signatures.map((item) => {
+        const signature = String(item.signature || "").trim();
+        const createdAt = Number(item.blockTime || 0) > 0
+          ? new Date(Number(item.blockTime) * 1000).toISOString()
+          : nowIso();
+        return {
+          id: `onchain:${signature}`,
+          chain: "solana",
+          side: "onchain",
+          status: item.err ? "failed" : "confirmed",
+          source: "onchain",
+          contract_address: walletAddress,
+          notional_usd: 0,
+          quantity: null,
+          asset: "SOL",
+          tx_hash: signature,
+          explorer_url: signature ? chainExplorerTxUrl("solana", signature) : null,
+          from_address: walletAddress,
+          to_address: walletAddress,
+          confirmation_status: String(item.confirmationStatus || "confirmed"),
+          created_at: createdAt,
+        };
+      });
+    } catch {
+      return [] as Array<Record<string, any>>;
+    }
+  };
+
   const ensureWalletExists = () => assistantRuntime.wallet.has_wallet && Object.values(assistantRuntime.wallet.addresses_by_chain).some(Boolean);
 
   const assistantWalletStatus = () => ({
@@ -6090,10 +6132,38 @@ export async function registerRoutes(
     });
   });
 
-  app.get("/api/ai/wallets/transactions", (req, res) => {
+  app.get("/api/ai/wallets/transactions", async (req, res) => {
     const limitRaw = Number(req.query.limit || 25);
     const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.trunc(limitRaw))) : 25;
-    const transactions = assistantRuntime.transactions.slice(0, limit);
+    const assistantTransactions = assistantRuntime.transactions.slice(0, Math.max(1, limit * 2));
+    const solanaAddress = String(assistantRuntime.wallet.addresses_by_chain.solana || "").trim();
+    const onchainTransactions = await fetchSolanaOnchainTransactions(solanaAddress, Math.max(1, limit * 2));
+
+    const mergedByKey = new Map<string, Record<string, any>>();
+    for (const tx of assistantTransactions) {
+      const hashKey = String((tx as any).tx_hash || "").trim();
+      const idKey = String((tx as any).id || "").trim();
+      const key = hashKey || idKey || `assistant:${Math.random().toString(36).slice(2, 10)}`;
+      mergedByKey.set(key, { source: "assistant", ...(tx as Record<string, any>) });
+    }
+    for (const tx of onchainTransactions) {
+      const hashKey = String((tx as any).tx_hash || "").trim();
+      const idKey = String((tx as any).id || "").trim();
+      const key = hashKey || idKey;
+      if (!key) continue;
+      if (!mergedByKey.has(key)) {
+        mergedByKey.set(key, tx as Record<string, any>);
+      }
+    }
+
+    const transactions = Array.from(mergedByKey.values())
+      .sort((a, b) => {
+        const ta = new Date(String((a as any).created_at || 0)).getTime();
+        const tb = new Date(String((b as any).created_at || 0)).getTime();
+        return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+      })
+      .slice(0, limit);
+
     return res.json({ transactions, count: transactions.length });
   });
 

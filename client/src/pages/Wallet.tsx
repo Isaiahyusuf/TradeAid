@@ -833,12 +833,12 @@ export default function WalletPage() {
                     <div key={trade.id} className="rounded-lg border border-border/60 px-3 py-2 bg-muted/20 flex items-center justify-between">
                       <div>
                         <p className="text-sm font-medium uppercase">{trade.side} · {trade.chain}</p>
-                        <p className="text-xs text-muted-foreground break-all">{shortAddress(trade.to_address || trade.contract_address)}</p>
+                        <p className="text-xs text-muted-foreground break-all">{shortAddress(trade.to_address || trade.contract_address || trade.tx_hash)}</p>
                         {trade.tx_hash && <p className="text-xs text-muted-foreground break-all">Tx: {shortAddress(trade.tx_hash)}</p>}
                       </div>
                       <div className="text-right space-y-1">
                         <p className="text-sm font-semibold">{Number(trade.quantity || 0).toLocaleString(undefined, { maximumFractionDigits: 6 })} {trade.asset || ""}</p>
-                        <p className="text-xs text-muted-foreground">${Number(trade.notional_usd || 0).toLocaleString()}</p>
+                        <p className="text-xs text-muted-foreground">{Number(trade.notional_usd || 0) > 0 ? `$${Number(trade.notional_usd || 0).toLocaleString()}` : "On-chain activity"}</p>
                         <p className="text-xs text-muted-foreground">{trade.status}</p>
                         {trade.explorer_url && (
                           <Button size="sm" variant="outline" onClick={() => window.open(trade.explorer_url, "_blank")}>View Tx</Button>
