@@ -4841,12 +4841,21 @@ export async function registerRoutes(
         await refreshDoctorWalletBalanceFromChain(doctorRuntime.wallet.address, true);
         doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 0);
         await ensureDoctorLiveExecutionModeIfCapable();
+        doctorRuntime.execution.mode = "live";
+        doctorRuntime.enabled = true;
         await persistDoctorRuntime(userId);
         console.info("[doctor.connect-wallet] runtime_persisted", {
           userId,
           walletAddress: String(doctorRuntime.wallet.address || "").trim() || null,
+          enabled: doctorRuntime.enabled,
+          executionMode: doctorRuntime.execution.mode,
         });
         await saveDoctorWalletForUser(userId);
+        await startDoctorCycleForUser(userId);
+        console.info("[doctor.connect-wallet] cycle_started", {
+          userId,
+          scanIntervalSeconds: doctorRuntime.scanIntervalSeconds,
+        });
         console.info("[doctor.connect-wallet] success", {
           userId,
           walletAddress: String(doctorRuntime.wallet.address || "").trim() || null,
