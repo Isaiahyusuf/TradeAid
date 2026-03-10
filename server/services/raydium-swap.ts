@@ -20,7 +20,7 @@ export function getDoctorTradeBaseAssetMint(): string {
 }
 
 function getRaydiumDexesParam(): string {
-  return String(process.env.RAYDIUM_ONLY_DEXES || "Raydium,Raydium CLMM").trim();
+  return String(process.env.RAYDIUM_ONLY_DEXES || "").trim();
 }
 
 const delay = async (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -69,8 +69,12 @@ export async function fetchRaydiumQuote(params: RaydiumQuoteParams): Promise<Rec
     slippageBps: String(Math.max(1, Math.trunc(params.slippageBps || 100))),
     restrictIntermediateTokens: "true",
     onlyDirectRoutes: "false",
-    dexes: getRaydiumDexesParam(),
   });
+
+  const dexes = getRaydiumDexesParam();
+  if (dexes) {
+    query.set("dexes", dexes);
+  }
 
   const quoteEndpoints = [
     `${JUP_PRIMARY_BASE}/quote?${query.toString()}`,
