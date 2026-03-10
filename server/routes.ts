@@ -2580,12 +2580,17 @@ export async function registerRoutes(
     expectedPriceUsd: number;
     reason: string;
     trigger: "manual" | "auto";
+    userId?: string;
     baseMint?: string;
     sellFractionPct?: number;
   }) => {
     const liveEnabled = isDoctorLiveTradingEnabled();
     const liveOnly = isDoctorLiveOnlyMode();
-    const mode = liveOnly ? "live" : doctorRuntime.execution.mode;
+    const scopedUserId = String(params.userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
+    const liveCredentials = await getDoctorLiveWalletCredentials(scopedUserId || undefined);
+    const hasLiveCredentials = Boolean(String(liveCredentials.walletPublicKey || "").trim())
+      && Boolean(String(liveCredentials.walletPrivateKey || "").trim());
+    const mode = (liveOnly || doctorRuntime.execution.mode === "live" || hasLiveCredentials) ? "live" : "paper";
 
     if (mode === "live") {
       if (!liveEnabled) {
@@ -2608,7 +2613,7 @@ export async function registerRoutes(
         } as const;
       }
 
-      const { walletPublicKey, walletPrivateKey } = await getDoctorLiveWalletCredentials();
+      const { walletPublicKey, walletPrivateKey } = liveCredentials;
       const slippageBps = Math.max(25, Math.trunc(Number(doctorRuntime.controls.max_slippage_pct || 1) * 100));
       const tradeBaseMint = [SOL_MINT, BONK_MINT].includes(String(params.baseMint || "").trim())
         ? String(params.baseMint || "").trim()
@@ -3101,6 +3106,26 @@ export async function registerRoutes(
       }
     }
 
+    if (params.trigger === "auto") {
+      appendDoctorExecutionAudit({
+        action: params.action,
+        symbol: params.symbol,
+        mint: params.mint,
+        amount_sol: params.amountSol,
+        expected_price_usd: params.expectedPriceUsd,
+        expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+        trigger: params.trigger,
+        reason: params.reason,
+        status: "blocked",
+        block_reason: "auto_trade_requires_live_mode",
+      });
+      return {
+        executed: false,
+        status: "blocked",
+        reason: "auto_trade_requires_live_mode",
+      } as const;
+    }
+
     if (liveOnly) {
       appendDoctorExecutionAudit({
         action: params.action,
@@ -3131,7 +3156,7 @@ export async function registerRoutes(
       expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
       trigger: params.trigger,
       reason: params.reason,
-      status: "executed",
+      status: "simulated",
       router: "paper",
       tx_hash: paperTxHash,
     });
@@ -3352,6 +3377,7 @@ export async function registerRoutes(
         expectedPriceUsd: currentPrice,
         reason: sellReason,
         trigger,
+        userId: scopedUserId,
         baseMint: String((position as any).base_mint || getDoctorTradeBaseAssetMint()),
         sellFractionPct,
       });
@@ -3626,7 +3652,7 @@ export async function registerRoutes(
 
       const requiresLiveWallet = isDoctorLiveOnlyMode() || doctorRuntime.execution.mode === "live";
       if (requiresLiveWallet) {
-        const liveCredentials = await getDoctorLiveWalletCredentials();
+        const liveCredentials = await getDoctorLiveWalletCredentials(scopedUserId || undefined);
         const hasWalletPublicKey = Boolean(String(liveCredentials.walletPublicKey || "").trim());
         const hasWalletPrivateKey = Boolean(String(liveCredentials.walletPrivateKey || "").trim());
         if (!hasWalletPublicKey || !hasWalletPrivateKey) {
@@ -4056,6 +4082,7 @@ export async function registerRoutes(
         expectedPriceUsd: tokenPriceUsd,
         reason: String(buyCandidate.source || "scanner_signal"),
         trigger,
+        userId: scopedUserId,
         baseMint: String(buyCandidate.base_mint || getDoctorTradeBaseAssetMint()),
       });
       if (!buyExecution.executed) {
@@ -4983,6 +5010,7 @@ export async function registerRoutes(
       expectedPriceUsd,
       reason: "manual_direct_buy",
       trigger: "manual",
+      userId,
       baseMint: String((candidate as any)?.base_mint || getDoctorTradeBaseAssetMint()),
     });
 
