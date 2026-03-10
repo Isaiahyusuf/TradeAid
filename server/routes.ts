@@ -3694,6 +3694,10 @@ export async function registerRoutes(
     const maxSells5m = Math.max(0, Math.trunc(getDoctorEffectiveControlNumber("max_sells_5m", 1)));
     const minMarketCapUsd = Math.max(1, getDoctorEffectiveControlNumber("min_market_cap_usd", 15000));
     const maxMarketCapUsd = Math.max(minMarketCapUsd, getDoctorEffectiveControlNumber("max_market_cap_usd", 250000));
+    const hardMaxMarketCapUsd = Math.max(100_000, Number(process.env.DOCTOR_HARD_MAX_MARKET_CAP_USD || 5_000_000));
+    const effectiveMaxMarketCapUsd = Math.min(maxMarketCapUsd, hardMaxMarketCapUsd);
+    const hardMinVolume24hUsd = Math.max(1_000, Number(process.env.DOCTOR_HARD_MIN_VOLUME_24H_USD || 12_000));
+    const hardMinSafetyScore = Math.max(1, Number(process.env.DOCTOR_HARD_MIN_SAFETY_SCORE || 60));
     const minLiquiditySol = Math.max(0.1, getDoctorEffectiveControlNumber("min_liquidity_sol", 2));
     const maxLiquiditySol = Math.max(minLiquiditySol, getDoctorEffectiveControlNumber("max_liquidity_sol", 50));
     const requireLiquidityLock = Math.max(0, getDoctorEffectiveControlNumber("min_lock_hours", 24)) > 0;
@@ -3706,7 +3710,7 @@ export async function registerRoutes(
       .filter((token) => Number(token.liquidity || 0) <= maxLiquidityUsd)
       .filter((token) => {
         const marketCapUsd = Number(token.market_cap_usd || 0);
-        return marketCapUsd >= minMarketCapUsd && marketCapUsd <= maxMarketCapUsd;
+        return marketCapUsd >= minMarketCapUsd && marketCapUsd <= effectiveMaxMarketCapUsd;
       })
       .filter((token) => Number(token.volume_24h || 0) >= Math.max(1, getDoctorEffectiveControlNumber("min_volume_24h_usd", 12000)))
       .filter((token) => Number(token.age_seconds || 0) >= Math.max(0, Math.trunc(getDoctorEffectiveControlNumber("min_token_age_minutes", 0))) * 60)
@@ -3914,8 +3918,18 @@ export async function registerRoutes(
       if (candidateMarketCapUsd < minMarketCapUsd) {
         return { allowed: false, reason: "low_market_cap" };
       }
-      if (candidateMarketCapUsd > maxMarketCapUsd) {
+      if (candidateMarketCapUsd > effectiveMaxMarketCapUsd) {
         return { allowed: false, reason: "high_market_cap" };
+      }
+
+      const candidateVolume24hUsd = Number(candidate.volume_24h || 0);
+      if (candidateVolume24hUsd < hardMinVolume24hUsd) {
+        return { allowed: false, reason: "low_volume_hard_floor" };
+      }
+
+      const candidateSafetyScore = Number(candidate.score || 0);
+      if (candidateSafetyScore < hardMinSafetyScore) {
+        return { allowed: false, reason: "low_safety_score" };
       }
 
       if (!isLaunchSourceAllowed(String(candidate.launch_source || candidate.source || "unknown"))) {
@@ -4014,6 +4028,10 @@ export async function registerRoutes(
         : strictMaxTokenAgeSecondsRaw;
       const minVolume24h = Math.max(1, getDoctorEffectiveControlNumber("min_volume_24h_usd", 12000));
       const minMarketCap = Math.max(1, getDoctorEffectiveControlNumber("min_market_cap_usd", 15000));
+      const maxMarketCap = Math.min(
+        Math.max(minMarketCap, getDoctorEffectiveControlNumber("max_market_cap_usd", 250000)),
+        hardMaxMarketCapUsd,
+      );
       const requireLiquidityLock = Math.max(0, getDoctorEffectiveControlNumber("min_lock_hours", 24)) > 0;
       const requireFreezeAuthorityDisabled = String(process.env.DOCTOR_REQUIRE_FREEZE_AUTHORITY_DISABLED || "true").trim().toLowerCase() !== "false";
       const strictContractSafety = String(process.env.DOCTOR_STRICT_CONTRACT_SAFETY || "true").trim().toLowerCase() !== "false";
@@ -4096,6 +4114,7 @@ export async function registerRoutes(
         liquidityUsd > 0 &&
         liquidityUsd <= liquidityMax &&
         marketCapUsd >= minMarketCap &&
+        marketCapUsd <= maxMarketCap &&
         volume24h >= minVolume24h &&
         liquidityLockCheck &&
         (allowedLaunchSources.allowAll || allowedLaunchSources.allowed.has(launchSource)) &&
@@ -4162,6 +4181,7 @@ export async function registerRoutes(
         liquidityLockCheck &&
         volume24h >= minVolume24h &&
         marketCapUsd >= minMarketCap &&
+        marketCapUsd <= maxMarketCap &&
         (allowedLaunchSources.allowAll || allowedLaunchSources.allowed.has(launchSource)) &&
         !riskFlags.has("NO_LIVE_PAIR_DATA") &&
         (devWalletPct <= 0 || devWalletPct <= maxDevWalletPct) &&
@@ -4256,42 +4276,113 @@ export async function registerRoutes(
       };
     };
 
+    const evaluateDoctorOpenAiSafetyGate = async (
+      candidate: Record<string, any>,
+      aiValidation: Record<string, any>,
+    ) => {
+      const apiKey = resolveOpenAiApiKey();
+      if (!apiKey) {
+        return {
+          allowed: false,
+          reason: "openai_api_key_missing",
+          source: "openai_unavailable",
+        };
+      }
+
+      const timeoutMs = Math.max(2000, Number(process.env.DOCTOR_OPENAI_SAFETY_TIMEOUT_MS || 8000));
+      const messages = [
+        {
+          role: "system" as const,
+          content: [
+            "You are a strict Solana memecoin risk gate.",
+            "Your job is to ALLOW only clearly safer early-entry tokens.",
+            "If uncertain, deny.",
+            "Return JSON only with keys: allow_trade(boolean), risk_level(low|medium|high|critical), reason(string), hard_block_reasons(string[]).",
+          ].join(" "),
+        },
+        {
+          role: "user" as const,
+          content: JSON.stringify({
+            task: "Decide if DoctorTrade can execute a BUY for this token now.",
+            candidate: {
+              symbol: String(candidate.symbol || "UNKNOWN"),
+              address: String(candidate.address || ""),
+              market_cap_usd: Number(candidate.market_cap_usd || 0),
+              volume_24h_usd: Number(candidate.volume_24h || 0),
+              volume_5m_usd: Number(candidate.volume_5m || 0),
+              liquidity_usd: Number(candidate.liquidity || 0),
+              age_seconds: Number(candidate.age_seconds || 0),
+              score: Number(candidate.score || 0),
+              launch_source: String(candidate.launch_source || candidate.source || "unknown"),
+              buy_ratio_pct: Number(candidate.buy_ratio_pct || 0),
+              buys_5m: Number(candidate.buys_5m || 0),
+              sells_5m: Number(candidate.sells_5m || 0),
+            },
+            deterministic_validation: aiValidation,
+            policy: {
+              default_decision_if_uncertain: "deny",
+              never_allow_if_high_or_critical_risk: true,
+            },
+          }),
+        },
+      ];
+
+      try {
+        let completion: Awaited<ReturnType<OpenAI["chat"]["completions"]["create"]>> | null = null;
+        let lastError: unknown = null;
+
+        for (const model of resolveOpenAiModelFallbacks()) {
+          try {
+            completion = await Promise.race([
+              getOpenAI().chat.completions.create({
+                model,
+                temperature: 0.1,
+                messages,
+                response_format: { type: "json_object" },
+              }),
+              new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("openai_safety_timeout")), timeoutMs)),
+            ]);
+            if (completion) break;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+
+        if (!completion) {
+          throw lastError instanceof Error ? lastError : new Error("openai_safety_completion_failed");
+        }
+
+        const content = String(completion.choices?.[0]?.message?.content || "{}").trim();
+        const parsed = JSON.parse(content || "{}") as Record<string, any>;
+        const riskLevel = String(parsed.risk_level || "high").trim().toLowerCase();
+        const allowTrade = Boolean(parsed.allow_trade) && riskLevel !== "high" && riskLevel !== "critical";
+
+        return {
+          allowed: allowTrade,
+          reason: allowTrade ? "openai_safety_approved" : String(parsed.reason || "openai_safety_blocked"),
+          risk_level: riskLevel,
+          hard_block_reasons: Array.isArray(parsed.hard_block_reasons) ? parsed.hard_block_reasons.map((item) => String(item || "")).filter(Boolean) : [],
+          source: "openai",
+        };
+      } catch (error: any) {
+        return {
+          allowed: false,
+          reason: String(error?.message || "openai_safety_check_failed"),
+          source: "openai_unavailable",
+        };
+      }
+    };
+
     const guard = await evaluatePreTradeGuard(buyCandidate);
     const canBuy = guard.allowed;
 
     let hasBlockingError = false;
 
     if (buyCandidate && canBuy) {
-      const isInsiderPreset = activeSnipePreset === "insider";
-      const enforceAiValidation = !isInsiderPreset && (
-        String(process.env.DOCTOR_ENFORCE_AI_VALIDATION || "").trim().toLowerCase() === "true"
-        || doctorRuntime.execution.mode === "live"
-      );
-      const skipAiGateForDetectedSignal =
-        isInsiderPreset ||
-        String((buyCandidate as any).source || "").includes("dexscreener_detected_signal");
-      const aiValidation = skipAiGateForDetectedSignal
-        ? {
-            allowed: true,
-            reason: isInsiderPreset
-              ? "ai_validation_bypassed_for_insider_preset"
-              : "ai_validation_bypassed_for_detected_signal",
-            checks: {},
-            passed_signals: 0,
-            required_signals: 0,
-            required_all_checks: false,
-            all_checks_passed: true,
-            checked_at: nowIso(),
-            age_seconds: Number((buyCandidate as any).age_seconds || 0),
-            token: {
-              symbol: String((buyCandidate as any).symbol || "UNKNOWN"),
-              address: String((buyCandidate as any).address || ""),
-            },
-            checklist_profile: { bypassed: true },
-            reasons: [],
-            turbo_ai_pass: true,
-          }
-        : await evaluateDoctorAiValidation(buyCandidate);
+      const enforceAiValidation =
+        String(process.env.DOCTOR_ENFORCE_AI_VALIDATION || "true").trim().toLowerCase() !== "false"
+        || doctorRuntime.execution.mode === "live";
+      const aiValidation = await evaluateDoctorAiValidation(buyCandidate);
       if (enforceAiValidation && !aiValidation.allowed) {
         appendDoctorSniperLog({
           event: "blocked",
@@ -4335,6 +4426,47 @@ export async function registerRoutes(
           ai_validation: aiValidation,
         };
       } else {
+      const requireOpenAiSafetyGate =
+        doctorRuntime.execution.mode === "live"
+        && String(process.env.DOCTOR_REQUIRE_OPENAI_SAFETY_GATE || "true").trim().toLowerCase() !== "false";
+      if (requireOpenAiSafetyGate) {
+        const openAiSafety = await evaluateDoctorOpenAiSafetyGate(buyCandidate, aiValidation as Record<string, any>);
+        if (!openAiSafety.allowed) {
+          appendDoctorSniperLog({
+            event: "blocked",
+            source: String(buyCandidate.source || "scanner"),
+            symbol: String(buyCandidate.symbol || "UNKNOWN"),
+            mint: String(buyCandidate.address || ""),
+            reason: "openai_safety_gate",
+            gate_reason: String(openAiSafety.reason || "openai_safety_blocked"),
+            risk_level: String((openAiSafety as any).risk_level || "unknown"),
+          });
+          appendDoctorExecutionAudit({
+            action: "buy",
+            symbol: String(buyCandidate.symbol || "UNKNOWN"),
+            mint: String(buyCandidate.address || ""),
+            amount_sol: buyAmountSol,
+            expected_price_usd: Number(buyCandidate.price_usd || 0),
+            expected_notional_usd: Number((buyAmountSol * Number(buyCandidate.price_usd || 0)).toFixed(2)),
+            trigger,
+            reason: String(buyCandidate.source || "scanner_signal"),
+            status: "blocked",
+            block_reason: String((openAiSafety as any).reason || "openai_safety_blocked"),
+          });
+          doctorRuntime.lastDecision = {
+            action: "skip",
+            reason: String((openAiSafety as any).reason || "openai_safety_blocked"),
+            trigger,
+            at: nowIso(),
+            token: String(buyCandidate.symbol || "UNKNOWN"),
+            mint: String(buyCandidate.address || ""),
+          };
+          hasBlockingError = true;
+          buyCandidate = undefined;
+        }
+      }
+
+      if (buyCandidate) {
       const tokenPriceUsd = resolveCurrentPriceUsd(buyCandidate, 0);
       const buyExecution = await executeDoctorOrder({
         action: "buy",
@@ -4436,6 +4568,7 @@ export async function registerRoutes(
         confidence: Number(position.confidence || 0),
         ai_validation: aiValidation,
       };
+      }
       }
       }
     } else {
