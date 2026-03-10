@@ -2895,10 +2895,43 @@ export async function registerRoutes(
       }
 
       try {
+        const feeBufferSol = Math.max(0, Number(doctorRuntime.controls.min_wallet_fee_buffer_sol || 0));
+        const estimatedFeeSol = Number((Math.max(0.000005, Number(doctorRuntime.controls.gas_priority_lamports || 0) / 1_000_000_000) + 0.00002).toFixed(6));
+        let effectiveAmountSol = Math.max(0, Number(params.amountSol || 0));
+        if (tradeBaseMint === SOL_MINT) {
+          const availableSol = Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0));
+          const maxSpendableSol = Math.max(0, availableSol - feeBufferSol - estimatedFeeSol);
+          effectiveAmountSol = Math.min(effectiveAmountSol, maxSpendableSol);
+          effectiveAmountSol = Number(effectiveAmountSol.toFixed(6));
+          if (effectiveAmountSol < 0.0001) {
+            appendDoctorExecutionAudit({
+              action: params.action,
+              symbol: params.symbol,
+              mint: params.mint,
+              amount_sol: params.amountSol,
+              expected_price_usd: params.expectedPriceUsd,
+              expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+              trigger: params.trigger,
+              reason: params.reason,
+              status: "blocked",
+              block_reason: "insufficient_sol_for_swap_fees",
+              router: "raydium",
+              available_sol: availableSol,
+              required_sol: Number((params.amountSol + feeBufferSol + estimatedFeeSol).toFixed(6)),
+            });
+            return {
+              executed: false,
+              status: "blocked",
+              reason: "insufficient_sol_for_swap_fees",
+            } as const;
+          }
+        }
+
+        const effectiveAmountLamports = Math.max(1, Math.trunc(effectiveAmountSol * Math.pow(10, baseDecimals)));
         const quote = await fetchJupiterQuote({
           inputMint: tradeBaseMint,
           outputMint: params.mint,
-          amountAtomic: amountLamports,
+          amountAtomic: effectiveAmountLamports,
           slippageBps,
         });
 
@@ -3071,7 +3104,7 @@ export async function registerRoutes(
         await appendDoctorTradeLog({
           token_address: params.mint,
           pool_address: null,
-          trade_amount: params.amountSol,
+          trade_amount: effectiveAmountSol,
           entry_price: params.expectedPriceUsd,
           transaction_signature: signature,
           base_asset_mint: tradeBaseMint,
@@ -3081,6 +3114,7 @@ export async function registerRoutes(
           executed: true,
           status: "executed",
           txHash: signature,
+          executedAmountSol: effectiveAmountSol,
         } as const;
       } catch (error) {
         const message = error instanceof Error ? error.message : "jupiter_live_preflight_failed";
