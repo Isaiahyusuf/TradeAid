@@ -1532,15 +1532,27 @@ export async function registerRoutes(
   let doctorWalletTransactionsCache: { address: string; at: number; transactions: Array<Record<string, any>> } | null = null;
   const doctorProcessedMints = new Map<string, number>();
   const doctorRejectedMints = new Map<string, number>();
-  let doctorSniperLogs: Array<Record<string, any>> = [];
+  let doctorSniperLogsByUser = new Map<string, Array<Record<string, any>>>();
 
-  const appendDoctorSniperLog = (entry: Record<string, any>) => {
-    doctorSniperLogs.unshift({
+  const getDoctorSniperLogsForUser = (userId?: string) => {
+    const scopedUserId = String(userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
+    if (!scopedUserId) return [] as Array<Record<string, any>>;
+    return doctorSniperLogsByUser.get(scopedUserId) || [];
+  };
+
+  const appendDoctorSniperLog = (entry: Record<string, any>, userId?: string) => {
+    const scopedUserId = String(userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
+    if (!scopedUserId) return;
+
+    const existing = doctorSniperLogsByUser.get(scopedUserId) || [];
+    existing.unshift({
+      id: `sniper_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       at: nowIso(),
       preset: getDoctorActiveSnipePreset(),
+      user_id: scopedUserId,
       ...entry,
     });
-    doctorSniperLogs = doctorSniperLogs.slice(0, 200);
+    doctorSniperLogsByUser.set(scopedUserId, existing.slice(0, 200));
   };
 
   const getDoctorSchedulerState = async (): Promise<Record<string, any>> => {
@@ -1689,10 +1701,15 @@ export async function registerRoutes(
 
   const persistDoctorDexWorkerState = async () => {
     try {
+      const logsByUser: Record<string, Array<Record<string, any>>> = {};
+      doctorSniperLogsByUser.forEach((rows, userId) => {
+        if (!userId) return;
+        logsByUser[userId] = rows.slice(0, 200);
+      });
       const payload = {
         processed_mints: Array.from(doctorProcessedMints.entries()),
         rejected_mints: Array.from(doctorRejectedMints.entries()),
-        logs: doctorSniperLogs.slice(0, 200),
+        logs_by_user: logsByUser,
         last_poll_at: doctorDexWorkerLastPollAt,
       };
       await storage.setAppState(doctorDexWorkerStateKey, payload);
@@ -1705,7 +1722,10 @@ export async function registerRoutes(
       const payload = await storage.getAppState<Record<string, any>>(doctorDexWorkerStateKey);
       const processed = Array.isArray(payload?.processed_mints) ? payload!.processed_mints : [];
       const rejected = Array.isArray(payload?.rejected_mints) ? payload!.rejected_mints : [];
-      const logs = Array.isArray(payload?.logs) ? payload!.logs : [];
+      const logsByUserPayload = payload?.logs_by_user && typeof payload.logs_by_user === "object"
+        ? (payload.logs_by_user as Record<string, any>)
+        : null;
+      const legacyLogs = Array.isArray(payload?.logs) ? payload!.logs : [];
       doctorDexWorkerLastPollAt = typeof payload?.last_poll_at === "string" ? payload.last_poll_at : null;
 
       const nowMs = Date.now();
@@ -1727,7 +1747,19 @@ export async function registerRoutes(
           doctorRejectedMints.set(mint, ts);
         }
       }
-      doctorSniperLogs = logs.slice(0, 200);
+      doctorSniperLogsByUser = new Map<string, Array<Record<string, any>>>();
+      if (logsByUserPayload) {
+        for (const [userId, rows] of Object.entries(logsByUserPayload)) {
+          const scopedUserId = String(userId || "").trim();
+          if (!scopedUserId || !Array.isArray(rows)) continue;
+          doctorSniperLogsByUser.set(scopedUserId, rows.slice(0, 200));
+        }
+      } else if (legacyLogs.length > 0) {
+        const scopedUserId = String(doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
+        if (scopedUserId) {
+          doctorSniperLogsByUser.set(scopedUserId, legacyLogs.slice(0, 200));
+        }
+      }
     } catch {
     }
   };
@@ -3809,7 +3841,7 @@ export async function registerRoutes(
     const getFallbackDetectedCandidate = async () => {
       const passReason = `${activeSnipePreset}_conditions_passed`;
       const legacyPassReason = "insider_conditions_passed";
-      const fallbackLogs = doctorSniperLogs
+      const fallbackLogs = getDoctorSniperLogsForUser(scopedUserId)
         .filter((log) => String(log?.event || "") === "detected")
         .filter((log) => {
           const reason = String(log?.reason || "");
@@ -4906,7 +4938,7 @@ export async function registerRoutes(
       decision_journal: filteredDecisionJournal,
       performance: doctorRuntime.performance.slice(0, 30),
       execution_audit: doctorRuntime.executionAudit.slice(0, 80),
-      sniper_logs: doctorSniperLogs.slice(0, 80),
+      sniper_logs: getDoctorSniperLogsForUser(statusUserId).slice(0, 80),
       discovery: {
         dexscreener_primary: true,
         poll_interval_seconds: Math.max(5, Math.trunc(Number(process.env.DOCTOR_DEX_POLL_SECONDS || 7))),

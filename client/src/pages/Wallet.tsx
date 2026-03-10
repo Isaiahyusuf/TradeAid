@@ -16,6 +16,7 @@ import { SUPPORTED_CHAINS } from "@/hooks/use-chain";
 import { useLocation } from "wouter";
 import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
 import { useDoctorConfig, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
+import { TokenAvatar } from "@/components/token/TokenAvatar";
 import {
   useApproveAssistantConsent,
   useAssistantWalletSwap,
@@ -804,9 +805,18 @@ export default function WalletPage() {
                     const tokenValueUsd = Number(token.value_usd || 0);
                     return (
                       <div key={token.mint} className="rounded-lg border border-border/60 px-3 py-2 bg-muted/20 flex items-center justify-between gap-3">
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex items-center gap-2">
+                          <TokenAvatar
+                            logoUrl={(token as any).logo_url}
+                            symbol={token.symbol}
+                            name={token.symbol}
+                            className="h-8 w-8 border-none"
+                            fallbackClassName="text-[10px]"
+                          />
+                          <div className="min-w-0">
                           <p className="text-sm font-semibold truncate">{String(token.symbol || "TOKEN")}</p>
                           <p className="text-xs text-muted-foreground break-all">{shortAddress(token.mint)}</p>
+                          </div>
                         </div>
                         <div className="text-right shrink-0">
                           <p className="text-sm font-semibold">{tokenAmount.toLocaleString(undefined, { maximumFractionDigits: 9 })}</p>

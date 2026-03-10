@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { type SafeBuyItem } from "@/hooks/use-safe-buy";
 import { Input } from "@/components/ui/input";
 import { useLocation } from "wouter";
+import { TokenAvatar } from "@/components/token/TokenAvatar";
 
 function formatNumber(n: number) {
   if (n >= 1000000) return `$${(n / 1000000).toFixed(2)}M`;
@@ -46,13 +47,12 @@ export function SafeBuyCard({ item }: { item: SafeBuyItem }) {
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0 overflow-hidden">
-              {item.logo_url ? (
-                <img src={item.logo_url} alt={item.symbol || item.name || "token logo"} className="w-10 h-10 rounded-full object-cover" />
-              ) : (
-                <ShieldCheck className="w-5 h-5 text-primary" />
-              )}
-            </div>
+            <TokenAvatar
+              logoUrl={item.logo_url}
+              symbol={item.symbol}
+              name={item.name}
+              fallback={<ShieldCheck className="w-5 h-5 text-primary" />}
+            />
             <div className="min-w-0">
               <CardTitle className="text-lg truncate">{item.symbol || item.name || "Unknown"}</CardTitle>
               <p className="text-xs text-muted-foreground truncate">{item.name}</p>

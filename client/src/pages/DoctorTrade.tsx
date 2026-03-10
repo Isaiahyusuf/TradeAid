@@ -7,9 +7,9 @@ import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy, BookO
 import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDisconnectWallet, useDoctorHealth, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { useLocation } from "wouter";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
+import { TokenAvatar } from "@/components/token/TokenAvatar";
 
 function fmtUsd(value: number) {
   if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
@@ -33,7 +33,6 @@ export default function DoctorTrade() {
   const { data, isLoading, isFetching, refetch, dataUpdatedAt } = useDoctorStatus();
   const doctorHealth = useDoctorHealth();
   const { toast } = useToast();
-  const [, setLocation] = useLocation();
   const controlMutation = useDoctorControl();
   const configMutation = useDoctorConfig();
   const connectWalletMutation = useDoctorConnectWallet();
@@ -904,7 +903,16 @@ export default function DoctorTrade() {
             {tickerTokens.map((token) => (
               <div key={token.address} className="min-w-[180px] border rounded-md px-2 py-1.5">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold">{token.symbol}</p>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <TokenAvatar
+                      logoUrl={token.logo_url}
+                      symbol={token.symbol}
+                      name={token.name}
+                      className="h-5 w-5 border-none"
+                      fallbackClassName="text-[9px]"
+                    />
+                    <p className="text-xs font-semibold truncate">{token.symbol}</p>
+                  </div>
                   <p className="text-[10px] text-muted-foreground">S {Math.round(token.score)}</p>
                 </div>
                 <p className="text-[10px] text-muted-foreground">{fmtUsd(token.liquidity)} · {fmtUsd(token.volume_5m)}</p>
@@ -922,7 +930,16 @@ export default function DoctorTrade() {
               {safeBuyTokens.map((token: any) => (
                 <div key={token.address} className="border rounded-md p-2">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold">{token.symbol}</p>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <TokenAvatar
+                        logoUrl={token.logo_url}
+                        symbol={token.symbol}
+                        name={token.name}
+                        className="h-6 w-6 border-none"
+                        fallbackClassName="text-[10px]"
+                      />
+                      <p className="text-sm font-semibold truncate">{token.symbol}</p>
+                    </div>
                     <div className="flex items-center gap-1">
                       <Badge variant="outline" className="text-[10px]">{Math.round(token.score)}</Badge>
                       <Badge variant="outline" className="text-[10px]">{String(token.safety_tier || token.eligible ? "strict" : "soft")}</Badge>
@@ -1016,7 +1033,6 @@ export default function DoctorTrade() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">Engine</span><span>{viewData?.enabled ? "Live" : "Stopped"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Wallet Link</span><span>{walletConnected ? "Connected" : "Missing"}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">User ID</span><span className="truncate max-w-[220px] text-right">{viewData?.user_id || "unknown"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">API Target</span><span className="truncate max-w-[220px] text-right">{viewData?.api_target || "same-origin"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Execution Mode</span><span>LIVE ONLY</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Live Capable</span><span>{viewData?.execution?.live_capable ? "Yes" : "No"}</span></div>
@@ -1107,7 +1123,16 @@ export default function DoctorTrade() {
                 {(viewData?.positions || []).map((position) => (
                   <div key={position.address} className="border rounded-md p-2">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-semibold">{position.symbol}</p>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <TokenAvatar
+                          logoUrl={(position as any).logo_url}
+                          symbol={position.symbol}
+                          name={position.symbol}
+                          className="h-6 w-6 border-none"
+                          fallbackClassName="text-[10px]"
+                        />
+                        <p className="text-sm font-semibold truncate">{position.symbol}</p>
+                      </div>
                       <Badge variant="outline" className="text-[10px]">{position.risk_status}</Badge>
                     </div>
                     <p className="text-[11px] text-muted-foreground">Entry ${Number(position.entry_price || 0).toFixed(6)} · Now ${Number(position.current_price || 0).toFixed(6)}</p>
@@ -1123,7 +1148,16 @@ export default function DoctorTrade() {
               <div className="space-y-2 max-h-[240px] overflow-auto">
                 {(viewData?.wallet_tokens || []).map((token) => (
                   <div key={token.mint} className="border rounded-md p-2">
-                    <p className="text-xs font-semibold break-all">{token.mint}</p>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <TokenAvatar
+                        logoUrl={(token as any).logo_url}
+                        symbol={(token as any).symbol || token.mint.slice(0, 4)}
+                        name={(token as any).name || token.mint}
+                        className="h-6 w-6 border-none"
+                        fallbackClassName="text-[10px]"
+                      />
+                      <p className="text-xs font-semibold break-all">{token.mint}</p>
+                    </div>
                     <p className="text-[11px] text-muted-foreground">Balance {Number(token.ui_amount || 0).toFixed(6)}</p>
                   </div>
                 ))}

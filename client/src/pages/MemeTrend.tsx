@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SiSolana, SiEthereum } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
 import { useChain } from "@/hooks/use-chain";
+import { TokenAvatar } from "@/components/token/TokenAvatar";
 
 function ChainIcon({ chain }: { chain: string }) {
   const key = String(chain || "").toLowerCase();
@@ -73,23 +74,6 @@ export default function MemeTrend() {
         );
       })
     : tokens;
-
-  const renderLogo = (token: TokenItem) => {
-    if (token.logo_url) {
-      return (
-        <img
-          src={token.logo_url}
-          alt={`${token.symbol || token.name || "token"} logo`}
-          className="w-10 h-10 rounded-full object-cover border border-border/50"
-          onError={(event) => {
-            const target = event.currentTarget;
-            target.style.display = "none";
-          }}
-        />
-      );
-    }
-    return null;
-  };
 
   return (
     <Layout>
@@ -153,9 +137,13 @@ export default function MemeTrend() {
           <Card className="p-4 solana-card bg-card/70 backdrop-blur-sm border-border/60">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex items-start gap-3 min-w-0">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0">
-                  {renderLogo(selectedToken) || <ChainIcon chain={selectedToken.chain} />}
-                </div>
+                <TokenAvatar
+                  logoUrl={selectedToken.logo_url}
+                  symbol={selectedToken.symbol}
+                  name={selectedToken.name}
+                  className="h-12 w-12"
+                  fallback={<ChainIcon chain={selectedToken.chain} />}
+                />
                 <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Selected Token</p>
                 <h3 className="text-xl font-semibold">{selectedToken.symbol || selectedToken.name || "Unknown"}</h3>
@@ -258,9 +246,12 @@ export default function MemeTrend() {
                 onClick={() => setSelectedToken(token)}
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0 overflow-hidden">
-                    {renderLogo(token) || <ChainIcon chain={token.chain} />}
-                  </div>
+                  <TokenAvatar
+                    logoUrl={token.logo_url}
+                    symbol={token.symbol}
+                    name={token.name}
+                    fallback={<ChainIcon chain={token.chain} />}
+                  />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold">{token.symbol || "Unknown"}</span>

@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { TokenAvatar } from "@/components/token/TokenAvatar";
 
 function ChainIcon({ chain }: { chain: string }) {
   const key = String(chain || "").toUpperCase();
@@ -186,6 +187,27 @@ export default function Dashboard() {
     };
   }, [tokenData?.tokens, tokenDataFallback?.tokens]);
 
+  const marketSnapshot = useMemo(() => {
+    const rows = displayTokens.slice(0, 20);
+    if (!rows.length) {
+      return {
+        avgLiquidity: 0,
+        avgVolume1h: 0,
+        pumpFunCount: 0,
+      };
+    }
+
+    const totalLiquidity = rows.reduce((sum, token) => sum + Number(token.liquidity_usd || 0), 0);
+    const totalVolume1h = rows.reduce((sum, token) => sum + Number(token.volume_1h || 0), 0);
+    const pumpFunCount = rows.filter((token) => Boolean(token.is_pump_fun)).length;
+
+    return {
+      avgLiquidity: totalLiquidity / rows.length,
+      avgVolume1h: totalVolume1h / rows.length,
+      pumpFunCount,
+    };
+  }, [displayTokens]);
+
   const retryAll = () => {
     qc.refetchQueries({ queryKey: ["tokens"] });
     qc.refetchQueries({ queryKey: ["token-stats"] });
@@ -253,7 +275,7 @@ export default function Dashboard() {
           </Card>
         )}
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           <Card className="p-4 solana-card wow-tilt-card animate-fade-in-up bg-card/70 backdrop-blur-sm border-border/60" onMouseMove={handleTiltMove} onMouseLeave={handleTiltLeave}>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
@@ -307,6 +329,20 @@ export default function Dashboard() {
             </div>
           </Card>
         </div>
+
+        <Card className="solana-card p-4">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+            <div>
+              <h3 className="font-semibold">Market Snapshot</h3>
+              <p className="text-sm text-muted-foreground">Live 24h token flow summary from your current filter.</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full lg:w-auto">
+              <Badge variant="outline" className="justify-center px-3 py-1.5">Avg Liq {formatNumber(marketSnapshot.avgLiquidity)}</Badge>
+              <Badge variant="outline" className="justify-center px-3 py-1.5">Avg Vol 1h {formatNumber(marketSnapshot.avgVolume1h)}</Badge>
+              <Badge variant="outline" className="justify-center px-3 py-1.5">Pump.fun {marketSnapshot.pumpFunCount}</Badge>
+            </div>
+          </div>
+        </Card>
 
         <Card className="solana-card wow-tilt-card p-4 border-primary/20 animate-soft-pulse" onMouseMove={handleTiltMove} onMouseLeave={handleTiltLeave}>
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -451,7 +487,7 @@ export default function Dashboard() {
             </SelectContent>
           </Select>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
           {selectedAlert && (
             <Card className="lg:col-span-2 p-4 solana-card">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -471,7 +507,7 @@ export default function Dashboard() {
             </Card>
           )}
 
-          <Card className="solana-card overflow-hidden border-primary/20">
+          <Card className="solana-card overflow-hidden border-primary/20 xl:col-span-7">
             <div className="p-4 border-b border-border flex items-center justify-between gap-2">
               <h3 className="font-semibold flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-green-500" />
@@ -519,13 +555,12 @@ export default function Dashboard() {
                     }}
                   >
                     <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center font-bold shrink-0">
-                        {token.logo_url ? (
-                          <img src={token.logo_url} alt={token.symbol || token.name || "token logo"} className="w-10 h-10 rounded-full object-cover" />
-                        ) : (
-                          <ChainIcon chain={token.chain} />
-                        )}
-                      </div>
+                      <TokenAvatar
+                        logoUrl={token.logo_url}
+                        symbol={token.symbol}
+                        name={token.name}
+                        fallback={<ChainIcon chain={token.chain} />}
+                      />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold">{token.symbol || token.name || "Unknown"}</span>
@@ -593,7 +628,7 @@ export default function Dashboard() {
             </div>
           </Card>
 
-          <Card className="bg-card/60 backdrop-blur overflow-hidden">
+          <Card className="bg-card/60 backdrop-blur overflow-hidden xl:col-span-5">
             <div className="p-4 border-b border-border flex items-center justify-between gap-2">
               <h3 className="font-semibold flex items-center gap-2">
                 <Bell className="w-4 h-4 text-orange-500" />

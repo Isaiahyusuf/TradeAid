@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { AIScoreBadgePanel } from "@/components/scanner/AIScoreBadgePanel";
 import { MetricLabel } from "@/components/scanner/MetricLabel";
+import { TokenAvatar } from "@/components/token/TokenAvatar";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useChain } from "@/hooks/use-chain";
@@ -415,13 +416,7 @@ export default function AlphaScanner() {
                 onClick={() => setSelectedTokenId((prev) => (prev === token.id ? null : token.id))}
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0">
-                    {token.logo_url ? (
-                      <img src={token.logo_url} alt={token.symbol || token.name || "token logo"} className="w-10 h-10 rounded-full object-cover" />
-                    ) : (
-                      <span>{token.symbol?.slice(0, 2) || "TK"}</span>
-                    )}
-                  </div>
+                  <TokenAvatar logoUrl={token.logo_url} symbol={token.symbol} name={token.name} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold">{token.symbol || "???"}</span>
