@@ -50,6 +50,16 @@ export type AssistantWalletPortfolioChain = {
   native_balance: number | null;
   price_usd: number;
   value_usd: number;
+  tokens_value_usd?: number;
+  spl_tokens?: Array<{
+    mint: string;
+    symbol: string;
+    ui_amount: number;
+    amount_raw: string;
+    decimals: number;
+    price_usd: number;
+    value_usd: number;
+  }>;
   data_status: "ok" | "rpc_unavailable" | "unsupported" | "not_configured" | "rpc_not_configured" | "invalid_address";
 };
 

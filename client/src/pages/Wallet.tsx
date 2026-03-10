@@ -192,6 +192,15 @@ export default function WalletPage() {
   const portfolio = walletPortfolioQuery.data?.portfolio;
   const portfolioChains = portfolio?.chains || {};
   const portfolioUpdatedAt = portfolio?.updated_at ? new Date(portfolio.updated_at).toLocaleString() : "-";
+  const solanaSplTokens = useMemo(
+    () => ((portfolioChains as any)?.solana?.spl_tokens || []) as Array<{
+      mint: string;
+      symbol: string;
+      ui_amount: number;
+      value_usd: number;
+    }>,
+    [portfolioChains],
+  );
 
   const activeChainsCount = Object.values(addressesByChain).filter(Boolean).length;
 
@@ -779,6 +788,34 @@ export default function WalletPage() {
                     </div>
                   );
                 })}
+              </CardContent>
+            </Card>
+
+            <Card className="solana-card">
+              <CardHeader>
+                <CardTitle className="text-base">Token Holdings</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {solanaSplTokens.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No token holdings detected yet. Bought tokens will appear here automatically.</p>
+                ) : (
+                  solanaSplTokens.map((token) => {
+                    const tokenAmount = Number(token.ui_amount || 0);
+                    const tokenValueUsd = Number(token.value_usd || 0);
+                    return (
+                      <div key={token.mint} className="rounded-lg border border-border/60 px-3 py-2 bg-muted/20 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold truncate">{String(token.symbol || "TOKEN")}</p>
+                          <p className="text-xs text-muted-foreground break-all">{shortAddress(token.mint)}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-sm font-semibold">{tokenAmount.toLocaleString(undefined, { maximumFractionDigits: 9 })}</p>
+                          <p className="text-xs text-muted-foreground">$ {tokenValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </CardContent>
             </Card>
           </TabsContent>

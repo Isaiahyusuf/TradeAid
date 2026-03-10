@@ -5914,6 +5914,56 @@ export async function registerRoutes(
     }
   };
 
+  const fetchSolanaSplTokenPortfolio = async (address: string) => {
+    if (!validateAddressForChain("solana", address)) {
+      return [] as Array<Record<string, any>>;
+    }
+
+    try {
+      const ownerPk = new PublicKey(address);
+      const tokenProgram = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+      const accounts = await getSolanaConnection().getParsedTokenAccountsByOwner(ownerPk, { programId: tokenProgram }, "confirmed");
+      const activeTokens = await getDoctorActiveTokens().catch(() => [] as Array<Record<string, any>>);
+      const activeTokenMap = new Map(activeTokens.map((token) => [String(token.address || "").trim(), token]));
+
+      const rows: Array<Record<string, any>> = [];
+      for (const entry of accounts.value) {
+        const parsedInfo = (entry.account.data as any)?.parsed?.info as Record<string, any> | undefined;
+        const tokenAmount = (parsedInfo?.tokenAmount || {}) as Record<string, any>;
+        const mint = String(parsedInfo?.mint || "").trim();
+        const uiAmount = Number(tokenAmount?.uiAmount || 0);
+        if (!mint || !Number.isFinite(uiAmount) || uiAmount <= 0) continue;
+
+        const amountRaw = String(tokenAmount?.amount || "0");
+        const decimals = Math.max(0, Math.trunc(Number(tokenAmount?.decimals || 0)));
+        const marketToken = activeTokenMap.get(mint) as Record<string, any> | undefined;
+        const resolvedPriceUsd = resolveCurrentPriceUsd(marketToken || {}, 0);
+        const valueUsd = Number((uiAmount * Math.max(0, resolvedPriceUsd || 0)).toFixed(6));
+        const symbol = String(marketToken?.symbol || marketToken?.token || "").trim() || `${mint.slice(0, 4)}...${mint.slice(-4)}`;
+
+        rows.push({
+          mint,
+          symbol,
+          ui_amount: Number(uiAmount.toFixed(9)),
+          amount_raw: amountRaw,
+          decimals,
+          price_usd: Number((Math.max(0, resolvedPriceUsd || 0)).toFixed(9)),
+          value_usd: valueUsd,
+        });
+      }
+
+      rows.sort((a, b) => {
+        const byValue = Number(b.value_usd || 0) - Number(a.value_usd || 0);
+        if (Math.abs(byValue) > 0.000001) return byValue;
+        return Number(b.ui_amount || 0) - Number(a.ui_amount || 0);
+      });
+
+      return rows.slice(0, 200);
+    } catch {
+      return [] as Array<Record<string, any>>;
+    }
+  };
+
   const ensureWalletExists = () => assistantRuntime.wallet.has_wallet && Object.values(assistantRuntime.wallet.addresses_by_chain).some(Boolean);
 
   const assistantWalletStatus = () => ({
@@ -5964,6 +6014,8 @@ export async function registerRoutes(
               native_balance: null,
               price_usd,
               value_usd: 0,
+              tokens_value_usd: 0,
+              spl_tokens: [],
               data_status: "not_configured",
             },
           ] as const;
@@ -5978,6 +6030,8 @@ export async function registerRoutes(
               native_balance: null,
               price_usd,
               value_usd: 0,
+              tokens_value_usd: 0,
+              spl_tokens: [],
               data_status: "invalid_address",
             },
           ] as const;
@@ -5993,12 +6047,18 @@ export async function registerRoutes(
               native_balance: null,
               price_usd,
               value_usd: 0,
+              tokens_value_usd: 0,
+              spl_tokens: [],
               data_status: "rpc_not_configured",
             },
           ] as const;
         }
 
         const valueUsd = Number((balance * price_usd).toFixed(2));
+        const splTokens = chain === "solana" ? await fetchSolanaSplTokenPortfolio(address) : [];
+        const tokensValueUsd = Number(
+          splTokens.reduce((sum, token) => sum + Number((token as any).value_usd || 0), 0).toFixed(2),
+        );
         return [
           chain,
           {
@@ -6007,6 +6067,8 @@ export async function registerRoutes(
             native_balance: Number(balance.toFixed(8)),
             price_usd,
             value_usd: valueUsd,
+            tokens_value_usd: tokensValueUsd,
+            spl_tokens: splTokens,
             data_status: "ok",
           },
         ] as const;
@@ -6014,7 +6076,10 @@ export async function registerRoutes(
     );
 
     const chains = Object.fromEntries(entries);
-    const total_usd = Object.values(chains).reduce((sum: number, item: any) => sum + Number(item.value_usd || 0), 0);
+    const total_usd = Object.values(chains).reduce(
+      (sum: number, item: any) => sum + Number(item.value_usd || 0) + Number(item.tokens_value_usd || 0),
+      0,
+    );
     return res.json({
       wallet: assistantWalletStatus(),
       portfolio: {
