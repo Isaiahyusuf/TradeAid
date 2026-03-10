@@ -932,6 +932,24 @@ export async function registerRoutes(
     await storage.setAppState(doctorRuntimeByUserStateKey, value);
   };
 
+  const isDoctorAutoTradingEnabledForUser = async (userId: string) => {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) {
+      return Boolean(doctorRuntime.enabled) && !Boolean(doctorRuntime.killSwitch);
+    }
+
+    try {
+      const byUser = await getStoredDoctorRuntimesByUser();
+      const userRuntime = byUser[normalizedUserId] as Record<string, any> | undefined;
+      if (userRuntime && typeof userRuntime === "object") {
+        return Boolean(userRuntime.enabled) && !Boolean(userRuntime.killSwitch);
+      }
+    } catch {
+    }
+
+    return Boolean(doctorRuntime.enabled) && !Boolean(doctorRuntime.killSwitch);
+  };
+
   const loadDoctorWalletForUser = async (userId: string) => {
     const wallets = await getStoredDoctorWalletsByUser();
     const userWallet = wallets[userId] as Record<string, any> | undefined;
@@ -2672,6 +2690,30 @@ export async function registerRoutes(
     const liveEnabled = isDoctorLiveTradingEnabled();
     const liveOnly = isDoctorLiveOnlyMode();
     const scopedUserId = String(params.userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
+
+    if (params.trigger === "auto") {
+      const autoEnabled = await isDoctorAutoTradingEnabledForUser(scopedUserId);
+      if (!autoEnabled) {
+        appendDoctorExecutionAudit({
+          action: params.action,
+          symbol: params.symbol,
+          mint: params.mint,
+          amount_sol: params.amountSol,
+          expected_price_usd: params.expectedPriceUsd,
+          expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+          trigger: params.trigger,
+          reason: params.reason,
+          status: "blocked",
+          block_reason: "doctortrade_disabled",
+        });
+        return {
+          executed: false,
+          status: "blocked",
+          reason: "doctortrade_disabled",
+        } as const;
+      }
+    }
+
     const liveCredentials = await getDoctorLiveWalletCredentials(scopedUserId || undefined);
     const hasLiveCredentials = Boolean(String(liveCredentials.walletPublicKey || "").trim())
       && Boolean(String(liveCredentials.walletPrivateKey || "").trim());
