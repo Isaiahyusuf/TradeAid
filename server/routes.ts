@@ -1008,9 +1008,9 @@ export async function registerRoutes(
     await setStoredDoctorWalletsByUser(wallets);
   };
 
-  const ensureDoctorOwnerAndWalletHydrated = async () => {
+  const ensureDoctorOwnerAndWalletHydrated = async (preferredUserId?: string) => {
     let hydrated = false;
-    const currentOwner = String(doctorRuntime.ownerUserId || "").trim();
+    const currentOwner = String(preferredUserId || doctorRuntime.ownerUserId || "").trim();
     const currentWalletAddress = String(doctorRuntime.wallet.address || "").trim();
 
     if (!currentOwner) {
@@ -1040,10 +1040,11 @@ export async function registerRoutes(
     return hydrated;
   };
 
-  const getDoctorLiveWalletCredentials = async () => {
-    await ensureDoctorOwnerAndWalletHydrated();
+  const getDoctorLiveWalletCredentials = async (preferredUserId?: string) => {
+    const requestedUserId = String(preferredUserId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
+    await ensureDoctorOwnerAndWalletHydrated(requestedUserId);
 
-    const ownerUserId = String(doctorRuntime.ownerUserId || "").trim();
+    const ownerUserId = requestedUserId;
     const wallets = await getStoredDoctorWalletsByUser();
     const ownerWallet = ownerUserId ? (wallets[ownerUserId] as Record<string, any> | undefined) : undefined;
     const resolvedWallet = ownerWallet;
@@ -1202,8 +1203,8 @@ export async function registerRoutes(
     return fallbackValue;
   };
 
-  const ensureDoctorLiveExecutionModeIfCapable = async () => {
-    const { walletPublicKey, walletPrivateKey } = await getDoctorLiveWalletCredentials();
+  const ensureDoctorLiveExecutionModeIfCapable = async (preferredUserId?: string) => {
+    const { walletPublicKey, walletPrivateKey } = await getDoctorLiveWalletCredentials(preferredUserId);
     const liveCapable = isDoctorLiveTradingEnabled() && Boolean(walletPublicKey) && Boolean(walletPrivateKey);
     const liveOnly = isDoctorLiveOnlyMode();
     if (liveOnly) {
@@ -1768,7 +1769,7 @@ export async function registerRoutes(
     doctorCycleRunningByUser.add(normalizedUserId);
     try {
       await loadDoctorRuntimeForUser(normalizedUserId);
-      await executeDoctorCycle(trigger);
+      await executeDoctorCycle(trigger, normalizedUserId);
       await persistDoctorRuntime(normalizedUserId);
       return { ok: true } as const;
     } catch (error) {
@@ -3152,22 +3153,23 @@ export async function registerRoutes(
     } as const;
   };
 
-  const executeDoctorCycle = async (trigger: "manual" | "auto" = "manual") => {
+  const executeDoctorCycle = async (trigger: "manual" | "auto" = "manual", userId?: string) => {
     doctorRuntime.lastRunAt = nowIso();
+    const scopedUserId = String(userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
 
-    await ensureDoctorOwnerAndWalletHydrated();
-    const liveCredentials = await getDoctorLiveWalletCredentials();
+    await ensureDoctorOwnerAndWalletHydrated(scopedUserId);
+    const liveCredentials = await getDoctorLiveWalletCredentials(scopedUserId);
     const resolvedWalletAddress = String(liveCredentials.walletPublicKey || doctorRuntime.wallet.address || "").trim();
     if (resolvedWalletAddress) {
       doctorRuntime.wallet.address = resolvedWalletAddress;
     }
 
-    await ensureDoctorLiveExecutionModeIfCapable();
+    await ensureDoctorLiveExecutionModeIfCapable(scopedUserId);
     await refreshDoctorWalletBalanceFromChain();
     clampDoctorPaperBalance();
 
     if (!doctorRuntime.enabled && !doctorRuntime.killSwitch && doctorRuntime.execution.mode === "live") {
-      const liveCredentials = await getDoctorLiveWalletCredentials();
+      const liveCredentials = await getDoctorLiveWalletCredentials(scopedUserId);
       const hasLiveWallet = Boolean(String(liveCredentials.walletPublicKey || "").trim())
         && Boolean(String(liveCredentials.walletPrivateKey || "").trim());
       if (hasLiveWallet) {
@@ -4216,6 +4218,7 @@ export async function registerRoutes(
   };
 
   const buildDoctorStatus = async (userId?: string) => {
+    const statusUserId = String(userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
     await refreshDoctorWalletBalanceFromChain();
     const earlyTokens = await getSolanaEarlyScoredTokens(120, 220);
     const activeTokens = await getDoctorActiveTokens();
@@ -4225,13 +4228,11 @@ export async function registerRoutes(
     const paused = doctorRuntime.killSwitch;
     const safetyPaused = paused || !doctorRuntime.enabled;
 
-    const liveCredentials = await getDoctorLiveWalletCredentials();
+    const liveCredentials = await getDoctorLiveWalletCredentials(statusUserId);
     const liveCapable =
       isDoctorLiveTradingEnabled() &&
       Boolean(String(liveCredentials.walletPublicKey || "").trim()) &&
       Boolean(String(liveCredentials.walletPrivateKey || "").trim());
-
-    const statusUserId = String(userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
     const walletSnapshot = statusUserId
       ? await getDoctorWalletSnapshotForUser(statusUserId)
       : {
@@ -4484,7 +4485,7 @@ export async function registerRoutes(
     res.setHeader("Surrogate-Control", "no-store");
     await loadDoctorRuntimeForUser(userId);
     await syncDoctorWalletFromAssistantRuntime(userId);
-    await ensureDoctorLiveExecutionModeIfCapable();
+    await ensureDoctorLiveExecutionModeIfCapable(userId);
     await refreshDoctorWalletBalanceFromChain(undefined, true);
     const status = await buildDoctorStatus(userId);
     await saveDoctorWalletForUser(userId);
@@ -4639,7 +4640,7 @@ export async function registerRoutes(
 
     await stopDoctorCycleForUser(userId);
     if (doctorRuntime.enabled) {
-      await ensureDoctorLiveExecutionModeIfCapable();
+      await ensureDoctorLiveExecutionModeIfCapable(userId);
       await startDoctorCycleForUser(userId);
     }
 
@@ -4737,6 +4738,7 @@ export async function registerRoutes(
 
     await stopDoctorCycleForUser(userId);
     if (doctorRuntime.enabled) {
+      await ensureDoctorLiveExecutionModeIfCapable(userId);
       await startDoctorCycleForUser(userId);
     }
 
@@ -4860,7 +4862,7 @@ export async function registerRoutes(
 
         await refreshDoctorWalletBalanceFromChain(doctorRuntime.wallet.address, true);
         doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 0);
-        await ensureDoctorLiveExecutionModeIfCapable();
+        await ensureDoctorLiveExecutionModeIfCapable(userId);
         doctorRuntime.execution.mode = "live";
         doctorRuntime.enabled = true;
         await persistDoctorRuntime(userId);
@@ -4917,10 +4919,10 @@ export async function registerRoutes(
     }
     await loadDoctorRuntimeForUser(userId);
     await syncDoctorWalletFromAssistantRuntime(userId);
-    await ensureDoctorLiveExecutionModeIfCapable();
+    await ensureDoctorLiveExecutionModeIfCapable(userId);
 
     if (!doctorRuntime.enabled && !doctorRuntime.killSwitch) {
-      const liveCredentials = await getDoctorLiveWalletCredentials();
+      const liveCredentials = await getDoctorLiveWalletCredentials(userId);
       const hasLiveWallet = Boolean(String(liveCredentials.walletPublicKey || "").trim())
         && Boolean(String(liveCredentials.walletPrivateKey || "").trim());
       if (hasLiveWallet) {
@@ -4928,7 +4930,7 @@ export async function registerRoutes(
       }
     }
 
-    const result = await executeDoctorCycle("manual");
+    const result = await executeDoctorCycle("manual", userId);
     await saveDoctorWalletForUser(userId);
     await persistDoctorRuntime(userId);
     return res.json({ result });
@@ -4940,7 +4942,7 @@ export async function registerRoutes(
       return res.status(401).json({ message: "Unauthorized" });
     }
     await loadDoctorRuntimeForUser(userId);
-    await ensureDoctorLiveExecutionModeIfCapable();
+    await ensureDoctorLiveExecutionModeIfCapable(userId);
 
     const contractAddress = String(req.body?.contract_address || req.body?.address || "").trim();
     const symbol = String(req.body?.symbol || "MANUAL").trim() || "MANUAL";
@@ -4949,7 +4951,7 @@ export async function registerRoutes(
     }
     const requiresLiveWallet = isDoctorLiveOnlyMode() || doctorRuntime.execution.mode === "live";
     if (requiresLiveWallet && !doctorRuntime.wallet.address) {
-      const liveCredentials = await getDoctorLiveWalletCredentials();
+      const liveCredentials = await getDoctorLiveWalletCredentials(userId);
       const resolvedWalletAddress = String(liveCredentials.walletPublicKey || "").trim();
       if (resolvedWalletAddress) {
         doctorRuntime.wallet.address = resolvedWalletAddress;
