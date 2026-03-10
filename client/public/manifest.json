@@ -9,13 +9,13 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/tradeaid-logo.svg?v=2",
+      "src": "/tradeaid-logo.svg?v=3",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "/tradeaid-logo.svg?v=2",
+      "src": "/tradeaid-logo.svg?v=3",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "maskable"

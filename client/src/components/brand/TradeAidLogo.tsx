@@ -9,7 +9,7 @@ export function TradeAidLogo({ className, withText = true }: TradeAidLogoProps) 
   return (
     <div className={cn("inline-flex items-center gap-2", className)}>
       <img
-        src="/tradeaid-logo.svg"
+        src="/tradeaid-logo.svg?v=3"
         alt="Trade Aid logo"
         className="h-8 w-8 shrink-0 rounded-md"
         loading="eager"
