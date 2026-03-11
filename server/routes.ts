@@ -1270,28 +1270,38 @@ export async function registerRoutes(
     return Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("max_open_positions", Number(doctorRuntime.controls.max_open_positions || 3))));
   };
 
-  const ensureDoctorLiveExecutionModeIfCapable = async (preferredUserId?: string) => {
+  const ensureDoctorLiveExecutionModeIfCapable = async (
+    preferredUserId?: string,
+    options?: { persistRuntime?: boolean },
+  ) => {
     const scopedUserId = String(preferredUserId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
+    const shouldPersist = options?.persistRuntime !== false;
     const { walletPublicKey, walletPrivateKey } = await getDoctorLiveWalletCredentials(preferredUserId);
     const liveCapable = isDoctorLiveTradingEnabled() && Boolean(walletPublicKey) && Boolean(walletPrivateKey);
     const liveOnly = isDoctorLiveOnlyMode();
     if (liveOnly) {
       if (doctorRuntime.execution.mode !== "live") {
         doctorRuntime.execution.mode = "live";
-        await persistDoctorRuntime(scopedUserId);
+        if (shouldPersist) {
+          await persistDoctorRuntime(scopedUserId);
+        }
       }
       return liveCapable;
     }
 
     if (liveCapable && doctorRuntime.execution.mode !== "live") {
       doctorRuntime.execution.mode = "live";
-      await persistDoctorRuntime(scopedUserId);
+      if (shouldPersist) {
+        await persistDoctorRuntime(scopedUserId);
+      }
       return liveCapable;
     }
 
     if (!liveCapable && doctorRuntime.execution.mode === "live") {
       doctorRuntime.execution.mode = "paper";
-      await persistDoctorRuntime(scopedUserId);
+      if (shouldPersist) {
+        await persistDoctorRuntime(scopedUserId);
+      }
     }
 
     return liveCapable;
@@ -5024,9 +5034,13 @@ export async function registerRoutes(
     res.setHeader("Expires", "0");
     res.setHeader("Surrogate-Control", "no-store");
     await loadDoctorRuntimeForUser(userId);
+    const enabledBeforeStatus = Boolean(doctorRuntime.enabled);
+    const presetBeforeStatus = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
     await syncDoctorWalletFromAssistantRuntime(userId);
-    await ensureDoctorLiveExecutionModeIfCapable(userId);
+    await ensureDoctorLiveExecutionModeIfCapable(userId, { persistRuntime: false });
     await refreshDoctorWalletBalanceFromChain(undefined, true);
+    doctorRuntime.enabled = enabledBeforeStatus;
+    (doctorRuntime.controls as any).snipe_preset = presetBeforeStatus;
     const status = await buildDoctorStatus(userId);
     await saveDoctorWalletForUser(userId);
     return res.json(status);
@@ -5170,9 +5184,11 @@ export async function registerRoutes(
       return res.status(400).json({ message: "enabled_boolean_required" });
     }
     const requestedEnable = req.body.enabled as boolean;
+    const presetBeforeToggle = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
 
     const enabled = requestedEnable;
     doctorRuntime.enabled = enabled && !doctorRuntime.killSwitch;
+    (doctorRuntime.controls as any).snipe_preset = presetBeforeToggle;
     if (enabled && doctorRuntime.killSwitch) {
       doctorRuntime.lastError = "Cannot enable while kill switch is active";
     }
