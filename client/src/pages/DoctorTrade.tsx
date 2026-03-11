@@ -297,6 +297,22 @@ export default function DoctorTrade() {
     const gasPriorityLamports = Math.max(0, Math.trunc(Number.parseFloat(gasPriorityInput) || 0));
     const liveSellFractionPct = Math.max(1, Math.min(100, Number.parseFloat(liveSellFractionInput) || 50));
     const maxSellNotionalUsd = Math.max(1, Number.parseFloat(maxSellNotionalInput) || 300);
+    const presetDefaultBuyAmount: Record<Exclude<SnipePreset, "custom">, number> = {
+      conservative: 0.1,
+      balanced: 0.15,
+      aggressive: 0.25,
+      insider: 0.3,
+    };
+    const selectedPresetBeforeSave = selectedSnipePreset;
+    const manualBuyOverrideDetected = selectedPresetBeforeSave !== "custom"
+      && Math.abs(
+        buyAmountSol - presetDefaultBuyAmount[selectedPresetBeforeSave as Exclude<SnipePreset, "custom">]
+      ) > 0.000001;
+    const presetForSave: SnipePreset = manualBuyOverrideDetected ? "custom" : selectedPresetBeforeSave;
+    if (manualBuyOverrideDetected) {
+      setPresetMode("custom");
+      setSelectedSnipePreset("custom");
+    }
 
     configMutation.mutate(
       {
@@ -320,7 +336,7 @@ export default function DoctorTrade() {
         gas_priority_lamports: gasPriorityLamports,
         live_sell_fraction_pct: liveSellFractionPct,
         max_sell_notional_usd: maxSellNotionalUsd,
-        snipe_preset: selectedSnipePreset,
+        snipe_preset: presetForSave,
       },
       {
         onSuccess: () => {
@@ -345,7 +361,7 @@ export default function DoctorTrade() {
             gas_priority_lamports: gasPriorityLamports,
             live_sell_fraction_pct: liveSellFractionPct,
             max_sell_notional_usd: maxSellNotionalUsd,
-            snipe_preset: selectedSnipePreset,
+            snipe_preset: presetForSave,
             user_id: String(viewData?.user_id || ""),
             wallet_address: String(viewData?.wallet?.address || ""),
           }, viewData?.user_id);

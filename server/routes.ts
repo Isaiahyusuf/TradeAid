@@ -1511,7 +1511,14 @@ export async function registerRoutes(
       let loadedLegacy = false;
       try {
         const legacy = await storage.getAppState<Record<string, any>>(doctorRuntimeStateKey);
-        if (legacy && typeof legacy === "object") {
+        const legacyOwnerUserId = String((legacy as any)?.ownerUserId || "").trim();
+        const canMigrateLegacyToUser = Boolean(
+          legacy
+          && typeof legacy === "object"
+          && legacyOwnerUserId
+          && legacyOwnerUserId === normalizedUserId,
+        );
+        if (canMigrateLegacyToUser) {
           hydrateDoctorRuntimeWithDefaults();
           applyDoctorRuntimeSnapshot(legacy);
           loadedLegacy = true;
