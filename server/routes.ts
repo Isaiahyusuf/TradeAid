@@ -954,10 +954,13 @@ export async function registerRoutes(
   const loadDoctorWalletForUser = async (userId: string) => {
     const wallets = await getStoredDoctorWalletsByUser();
     const userWallet = wallets[userId] as Record<string, any> | undefined;
+    if (!userWallet || typeof userWallet !== "object") {
+      return;
+    }
 
-    doctorRuntime.wallet.address = String(userWallet?.address || "").trim();
-    doctorRuntime.wallet.balanceSol = Math.max(0, Number(userWallet?.balanceSol || 0));
-    doctorRuntime.wallet.separateWalletEnforced = userWallet?.separateWalletEnforced !== false;
+    doctorRuntime.wallet.address = String(userWallet.address || "").trim();
+    doctorRuntime.wallet.balanceSol = Math.max(0, Number(userWallet.balanceSol || 0));
+    doctorRuntime.wallet.separateWalletEnforced = userWallet.separateWalletEnforced !== false;
   };
 
   const getDoctorWalletSnapshotForUser = async (userId: string) => {
@@ -1486,7 +1489,9 @@ export async function registerRoutes(
   const loadDoctorRuntimeForUser = async (userId: string) => {
     const normalizedUserId = String(userId || "").trim();
     if (!normalizedUserId) return;
-    hydrateDoctorRuntimeWithDefaults();
+    const currentRuntimeSnapshot = JSON.parse(JSON.stringify(doctorRuntime)) as Record<string, any>;
+    const isCurrentRuntimeForSameUser =
+      String(doctorActiveUserId || doctorRuntime.ownerUserId || "").trim() === normalizedUserId;
 
     let loaded: Record<string, any> | null = null;
     try {
@@ -1499,15 +1504,27 @@ export async function registerRoutes(
     }
 
     if (loaded) {
+      hydrateDoctorRuntimeWithDefaults();
       applyDoctorRuntimeSnapshot(loaded);
     } else {
+      let loadedLegacy = false;
       try {
         const legacy = await storage.getAppState<Record<string, any>>(doctorRuntimeStateKey);
         if (legacy && typeof legacy === "object") {
+          hydrateDoctorRuntimeWithDefaults();
           applyDoctorRuntimeSnapshot(legacy);
+          loadedLegacy = true;
           await persistDoctorRuntime(normalizedUserId);
         }
       } catch {
+      }
+
+      if (!loadedLegacy && !isCurrentRuntimeForSameUser) {
+        hydrateDoctorRuntimeWithDefaults();
+      } else if (!loadedLegacy && isCurrentRuntimeForSameUser) {
+        Object.keys(doctorRuntime).forEach((key) => {
+          (doctorRuntime as any)[key] = currentRuntimeSnapshot[key];
+        });
       }
     }
 
@@ -1829,10 +1846,10 @@ export async function registerRoutes(
       const ownerPk = new PublicKey(resolvedWallet);
       const mintPk = new PublicKey(resolvedMint);
       const accounts = await getSolanaConnection().getParsedTokenAccountsByOwner(ownerPk, { mint: mintPk }, "confirmed");
-
       let uiAmount = 0;
-      let decimals = 0;
       let amountRawBigInt = BigInt(0);
+      let decimals = 0;
+
       for (const entry of accounts.value) {
         const tokenAmount = (entry.account.data as any)?.parsed?.info?.tokenAmount as Record<string, any> | undefined;
         const parsedUi = Number(tokenAmount?.uiAmount || 0);
