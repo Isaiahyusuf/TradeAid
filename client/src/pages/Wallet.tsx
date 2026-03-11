@@ -14,8 +14,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useToast } from "@/hooks/use-toast";
 import { SUPPORTED_CHAINS } from "@/hooks/use-chain";
 import { useLocation } from "wouter";
-import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
-import { useDoctorConfig, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
+import { useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { TokenAvatar } from "@/components/token/TokenAvatar";
 import {
   useApproveAssistantConsent,
@@ -55,7 +54,6 @@ export default function WalletPage() {
   const tradingStatusQuery = useAssistantTradingStatus();
   const doctorStatusQuery = useDoctorStatus();
   const doctorRunOnce = useDoctorRunOnce();
-  const doctorConfigMutation = useDoctorConfig();
   const walletStatusQuery = useAssistantWalletStatus();
   const walletPortfolioQuery = useAssistantWalletPortfolio();
   const walletTransactionsQuery = useAssistantWalletTransactions(50);
@@ -93,23 +91,7 @@ export default function WalletPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [walletSettingsOpen, setWalletSettingsOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [assistantRiskSettingsOpen, setAssistantRiskSettingsOpen] = useState(false);
-  const [assistantSettingsHydrated, setAssistantSettingsHydrated] = useState(false);
   const [walletTab, setWalletTab] = useState<"assets" | "activity" | "security">("assets");
-
-  const [buyAmountInput, setBuyAmountInput] = useState("0.1");
-  const [maxTradesInput, setMaxTradesInput] = useState("12");
-  const [tpMultInput, setTpMultInput] = useState("2.0");
-  const [minProfitInput, setMinProfitInput] = useState("12");
-  const [stopLossInput, setStopLossInput] = useState("6");
-  const [trailInput, setTrailInput] = useState("10");
-  const [minLiquidityInput, setMinLiquidityInput] = useState("20000");
-  const [maxSlippageInput, setMaxSlippageInput] = useState("4");
-  const [maxSpreadInput, setMaxSpreadInput] = useState("3");
-  const [dailyLossInput, setDailyLossInput] = useState("600");
-  const [maxConsecutiveLossesInput, setMaxConsecutiveLossesInput] = useState("3");
-  const [liveSellFractionInput, setLiveSellFractionInput] = useState("50");
-  const [maxSellNotionalInput, setMaxSellNotionalInput] = useState("300");
 
   const [sendChain, setSendChain] = useState<SupportedWalletChain>(enabledChains[0] || "solana");
   const [receiveChain, setReceiveChain] = useState<SupportedWalletChain>(enabledChains[0] || "solana");
@@ -161,25 +143,6 @@ export default function WalletPage() {
       setSwapAmountSol(prefillSwapAmountSol);
     }
   }, [walletAction, prefillSwapTokenMint, prefillSwapAmountSol, prefillSwapSide]);
-
-  useEffect(() => {
-    const controls = doctorStatusQuery.data?.trade_controls;
-    if (!controls || assistantSettingsHydrated) return;
-    setBuyAmountInput(String(controls.buy_amount_sol ?? 0.1));
-    setMaxTradesInput(String(controls.max_trades_per_day ?? 12));
-    setTpMultInput(String(controls.take_profit_multiplier ?? 2.0));
-    setMinProfitInput(String(controls.min_profit_pct ?? 12));
-    setStopLossInput(String(controls.stop_loss_pct ?? 6));
-    setTrailInput(String(controls.trailing_stop_pct ?? 10));
-    setMinLiquidityInput(String(controls.min_liquidity_usd ?? 20000));
-    setMaxSlippageInput(String(controls.max_slippage_pct ?? 4));
-    setMaxSpreadInput(String(controls.max_spread_pct ?? 3));
-    setDailyLossInput(String(controls.daily_loss_limit_usd ?? 600));
-    setMaxConsecutiveLossesInput(String(controls.max_consecutive_losses ?? 3));
-    setLiveSellFractionInput(String(controls.live_sell_fraction_pct ?? 50));
-    setMaxSellNotionalInput(String(controls.max_sell_notional_usd ?? 300));
-    setAssistantSettingsHydrated(true);
-  }, [assistantSettingsHydrated, doctorStatusQuery.data?.trade_controls]);
 
   const addressesByChain = useMemo(() => {
     const incoming = trading?.wallets_by_chain || wallet?.addresses_by_chain || {};
@@ -578,88 +541,6 @@ export default function WalletPage() {
     } catch (error) {
       toast({ title: "Auto cycle failed", description: error instanceof Error ? error.message : "Execution failed", variant: "destructive" });
     }
-  };
-
-  const applyDoctorPreset = (preset: "conservative" | "balanced" | "aggressive") => {
-    if (preset === "conservative") {
-      setBuyAmountInput("0.1");
-      setMaxTradesInput("6");
-      setTpMultInput("1.8");
-      setMinProfitInput("9");
-      setStopLossInput("4");
-      setTrailInput("7");
-      setMinLiquidityInput("45000");
-      setMaxSlippageInput("2.2");
-      setMaxSpreadInput("1.8");
-      setDailyLossInput("300");
-      setMaxConsecutiveLossesInput("2");
-      setLiveSellFractionInput("35");
-      setMaxSellNotionalInput("180");
-    }
-    if (preset === "balanced") {
-      setBuyAmountInput("0.15");
-      setMaxTradesInput("12");
-      setTpMultInput("2.0");
-      setMinProfitInput("12");
-      setStopLossInput("6");
-      setTrailInput("10");
-      setMinLiquidityInput("20000");
-      setMaxSlippageInput("4");
-      setMaxSpreadInput("3");
-      setDailyLossInput("600");
-      setMaxConsecutiveLossesInput("3");
-      setLiveSellFractionInput("50");
-      setMaxSellNotionalInput("300");
-    }
-    if (preset === "aggressive") {
-      setBuyAmountInput("0.25");
-      setMaxTradesInput("20");
-      setTpMultInput("2.4");
-      setMinProfitInput("15");
-      setStopLossInput("8");
-      setTrailInput("14");
-      setMinLiquidityInput("12000");
-      setMaxSlippageInput("6");
-      setMaxSpreadInput("5");
-      setDailyLossInput("1000");
-      setMaxConsecutiveLossesInput("4");
-      setLiveSellFractionInput("75");
-      setMaxSellNotionalInput("650");
-    }
-    toast({ title: "Preset loaded", description: `${preset} profile applied. Save to sync DoctorTrade.` });
-  };
-
-  const saveAssistantDoctorSettings = () => {
-    doctorConfigMutation.mutate(
-      {
-        buy_amount_sol: Math.max(0.1, Number.parseFloat(buyAmountInput) || 0.1),
-        max_trades_per_day: Math.max(1, Math.trunc(Number.parseFloat(maxTradesInput) || 12)),
-        take_profit_multiplier: Math.max(1.01, Number.parseFloat(tpMultInput) || 2.0),
-        min_profit_pct: Math.max(0.1, Number.parseFloat(minProfitInput) || 12),
-        stop_loss_pct: Math.max(0.1, Number.parseFloat(stopLossInput) || 6),
-        trailing_stop_pct: Math.max(0.1, Number.parseFloat(trailInput) || 10),
-        min_liquidity_usd: Math.max(1000, Number.parseFloat(minLiquidityInput) || 20000),
-        max_slippage_pct: Math.max(0.1, Number.parseFloat(maxSlippageInput) || 4),
-        max_spread_pct: Math.max(0.1, Number.parseFloat(maxSpreadInput) || 3),
-        daily_loss_limit_usd: Math.max(10, Number.parseFloat(dailyLossInput) || 600),
-        max_consecutive_losses: Math.max(1, Math.trunc(Number.parseFloat(maxConsecutiveLossesInput) || 3)),
-        live_sell_fraction_pct: Math.max(1, Math.min(100, Number.parseFloat(liveSellFractionInput) || 50)),
-        max_sell_notional_usd: Math.max(1, Number.parseFloat(maxSellNotionalInput) || 300),
-      },
-      {
-        onSuccess: () => {
-          setAssistantRiskSettingsOpen(false);
-          toast({ title: "DoctorTrade synced", description: "Wallet assistant settings updated successfully." });
-        },
-        onError: (error) => {
-          toast({
-            title: "Save failed",
-            description: error instanceof Error ? error.message : "Could not sync settings",
-            variant: "destructive",
-          });
-        },
-      },
-    );
   };
 
   return (
@@ -1157,35 +1038,7 @@ export default function WalletPage() {
 
                 <div data-settings-section="doctortrade" className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-3">
                   <p className="text-sm font-semibold text-primary">DoctorTrade Settings</p>
-                  <p className="text-xs text-muted-foreground">Tune DoctorTrade risk controls directly from Wallet.</p>
-
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="outline" size="sm" onClick={() => applyDoctorPreset("conservative")}>Conservative</Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => applyDoctorPreset("balanced")}>Balanced</Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => applyDoctorPreset("aggressive")}>Aggressive</Button>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <Input placeholder="Buy SOL" value={buyAmountInput} onChange={(e) => setBuyAmountInput(e.target.value)} />
-                    <Input placeholder="Trades/24h" value={maxTradesInput} onChange={(e) => setMaxTradesInput(e.target.value)} />
-                    <Input placeholder="TP Multiplier" value={tpMultInput} onChange={(e) => setTpMultInput(e.target.value)} />
-                    <Input placeholder="Min Profit %" value={minProfitInput} onChange={(e) => setMinProfitInput(e.target.value)} />
-                    <Input placeholder="Stop Loss %" value={stopLossInput} onChange={(e) => setStopLossInput(e.target.value)} />
-                    <Input placeholder="Trailing Stop %" value={trailInput} onChange={(e) => setTrailInput(e.target.value)} />
-                    <Input placeholder="Min Liquidity USD" value={minLiquidityInput} onChange={(e) => setMinLiquidityInput(e.target.value)} />
-                    <Input placeholder="Max Slippage %" value={maxSlippageInput} onChange={(e) => setMaxSlippageInput(e.target.value)} />
-                    <Input placeholder="Max Spread %" value={maxSpreadInput} onChange={(e) => setMaxSpreadInput(e.target.value)} />
-                    <Input placeholder="Daily Loss Limit $" value={dailyLossInput} onChange={(e) => setDailyLossInput(e.target.value)} />
-                    <Input placeholder="Max Consecutive Losses" value={maxConsecutiveLossesInput} onChange={(e) => setMaxConsecutiveLossesInput(e.target.value)} />
-                    <Input placeholder="Live Sell Fraction %" value={liveSellFractionInput} onChange={(e) => setLiveSellFractionInput(e.target.value)} />
-                    <Input placeholder="Max Sell Notional $" value={maxSellNotionalInput} onChange={(e) => setMaxSellNotionalInput(e.target.value)} />
-                  </div>
-
-                  <div className="flex justify-end">
-                    <Button type="button" variant="outline" onClick={saveAssistantDoctorSettings} disabled={doctorConfigMutation.isPending}>
-                      {doctorConfigMutation.isPending ? "Saving..." : "Save DoctorTrade Settings"}
-                    </Button>
-                  </div>
+                  <p className="text-xs text-muted-foreground">DoctorTrade settings are managed directly inside the DoctorTrade page.</p>
                 </div>
               </div>
             </div>
@@ -1223,40 +1076,9 @@ export default function WalletPage() {
                 <Button variant="outline" onClick={handleRevokeAssistantConsent} disabled={revokeConsent.isPending}>{revokeConsent.isPending ? "Revoking..." : "Revoke"}</Button>
               </div>
 
-              <SettingsMenuCard
-                title="DoctorTrade Risk Presets"
-                description="Use the same preset and guardrail controls from DoctorTrade."
-                open={assistantRiskSettingsOpen}
-                onToggle={() => setAssistantRiskSettingsOpen((prev) => !prev)}
-              >
-                <div className="space-y-3">
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="outline" size="sm" onClick={() => applyDoctorPreset("conservative")}>Conservative</Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => applyDoctorPreset("balanced")}>Balanced</Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => applyDoctorPreset("aggressive")}>Aggressive</Button>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <Input placeholder="Buy SOL" value={buyAmountInput} onChange={(e) => setBuyAmountInput(e.target.value)} />
-                    <Input placeholder="Trades/24h" value={maxTradesInput} onChange={(e) => setMaxTradesInput(e.target.value)} />
-                    <Input placeholder="TP Multiplier" value={tpMultInput} onChange={(e) => setTpMultInput(e.target.value)} />
-                    <Input placeholder="Min Profit %" value={minProfitInput} onChange={(e) => setMinProfitInput(e.target.value)} />
-                    <Input placeholder="Stop Loss %" value={stopLossInput} onChange={(e) => setStopLossInput(e.target.value)} />
-                    <Input placeholder="Trailing Stop %" value={trailInput} onChange={(e) => setTrailInput(e.target.value)} />
-                    <Input placeholder="Min Liquidity USD" value={minLiquidityInput} onChange={(e) => setMinLiquidityInput(e.target.value)} />
-                    <Input placeholder="Max Slippage %" value={maxSlippageInput} onChange={(e) => setMaxSlippageInput(e.target.value)} />
-                    <Input placeholder="Max Spread %" value={maxSpreadInput} onChange={(e) => setMaxSpreadInput(e.target.value)} />
-                    <Input placeholder="Daily Loss Limit $" value={dailyLossInput} onChange={(e) => setDailyLossInput(e.target.value)} />
-                    <Input placeholder="Max Consecutive Losses" value={maxConsecutiveLossesInput} onChange={(e) => setMaxConsecutiveLossesInput(e.target.value)} />
-                    <Input placeholder="Live Sell Fraction %" value={liveSellFractionInput} onChange={(e) => setLiveSellFractionInput(e.target.value)} />
-                    <Input placeholder="Max Sell Notional $" value={maxSellNotionalInput} onChange={(e) => setMaxSellNotionalInput(e.target.value)} />
-                  </div>
-                  <div className="flex justify-end">
-                    <Button type="button" variant="outline" onClick={saveAssistantDoctorSettings} disabled={doctorConfigMutation.isPending}>
-                      {doctorConfigMutation.isPending ? "Saving..." : "Save & Close"}
-                    </Button>
-                  </div>
-                </div>
-              </SettingsMenuCard>
+              <div className="rounded-lg border border-border/60 p-3 text-xs text-muted-foreground">
+                DoctorTrade presets and risk settings were removed from Wallet. Manage them from the DoctorTrade page only.
+              </div>
 
               <div className="rounded-lg border border-border/60 p-3 space-y-3">
                 <p className="text-sm font-medium flex items-center gap-2"><KeyRound className="w-4 h-4" />Auto Trade Cycle</p>
