@@ -989,9 +989,14 @@ export async function registerRoutes(
   const saveDoctorWalletForUser = async (userId: string) => {
     const wallets = await getStoredDoctorWalletsByUser();
     const current = wallets[userId] as Record<string, any> | undefined;
+    const normalizedUserId = String(userId || "").trim();
+    const runtimeOwnerUserId = String(doctorRuntime.ownerUserId || "").trim();
+    const runtimeBelongsToUser = Boolean(normalizedUserId && runtimeOwnerUserId && normalizedUserId === runtimeOwnerUserId);
     const runtimeAddress = String(doctorRuntime.wallet.address || "").trim();
     const existingAddress = String(current?.address || "").trim();
-    const resolvedAddress = runtimeAddress || existingAddress;
+    const resolvedAddress = runtimeBelongsToUser
+      ? (runtimeAddress || existingAddress)
+      : existingAddress;
     wallets[userId] = {
       address: resolvedAddress,
       balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0)),
@@ -5036,13 +5041,13 @@ export async function registerRoutes(
     await loadDoctorRuntimeForUser(userId);
     const enabledBeforeStatus = Boolean(doctorRuntime.enabled);
     const presetBeforeStatus = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
+    const executionModeBeforeStatus = String(doctorRuntime.execution.mode || "live").trim().toLowerCase() === "paper" ? "paper" : "live";
     await syncDoctorWalletFromAssistantRuntime(userId);
-    await ensureDoctorLiveExecutionModeIfCapable(userId, { persistRuntime: false });
     await refreshDoctorWalletBalanceFromChain(undefined, true);
     doctorRuntime.enabled = enabledBeforeStatus;
     (doctorRuntime.controls as any).snipe_preset = presetBeforeStatus;
+    doctorRuntime.execution.mode = executionModeBeforeStatus;
     const status = await buildDoctorStatus(userId);
-    await saveDoctorWalletForUser(userId);
     return res.json(status);
   });
 
