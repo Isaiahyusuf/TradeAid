@@ -2,11 +2,13 @@ import { Layout } from "@/components/Layout";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Bot, Power, Activity, TrendingUp, BarChart3, Radio, BookOpen } from "lucide-react";
-import { useDoctorControl, useDoctorDirectBuy, useDoctorHealth, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
-import { useEffect, useMemo, useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy, BookOpen } from "lucide-react";
+import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDisconnectWallet, useDoctorHealth, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
 import { TokenAvatar } from "@/components/token/TokenAvatar";
 
 function fmtUsd(value: number) {
@@ -20,6 +22,15 @@ function fmtTs(value?: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+const DOCTOR_SETTINGS_LOCAL_KEY_PREFIX = "doctortrade.settings.local.v2";
+const DOCTOR_SETTINGS_LOCAL_KEY_LEGACY = "doctortrade.settings.local.v1";
+type SnipePreset = "conservative" | "balanced" | "aggressive" | "insider" | "custom";
+
+function getDoctorSettingsLocalKey(userId?: string | null) {
+  const normalizedUserId = String(userId || "").trim() || "anonymous";
+  return `${DOCTOR_SETTINGS_LOCAL_KEY_PREFIX}:${normalizedUserId}`;
 }
 
 function isDoctorWalletConnected(wallet?: Record<string, any> | null, tradeControls?: Record<string, any> | null) {
@@ -39,8 +50,37 @@ export default function DoctorTrade() {
   const doctorHealth = useDoctorHealth();
   const { toast } = useToast();
   const controlMutation = useDoctorControl();
+  const configMutation = useDoctorConfig();
+  const connectWalletMutation = useDoctorConnectWallet();
+  const disconnectWalletMutation = useDoctorDisconnectWallet();
   const runMutation = useDoctorRunOnce();
   const directBuyMutation = useDoctorDirectBuy();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [intervalInput, setIntervalInput] = useState("20");
+  const [buyAmountInput, setBuyAmountInput] = useState("0.1");
+  const [maxTradesInput, setMaxTradesInput] = useState("12");
+  const [tpMultInput, setTpMultInput] = useState("2.0");
+  const [minProfitInput, setMinProfitInput] = useState("12");
+  const [stopLossInput, setStopLossInput] = useState("6");
+  const [trailInput, setTrailInput] = useState("10");
+  const [minLiquidityInput, setMinLiquidityInput] = useState("20000");
+  const [maxSlippageInput, setMaxSlippageInput] = useState("4");
+  const [maxSpreadInput, setMaxSpreadInput] = useState("3");
+  const [dailyLossInput, setDailyLossInput] = useState("600");
+  const [maxConsecutiveLossesInput, setMaxConsecutiveLossesInput] = useState("3");
+  const [strongMoveInput, setStrongMoveInput] = useState("40");
+  const [maxHoldMinutesInput, setMaxHoldMinutesInput] = useState("180");
+  const [minMomentumInput, setMinMomentumInput] = useState("4");
+  const [qualityMinSpikeInput, setQualityMinSpikeInput] = useState("12");
+  const [qualityMaxHolderInput, setQualityMaxHolderInput] = useState("35");
+  const [gasPriorityInput, setGasPriorityInput] = useState("0");
+  const [liveSellFractionInput, setLiveSellFractionInput] = useState("50");
+  const [maxSellNotionalInput, setMaxSellNotionalInput] = useState("300");
+  const [presetMode, setPresetMode] = useState<"default" | "custom">("default");
+  const [selectedSnipePreset, setSelectedSnipePreset] = useState<SnipePreset>("insider");
+  const [privateKeyInput, setPrivateKeyInput] = useState("");
+  const hydratedFromLocalRef = useRef(false);
+  const hydratedFromServerRef = useRef(false);
   const viewData = data;
   const hasData = Boolean(viewData);
   // Only show new launches on Solana (created within 24h and chain is solana)
@@ -72,6 +112,78 @@ export default function DoctorTrade() {
   const autoBuyContract = String(searchParams.get("contract") || "").trim();
   const autoBuyChain = String(searchParams.get("chain") || "solana").trim().toLowerCase();
   const [autoBuyHandled, setAutoBuyHandled] = useState(false);
+
+  const normalizePreset = (value: unknown): SnipePreset => {
+    const preset = String(value || "").trim().toLowerCase();
+    if (preset === "conservative") return "conservative";
+    if (preset === "balanced") return "balanced";
+    if (preset === "aggressive" || preset === "agressive") return "aggressive";
+    if (preset === "custom") return "custom";
+    return "insider";
+  };
+
+  const hydrateSettingsInputs = (controls: Record<string, any>) => {
+    setIntervalInput(String(controls.scan_interval_seconds ?? 20));
+    setBuyAmountInput(String(controls.buy_amount_sol ?? 0.1));
+    setMaxTradesInput(String(controls.max_trades_per_day ?? 12));
+    setTpMultInput(String(controls.take_profit_multiplier ?? 2));
+    setMinProfitInput(String(controls.min_profit_pct ?? 12));
+    setStopLossInput(String(controls.stop_loss_pct ?? 6));
+    setTrailInput(String(controls.trailing_stop_pct ?? 10));
+    setMinLiquidityInput(String(controls.min_liquidity_usd ?? 20000));
+    setMaxSlippageInput(String(controls.max_slippage_pct ?? 4));
+    setMaxSpreadInput(String(controls.max_spread_pct ?? 3));
+    setDailyLossInput(String(controls.daily_loss_limit_usd ?? 600));
+    setMaxConsecutiveLossesInput(String(controls.max_consecutive_losses ?? 3));
+    setStrongMoveInput(String(controls.strong_move_threshold_pct ?? 40));
+    setMaxHoldMinutesInput(String(controls.max_hold_minutes ?? 180));
+    setMinMomentumInput(String(controls.min_momentum_profit_pct ?? 4));
+    setQualityMinSpikeInput(String(controls.quality_min_volume_spike_pct ?? 12));
+    setQualityMaxHolderInput(String(controls.quality_max_top_holder_pct ?? 35));
+    setGasPriorityInput(String(controls.gas_priority_lamports ?? 0));
+    setLiveSellFractionInput(String(controls.live_sell_fraction_pct ?? 50));
+    setMaxSellNotionalInput(String(controls.max_sell_notional_usd ?? 300));
+    const preset = normalizePreset(controls.snipe_preset);
+    setSelectedSnipePreset(preset);
+    setPresetMode(preset === "custom" ? "custom" : "default");
+  };
+
+  const persistSettingsLocalBackup = (payload: Record<string, any>, userId?: string | null) => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(getDoctorSettingsLocalKey(userId), JSON.stringify(payload));
+    } catch {
+    }
+  };
+
+  useEffect(() => {
+    const controls = viewData?.trade_controls as Record<string, any> | undefined;
+    if (controls && !hydratedFromServerRef.current) {
+      hydrateSettingsInputs(controls);
+      hydratedFromServerRef.current = true;
+      return;
+    }
+
+    if (!controls && !hydratedFromLocalRef.current && typeof window !== "undefined") {
+      hydratedFromLocalRef.current = true;
+      try {
+        const runtimeUserId = String(viewData?.user_id || "").trim();
+        const scopedRaw = window.localStorage.getItem(getDoctorSettingsLocalKey(runtimeUserId));
+        const legacyRaw = window.localStorage.getItem(DOCTOR_SETTINGS_LOCAL_KEY_LEGACY);
+        const candidatePayloads = [scopedRaw, legacyRaw].filter(Boolean) as string[];
+
+        for (const raw of candidatePayloads) {
+          const parsed = JSON.parse(raw) as Record<string, any>;
+          if (!parsed || typeof parsed !== "object") continue;
+          const parsedUserId = String(parsed.user_id || "").trim();
+          if (runtimeUserId && parsedUserId && runtimeUserId !== parsedUserId) continue;
+          hydrateSettingsInputs(parsed);
+          break;
+        }
+      } catch {
+      }
+    }
+  }, [viewData?.trade_controls, viewData?.user_id]);
 
   useEffect(() => {
     if (autoAction !== "buy" || autoBuyHandled || !autoBuyContract) {
@@ -173,6 +285,291 @@ export default function DoctorTrade() {
             : "Auto-snipe running";
   const lastSyncLabel = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : "-";
 
+  const saveRiskRules = () => {
+    const scanIntervalSeconds = Math.max(5, Math.trunc(Number.parseFloat(intervalInput) || 20));
+    const buyAmountSol = Math.max(0.1, Number.parseFloat(buyAmountInput) || 0.1);
+    const maxTradesPerDay = Math.max(1, Math.trunc(Number.parseFloat(maxTradesInput) || 12));
+    const takeProfitMultiplier = Math.max(1.01, Number.parseFloat(tpMultInput) || 2.0);
+    const minProfitPct = Math.max(0.1, Number.parseFloat(minProfitInput) || 12);
+    const stopLossPct = Math.max(0.1, Number.parseFloat(stopLossInput) || 6);
+    const trailingStopPct = Math.max(0.1, Number.parseFloat(trailInput) || 10);
+    const minLiquidityUsd = Math.max(100, Number.parseFloat(minLiquidityInput) || 20000);
+    const maxSlippagePct = Math.max(0.1, Number.parseFloat(maxSlippageInput) || 4);
+    const maxSpreadPct = Math.max(0.1, Number.parseFloat(maxSpreadInput) || 3);
+    const dailyLossLimitUsd = Math.max(10, Number.parseFloat(dailyLossInput) || 600);
+    const maxConsecutiveLosses = Math.max(1, Math.trunc(Number.parseFloat(maxConsecutiveLossesInput) || 3));
+    const strongMoveThresholdPct = Math.max(5, Number.parseFloat(strongMoveInput) || 40);
+    const maxHoldMinutes = Math.max(5, Math.trunc(Number.parseFloat(maxHoldMinutesInput) || 180));
+    const minMomentumProfitPct = Math.max(0, Number.parseFloat(minMomentumInput) || 4);
+    const qualityMinVolumeSpikePct = Math.max(0, Number.parseFloat(qualityMinSpikeInput) || 12);
+    const qualityMaxTopHolderPct = Math.max(1, Number.parseFloat(qualityMaxHolderInput) || 35);
+    const gasPriorityLamports = Math.max(0, Math.trunc(Number.parseFloat(gasPriorityInput) || 0));
+    const liveSellFractionPct = Math.max(1, Math.min(100, Number.parseFloat(liveSellFractionInput) || 50));
+    const maxSellNotionalUsd = Math.max(1, Number.parseFloat(maxSellNotionalInput) || 300);
+    const presetDefaultBuyAmount: Record<Exclude<SnipePreset, "custom">, number> = {
+      conservative: 0.1,
+      balanced: 0.15,
+      aggressive: 0.25,
+      insider: 0.3,
+    };
+    const selectedPresetBeforeSave = selectedSnipePreset;
+    const manualBuyOverrideDetected = selectedPresetBeforeSave !== "custom"
+      && Math.abs(
+        buyAmountSol - presetDefaultBuyAmount[selectedPresetBeforeSave as Exclude<SnipePreset, "custom">]
+      ) > 0.000001;
+    const presetForSave: SnipePreset = manualBuyOverrideDetected ? "custom" : selectedPresetBeforeSave;
+    if (manualBuyOverrideDetected) {
+      setPresetMode("custom");
+      setSelectedSnipePreset("custom");
+    }
+
+    configMutation.mutate(
+      {
+        scan_interval_seconds: scanIntervalSeconds,
+        buy_amount_sol: buyAmountSol,
+        max_trades_per_day: maxTradesPerDay,
+        take_profit_multiplier: takeProfitMultiplier,
+        min_profit_pct: minProfitPct,
+        stop_loss_pct: stopLossPct,
+        trailing_stop_pct: trailingStopPct,
+        min_liquidity_usd: minLiquidityUsd,
+        max_slippage_pct: maxSlippagePct,
+        max_spread_pct: maxSpreadPct,
+        daily_loss_limit_usd: dailyLossLimitUsd,
+        max_consecutive_losses: maxConsecutiveLosses,
+        strong_move_threshold_pct: strongMoveThresholdPct,
+        max_hold_minutes: maxHoldMinutes,
+        min_momentum_profit_pct: minMomentumProfitPct,
+        quality_min_volume_spike_pct: qualityMinVolumeSpikePct,
+        quality_max_top_holder_pct: qualityMaxTopHolderPct,
+        gas_priority_lamports: gasPriorityLamports,
+        live_sell_fraction_pct: liveSellFractionPct,
+        max_sell_notional_usd: maxSellNotionalUsd,
+        snipe_preset: presetForSave,
+      },
+      {
+        onSuccess: () => {
+          persistSettingsLocalBackup({
+            scan_interval_seconds: scanIntervalSeconds,
+            buy_amount_sol: buyAmountSol,
+            max_trades_per_day: maxTradesPerDay,
+            take_profit_multiplier: takeProfitMultiplier,
+            min_profit_pct: minProfitPct,
+            stop_loss_pct: stopLossPct,
+            trailing_stop_pct: trailingStopPct,
+            min_liquidity_usd: minLiquidityUsd,
+            max_slippage_pct: maxSlippagePct,
+            max_spread_pct: maxSpreadPct,
+            daily_loss_limit_usd: dailyLossLimitUsd,
+            max_consecutive_losses: maxConsecutiveLosses,
+            strong_move_threshold_pct: strongMoveThresholdPct,
+            max_hold_minutes: maxHoldMinutes,
+            min_momentum_profit_pct: minMomentumProfitPct,
+            quality_min_volume_spike_pct: qualityMinVolumeSpikePct,
+            quality_max_top_holder_pct: qualityMaxTopHolderPct,
+            gas_priority_lamports: gasPriorityLamports,
+            live_sell_fraction_pct: liveSellFractionPct,
+            max_sell_notional_usd: maxSellNotionalUsd,
+            snipe_preset: presetForSave,
+            user_id: String(viewData?.user_id || ""),
+            wallet_address: String(viewData?.wallet?.address || ""),
+          }, viewData?.user_id);
+          setSettingsOpen(false);
+          toast({ title: "Risk rules saved", description: "DoctorTrade settings updated." });
+        },
+        onError: (error) => {
+          toast({
+            title: "Save failed",
+            description: error instanceof Error ? error.message : "Unable to save settings",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
+
+  const applyPreset = (preset: Exclude<SnipePreset, "custom">) => {
+    setSelectedSnipePreset(preset);
+    setPresetMode("default");
+    if (preset === "conservative") {
+      setBuyAmountInput("0.1");
+      setMaxTradesInput("6");
+      setTpMultInput("1.8");
+      setMinProfitInput("9");
+      setStopLossInput("4");
+      setTrailInput("7");
+      setMinLiquidityInput("45000");
+      setMaxSlippageInput("2.2");
+      setMaxSpreadInput("1.8");
+      setDailyLossInput("300");
+      setMaxConsecutiveLossesInput("2");
+      setStrongMoveInput("32");
+      setMaxHoldMinutesInput("120");
+      setMinMomentumInput("3");
+      setQualityMinSpikeInput("18");
+      setQualityMaxHolderInput("28");
+      setLiveSellFractionInput("35");
+      setMaxSellNotionalInput("180");
+    }
+    if (preset === "balanced") {
+      setBuyAmountInput("0.15");
+      setMaxTradesInput("12");
+      setTpMultInput("2.0");
+      setMinProfitInput("12");
+      setStopLossInput("6");
+      setTrailInput("10");
+      setMinLiquidityInput("20000");
+      setMaxSlippageInput("4");
+      setMaxSpreadInput("3");
+      setDailyLossInput("600");
+      setMaxConsecutiveLossesInput("3");
+      setStrongMoveInput("40");
+      setMaxHoldMinutesInput("180");
+      setMinMomentumInput("4");
+      setQualityMinSpikeInput("12");
+      setQualityMaxHolderInput("35");
+      setLiveSellFractionInput("50");
+      setMaxSellNotionalInput("300");
+    }
+    if (preset === "aggressive") {
+      setBuyAmountInput("0.25");
+      setMaxTradesInput("20");
+      setTpMultInput("2.4");
+      setMinProfitInput("15");
+      setStopLossInput("8");
+      setTrailInput("14");
+      setMinLiquidityInput("12000");
+      setMaxSlippageInput("6");
+      setMaxSpreadInput("5");
+      setDailyLossInput("1000");
+      setMaxConsecutiveLossesInput("4");
+      setStrongMoveInput("50");
+      setMaxHoldMinutesInput("240");
+      setMinMomentumInput("5");
+      setQualityMinSpikeInput("8");
+      setQualityMaxHolderInput("40");
+      setLiveSellFractionInput("75");
+      setMaxSellNotionalInput("650");
+    }
+    if (preset === "insider") {
+      setBuyAmountInput("0.3");
+      setMaxTradesInput("20");
+      setTpMultInput("2.0");
+      setMinProfitInput("100");
+      setStopLossInput("35");
+      setTrailInput("10");
+      setMinLiquidityInput("300");
+      setMaxSlippageInput("20");
+      setMaxSpreadInput("10");
+      setDailyLossInput("1000");
+      setMaxConsecutiveLossesInput("5");
+      setStrongMoveInput("45");
+      setMaxHoldMinutesInput("120");
+      setMinMomentumInput("8");
+      setQualityMinSpikeInput("12");
+      setQualityMaxHolderInput("15");
+      setGasPriorityInput("500000");
+      setLiveSellFractionInput("50");
+      setMaxSellNotionalInput("10000");
+    }
+    configMutation.mutate(
+      { snipe_preset: preset },
+      {
+        onSuccess: () => {
+          toast({ title: "Preset applied", description: `${preset} preset is now active.` });
+        },
+        onError: (error) => {
+          toast({
+            title: "Preset save failed",
+            description: error instanceof Error ? error.message : "Could not persist preset.",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
+
+  const handleManualPrivateKeyConnect = () => {
+    const trimmedPrivateKey = String(privateKeyInput || "").trim();
+    if (!trimmedPrivateKey) {
+      toast({
+        title: "Private key required",
+        description: "Paste a Solana private key to connect DoctorTrade wallet.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Private keys grant full wallet access.\n\nTradeAid encrypts keys before storage and decrypts only in memory for transaction signing. You are responsible for key security.\n\nConnect this wallet now?",
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    connectWalletMutation.mutate(
+      { private_key: trimmedPrivateKey },
+      {
+        onSuccess: (status) => {
+          const persistedConnected = isDoctorWalletConnected(
+            (status?.wallet as Record<string, any> | undefined) || null,
+            (status?.trade_controls as Record<string, any> | undefined) || null,
+          );
+          if (!persistedConnected) {
+            toast({
+              title: "Wallet not persisted",
+              description: "Wallet connection is pending sync. Refreshing live status now.",
+              variant: "destructive",
+            });
+            void refetch();
+          }
+          setPrivateKeyInput("");
+          persistSettingsLocalBackup({
+            ...(viewData?.trade_controls || {}),
+            wallet_address: String(status?.wallet?.address || ""),
+            user_id: String(viewData?.user_id || ""),
+          }, viewData?.user_id);
+          toast({ title: "Wallet connected", description: "DoctorTrade wallet connected from private key." });
+        },
+        onError: (error) => {
+          toast({
+            title: "Wallet connection failed",
+            description: error instanceof Error ? error.message : "Could not connect wallet.",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
+
+  const handleConnectWallet = () => {
+    setSettingsOpen(true);
+    toast({
+      title: "Private key required",
+      description: "Use Manual Private Key Import in the settings panel to connect your DoctorTrade wallet.",
+    });
+  };
+
+  const handleDisconnectWallet = () => {
+    disconnectWalletMutation.mutate(undefined, {
+      onSuccess: () => {
+        persistSettingsLocalBackup({
+          ...(viewData?.trade_controls || {}),
+          wallet_address: "",
+          user_id: String(viewData?.user_id || ""),
+        }, viewData?.user_id);
+        toast({ title: "Wallet disconnected", description: "DoctorTrade wallet has been disconnected." });
+      },
+      onError: (error) => {
+        toast({
+          title: "Disconnect failed",
+          description: error instanceof Error ? error.message : "Unable to disconnect wallet",
+          variant: "destructive",
+        });
+      },
+    });
+  };
+
   const handleToggleDoctor = () => {
     const nextEnabled = !Boolean(viewData?.enabled);
     controlMutation.mutate(nextEnabled, {
@@ -238,6 +635,20 @@ export default function DoctorTrade() {
             <Button variant="outline" onClick={() => refetch()} disabled={isFetching}>
               <Activity className={`w-4 h-4 mr-2 ${isFetching ? "animate-spin" : ""}`} /> {isFetching ? "Syncing..." : "Refresh Data"}
             </Button>
+            <Button
+              variant="outline"
+              onClick={handleConnectWallet}
+              disabled={connectWalletMutation.isPending || walletConnected}
+            >
+              <Wallet className="w-4 h-4 mr-2" /> {walletConnected ? "Wallet Connected" : "Use Private Key Below"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleDisconnectWallet}
+              disabled={disconnectWalletMutation.isPending || !walletConnected}
+            >
+              Disconnect Wallet
+            </Button>
             {doctorHealth.isError && (
               <Badge variant="destructive">Backend target mismatch</Badge>
             )}
@@ -258,24 +669,33 @@ export default function DoctorTrade() {
             <Badge variant="outline" className="ml-auto border-primary/40 text-primary">Quick Guide</Badge>
           </div>
           <p className="text-xs text-muted-foreground">
-            This page now provides execution controls only: start, stop, run cycle, and refresh.
+            Quick step-by-step guide for setup, wallet connection, execution, and troubleshooting.
           </p>
 
           <details className="group rounded-md border border-primary/25 bg-background/60 p-3 hover:border-primary/45 transition-colors">
-            <summary className="cursor-pointer text-sm font-medium">1) Start and monitor</summary>
+            <summary className="cursor-pointer text-sm font-medium">1) Connect wallet correctly</summary>
             <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
-              <li>Click <span className="font-medium text-foreground">Start DoctorTrade</span> to enable autonomous cycles.</li>
-              <li>Use <span className="font-medium text-foreground">Run Cycle</span> for an immediate evaluation pass.</li>
-              <li>Use <span className="font-medium text-foreground">Refresh Data</span> to pull latest status and logs.</li>
+              <li>Use <span className="font-medium text-foreground">Connect Existing Wallet</span> or paste private key under Manual Private Key Import.</li>
+              <li>After connect, verify <span className="font-medium text-foreground">Connection = Connected</span>.</li>
+              <li>Private key is encrypted and persisted until you disconnect or replace it.</li>
             </ul>
           </details>
 
           <details className="group rounded-md border border-accent/25 bg-background/60 p-3 hover:border-accent/45 transition-colors">
-            <summary className="cursor-pointer text-sm font-medium">2) Troubleshoot quickly</summary>
+            <summary className="cursor-pointer text-sm font-medium">2) Configure risk controls</summary>
             <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
-              <li>If start fails, check the status badges and latest execution message.</li>
-              <li>Use <span className="font-medium text-foreground">Refresh Data</span> after each action to confirm current backend state.</li>
-              <li>If needed, stop then start DoctorTrade again to re-sync runtime controls.</li>
+              <li>Pick a preset (Conservative, Balanced, Aggressive, Insider Default).</li>
+              <li>Adjust buy size, slippage, daily loss, hold time, and trade limits.</li>
+              <li>Click <span className="font-medium text-foreground">Save Settings</span> before starting DoctorTrade.</li>
+            </ul>
+          </details>
+
+          <details className="group rounded-md border border-primary/25 bg-background/60 p-3 hover:border-primary/45 transition-colors">
+            <summary className="cursor-pointer text-sm font-medium">3) Start and monitor</summary>
+            <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
+              <li>Click <span className="font-medium text-foreground">Start DoctorTrade</span> to enable autonomous cycles.</li>
+              <li>Use <span className="font-medium text-foreground">Run Cycle</span> for an immediate evaluation pass.</li>
+              <li>Use <span className="font-medium text-foreground">Refresh Data</span> to pull latest status and logs.</li>
             </ul>
           </details>
 
@@ -298,12 +718,276 @@ export default function DoctorTrade() {
           </details>
         </Card>
 
-        <Card className="p-4 border-border/60 bg-muted/20">
-          <p className="text-sm font-semibold">DoctorTrade Controls Simplified</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Per request, wallet and preset/risk settings are hidden from this page. Use only the Start/Stop button to control DoctorTrade.
-          </p>
-        </Card>
+        <SettingsMenuCard
+          title="DoctorTrade Settings"
+          description="Configure live-only trading, wallet session, and risk controls."
+          open={settingsOpen}
+          onToggle={() => setSettingsOpen((prev) => !prev)}
+        >
+          <div className="rounded-md border border-border/60 bg-muted/20 p-3 mb-3 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold">Doctor Wallet</p>
+              <Badge variant="outline" className="border-green-500/40 text-green-400">LIVE ONLY</Badge>
+            </div>
+            <div className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-background/50 p-2">
+              <div>
+                <p className="text-xs font-medium">Kill Switch</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {viewData?.kill_switch ? "Engaged: DoctorTrade is forced OFF" : "Released: DoctorTrade can run"}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant={viewData?.kill_switch ? "destructive" : "outline"}
+                  disabled={configMutation.isPending || Boolean(viewData?.kill_switch)}
+                  onClick={() => {
+                    configMutation.mutate(
+                      { kill_switch: true },
+                      {
+                        onSuccess: () => {
+                          toast({ title: "Kill switch engaged", description: "DoctorTrade has been stopped." });
+                        },
+                        onError: (error) => {
+                          toast({
+                            title: "Kill switch update failed",
+                            description: error instanceof Error ? error.message : "Unable to update kill switch",
+                            variant: "destructive",
+                          });
+                        },
+                      },
+                    );
+                  }}
+                >
+                  Engage
+                </Button>
+                <Button
+                  size="sm"
+                  variant={!viewData?.kill_switch ? "default" : "outline"}
+                  disabled={configMutation.isPending || !Boolean(viewData?.kill_switch)}
+                  onClick={() => {
+                    configMutation.mutate(
+                      { kill_switch: false },
+                      {
+                        onSuccess: () => {
+                          toast({ title: "Kill switch released", description: "You can start DoctorTrade again." });
+                        },
+                        onError: (error) => {
+                          toast({
+                            title: "Kill switch update failed",
+                            description: error instanceof Error ? error.message : "Unable to update kill switch",
+                            variant: "destructive",
+                          });
+                        },
+                      },
+                    );
+                  }}
+                >
+                  Release
+                </Button>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+              <div>
+                <p className="text-muted-foreground">Address</p>
+                <p className="font-medium truncate">{viewData?.wallet?.address || "Not connected"}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">SOL Balance</p>
+                <p className="font-medium">{Number(viewData?.wallet?.balance_sol || 0).toFixed(4)} SOL</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Connection</p>
+                <p className="font-medium">
+                  {viewData?.wallet?.connection_status === "connected"
+                    ? "Connected"
+                    : "Disconnected"}
+                </p>
+              </div>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Private key status: {viewData?.wallet?.private_key_configured ? "Configured (persisted)" : "Not configured"}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const address = String(viewData?.wallet?.address || "").trim();
+                  if (!address) return;
+                  navigator.clipboard.writeText(address);
+                  toast({ title: "Copied", description: "Wallet address copied." });
+                }}
+                disabled={!viewData?.wallet?.address}
+              >
+                <Copy className="w-4 h-4 mr-1" /> Copy Address
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDisconnectWallet}
+                disabled={disconnectWalletMutation.isPending || !walletConnected}
+              >
+                Disconnect Wallet
+              </Button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2 items-end">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Manual Private Key Import</p>
+                <Input
+                  type="password"
+                  value={privateKeyInput}
+                  onChange={(event) => setPrivateKeyInput(event.target.value)}
+                  placeholder="Paste Solana private key"
+                />
+              </div>
+              <Button
+                onClick={handleManualPrivateKeyConnect}
+                disabled={connectWalletMutation.isPending}
+              >
+                Connect Wallet
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Warning: Private keys grant full wallet access. TradeAid encrypts keys before storage and decrypts only in memory to sign transactions.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2 mb-3 overflow-x-auto">
+            <Button variant="outline" size="sm" onClick={() => applyPreset("conservative")}>Conservative</Button>
+            <Button variant="outline" size="sm" onClick={() => applyPreset("balanced")}>Balanced</Button>
+            <Button variant="outline" size="sm" onClick={() => applyPreset("aggressive")}>Aggressive</Button>
+            <Button
+              variant={presetMode === "default" ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                applyPreset("insider");
+              }}
+            >
+              Insider
+            </Button>
+            <Button
+              variant={presetMode === "custom" ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setPresetMode("custom");
+                setSelectedSnipePreset("custom");
+                configMutation.mutate(
+                  { snipe_preset: "custom" },
+                  {
+                    onSuccess: () => {
+                      toast({ title: "Preset applied", description: "custom preset is now active." });
+                    },
+                    onError: (error) => {
+                      toast({
+                        title: "Preset save failed",
+                        description: error instanceof Error ? error.message : "Could not persist preset.",
+                        variant: "destructive",
+                      });
+                    },
+                  },
+                );
+              }}
+            >
+              Custom
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 items-end">
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Scan Interval (sec)</p>
+              <Input value={intervalInput} onChange={(e) => setIntervalInput(e.target.value)} placeholder="20" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Buy Amount (SOL, min 0.1)</p>
+              <Input value={buyAmountInput} onChange={(e) => setBuyAmountInput(e.target.value)} placeholder="0.1" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Trades / 24h</p>
+              <Input value={maxTradesInput} onChange={(e) => setMaxTradesInput(e.target.value)} placeholder="12" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Take Profit Multiplier</p>
+              <Input value={tpMultInput} onChange={(e) => setTpMultInput(e.target.value)} placeholder="2.0" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Min Profit Sell %</p>
+              <Input value={minProfitInput} onChange={(e) => setMinProfitInput(e.target.value)} placeholder="12" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Stop Loss %</p>
+              <Input value={stopLossInput} onChange={(e) => setStopLossInput(e.target.value)} placeholder="6" />
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <p className="text-xs text-muted-foreground mb-1">Trailing Stop %</p>
+                <Input value={trailInput} onChange={(e) => setTrailInput(e.target.value)} placeholder="10" />
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 items-end mt-2">
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Min Liquidity USD</p>
+              <Input value={minLiquidityInput} onChange={(e) => setMinLiquidityInput(e.target.value)} placeholder="20000" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Max Slippage %</p>
+              <Input value={maxSlippageInput} onChange={(e) => setMaxSlippageInput(e.target.value)} placeholder="4" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Max Spread %</p>
+              <Input value={maxSpreadInput} onChange={(e) => setMaxSpreadInput(e.target.value)} placeholder="3" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Daily Loss Limit $</p>
+              <Input value={dailyLossInput} onChange={(e) => setDailyLossInput(e.target.value)} placeholder="600" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Max Consecutive Losses</p>
+              <Input value={maxConsecutiveLossesInput} onChange={(e) => setMaxConsecutiveLossesInput(e.target.value)} placeholder="3" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Strong Move %</p>
+              <Input value={strongMoveInput} onChange={(e) => setStrongMoveInput(e.target.value)} placeholder="40" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Max Hold Minutes</p>
+              <Input value={maxHoldMinutesInput} onChange={(e) => setMaxHoldMinutesInput(e.target.value)} placeholder="180" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Min Momentum Profit %</p>
+              <Input value={minMomentumInput} onChange={(e) => setMinMomentumInput(e.target.value)} placeholder="4" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Quality Min Spike %</p>
+              <Input value={qualityMinSpikeInput} onChange={(e) => setQualityMinSpikeInput(e.target.value)} placeholder="12" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Quality Max Holder %</p>
+              <Input value={qualityMaxHolderInput} onChange={(e) => setQualityMaxHolderInput(e.target.value)} placeholder="35" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Gas Priority (lamports)</p>
+              <Input value={gasPriorityInput} onChange={(e) => setGasPriorityInput(e.target.value)} placeholder="0" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Live Sell Fraction %</p>
+              <Input value={liveSellFractionInput} onChange={(e) => setLiveSellFractionInput(e.target.value)} placeholder="50" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Max Sell Notional $</p>
+              <Input value={maxSellNotionalInput} onChange={(e) => setMaxSellNotionalInput(e.target.value)} placeholder="300" />
+            </div>
+          </div>
+          <div className="mt-3 flex justify-end sticky bottom-0 bg-card/95 backdrop-blur py-2 border-t border-border/40">
+            <Button
+              variant="outline"
+              onClick={saveRiskRules}
+              disabled={configMutation.isPending}
+            >
+              Save Settings
+            </Button>
+          </div>
+        </SettingsMenuCard>
 
         <Card className="p-3 bg-card/70 backdrop-blur-sm border-border/60">
           <div className="flex items-center justify-between gap-2 mb-2">
@@ -511,6 +1195,9 @@ export default function DoctorTrade() {
                   </div>
                 </div>
                 <div className="flex gap-2">
+                  <Button className="flex-1" variant="outline" onClick={() => setSettingsOpen(true)}>
+                    Open Settings
+                  </Button>
                   <Button
                     className="flex-1"
                     variant={viewData?.enabled ? "destructive" : "default"}
