@@ -24,8 +24,14 @@ function fmtTs(value?: string) {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-const DOCTOR_SETTINGS_LOCAL_KEY = "doctortrade.settings.local.v1";
+const DOCTOR_SETTINGS_LOCAL_KEY_PREFIX = "doctortrade.settings.local.v2";
+const DOCTOR_SETTINGS_LOCAL_KEY_LEGACY = "doctortrade.settings.local.v1";
 type SnipePreset = "conservative" | "balanced" | "aggressive" | "insider" | "custom";
+
+function getDoctorSettingsLocalKey(userId?: string | null) {
+  const normalizedUserId = String(userId || "").trim() || "anonymous";
+  return `${DOCTOR_SETTINGS_LOCAL_KEY_PREFIX}:${normalizedUserId}`;
+}
 
 export default function DoctorTrade() {
     // Only show new launches on Solana (created within 24h and chain is solana)
@@ -132,10 +138,10 @@ export default function DoctorTrade() {
     setPresetMode(preset === "custom" ? "custom" : "default");
   };
 
-  const persistSettingsLocalBackup = (payload: Record<string, any>) => {
+  const persistSettingsLocalBackup = (payload: Record<string, any>, userId?: string | null) => {
     if (typeof window === "undefined") return;
     try {
-      window.localStorage.setItem(DOCTOR_SETTINGS_LOCAL_KEY, JSON.stringify(payload));
+      window.localStorage.setItem(getDoctorSettingsLocalKey(userId), JSON.stringify(payload));
     } catch {
     }
   };
@@ -151,16 +157,23 @@ export default function DoctorTrade() {
     if (!controls && !hydratedFromLocalRef.current && typeof window !== "undefined") {
       hydratedFromLocalRef.current = true;
       try {
-        const raw = window.localStorage.getItem(DOCTOR_SETTINGS_LOCAL_KEY);
-        if (!raw) return;
-        const parsed = JSON.parse(raw) as Record<string, any>;
-        if (parsed && typeof parsed === "object") {
+        const runtimeUserId = String(viewData?.user_id || "").trim();
+        const scopedRaw = window.localStorage.getItem(getDoctorSettingsLocalKey(runtimeUserId));
+        const legacyRaw = window.localStorage.getItem(DOCTOR_SETTINGS_LOCAL_KEY_LEGACY);
+        const candidatePayloads = [scopedRaw, legacyRaw].filter(Boolean) as string[];
+
+        for (const raw of candidatePayloads) {
+          const parsed = JSON.parse(raw) as Record<string, any>;
+          if (!parsed || typeof parsed !== "object") continue;
+          const parsedUserId = String(parsed.user_id || "").trim();
+          if (runtimeUserId && parsedUserId && runtimeUserId !== parsedUserId) continue;
           hydrateSettingsInputs(parsed);
+          break;
         }
       } catch {
       }
     }
-  }, [viewData?.trade_controls]);
+  }, [viewData?.trade_controls, viewData?.user_id]);
 
   useEffect(() => {
     if (autoAction !== "buy" || autoBuyHandled || !autoBuyContract) {
@@ -333,8 +346,9 @@ export default function DoctorTrade() {
             live_sell_fraction_pct: liveSellFractionPct,
             max_sell_notional_usd: maxSellNotionalUsd,
             snipe_preset: selectedSnipePreset,
+            user_id: String(viewData?.user_id || ""),
             wallet_address: String(viewData?.wallet?.address || ""),
-          });
+          }, viewData?.user_id);
           setSettingsOpen(false);
           toast({ title: "Risk rules saved", description: "DoctorTrade settings updated." });
         },
@@ -489,7 +503,8 @@ export default function DoctorTrade() {
           persistSettingsLocalBackup({
             ...(viewData?.trade_controls || {}),
             wallet_address: String(status?.wallet?.address || ""),
-          });
+            user_id: String(viewData?.user_id || ""),
+          }, viewData?.user_id);
           toast({ title: "Wallet connected", description: "DoctorTrade wallet connected from private key." });
         },
         onError: (error) => {
@@ -517,7 +532,8 @@ export default function DoctorTrade() {
         persistSettingsLocalBackup({
           ...(viewData?.trade_controls || {}),
           wallet_address: "",
-        });
+          user_id: String(viewData?.user_id || ""),
+        }, viewData?.user_id);
         toast({ title: "Wallet disconnected", description: "DoctorTrade wallet has been disconnected." });
       },
       onError: (error) => {

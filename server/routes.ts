@@ -1057,7 +1057,7 @@ export async function registerRoutes(
     }
 
     if (hydrated) {
-      await persistDoctorRuntime();
+      await persistDoctorRuntime(currentOwner);
     }
 
     return hydrated;
@@ -1271,26 +1271,27 @@ export async function registerRoutes(
   };
 
   const ensureDoctorLiveExecutionModeIfCapable = async (preferredUserId?: string) => {
+    const scopedUserId = String(preferredUserId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
     const { walletPublicKey, walletPrivateKey } = await getDoctorLiveWalletCredentials(preferredUserId);
     const liveCapable = isDoctorLiveTradingEnabled() && Boolean(walletPublicKey) && Boolean(walletPrivateKey);
     const liveOnly = isDoctorLiveOnlyMode();
     if (liveOnly) {
       if (doctorRuntime.execution.mode !== "live") {
         doctorRuntime.execution.mode = "live";
-        await persistDoctorRuntime();
+        await persistDoctorRuntime(scopedUserId);
       }
       return liveCapable;
     }
 
     if (liveCapable && doctorRuntime.execution.mode !== "live") {
       doctorRuntime.execution.mode = "live";
-      await persistDoctorRuntime();
+      await persistDoctorRuntime(scopedUserId);
       return liveCapable;
     }
 
     if (!liveCapable && doctorRuntime.execution.mode === "live") {
       doctorRuntime.execution.mode = "paper";
-      await persistDoctorRuntime();
+      await persistDoctorRuntime(scopedUserId);
     }
 
     return liveCapable;
@@ -4732,7 +4733,7 @@ export async function registerRoutes(
       doctorRuntime.lastError = null;
     }
 
-    await persistDoctorRuntime();
+    await persistDoctorRuntime(scopedUserId);
 
     if (!buyCount && !sellCount) {
       return { executed: false, reason: "no_eligible_action", trigger, buys: 0, sells: 0 };
