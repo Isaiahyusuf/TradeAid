@@ -6,6 +6,47 @@ import { issueSessionTokens, readBearerToken, getSessionUserId, rotateRefreshTok
 import { db } from "../../db";
 import { sql } from "drizzle-orm";
 
+const USERNAME_PATTERN = /^[a-z][a-z0-9._]{1,22}[a-z0-9]$/;
+const RESERVED_USERNAMES = new Set([
+  "admin",
+  "api",
+  "app",
+  "help",
+  "info",
+  "login",
+  "logout",
+  "me",
+  "root",
+  "security",
+  "settings",
+  "support",
+  "system",
+  "tradeaid",
+  "doctortrade",
+  "user",
+  "users",
+]);
+
+function normalizeUsername(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getUsernameValidationMessage(value: string): string | null {
+  if (!value) {
+    return "Username is required.";
+  }
+  if (!USERNAME_PATTERN.test(value)) {
+    return "Use 3-24 chars: lowercase letters, numbers, dot or underscore; must start with a letter and end with a letter/number.";
+  }
+  if (value.includes("..") || value.includes("__") || value.includes("._") || value.includes("_.")) {
+    return "Username cannot contain consecutive dots/underscores.";
+  }
+  if (RESERVED_USERNAMES.has(value)) {
+    return "That username is reserved.";
+  }
+  return null;
+}
+
 function toFrontendUser(user: any) {
   return {
     user_id: user.id,
@@ -61,7 +102,7 @@ export function registerAuthRoutes(app: Express): void {
 
       const user = usernameOrEmail.includes("@")
         ? await authStorage.getUserByEmail(usernameOrEmail)
-        : await authStorage.getUserByUsername(usernameOrEmail);
+        : await authStorage.getUserByUsername(normalizeUsername(usernameOrEmail));
 
       if (!user) {
         return res.status(401).json({ message: "Invalid credentials" });
@@ -82,12 +123,13 @@ export function registerAuthRoutes(app: Express): void {
   // Register endpoint
   app.post("/api/auth/register", async (req: any, res) => {
     try {
-      const username = String(req.body?.username || "").trim();
+      const username = normalizeUsername(req.body?.username);
       const emailRaw = String(req.body?.email || "").trim();
       const email = emailRaw || `${username}@tradeaid.local`;
 
-      if (!username || !/^[A-Za-z][A-Za-z0-9_]{2,19}$/.test(username)) {
-        return res.status(400).json({ message: "Invalid username format" });
+      const usernameError = getUsernameValidationMessage(username);
+      if (usernameError) {
+        return res.status(400).json({ message: usernameError });
       }
 
       const existingByUsername = await authStorage.getUserByUsername(username);
@@ -141,14 +183,14 @@ export function registerAuthRoutes(app: Express): void {
   // Check username endpoint
   app.get("/api/auth/check-username", async (req: any, res) => {
     try {
-      const username = String(req.query.username || "").trim();
-      const valid = !!username && /^[A-Za-z][A-Za-z0-9_]{2,19}$/.test(username);
-      if (!valid) {
+      const username = normalizeUsername(req.query.username);
+      const usernameError = getUsernameValidationMessage(username);
+      if (usernameError) {
         return res.json({
           username,
           available: false,
           valid: false,
-          message: "Username must be 3-20 chars, start with a letter, and use letters/numbers/_",
+          message: usernameError,
         });
       }
 
@@ -231,10 +273,11 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(401).json({ message: "Not authenticated" });
       }
 
-      const nextUsername = req.body?.username ? String(req.body.username).trim() : undefined;
+      const nextUsername = req.body?.username ? normalizeUsername(req.body.username) : undefined;
       if (nextUsername) {
-        if (!/^[A-Za-z][A-Za-z0-9_]{2,19}$/.test(nextUsername)) {
-          return res.status(400).json({ message: "Invalid username format" });
+        const usernameError = getUsernameValidationMessage(nextUsername);
+        if (usernameError) {
+          return res.status(400).json({ message: usernameError });
         }
         const existing = await authStorage.getUserByUsername(nextUsername);
         if (existing && existing.id !== user.id) {

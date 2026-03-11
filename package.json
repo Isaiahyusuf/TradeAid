@@ -11,6 +11,7 @@
     "verify": "node scripts/verify-full.cjs",
     "verify:doctor-wallet": "node scripts/verify-doctor-wallet-connection.cjs",
     "smoke:api": "node scripts/smoke-api.cjs",
+    "db:check-username-collisions": "node scripts/check-username-collisions.cjs",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {

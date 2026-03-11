@@ -11,7 +11,26 @@ import { motion } from "framer-motion";
 
 const EMAIL_PATTERN = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 const SPECIAL_PATTERN = /[^A-Za-z0-9]/;
-const USERNAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{2,19}$/;
+const USERNAME_PATTERN = /^[a-z][a-z0-9._]{1,22}[a-z0-9]$/;
+
+function normalizeUsername(value: string) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function validateUsername(value: string) {
+  const normalized = normalizeUsername(value);
+  if (!normalized) return { valid: false, message: "Username is required." };
+  if (!USERNAME_PATTERN.test(normalized)) {
+    return {
+      valid: false,
+      message: "Use 3-24 chars: lowercase letters, numbers, dot or underscore; must start with a letter and end with a letter/number.",
+    };
+  }
+  if (normalized.includes("..") || normalized.includes("__") || normalized.includes("._") || normalized.includes("_.")) {
+    return { valid: false, message: "Username cannot contain consecutive dots/underscores." };
+  }
+  return { valid: true, message: "" };
+}
 
 function getPasswordErrors(value: string): string[] {
   const errors: string[] = [];
@@ -47,7 +66,8 @@ export default function AuthPage() {
   const registerPasswordsMismatch = mode === "register" && !!registerConfirmPassword && password !== registerConfirmPassword;
   const resetPasswordsMismatch = mode === "reset" && !!resetConfirmPassword && newPassword !== resetConfirmPassword;
   const emailInvalid = !!email && !EMAIL_PATTERN.test(email);
-  const usernameInvalid = mode === "register" && !!username && !USERNAME_PATTERN.test(username.trim());
+  const usernameValidation = validateUsername(username);
+  const usernameInvalid = mode === "register" && !!username && !usernameValidation.valid;
 
   const isSubmitDisabled =
     isSubmitting ||
@@ -72,16 +92,16 @@ export default function AuthPage() {
       return;
     }
 
-    const value = username.trim();
+    const value = normalizeUsername(username);
     if (!value) {
       setUsernameStatus("idle");
       setUsernameMessage("");
       return;
     }
 
-    if (!USERNAME_PATTERN.test(value)) {
+    if (!usernameValidation.valid) {
       setUsernameStatus("invalid");
-      setUsernameMessage("Username must be 3-20 chars, start with a letter, and use only letters, numbers, or underscore.");
+      setUsernameMessage(usernameValidation.message);
       return;
     }
 
@@ -109,7 +129,7 @@ export default function AuthPage() {
     }, 350);
 
     return () => clearTimeout(timer);
-  }, [mode, username, checkUsername]);
+  }, [mode, username, checkUsername, usernameValidation.message, usernameValidation.valid]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -201,7 +221,7 @@ export default function AuthPage() {
         await login(username, password, accessCode);
         toast({ title: "Welcome back", description: "You're signed in and ready to trade." });
       } else if (mode === "register") {
-        const result = await register(username, undefined, password, accessCode);
+        const result = await register(normalizeUsername(username), undefined, password, accessCode);
         if (result?.verification_email_sent) {
           toast({ title: "Account created", description: "Your account is ready. A verification code has been sent to your email." });
         } else {
@@ -295,9 +315,13 @@ export default function AuthPage() {
                 <Label htmlFor="username">Username</Label>
                 <Input
                   id="username"
-                  placeholder="Enter your username"
+                  placeholder="e.g. alpha.trader_1"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  onChange={(e) => setUsername(mode === "register" ? normalizeUsername(e.target.value) : e.target.value)}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  maxLength={24}
                   required
                   data-testid="input-username"
                 />

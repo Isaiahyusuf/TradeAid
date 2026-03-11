@@ -1,6 +1,7 @@
 import { users, type User, type UpsertUser } from "@shared/models/auth";
 import { db } from "../../db";
 import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 // Interface for auth storage operations
 // (IMPORTANT) These user operations are mandatory for Replit Auth.
@@ -21,14 +22,20 @@ class AuthStorage implements IAuthStorage {
   async getUserByUsername(username: string): Promise<User | undefined> {
     const value = String(username || "").trim();
     if (!value) return undefined;
-    const [user] = await db.select().from(users).where(eq(users.username, value));
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(sql`LOWER(${users.username}) = LOWER(${value})`);
     return user;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     const value = String(email || "").trim();
     if (!value) return undefined;
-    const [user] = await db.select().from(users).where(eq(users.email, value));
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(sql`LOWER(${users.email}) = LOWER(${value})`);
     return user;
   }
 
