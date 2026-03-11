@@ -33,6 +33,16 @@ function getDoctorSettingsLocalKey(userId?: string | null) {
   return `${DOCTOR_SETTINGS_LOCAL_KEY_PREFIX}:${normalizedUserId}`;
 }
 
+function isDoctorWalletConnected(wallet?: Record<string, any> | null, tradeControls?: Record<string, any> | null) {
+  const address = String(wallet?.address || "").trim();
+  if (!address) return false;
+
+  const statusConnected = String(wallet?.connection_status || "").trim().toLowerCase() === "connected";
+  const keyConfigured = Boolean(wallet?.private_key_configured);
+  const controlsConnected = Boolean(tradeControls?.wallet_connected);
+  return statusConnected || keyConfigured || controlsConnected;
+}
+
 export default function DoctorTrade() {
     // Only show new launches on Solana (created within 24h and chain is solana)
     // (Declarations moved below after viewData is defined)
@@ -252,10 +262,9 @@ export default function DoctorTrade() {
   }, [viewData?.decision_journal]);
 
   const scannerSuccessRate = Number(viewData?.scanner_health?.overall?.success_rate_pct || 0);
-  const walletConnected = Boolean(
-    String(viewData?.wallet?.connection_status || "").toLowerCase() === "connected"
-    && viewData?.wallet?.private_key_configured
-    && String(viewData?.wallet?.address || "").trim(),
+  const walletConnected = isDoctorWalletConnected(
+    (viewData?.wallet as Record<string, any> | undefined) || null,
+    (viewData?.trade_controls as Record<string, any> | undefined) || null,
   );
   const autoSnipeReady = Boolean(
     viewData?.enabled &&
@@ -502,18 +511,17 @@ export default function DoctorTrade() {
       { private_key: trimmedPrivateKey },
       {
         onSuccess: (status) => {
-          const persistedConnected = Boolean(
-            String(status?.wallet?.connection_status || "").toLowerCase() === "connected"
-            && status?.wallet?.private_key_configured
-            && String(status?.wallet?.address || "").trim(),
+          const persistedConnected = isDoctorWalletConnected(
+            (status?.wallet as Record<string, any> | undefined) || null,
+            (status?.trade_controls as Record<string, any> | undefined) || null,
           );
           if (!persistedConnected) {
             toast({
               title: "Wallet not persisted",
-              description: "Connection response did not include saved wallet credentials. Please retry.",
+              description: "Wallet connection is pending sync. Refreshing live status now.",
               variant: "destructive",
             });
-            return;
+            void refetch();
           }
           setPrivateKeyInput("");
           persistSettingsLocalBackup({
@@ -720,6 +728,64 @@ export default function DoctorTrade() {
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-semibold">Doctor Wallet</p>
               <Badge variant="outline" className="border-green-500/40 text-green-400">LIVE ONLY</Badge>
+            </div>
+            <div className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-background/50 p-2">
+              <div>
+                <p className="text-xs font-medium">Kill Switch</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {viewData?.kill_switch ? "Engaged: DoctorTrade is forced OFF" : "Released: DoctorTrade can run"}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant={viewData?.kill_switch ? "destructive" : "outline"}
+                  disabled={configMutation.isPending || Boolean(viewData?.kill_switch)}
+                  onClick={() => {
+                    configMutation.mutate(
+                      { kill_switch: true },
+                      {
+                        onSuccess: () => {
+                          toast({ title: "Kill switch engaged", description: "DoctorTrade has been stopped." });
+                        },
+                        onError: (error) => {
+                          toast({
+                            title: "Kill switch update failed",
+                            description: error instanceof Error ? error.message : "Unable to update kill switch",
+                            variant: "destructive",
+                          });
+                        },
+                      },
+                    );
+                  }}
+                >
+                  Engage
+                </Button>
+                <Button
+                  size="sm"
+                  variant={!viewData?.kill_switch ? "default" : "outline"}
+                  disabled={configMutation.isPending || !Boolean(viewData?.kill_switch)}
+                  onClick={() => {
+                    configMutation.mutate(
+                      { kill_switch: false },
+                      {
+                        onSuccess: () => {
+                          toast({ title: "Kill switch released", description: "You can start DoctorTrade again." });
+                        },
+                        onError: (error) => {
+                          toast({
+                            title: "Kill switch update failed",
+                            description: error instanceof Error ? error.message : "Unable to update kill switch",
+                            variant: "destructive",
+                          });
+                        },
+                      },
+                    );
+                  }}
+                >
+                  Release
+                </Button>
+              </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
               <div>
