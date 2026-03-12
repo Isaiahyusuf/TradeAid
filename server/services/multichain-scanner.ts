@@ -42,6 +42,15 @@ const SAFE_THRESHOLDS = {
   maxSingleHolderPercentage: 15,
 };
 
+const EXCLUDED_SOL_MINTS = new Set([
+  "So11111111111111111111111111111111111111112",
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+  "USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB",
+]);
+
+const EXCLUDED_SOL_SYMBOLS = new Set(["SOL", "WSOL", "USDC", "USDT", "USD1", "USDC.S"]);
+
 export class MultichainLaunchpadScanner {
   private isScanning = false;
   private readonly emittedFreshMints = new Map<string, number>();
@@ -235,6 +244,12 @@ export class MultichainLaunchpadScanner {
         if (Number(pair?.liquidity?.usd || 0) <= 0) {
           continue;
         }
+        const createdAtMs = Number(pair?.pairCreatedAt || 0);
+        const pairAgeMinutes = createdAtMs > 0 ? (Date.now() - createdAtMs) / 60000 : Number.POSITIVE_INFINITY;
+        if (chain === "solana" && (!Number.isFinite(pairAgeMinutes) || pairAgeMinutes < 0 || pairAgeMinutes > 720)) {
+          continue;
+        }
+
         const baseToken = pair?.baseToken || {};
         const quoteToken = pair?.quoteToken || {};
         const baseAddress = String(baseToken?.address || "").trim();
@@ -247,12 +262,20 @@ export class MultichainLaunchpadScanner {
         if (!selectedAddress || (chain === "solana" && selectedAddress === wrappedSolMint)) {
           continue;
         }
+        if (chain === "solana" && EXCLUDED_SOL_MINTS.has(selectedAddress)) {
+          continue;
+        }
+
+        const selectedSymbol = String(selectedToken?.symbol || "???").trim().toUpperCase();
+        if (chain === "solana" && EXCLUDED_SOL_SYMBOLS.has(selectedSymbol)) {
+          continue;
+        }
 
         const holderAnalysis = await this.analyzeHolders(selectedAddress, chain);
         
         tokens.push({
           address: selectedAddress,
-          symbol: selectedToken?.symbol || "???",
+          symbol: selectedSymbol || "???",
           name: selectedToken?.name || "Unknown",
           chain,
           launchpad: pair.dexId || "unknown",
@@ -522,7 +545,14 @@ export class MultichainLaunchpadScanner {
         }
 
         const tokenAgeMinutes = Math.max(0, (Date.now() - new Date(token.createdAt).getTime()) / 60000);
-        const isEarlySafe = token.chain === "solana" && Boolean(String(token.address || "").trim());
+        const symbol = String(token.symbol || "").trim().toUpperCase();
+        const isEarlySafe = token.chain === "solana"
+          && !EXCLUDED_SOL_MINTS.has(String(token.address || "").trim())
+          && !EXCLUDED_SOL_SYMBOLS.has(symbol)
+          && Number.isFinite(tokenAgeMinutes)
+          && tokenAgeMinutes <= 720
+          && token.liquidity >= 8_000
+          && safetyScore >= 65;
 
         if (isEarlySafe && !this.emittedFreshMints.has(token.address)) {
           this.emittedFreshMints.set(token.address, nowMs);
