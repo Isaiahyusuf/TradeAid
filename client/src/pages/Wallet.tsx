@@ -77,7 +77,7 @@ export default function WalletPage() {
   const wallet = walletStatusQuery.data?.wallet;
   const context = contextOverviewQuery.data?.context;
 
-  const [assistantMode, setAssistantMode] = useState<"paper" | "live">("paper");
+  const assistantMode = "live" as const;
   const [confirmationText, setConfirmationText] = useState("I_APPROVE_ASSISTANT_TRADING");
 
   const [backupPhraseInput, setBackupPhraseInput] = useState("");
@@ -104,7 +104,7 @@ export default function WalletPage() {
   const [swapSide, setSwapSide] = useState<"buy" | "sell">("buy");
   const [swapTokenMint, setSwapTokenMint] = useState("");
   const [swapAmountSol, setSwapAmountSol] = useState("0.1");
-  const [swapMode, setSwapMode] = useState<"paper" | "live">("live");
+  const swapMode = "live" as const;
 
   const [exportedKey, setExportedKey] = useState<{ chain: string; address: string; private_key: string; warning: string } | null>(null);
   const walletSettingsScrollRef = useRef<HTMLDivElement | null>(null);
@@ -118,12 +118,6 @@ export default function WalletPage() {
     if (!target) return;
     target.scrollIntoView({ behavior: "smooth", block: "start" });
   };
-
-  useEffect(() => {
-    if (trading?.mode === "paper" || trading?.mode === "live") {
-      setAssistantMode(trading.mode);
-    }
-  }, [trading?.mode]);
 
   useEffect(() => {
     if (walletAction === "connect") {
@@ -915,10 +909,7 @@ export default function WalletPage() {
                 </div>
                 <div className="space-y-1">
                   <Label>Mode</Label>
-                  <select value={swapMode} onChange={(e) => setSwapMode(e.target.value as "paper" | "live")} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
-                    <option value="live">Live</option>
-                    <option value="paper">Paper</option>
-                  </select>
+                  <div className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm flex items-center">Live</div>
                 </div>
               </div>
 
@@ -1059,10 +1050,7 @@ export default function WalletPage() {
 
               <div className="space-y-2">
                 <Label>Mode</Label>
-                <select value={assistantMode} onChange={(e) => setAssistantMode(e.target.value as "paper" | "live")} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="paper">Paper</option>
-                  <option value="live">Live</option>
-                </select>
+                <div className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm flex items-center">Live</div>
               </div>
 
               <div className="space-y-2">
