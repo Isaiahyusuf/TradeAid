@@ -208,8 +208,8 @@ export function useDoctorStatus() {
     },
     initialData: readCached,
     enabled: true,
-    staleTime: 5000,
-    refetchInterval: 3000,
+    staleTime: 2000,
+    refetchInterval: 2000,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
@@ -263,6 +263,36 @@ export type DoctorHealth = {
   version: string;
   features?: Record<string, boolean>;
 };
+
+export type DoctorTickerItem = {
+  id: string;
+  mint: string;
+  name: string;
+  symbol: string;
+  price_usd: number;
+  liquidity_usd: number;
+  volume_5m_usd: number;
+  age_minutes: number;
+  signal: string;
+  signal_prefix: string;
+  source: string;
+  chart_url?: string;
+  message: string;
+  created_at: string;
+};
+
+export function useDoctorTicker(limit = 24) {
+  return useQuery({
+    queryKey: ["doctortrade", "ticker", limit],
+    queryFn: () => apiGet<{ ok: boolean; items: DoctorTickerItem[]; as_of: string }>(`/api/doctor/ticker?limit=${limit}`),
+    enabled: true,
+    staleTime: 3_000,
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
+    retry: 1,
+  });
+}
 
 export function useDoctorHealth() {
   return useQuery({

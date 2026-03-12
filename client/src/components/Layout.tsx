@@ -4,6 +4,7 @@ import { TradeAidLogo } from "@/components/brand/TradeAidLogo";
 import { useAuth } from "@/hooks/use-auth";
 import { useChain, SUPPORTED_CHAINS, type AppChain } from "@/hooks/use-chain";
 import { useLocation } from "wouter";
+import { LiveTickerBar } from "@/components/LiveTickerBar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -68,6 +69,7 @@ export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-background text-foreground flex solana-shell">
       <Sidebar />
+      <LiveTickerBar className="fixed top-0 left-0 md:left-64 right-0 z-[65]" />
       <main
         className="flex-1 md:ml-64 h-screen overflow-y-auto overflow-x-hidden pb-28 md:pb-8 relative wow-shell app-scroll"
         onMouseMove={handlePointerMove}
@@ -80,7 +82,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="absolute inset-0 pointer-events-none wow-grid" />
         <div className="absolute inset-0 pointer-events-none wow-spotlight" />
         <div className="absolute inset-x-0 top-24 h-40 bg-gradient-to-b from-white/[0.04] to-transparent pointer-events-none" />
-        <div className="absolute top-0 left-0 right-0 p-4 md:p-6 z-20">
+        <div className="absolute top-10 left-0 right-0 p-4 md:p-6 z-20">
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
@@ -141,7 +143,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={location}
-            className="relative z-10 w-full max-w-7xl mx-auto px-4 md:px-8 pt-20 md:pt-20 pb-6 md:pb-8 animate-fade-in-up tilt-shell"
+            className="relative z-10 w-full max-w-7xl mx-auto px-4 md:px-8 pt-28 md:pt-28 pb-6 md:pb-8 animate-fade-in-up tilt-shell"
             initial={{ opacity: 0, y: 16, scale: 0.995 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.995 }}

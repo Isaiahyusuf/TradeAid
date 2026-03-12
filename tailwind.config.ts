@@ -83,7 +83,8 @@ export default {
         },
       },
       fontFamily: {
-        sans: ["'Space Grotesk'", "sans-serif"],
+        sans: ["'Manrope'", "'Segoe UI'", "sans-serif"],
+        display: ["'Sora'", "'Manrope'", "sans-serif"],
         mono: ["'JetBrains Mono'", "monospace"],
       },
       keyframes: {

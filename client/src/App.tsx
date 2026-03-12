@@ -17,6 +17,7 @@ import DoctorTradePage from "@/pages/DoctorTrade";
 import WalletPage from "@/pages/Wallet";
 import Account from "@/pages/Account";
 import Subscription from "@/pages/Subscription";
+import Disclaimer from "@/pages/Disclaimer";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -37,6 +38,7 @@ function AuthenticatedRouter() {
       <Route path="/account" component={Account} />
       <Route path="/settings" component={Account} />
       <Route path="/subscription" component={Subscription} />
+      <Route path="/disclaimer" component={Disclaimer} />
       <Route component={NotFound} />
     </Switch>
   );

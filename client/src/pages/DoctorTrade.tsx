@@ -4,13 +4,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy, BookOpen } from "lucide-react";
-import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDisconnectWallet, useDoctorHealth, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
+import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDisconnectWallet, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
 import { TokenAvatar } from "@/components/token/TokenAvatar";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { useLocation } from "wouter";
 
 function fmtUsd(value: number) {
   if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
@@ -45,10 +46,10 @@ function isDoctorWalletConnected(wallet?: Record<string, any> | null, tradeContr
 }
 
 export default function DoctorTrade() {
+  const [, setLocation] = useLocation();
     // Only show new launches on Solana (created within 24h and chain is solana)
     // (Declarations moved below after viewData is defined)
   const { data, isLoading, isFetching, refetch, dataUpdatedAt } = useDoctorStatus();
-  const doctorHealth = useDoctorHealth();
   const { toast } = useToast();
   const controlMutation = useDoctorControl();
   const configMutation = useDoctorConfig();
@@ -56,8 +57,9 @@ export default function DoctorTrade() {
   const disconnectWalletMutation = useDoctorDisconnectWallet();
   const runMutation = useDoctorRunOnce();
   const directBuyMutation = useDoctorDirectBuy();
+  const [guideOpen, setGuideOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [intervalInput, setIntervalInput] = useState("20");
+  const [intervalInput, setIntervalInput] = useState("10");
   const [buyAmountInput, setBuyAmountInput] = useState("0.1");
   const [maxTradesInput, setMaxTradesInput] = useState("12");
   const [tpMultInput, setTpMultInput] = useState("2.0");
@@ -124,7 +126,7 @@ export default function DoctorTrade() {
   };
 
   const hydrateSettingsInputs = (controls: Record<string, any>) => {
-    setIntervalInput(String(controls.scan_interval_seconds ?? 20));
+    setIntervalInput(String(controls.scan_interval_seconds ?? 10));
     setBuyAmountInput(String(controls.buy_amount_sol ?? 0.1));
     setMaxTradesInput(String(controls.max_trades_per_day ?? 12));
     setTpMultInput(String(controls.take_profit_multiplier ?? 2));
@@ -275,7 +277,6 @@ export default function DoctorTrade() {
       .slice(0, 16);
   }, [viewData?.decision_journal]);
 
-  const scannerSuccessRate = Number(viewData?.scanner_health?.overall?.success_rate_pct || 0);
   const walletConnected = isDoctorWalletConnected(
     (viewData?.wallet as Record<string, any> | undefined) || null,
     (viewData?.trade_controls as Record<string, any> | undefined) || null,
@@ -599,7 +600,9 @@ export default function DoctorTrade() {
         }
         toast({
           title: enabledNow ? "DoctorTrade started" : "DoctorTrade stopped",
-          description: enabledNow ? "Autonomous engine is now active." : "Autonomous engine has been paused.",
+          description: enabledNow
+            ? "Autonomous engine is now active and continues server-side even if you close your browser."
+            : "Autonomous engine has been paused.",
         });
         refetch();
       },
@@ -627,6 +630,7 @@ export default function DoctorTrade() {
           <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="outline">Solana Only</Badge>
             <Badge variant="outline">Independent Engine</Badge>
+            <Badge variant="outline">Runs Server-Side</Badge>
             <Badge variant="outline" className="border-green-500/40 text-green-400">Trade Mode LIVE ONLY</Badge>
             <Badge variant="outline" className="border-accent/30 text-accent">Risk Locked</Badge>
             {!hasData && <Badge variant="outline">Syncing</Badge>}
@@ -649,6 +653,9 @@ export default function DoctorTrade() {
             <Button variant="outline" onClick={() => refetch()} disabled={isFetching}>
               <Activity className={`w-4 h-4 mr-2 ${isFetching ? "animate-spin" : ""}`} /> {isFetching ? "Syncing..." : "Refresh Data"}
             </Button>
+            <Button variant="outline" onClick={() => setLocation("/disclaimer")}>
+              Disclaimer
+            </Button>
             <Button
               variant="outline"
               onClick={handleConnectWallet}
@@ -663,28 +670,26 @@ export default function DoctorTrade() {
             >
               Disconnect Wallet
             </Button>
-            {doctorHealth.isError && (
-              <Badge variant="destructive">Backend target mismatch</Badge>
-            )}
-            {doctorHealth.data?.ok && (
-              <Badge variant="outline" className="border-green-500/40 text-green-400">Backend Healthy</Badge>
-            )}
           </div>
           <div className="mt-3 text-xs text-muted-foreground flex items-center gap-3">
             <span>{isLoading ? "Loading DoctorTrade..." : isFetching ? "Updating live data..." : "Live sync active"}</span>
             <span>Last sync: {lastSyncLabel}</span>
           </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            DoctorTrade runs on the server. Once started, it continues scanning and executing even when your browser is closed.
+          </p>
         </Card>
 
-        <Card className="p-4 bg-gradient-to-br from-primary/10 via-card/80 to-accent/10 backdrop-blur-sm border-primary/30 shadow-[0_0_20px_rgba(99,102,241,0.15)] space-y-3 animate-in fade-in-0">
-          <div className="flex items-center gap-2">
+        <SettingsMenuCard
+          title="DoctorTrade Operating Guide"
+          description="Professional quick-reference for setup, controls, and safe execution."
+          open={guideOpen}
+          onToggle={() => setGuideOpen((prev) => !prev)}
+        >
+          <div className="flex items-center gap-2 mb-3">
             <BookOpen className="w-4 h-4 text-primary animate-pulse" />
-            <p className="text-sm font-semibold text-primary">DoctorTrade Operating Guide</p>
-            <Badge variant="outline" className="ml-auto border-primary/40 text-primary">Updated 2026</Badge>
+            <Badge variant="outline" className="border-primary/40 text-primary">Updated 2026</Badge>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Professional quick-reference for setup, execution, controls, and issue recovery.
-          </p>
 
           <Accordion type="single" collapsible className="rounded-md border border-primary/25 bg-background/60 px-3">
             <AccordionItem value="setup" className="border-border/60">
@@ -737,12 +742,12 @@ export default function DoctorTrade() {
                 <ul className="space-y-1 list-disc pl-5">
                   <li>Use the <span className="font-medium text-foreground">Kill Switch</span> for immediate forced stop.</li>
                   <li>Disconnect wallet when rotating keys or ending a trading session.</li>
-                  <li>Use Direct Buy only for supervised manual entries, not unattended execution.</li>
+                  <li>DoctorTrade is an assistive tool, not a profit guarantee. Review the Disclaimer page before trading.</li>
                 </ul>
               </AccordionContent>
             </AccordionItem>
           </Accordion>
-        </Card>
+        </SettingsMenuCard>
 
         <SettingsMenuCard
           title="DoctorTrade Settings"
@@ -921,7 +926,7 @@ export default function DoctorTrade() {
           <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 items-end">
             <div>
               <p className="text-xs text-muted-foreground mb-1">Scan Interval (sec)</p>
-              <Input value={intervalInput} onChange={(e) => setIntervalInput(e.target.value)} placeholder="20" />
+              <Input value={intervalInput} onChange={(e) => setIntervalInput(e.target.value)} placeholder="10" />
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-1">Buy Amount (SOL, min 0.1)</p>
@@ -1156,8 +1161,8 @@ export default function DoctorTrade() {
               <h2 className="text-sm font-semibold mb-3">Account</h2>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">Engine</span><span>{viewData?.enabled ? "Live" : "Stopped"}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Runtime</span><span>Server-side autonomous</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Wallet Link</span><span>{walletConnected ? "Connected" : "Missing"}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">API Target</span><span className="truncate max-w-[220px] text-right">{viewData?.api_target || "same-origin"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Execution Mode</span><span>LIVE ONLY</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Live Capable</span><span>{viewData?.execution?.live_capable ? "Yes" : "No"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Network</span><span>Solana</span></div>
@@ -1166,7 +1171,6 @@ export default function DoctorTrade() {
                 <div className="flex justify-between"><span className="text-muted-foreground">Buy Amount</span><span>{(viewData?.trade_controls?.buy_amount_sol || 0.1).toFixed(3)} SOL</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Stop Loss</span><span>{(viewData?.trade_controls?.stop_loss_pct || 6).toFixed(1)}%</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Target</span><span>{(viewData?.trade_controls?.take_profit_multiplier || 2).toFixed(2)}x</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Scanner Health</span><span>{scannerSuccessRate.toFixed(1)}%</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Max Slippage</span><span>{(viewData?.trade_controls?.max_slippage_pct || 0).toFixed(1)}%</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Daily Loss Limit</span><span>${(viewData?.trade_controls?.daily_loss_limit_usd || 0).toFixed(0)}</span></div>
               </div>
@@ -1174,10 +1178,6 @@ export default function DoctorTrade() {
 
             <Card className="p-4">
               <h2 className="text-sm font-semibold mb-3">Sniper Logs</h2>
-              <div className="mb-2 text-[11px] text-muted-foreground">
-                <p>Source: {viewData?.discovery?.dexscreener_primary ? "Dexscreener Primary" : "Mixed"}</p>
-                <p>Worker: {viewData?.discovery?.worker_running ? "Running" : "Stopped"} · Poll {viewData?.discovery?.poll_interval_seconds || 7}s</p>
-              </div>
               <div className="space-y-2 max-h-[220px] overflow-auto">
                 {(viewData?.sniper_logs || []).slice(0, 12).map((row, index) => (
                   <div key={`${row?.mint || "sniper"}-${index}`} className="border rounded-md p-2">

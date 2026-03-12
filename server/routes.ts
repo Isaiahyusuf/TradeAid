@@ -725,7 +725,7 @@ export async function registerRoutes(
     ownerUserId: "" as string,
     enabled: false,
     killSwitch: false,
-    scanIntervalSeconds: Math.max(2, Math.trunc(Number(process.env.DOCTORTRADE_SCAN_INTERVAL_SECONDS || 20))),
+    scanIntervalSeconds: Math.max(2, Math.trunc(Number(process.env.DOCTORTRADE_SCAN_INTERVAL_SECONDS || 10))),
     wallet: {
       address: "",
       balanceSol: 0,
@@ -1611,6 +1611,131 @@ export async function registerRoutes(
   const doctorProcessedMints = new Map<string, number>();
   const doctorRejectedMints = new Map<string, number>();
   let doctorSniperLogsByUser = new Map<string, Array<Record<string, any>>>();
+  const doctorTickerQueue: Array<Record<string, any>> = [];
+  const doctorTickerSeenByMint = new Map<string, number>();
+
+  const formatTickerCompactUsd = (value: number) => {
+    const safe = Number(value || 0);
+    if (!Number.isFinite(safe) || safe <= 0) return "$0";
+    if (safe >= 1_000_000_000) return `$${(safe / 1_000_000_000).toFixed(2)}B`;
+    if (safe >= 1_000_000) return `$${(safe / 1_000_000).toFixed(2)}M`;
+    if (safe >= 1_000) return `$${(safe / 1_000).toFixed(0)}K`;
+    if (safe >= 1) return `$${safe.toFixed(2)}`;
+    return `$${safe.toFixed(6)}`;
+  };
+
+  const getTickerSourceLabel = (source: string, launchSource: string, smartMoney = false) => {
+    const normalizedSource = String(source || "").trim().toLowerCase();
+    const normalizedLaunchSource = normalizeLaunchSource(String(launchSource || "").trim());
+    if (normalizedLaunchSource === "pumpfun") return "Pump.fun";
+    if (normalizedSource.includes("dex")) return "DexScreener";
+    if (smartMoney) return "Helius Tx";
+    return "Doctor AI";
+  };
+
+  const getTickerSignalLabel = (context: {
+    smartMoney: boolean;
+    volume5mUsd: number;
+    liquidityUsd: number;
+    ageMinutes: number;
+    buys5m: number;
+    sells5m: number;
+  }) => {
+    if (context.smartMoney) return "Smart Money";
+    if (context.ageMinutes <= 10 && context.liquidityUsd >= 50_000) return "Hot";
+    if (context.buys5m >= Math.max(2, context.sells5m * 1.4) && context.volume5mUsd >= 25_000) return "Pumping";
+    return "Hot";
+  };
+
+  const getTickerSignalPrefix = (signal: string) => {
+    if (signal === "Pumping") return "ROCKET";
+    if (signal === "Smart Money") return "BRAIN";
+    return "FIRE";
+  };
+
+  const enqueueDoctorTickerSignal = (payload: {
+    mint: string;
+    symbol?: string;
+    name?: string;
+    priceUsd?: number;
+    liquidityUsd?: number;
+    volume5mUsd?: number;
+    ageMinutes?: number;
+    buys5m?: number;
+    sells5m?: number;
+    source?: string;
+    launchSource?: string;
+    smartMoney?: boolean;
+    rejectReasons?: string[];
+  }) => {
+    const mint = String(payload.mint || "").trim();
+    if (!mint) return;
+
+    const blacklistHit = (Array.isArray(payload.rejectReasons) ? payload.rejectReasons : [])
+      .some((reason) => /blacklist|blocked|scam/i.test(String(reason || "")));
+    if (blacklistHit) return;
+
+    const nowMs = Date.now();
+    const dedupeWindowMs = Math.max(30_000, Number(process.env.DOCTOR_TICKER_DEDUPE_MS || 120_000));
+    const lastSeenAt = Number(doctorTickerSeenByMint.get(mint) || 0);
+    if (nowMs - lastSeenAt < dedupeWindowMs) return;
+
+    const liquidityUsd = Math.max(0, Number(payload.liquidityUsd || 0));
+    const volume5mUsd = Math.max(0, Number(payload.volume5mUsd || 0));
+    const ageMinutes = Math.max(0, Number(payload.ageMinutes || 0));
+    const buys5m = Math.max(0, Number(payload.buys5m || 0));
+    const sells5m = Math.max(0, Number(payload.sells5m || 0));
+    const smartMoney = Boolean(payload.smartMoney);
+
+    const liquidityFloorUsd = Math.max(1_000, Number(process.env.DOCTOR_TICKER_MIN_LIQUIDITY_USD || 20_000));
+    const volumeFloorUsd = Math.max(0, Number(process.env.DOCTOR_TICKER_MIN_VOLUME_5M_USD || 8_000));
+    const maxAgeMinutes = Math.max(1, Number(process.env.DOCTOR_TICKER_MAX_AGE_MINUTES || 45));
+
+    const liquidityPass = liquidityUsd >= liquidityFloorUsd;
+    const volumeSpikePass = volume5mUsd >= volumeFloorUsd || buys5m >= Math.max(3, sells5m * 1.25);
+    const agePass = ageMinutes <= maxAgeMinutes;
+    if (!liquidityPass || !volumeSpikePass || !agePass) return;
+
+    const signal = getTickerSignalLabel({ smartMoney, volume5mUsd, liquidityUsd, ageMinutes, buys5m, sells5m });
+    const prefix = getTickerSignalPrefix(signal);
+    const symbol = String(payload.symbol || "UNKNOWN").trim().toUpperCase();
+    const tokenName = String(payload.name || symbol || "TOKEN").trim();
+    const sourceLabel = getTickerSourceLabel(String(payload.source || ""), String(payload.launchSource || ""), smartMoney);
+
+    const entry = {
+      id: `ticker_${nowMs}_${Math.random().toString(36).slice(2, 8)}`,
+      mint,
+      name: tokenName,
+      symbol,
+      price_usd: Math.max(0, Number(payload.priceUsd || 0)),
+      liquidity_usd: liquidityUsd,
+      volume_5m_usd: volume5mUsd,
+      age_minutes: Number(ageMinutes.toFixed(1)),
+      signal,
+      signal_prefix: prefix,
+      source: sourceLabel,
+      launch_source: normalizeLaunchSource(String(payload.launchSource || "")),
+      chart_url: `https://dexscreener.com/solana/${mint}`,
+      created_at: nowIso(),
+    } as Record<string, any>;
+
+    entry.message = `${prefix} ${entry.symbol} | Price ${formatTickerCompactUsd(entry.price_usd)} | Liquidity ${formatTickerCompactUsd(entry.liquidity_usd)} | Volume(5m) ${formatTickerCompactUsd(entry.volume_5m_usd)} | ${entry.signal}`;
+
+    doctorTickerSeenByMint.set(mint, nowMs);
+    doctorTickerQueue.unshift(entry);
+
+    const queueLimit = Math.max(20, Number(process.env.DOCTOR_TICKER_QUEUE_LIMIT || 80));
+    if (doctorTickerQueue.length > queueLimit) {
+      doctorTickerQueue.splice(queueLimit);
+    }
+
+    const seenTtlMs = Math.max(60_000, Number(process.env.DOCTOR_TICKER_SEEN_TTL_MS || 20 * 60 * 1000));
+    for (const [seenMint, seenAt] of Array.from(doctorTickerSeenByMint.entries())) {
+      if (nowMs - seenAt > seenTtlMs) {
+        doctorTickerSeenByMint.delete(seenMint);
+      }
+    }
+  };
 
   const getDoctorSniperLogsForUser = (userId?: string) => {
     const scopedUserId = String(userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
@@ -2169,6 +2294,22 @@ export async function registerRoutes(
           doctorRejectedMints.set(mint, nowMs);
           continue;
         }
+
+        enqueueDoctorTickerSignal({
+          mint,
+          symbol: String(pair?.baseToken?.symbol || "UNKNOWN"),
+          name: String(pair?.baseToken?.name || pair?.baseToken?.symbol || "TOKEN"),
+          priceUsd: Number(pair?.priceUsd || 0),
+          liquidityUsd: Number(pair?.liquidity?.usd || 0),
+          volume5mUsd: Number(pair?.volume?.m5 || 0),
+          ageMinutes: ageSeconds / 60,
+          buys5m,
+          sells5m,
+          source: "dexscreener",
+          launchSource: String(pair?.dexId || "dexscreener"),
+          smartMoney: smartWalletDetected,
+          rejectReasons: failedChecks,
+        });
 
         doctorProcessedMints.set(mint, nowMs);
         doctorRejectedMints.delete(mint);
@@ -5059,6 +5200,45 @@ export async function registerRoutes(
     };
   };
 
+  app.get("/api/doctor/ticker", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      await loadDoctorRuntimeForUser(userId);
+      const activeTokens = await getDoctorActiveTokens().catch(() => [] as Array<Record<string, any>>);
+      const topCandidates = activeTokens.slice(0, 12);
+      for (const token of topCandidates) {
+        const row = token as Record<string, any>;
+        enqueueDoctorTickerSignal({
+          mint: String(row.address || "").trim(),
+          symbol: String(row.symbol || "UNKNOWN"),
+          name: String(row.name || row.symbol || "TOKEN"),
+          priceUsd: Number(row.price_usd || 0),
+          liquidityUsd: Number(row.liquidity || 0),
+          volume5mUsd: Number(row.volume_5m || 0),
+          ageMinutes: Math.max(0, Number(row.age_seconds || 0) / 60),
+          buys5m: Number(row.buys_5m || 0),
+          sells5m: Number(row.sells_5m || 0),
+          source: String(row.source || "doctor_engine"),
+          launchSource: String(row.launch_source || "unknown"),
+          smartMoney: Number(row.buy_ratio_pct || 0) >= 75 && Number(row.buys_5m || 0) >= 4,
+          rejectReasons: Array.isArray(row.reject_reasons) ? row.reject_reasons : [],
+        });
+      }
+    } catch {
+    }
+
+    const limit = Math.max(5, Math.min(60, Math.trunc(Number(req.query?.limit || 24))));
+    return res.json({
+      ok: true,
+      items: doctorTickerQueue.slice(0, limit),
+      as_of: nowIso(),
+    });
+  });
+
   app.get("/api/doctor/health", async (_req, res) => {
     return res.json({
       ok: true,
@@ -5703,7 +5883,7 @@ export async function registerRoutes(
       for (const userId of userIds) {
         const runtime = runtimeByUser[userId] as Record<string, any> | undefined;
         if (runtime && runtime.enabled) {
-          await upsertDoctorSchedulerJob(userId, true, Math.max(2, Math.trunc(Number(runtime.scanIntervalSeconds || 20))), false);
+          await upsertDoctorSchedulerJob(userId, true, Math.max(2, Math.trunc(Number(runtime.scanIntervalSeconds || 10))), false);
         }
       }
     } catch {
