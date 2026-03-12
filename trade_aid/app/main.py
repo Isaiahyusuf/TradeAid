@@ -105,6 +105,7 @@ app.include_router(safe_buy.router)
 app.include_router(ai_assistant.router)
 app.include_router(doctor_trade.router)
 app.include_router(scanner.router)
+app.include_router(scanner.ingest_router)
 
 
 @app.get("/")
