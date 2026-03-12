@@ -229,17 +229,31 @@ export class MultichainLaunchpadScanner {
 
       const data = await response.json();
       const tokens: LaunchpadToken[] = [];
+      const wrappedSolMint = "So11111111111111111111111111111111111111112";
 
       for (const pair of (data.pairs || []).slice(0, 20)) {
         if (Number(pair?.liquidity?.usd || 0) <= 0) {
           continue;
         }
-        const holderAnalysis = await this.analyzeHolders(pair.baseToken?.address, chain);
+        const baseToken = pair?.baseToken || {};
+        const quoteToken = pair?.quoteToken || {};
+        const baseAddress = String(baseToken?.address || "").trim();
+        const quoteAddress = String(quoteToken?.address || "").trim();
+
+        const selectedToken = (chain === "solana" && baseAddress === wrappedSolMint && quoteAddress)
+          ? quoteToken
+          : baseToken;
+        const selectedAddress = String(selectedToken?.address || "").trim();
+        if (!selectedAddress || (chain === "solana" && selectedAddress === wrappedSolMint)) {
+          continue;
+        }
+
+        const holderAnalysis = await this.analyzeHolders(selectedAddress, chain);
         
         tokens.push({
-          address: pair.baseToken?.address || "",
-          symbol: pair.baseToken?.symbol || "???",
-          name: pair.baseToken?.name || "Unknown",
+          address: selectedAddress,
+          symbol: selectedToken?.symbol || "???",
+          name: selectedToken?.name || "Unknown",
           chain,
           launchpad: pair.dexId || "unknown",
           priceUsd: pair.priceUsd || "0",
