@@ -1,3 +1,4 @@
+import type { Express, Request, Response } from "express";
 import axios from "axios";
 import { and, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import { db } from "../db";
@@ -84,6 +85,11 @@ type BotCallRecord = {
   liquidityUsd: number;
   volume24hUsd: number;
   origin: string;
+  peakPriceUsd?: number;
+  peakAt?: string;
+  closedAt?: string;
+  closedPriceUsd?: number;
+  closeReason?: string;
 };
 
 type BotCallState = {
@@ -96,6 +102,8 @@ type PnlSnapshot = {
   multiplier: number;
   pnlPct: number;
   holdMinutes: number;
+  drawdownPct: number;
+  isClosed: boolean;
 };
 
 type PnlBoardResult = {
@@ -193,6 +201,9 @@ class TradeAidTelegramBot {
   private readonly earlyMinSafetyScore: number;
   private readonly earlyMinLiquidityUsd: number;
   private readonly earlyMinVolume24hUsd: number;
+  private readonly useWebhookMode: boolean;
+  private readonly webhookUrl: string;
+  private readonly webhookSecret: string;
   private offset = 0;
   private running = false;
   private pushTimer: NodeJS.Timeout | null = null;
@@ -227,6 +238,10 @@ class TradeAidTelegramBot {
     this.earlyMinSafetyScore = Math.max(55, Math.trunc(Number(process.env.TELEGRAM_BOT_EARLY_MIN_SAFETY_SCORE || 76)));
     this.earlyMinLiquidityUsd = Math.max(5_000, Number(process.env.TELEGRAM_BOT_EARLY_MIN_LIQUIDITY_USD || 30_000));
     this.earlyMinVolume24hUsd = Math.max(2_000, Number(process.env.TELEGRAM_BOT_EARLY_MIN_VOLUME24H_USD || 15_000));
+    const webhookPath = String(process.env.TELEGRAM_BOT_WEBHOOK_PATH || "/api/telegram/webhook").trim() || "/api/telegram/webhook";
+    this.webhookUrl = String(process.env.TELEGRAM_BOT_WEBHOOK_URL || `${this.appBaseUrl}${webhookPath}`).trim();
+    this.webhookSecret = String(process.env.TELEGRAM_BOT_WEBHOOK_SECRET || "").trim();
+    this.useWebhookMode = this.webhookUrl.length > 0;
   }
 
   async start() {
@@ -235,9 +250,41 @@ class TradeAidTelegramBot {
     await this.loadPushState();
     await this.loadCallState();
     await this.configureBotMenu();
+    if (this.useWebhookMode) {
+      await this.configureWebhook();
+    } else {
+      await this.deleteWebhook();
+    }
     this.startPushLoop();
     console.log("[TelegramBot] TradeAid Telegram bot started.");
-    void this.pollLoop();
+    if (!this.useWebhookMode) {
+      void this.pollLoop();
+    }
+  }
+
+  private async configureWebhook() {
+    const payload: Record<string, any> = {
+      url: this.webhookUrl,
+      allowed_updates: ["message", "callback_query"],
+      drop_pending_updates: false,
+    };
+    if (this.webhookSecret) {
+      payload.secret_token = this.webhookSecret;
+    }
+
+    await axios.post(`${this.apiBase}/setWebhook`, payload, { timeout: 15_000 });
+    console.log(`[TelegramBot] Webhook mode enabled: ${this.webhookUrl}`);
+  }
+
+  private async deleteWebhook() {
+    try {
+      await axios.post(
+        `${this.apiBase}/deleteWebhook`,
+        { drop_pending_updates: false },
+        { timeout: 12_000 },
+      );
+    } catch {
+    }
   }
 
   private async configureBotMenu() {
@@ -270,8 +317,7 @@ class TradeAidTelegramBot {
       try {
         const updates = await this.getUpdates();
         for (const update of updates) {
-          this.offset = Math.max(this.offset, Number(update.update_id || 0) + 1);
-          await this.handleUpdate(update);
+          await this.processUpdate(update);
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error || "unknown");
@@ -423,6 +469,11 @@ class TradeAidTelegramBot {
             liquidityUsd: Number(row.liquidityUsd || 0),
             volume24hUsd: Number(row.volume24hUsd || 0),
             origin: String(row.origin || "bot_call").trim() || "bot_call",
+            peakPriceUsd: Number(row.peakPriceUsd || 0) || undefined,
+            peakAt: row.peakAt ? String(row.peakAt) : undefined,
+            closedAt: row.closedAt ? String(row.closedAt) : undefined,
+            closedPriceUsd: Number(row.closedPriceUsd || 0) || undefined,
+            closeReason: row.closeReason ? String(row.closeReason) : undefined,
           }))
           .filter((row) => Boolean(row.mint))
           .slice(-1200),
@@ -463,6 +514,8 @@ class TradeAidTelegramBot {
       liquidityUsd: Number(token.liquidity || 0),
       volume24hUsd: Number(token.volume24h || 0),
       origin: String(origin || "bot_call").trim() || "bot_call",
+      peakPriceUsd: Number.isFinite(price) && price > 0 ? price : undefined,
+      peakAt: Number.isFinite(price) && price > 0 ? now : undefined,
     });
 
     if (this.callState.calls.length > 1200) {
@@ -491,6 +544,7 @@ class TradeAidTelegramBot {
       .where(and(eq(scannedTokens.chain, "solana"), inArray(scannedTokens.address, mints)));
 
     const tokenMap = new Map(rows.map((row) => [String(row.address || "").trim(), row]));
+    let stateChanged = false;
     const snapshots = calls
       .map((call) => {
         const token = tokenMap.get(call.mint);
@@ -499,18 +553,63 @@ class TradeAidTelegramBot {
         if (!Number.isFinite(currentPriceUsd) || currentPriceUsd <= 0 || !Number.isFinite(calledPriceUsd) || calledPriceUsd <= 0) {
           return null;
         }
-        const multiplier = currentPriceUsd / calledPriceUsd;
+        const nowMs = Date.now();
+        const holdMinutes = Math.max(0, (nowMs - new Date(call.calledAt).getTime()) / 60_000);
+
+        if (!call.closedAt) {
+          const peak = Number(call.peakPriceUsd || 0);
+          if (!Number.isFinite(peak) || peak <= 0 || currentPriceUsd > peak) {
+            call.peakPriceUsd = currentPriceUsd;
+            call.peakAt = new Date(nowMs).toISOString();
+            stateChanged = true;
+          }
+        }
+
+        const peakPriceUsd = Math.max(Number(call.peakPriceUsd || 0), currentPriceUsd, calledPriceUsd);
+        const drawdownPct = peakPriceUsd > 0 ? ((peakPriceUsd - currentPriceUsd) / peakPriceUsd) * 100 : 0;
+
+        if (!call.closedAt) {
+          const liveMultiplier = currentPriceUsd / calledPriceUsd;
+          const livePnlPct = (liveMultiplier - 1) * 100;
+          let closeReason = "";
+          if (liveMultiplier >= 4) {
+            closeReason = "tp_4x";
+          } else if (holdMinutes >= 24 * 60) {
+            closeReason = "time_exit";
+          } else if (liveMultiplier <= 0.45 && holdMinutes >= 30) {
+            closeReason = "hard_stop";
+          } else if (drawdownPct >= 45 && livePnlPct > 10) {
+            closeReason = "trailing_stop";
+          }
+
+          if (closeReason) {
+            call.closedAt = new Date(nowMs).toISOString();
+            call.closedPriceUsd = currentPriceUsd;
+            call.closeReason = closeReason;
+            stateChanged = true;
+          }
+        }
+
+        const effectiveCurrent = call.closedAt && Number(call.closedPriceUsd || 0) > 0
+          ? Number(call.closedPriceUsd || 0)
+          : currentPriceUsd;
+        const multiplier = effectiveCurrent / calledPriceUsd;
         const pnlPct = (multiplier - 1) * 100;
-        const holdMinutes = Math.max(0, (Date.now() - new Date(call.calledAt).getTime()) / 60_000);
         return {
           call,
-          currentPriceUsd,
+          currentPriceUsd: effectiveCurrent,
           multiplier,
           pnlPct,
           holdMinutes,
+          drawdownPct,
+          isClosed: Boolean(call.closedAt),
         } satisfies PnlSnapshot;
       })
       .filter((row): row is PnlSnapshot => Boolean(row));
+
+    if (stateChanged) {
+      await this.persistCallState();
+    }
 
     if (!snapshots.length) {
       return {
@@ -524,6 +623,8 @@ class TradeAidTelegramBot {
     const winners = snapshots.filter((row) => row.pnlPct > 0);
     const losers = snapshots.filter((row) => row.pnlPct < 0);
     const breakeven = snapshots.length - winners.length - losers.length;
+    const closedSnapshots = snapshots.filter((row) => row.isClosed);
+    const openSnapshots = snapshots.filter((row) => !row.isClosed);
     const winRate = (winners.length / snapshots.length) * 100;
     const avgPnl = snapshots.reduce((sum, row) => sum + row.pnlPct, 0) / snapshots.length;
     const medianHoldMinutes = median(snapshots.map((row) => row.holdMinutes));
@@ -541,6 +642,7 @@ class TradeAidTelegramBot {
       `Calls tracked: <b>${calls.length}</b> | Snapshots priced: <b>${snapshots.length}</b>`,
       `Win rate: <b>${winRate.toFixed(1)}%</b> | Avg PnL: <b>${fmtPct(avgPnl)}</b>`,
       `Win bucket: <b>${winners.length}</b> | Loss bucket: <b>${losers.length}</b> | Flat: <b>${breakeven}</b>`,
+      `Open: <b>${openSnapshots.length}</b> | Closed: <b>${closedSnapshots.length}</b>`,
       `Median hold time: <b>${escapeHtml(formatHoldTime(medianHoldMinutes))}</b>`,
       `2x: <b>${x2}</b> | 3x: <b>${x3}</b> | 4x+: <b>${x4}</b>`,
       "",
@@ -551,11 +653,24 @@ class TradeAidTelegramBot {
       const calledAgo = formatAge(row.call.calledAt);
       const xText = `${row.multiplier.toFixed(2)}x`;
       const direction = row.pnlPct >= 0 ? "WIN" : "LOSS";
+      const status = row.isClosed ? `CLOSED:${String(row.call.closeReason || "exit").toUpperCase()}` : "OPEN";
       lines.push(
         `${direction} ${escapeHtml(String(row.call.symbol || "UNK"))}: <b>${escapeHtml(xText)}</b> (${fmtPct(row.pnlPct)}) | ` +
         `Call ${escapeHtml(fmtUsd(row.call.calledPriceUsd))} -> ${escapeHtml(fmtUsd(row.currentPriceUsd))} | ` +
-        `Age ${escapeHtml(calledAgo)}`,
+        `Age ${escapeHtml(calledAgo)} | DD ${fmtPct(-row.drawdownPct)} | ${escapeHtml(status)}`,
       );
+    }
+
+    if (closedSnapshots.length) {
+      lines.push("", "<b>Closed Snapshot Ledger</b>");
+      for (const row of closedSnapshots.slice(0, 8)) {
+        const reason = String(row.call.closeReason || "exit").toUpperCase();
+        lines.push(
+          `${escapeHtml(String(row.call.symbol || "UNK"))}: Entry ${escapeHtml(fmtUsd(row.call.calledPriceUsd))} | ` +
+          `Peak ${escapeHtml(fmtUsd(row.call.peakPriceUsd || row.currentPriceUsd))} | ` +
+          `Close ${escapeHtml(fmtUsd(row.currentPriceUsd))} | DD ${fmtPct(-row.drawdownPct)} | ${escapeHtml(reason)}`,
+        );
+      }
     }
 
     if (topWins.length) {
@@ -596,12 +711,18 @@ class TradeAidTelegramBot {
       return `${sym}-${idx + 1}`;
     });
     const values = rows.map((row) => Number(row.multiplier.toFixed(3)));
+    const badges = rows.map((row) => {
+      if (row.multiplier >= 4) return "4x+";
+      if (row.multiplier >= 3) return "3x";
+      if (row.multiplier >= 2) return "2x";
+      return "<2x";
+    });
     const colors = rows.map((row) => {
-      if (row.multiplier >= 4) return "#15803d";
-      if (row.multiplier >= 3) return "#16a34a";
-      if (row.multiplier >= 2) return "#65a30d";
+      if (row.multiplier >= 4) return "#00d084";
+      if (row.multiplier >= 3) return "#22c55e";
+      if (row.multiplier >= 2) return "#84cc16";
       if (row.multiplier >= 1) return "#f59e0b";
-      return "#dc2626";
+      return "#ef4444";
     });
 
     const chartConfig = {
@@ -613,33 +734,45 @@ class TradeAidTelegramBot {
             label: "Multiple (x)",
             data: values,
             backgroundColor: colors,
-            borderColor: "#0f172a",
-            borderWidth: 1,
+            borderColor: "#111827",
+            borderWidth: 2,
+            borderRadius: 10,
+            barPercentage: 0.72,
+            categoryPercentage: 0.8,
           },
         ],
       },
       options: {
+        layout: { padding: { top: 24, right: 20, left: 20, bottom: 20 } },
         plugins: {
           title: {
             display: true,
-            text: "TradeAid SpyDefi-Style PnL Multipliers",
-            color: "#111827",
-            font: { size: 16 },
+            text: "TRADEAID ALPHA BOARD - MULTIPLIER SNAPSHOT",
+            color: "#e5e7eb",
+            font: { size: 20, weight: "bold" },
           },
           legend: { display: false },
+          subtitle: {
+            display: true,
+            text: badges.join("  |  "),
+            color: "#93c5fd",
+            font: { size: 13 },
+            padding: { bottom: 8 },
+          },
         },
         scales: {
           x: {
-            ticks: { color: "#111827", maxRotation: 65, minRotation: 30 },
-            grid: { color: "#e5e7eb" },
+            ticks: { color: "#d1d5db", maxRotation: 65, minRotation: 30, font: { size: 11 } },
+            grid: { color: "rgba(148,163,184,0.18)" },
           },
           y: {
             beginAtZero: true,
-            ticks: { color: "#111827" },
-            grid: { color: "#e5e7eb" },
+            ticks: { color: "#d1d5db" },
+            grid: { color: "rgba(148,163,184,0.18)" },
           },
         },
       },
+      backgroundColor: "#020617",
     };
 
     return `https://quickchart.io/chart?width=1200&height=628&c=${encodeURIComponent(JSON.stringify(chartConfig))}`;
@@ -837,6 +970,18 @@ class TradeAidTelegramBot {
       "Tip: send just a symbol or CA and I will search it.",
       "Risk notice: informational only, always DYOR.",
     ].join("\n");
+  }
+
+  async processUpdate(update: TelegramUpdate) {
+    if (!update || typeof update !== "object") return;
+    this.offset = Math.max(this.offset, Number(update.update_id || 0) + 1);
+    await this.handleUpdate(update);
+  }
+
+  isWebhookAuthorized(req: Request) {
+    if (!this.webhookSecret) return true;
+    const token = String(req.headers["x-telegram-bot-api-secret-token"] || "").trim();
+    return token.length > 0 && token === this.webhookSecret;
   }
 
   private async handleUpdate(update: TelegramUpdate) {
@@ -1245,4 +1390,32 @@ export const startTradeAidTelegramBot = async () => {
 
   telegramBotSingleton = new TradeAidTelegramBot(token);
   await telegramBotSingleton.start();
+};
+
+export const getTradeAidTelegramBot = () => telegramBotSingleton;
+
+export const registerTradeAidTelegramWebhookRoute = (app: Express) => {
+  const path = String(process.env.TELEGRAM_BOT_WEBHOOK_PATH || "/api/telegram/webhook").trim() || "/api/telegram/webhook";
+
+  app.post(path, async (req: Request, res: Response) => {
+    const bot = getTradeAidTelegramBot();
+    if (!bot) {
+      return res.status(503).json({ ok: false, message: "bot_not_started" });
+    }
+
+    if (!bot.isWebhookAuthorized(req)) {
+      return res.status(401).json({ ok: false, message: "unauthorized" });
+    }
+
+    try {
+      await bot.processUpdate(req.body as TelegramUpdate);
+      return res.json({ ok: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "update_failed";
+      console.warn(`[TelegramBot] Webhook update error: ${message}`);
+      return res.status(500).json({ ok: false, message: "update_failed" });
+    }
+  });
+
+  console.log(`[TelegramBot] Webhook route registered at ${path}`);
 };
