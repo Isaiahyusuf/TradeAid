@@ -5273,11 +5273,12 @@ export async function registerRoutes(
 
     const walletAddress = String(walletSnapshot.address || "").trim();
     const walletConnected = Boolean(walletSnapshot.connected);
+    const walletAddressAvailable = Boolean(walletAddress);
 
-    const rawWalletTokens = walletConnected
+    const rawWalletTokens = walletAddressAvailable
       ? await getDoctorLiveWalletTokenSnapshots(walletAddress, 20)
       : [];
-    const statusWalletTransactions = walletConnected
+    const statusWalletTransactions = walletAddressAvailable
       ? await getDoctorWalletRecentTransactions(walletAddress, 20)
       : [];
     const knownTokenDetailsByMint = new Map<string, Record<string, any>>();

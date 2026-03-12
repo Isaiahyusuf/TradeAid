@@ -1307,7 +1307,7 @@ export default function DoctorTrade() {
                     </p>
                   </div>
                 ))}
-                {!viewData?.wallet_tokens?.length && <p className="text-sm text-muted-foreground">No SPL tokens detected in connected wallet.</p>}
+                {!viewData?.wallet_tokens?.length && <p className="text-sm text-muted-foreground">No SPL tokens detected for this wallet yet.</p>}
               </div>
             </Card>
 
