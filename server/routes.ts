@@ -389,6 +389,17 @@ export async function registerRoutes(
         await storage.createScannedToken(tokenPayload as any);
       }
 
+      logStructured("info", "pump_listener.token_ingested", {
+        mintAddress,
+        symbol: tokenPayload.symbol,
+        source: String(req.body?.source || "pump_fun_listener"),
+        creatorWallet: String(req.body?.creator_wallet || "").trim() || null,
+        transactionSignature: String(req.body?.transaction_signature || "").trim() || null,
+        liquidityUsd: Number(tokenPayload.liquidity || 0),
+        marketCapUsd: Number(tokenPayload.marketCap || 0),
+        volumeUsd: Number(tokenPayload.volume24h || 0),
+      });
+
       return res.json({
         ok: true,
         mint_address: mintAddress,
