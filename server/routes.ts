@@ -796,6 +796,7 @@ export async function registerRoutes(
   const doctorStateFile = resolve(doctorStateDir, "doctortrade.runtime.json");
   const doctorRuntimeStateKey = "doctortrade.runtime.v1";
   const doctorRuntimeByUserStateKey = "doctortrade.runtime.by_user.v1";
+  const doctorPresetByUserStateKey = "doctortrade.preset.by_user.v1";
   const doctorWalletByUserStateKey = "doctortrade.wallets.by_user.v1";
 
   const encodeBase64 = (value: Uint8Array) => Buffer.from(value).toString("base64");
@@ -931,6 +932,30 @@ export async function registerRoutes(
 
   const setStoredDoctorRuntimesByUser = async (value: Record<string, any>) => {
     await storage.setAppState(doctorRuntimeByUserStateKey, value);
+  };
+
+  const getStoredDoctorPresetsByUser = async (): Promise<Record<string, string>> => {
+    try {
+      const state = await storage.getAppState<Record<string, any>>(doctorPresetByUserStateKey);
+      if (!state || typeof state !== "object" || Array.isArray(state)) {
+        return {};
+      }
+
+      const normalized: Record<string, string> = {};
+      for (const [userId, preset] of Object.entries(state)) {
+        const normalizedUserId = String(userId || "").trim();
+        if (!normalizedUserId) continue;
+        const normalizedPreset = normalizeDoctorSnipePreset(preset);
+        normalized[normalizedUserId] = normalizedPreset;
+      }
+      return normalized;
+    } catch {
+      return {};
+    }
+  };
+
+  const setStoredDoctorPresetsByUser = async (value: Record<string, string>) => {
+    await storage.setAppState(doctorPresetByUserStateKey, value);
   };
 
   const isDoctorAutoTradingEnabledForUser = async (userId: string) => {
@@ -1348,9 +1373,12 @@ export async function registerRoutes(
       await mkdir(doctorStateDir, { recursive: true });
       if (targetUserId) {
         const runtimeByUser = await getStoredDoctorRuntimesByUser();
+        const presetByUser = await getStoredDoctorPresetsByUser();
+        presetByUser[targetUserId] = normalizeDoctorSnipePreset((snapshot?.controls as any)?.snipe_preset);
         runtimeByUser[targetUserId] = snapshot;
         await Promise.allSettled([
           storage.setAppState(doctorRuntimeByUserStateKey, runtimeByUser),
+          storage.setAppState(doctorPresetByUserStateKey, presetByUser),
           writeFile(doctorStateFile, JSON.stringify(snapshot, null, 2), "utf8"),
           storage.setAppState(doctorRuntimeStateKey, snapshot),
         ]);
@@ -1549,6 +1577,16 @@ export async function registerRoutes(
           (doctorRuntime as any)[key] = currentRuntimeSnapshot[key];
         });
       }
+    }
+
+    // Enforce persisted per-user preset so runtime fallbacks cannot reset to default.
+    try {
+      const presetsByUser = await getStoredDoctorPresetsByUser();
+      const persistedPreset = presetsByUser[normalizedUserId];
+      if (persistedPreset) {
+        (doctorRuntime.controls as any).snipe_preset = normalizeDoctorSnipePreset(persistedPreset);
+      }
+    } catch {
     }
 
     doctorRuntime.ownerUserId = normalizedUserId;
@@ -5222,6 +5260,12 @@ export async function registerRoutes(
     }
     if (typeof payload.snipe_preset === "string") {
       (doctorRuntime.controls as any).snipe_preset = normalizeDoctorSnipePreset(payload.snipe_preset);
+      try {
+        const presetsByUser = await getStoredDoctorPresetsByUser();
+        presetsByUser[userId] = normalizeDoctorSnipePreset(payload.snipe_preset);
+        await setStoredDoctorPresetsByUser(presetsByUser);
+      } catch {
+      }
     }
     if (typeof payload.kill_switch === "boolean") {
       doctorRuntime.killSwitch = payload.kill_switch;
