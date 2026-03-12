@@ -269,10 +269,11 @@ export function useDoctorTicker(limit = 24) {
     queryKey: ["doctortrade", "ticker", limit],
     queryFn: () => apiGet<{ ok: boolean; items: DoctorTickerItem[]; as_of: string }>(`/api/doctor/ticker?limit=${limit}`),
     enabled: true,
-    staleTime: 3_000,
-    refetchInterval: 5_000,
+    staleTime: 1_000,
+    refetchInterval: 2_000,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
     retry: 1,
   });
 }

@@ -991,15 +991,32 @@ export async function registerRoutes(
   const getDoctorWalletSnapshotForUser = async (userId: string) => {
     const wallets = await getStoredDoctorWalletsByUser();
     const userWallet = wallets[userId] as Record<string, any> | undefined;
-    const hasEncryptedPrivateKey = Boolean(String(userWallet?.livePrivateKey || "").trim());
+    const encryptedPrivateKey = String(userWallet?.livePrivateKey || "").trim();
+    const decryptedPrivateKey = decryptDoctorPrivateKey(encryptedPrivateKey);
+    const hasPrivateKey = Boolean(String(decryptedPrivateKey || "").trim());
+    const configuredAddress = String(userWallet?.address || "").trim();
+    const derivedAddress = hasPrivateKey
+      ? deriveWalletPublicKeyFromPrivateKey(decryptedPrivateKey)
+      : "";
+    const resolvedAddress = configuredAddress || derivedAddress;
     const autoHydrateBlocked = Boolean(userWallet?.autoHydrateBlocked);
+
+    if (userWallet && resolvedAddress && resolvedAddress !== configuredAddress) {
+      wallets[userId] = {
+        ...userWallet,
+        address: resolvedAddress,
+        updatedAt: nowIso(),
+      };
+      await setStoredDoctorWalletsByUser(wallets);
+    }
+
     return {
-      address: String(userWallet?.address || "").trim(),
+      address: resolvedAddress,
       balanceSol: Math.max(0, Number(userWallet?.balanceSol || 0)),
       separateWalletEnforced: userWallet?.separateWalletEnforced !== false,
-      privateKeyConfigured: hasEncryptedPrivateKey,
+      privateKeyConfigured: hasPrivateKey,
       autoHydrateBlocked,
-      connected: Boolean(String(userWallet?.address || "").trim()) && hasEncryptedPrivateKey,
+      connected: Boolean(resolvedAddress) && hasPrivateKey,
     };
   };
 
@@ -1101,8 +1118,22 @@ export async function registerRoutes(
     const wallets = await getStoredDoctorWalletsByUser();
     const ownerWallet = ownerUserId ? (wallets[ownerUserId] as Record<string, any> | undefined) : undefined;
     const resolvedWallet = ownerWallet;
-    const userPublicKey = String(resolvedWallet?.address || "").trim();
-    const userPrivateKey = decryptDoctorPrivateKey(String(resolvedWallet?.livePrivateKey || "").trim());
+    const encryptedPrivateKey = String(resolvedWallet?.livePrivateKey || "").trim();
+    const userPrivateKey = decryptDoctorPrivateKey(encryptedPrivateKey);
+    const configuredPublicKey = String(resolvedWallet?.address || "").trim();
+    const derivedPublicKey = userPrivateKey
+      ? deriveWalletPublicKeyFromPrivateKey(userPrivateKey)
+      : "";
+    const userPublicKey = configuredPublicKey || derivedPublicKey;
+
+    if (ownerUserId && resolvedWallet && userPublicKey && userPublicKey !== configuredPublicKey) {
+      wallets[ownerUserId] = {
+        ...resolvedWallet,
+        address: userPublicKey,
+        updatedAt: nowIso(),
+      };
+      await setStoredDoctorWalletsByUser(wallets);
+    }
 
     if (userPublicKey && userPrivateKey) {
       return {
@@ -1725,7 +1756,7 @@ export async function registerRoutes(
     if (blacklistHit) return;
 
     const nowMs = Date.now();
-    const dedupeWindowMs = Math.max(30_000, Number(process.env.DOCTOR_TICKER_DEDUPE_MS || 120_000));
+    const dedupeWindowMs = Math.max(5_000, Number(process.env.DOCTOR_TICKER_DEDUPE_MS || 20_000));
     const lastSeenAt = Number(doctorTickerSeenByMint.get(mint) || 0);
     if (nowMs - lastSeenAt < dedupeWindowMs) return;
 
@@ -5306,8 +5337,11 @@ export async function registerRoutes(
           address: runtimeWalletAddress || String(walletSnapshotBase.address || "").trim(),
           balanceSol: runtimeWalletBalanceSol,
           separateWalletEnforced: doctorRuntime.wallet.separateWalletEnforced !== false,
+          privateKeyConfigured: Boolean(walletSnapshotBase.privateKeyConfigured)
+            || Boolean(String(liveCredentials.walletPrivateKey || "").trim()),
           connected: Boolean(runtimeWalletAddress || String(walletSnapshotBase.address || "").trim())
-            && Boolean(walletSnapshotBase.privateKeyConfigured),
+            && (Boolean(walletSnapshotBase.privateKeyConfigured)
+              || Boolean(String(liveCredentials.walletPrivateKey || "").trim())),
         }
       : walletSnapshotBase;
 
@@ -5593,6 +5627,10 @@ export async function registerRoutes(
     }
 
     const limit = Math.max(5, Math.min(60, Math.trunc(Number(req.query?.limit || 24))));
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+
     return res.json({
       ok: true,
       items: doctorTickerQueue.slice(0, limit),

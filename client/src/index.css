@@ -297,7 +297,7 @@
 
   .live-ticker-track {
     @apply flex items-center gap-3 w-max;
-    animation: ticker-scroll 55s linear infinite;
+    animation: ticker-scroll var(--live-ticker-speed, 32s) linear infinite;
   }
 
   .live-ticker-track:hover {
