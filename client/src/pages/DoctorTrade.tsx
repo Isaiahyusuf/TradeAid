@@ -26,6 +26,13 @@ function fmtTs(value?: string) {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function fmtSol(value: number) {
+  const numeric = Number.isFinite(value) ? value : 0;
+  if (numeric >= 1) return `${numeric.toFixed(4)} SOL`;
+  if (numeric >= 0.001) return `${numeric.toFixed(6)} SOL`;
+  return `${numeric.toFixed(8)} SOL`;
+}
+
 const DOCTOR_SETTINGS_LOCAL_KEY_PREFIX = "doctortrade.settings.local.v2";
 const DOCTOR_SETTINGS_LOCAL_KEY_LEGACY = "doctortrade.settings.local.v1";
 type SnipePreset = "conservative" | "balanced" | "aggressive" | "insider" | "custom";
@@ -299,6 +306,8 @@ export default function DoctorTrade() {
             ? "Scanning market (no current targets)"
             : "Auto-snipe running";
   const lastSyncLabel = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : "-";
+  const walletSolBalance = Number(viewData?.wallet?.balance_sol || 0);
+  const walletPrivateKeyConfigured = Boolean(viewData?.wallet?.private_key_configured);
 
   const saveRiskRules = () => {
     const scanIntervalSeconds = Math.max(5, Math.trunc(Number.parseFloat(intervalInput) || 20));
@@ -674,6 +683,7 @@ export default function DoctorTrade() {
           <div className="mt-3 text-xs text-muted-foreground flex items-center gap-3">
             <span>{isLoading ? "Loading DoctorTrade..." : isFetching ? "Updating live data..." : "Live sync active"}</span>
             <span>Last sync: {lastSyncLabel}</span>
+            <span>Wallet SOL: {fmtSol(walletSolBalance)}</span>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
             DoctorTrade runs on the server. Once started, it continues scanning and executing even when your browser is closed.
@@ -825,20 +835,22 @@ export default function DoctorTrade() {
               </div>
               <div>
                 <p className="text-muted-foreground">SOL Balance</p>
-                <p className="font-medium">{Number(viewData?.wallet?.balance_sol || 0).toFixed(4)} SOL</p>
+                <p className="font-medium">{fmtSol(walletSolBalance)}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Connection</p>
-                <p className="font-medium">
-                  {viewData?.wallet?.connection_status === "connected"
-                    ? "Connected"
-                    : "Disconnected"}
-                </p>
+                <p className="font-medium">{walletConnected ? "Connected" : "Disconnected"}</p>
               </div>
             </div>
             <div className="text-xs text-muted-foreground">
-              Private key status: {viewData?.wallet?.private_key_configured ? "Configured (persisted)" : "Not configured"}
+              Private key status: {walletPrivateKeyConfigured ? (walletConnected ? "Configured and connected" : "Configured (pending reconnect)") : "Not configured"}
             </div>
+            {walletConnected && (
+              <div className="flex items-center justify-between rounded-md border border-green-500/30 bg-green-500/10 px-3 py-2 text-xs">
+                <span className="font-medium text-green-300">Wallet is connected and ready for live execution.</span>
+                <Badge variant="outline" className="border-green-500/40 text-green-300">CONNECTED</Badge>
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
@@ -853,14 +865,16 @@ export default function DoctorTrade() {
               >
                 <Copy className="w-4 h-4 mr-1" /> Copy Address
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleDisconnectWallet}
-                disabled={disconnectWalletMutation.isPending || !walletConnected}
-              >
-                Disconnect Wallet
-              </Button>
+              {walletConnected ? (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={handleDisconnectWallet}
+                  disabled={disconnectWalletMutation.isPending}
+                >
+                  Disconnect Wallet
+                </Button>
+              ) : null}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2 items-end">
               <div>
@@ -870,13 +884,14 @@ export default function DoctorTrade() {
                   value={privateKeyInput}
                   onChange={(event) => setPrivateKeyInput(event.target.value)}
                   placeholder="Paste Solana private key"
+                  disabled={walletConnected}
                 />
               </div>
               <Button
                 onClick={handleManualPrivateKeyConnect}
-                disabled={connectWalletMutation.isPending}
+                disabled={connectWalletMutation.isPending || walletConnected}
               >
-                Connect Wallet
+                {walletConnected ? "Wallet Connected" : "Connect Wallet"}
               </Button>
             </div>
             <p className="text-[11px] text-muted-foreground">
@@ -1166,7 +1181,7 @@ export default function DoctorTrade() {
                 <div className="flex justify-between"><span className="text-muted-foreground">Execution Mode</span><span>LIVE ONLY</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Live Capable</span><span>{viewData?.execution?.live_capable ? "Yes" : "No"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Network</span><span>Solana</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Wallet SOL</span><span>{(viewData?.wallet?.balance_sol || 0).toFixed(4)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Wallet SOL</span><span>{fmtSol(walletSolBalance)}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Trades Today</span><span>{viewData?.trade_controls?.trades_today || 0}/{viewData?.trade_controls?.max_trades_per_day || 12}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Buy Amount</span><span>{(viewData?.trade_controls?.buy_amount_sol || 0.1).toFixed(3)} SOL</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Stop Loss</span><span>{(viewData?.trade_controls?.stop_loss_pct || 6).toFixed(1)}%</span></div>
