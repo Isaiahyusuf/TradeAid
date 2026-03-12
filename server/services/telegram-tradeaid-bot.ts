@@ -1384,7 +1384,7 @@ class TradeAidTelegramBot {
   }
 
   isWebhookAuthorized(req: Request) {
-    if (!this.webhookSecret) return true;
+    if (!this.webhookSecret) return false;
     const token = String(req.headers["x-telegram-bot-api-secret-token"] || "").trim();
     return token.length > 0 && token === this.webhookSecret;
   }

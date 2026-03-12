@@ -81,6 +81,7 @@ export const tokenSignals = pgTable("token_signals", {
 // === WhaleWatch ===
 export const trackedWallets = pgTable("tracked_wallets", {
   id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
   address: text("address").notNull().unique(),
   label: text("label").notNull(),
   winRate: integer("win_rate").default(0), // Percentage
@@ -89,6 +90,7 @@ export const trackedWallets = pgTable("tracked_wallets", {
 
 export const walletAlerts = pgTable("wallet_alerts", {
   id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
   walletId: integer("wallet_id").references(() => trackedWallets.id),
   tokenSymbol: text("token_symbol").notNull(),
   type: text("type").notNull(), // 'BUY' or 'SELL'

@@ -1,5 +1,6 @@
 import { normalizeChain } from "../utils/chain";
 import type { Express, Request, Response } from "express";
+import { isAuthenticated } from "../replit_integrations/auth";
 import { db } from "../db";
 import { scannedTokens, tokenSignals, userAlerts, watchlists } from "@shared/schema";
 import { eq, desc, and, gte, sql } from "drizzle-orm";
@@ -33,6 +34,8 @@ const startScannerSchema = z.object({
 });
 
 export function registerScannerRoutes(app: Express): void {
+  app.use(["/api/tokens", "/api/signals", "/api/scanner", "/api/search", "/api/alerts", "/api/stats"], isAuthenticated);
+
   app.get("/api/tokens", async (req: Request, res: Response) => {
     try {
       const { limit = "50", chain = "all" } = req.query;
@@ -305,8 +308,10 @@ export function registerScannerRoutes(app: Express): void {
 
   app.get("/api/alerts", async (req: Request, res: Response) => {
     try {
+      const userId = String((req as any)?.user?.claims?.sub || "").trim();
       const alerts = await db.select()
         .from(userAlerts)
+        .where(eq(userAlerts.userId, userId))
         .orderBy(desc(userAlerts.createdAt))
         .limit(50);
       res.json(alerts);
@@ -319,9 +324,10 @@ export function registerScannerRoutes(app: Express): void {
   app.patch("/api/alerts/:id/read", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
+      const userId = String((req as any)?.user?.claims?.sub || "").trim();
       await db.update(userAlerts)
         .set({ isRead: true })
-        .where(eq(userAlerts.id, id));
+        .where(and(eq(userAlerts.id, id), eq(userAlerts.userId, userId)));
       res.json({ success: true });
     } catch (error) {
       console.error("Error marking alert as read:", error);

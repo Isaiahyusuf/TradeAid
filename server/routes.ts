@@ -825,7 +825,6 @@ export async function registerRoutes(
 
   const doctorStateDir = resolve(process.cwd(), "server", "state");
   const doctorStateFile = resolve(doctorStateDir, "doctortrade.runtime.json");
-  const doctorRuntimeStateKey = "doctortrade.runtime.v1";
   const doctorRuntimeByUserStateKey = "doctortrade.runtime.by_user.v1";
   const doctorPresetByUserStateKey = "doctortrade.preset.by_user.v1";
   const doctorWalletByUserStateKey = "doctortrade.wallets.by_user.v1";
@@ -1482,12 +1481,10 @@ export async function registerRoutes(
           storage.setAppState(doctorRuntimeByUserStateKey, runtimeByUser),
           storage.setAppState(doctorPresetByUserStateKey, presetByUser),
           writeFile(doctorStateFile, JSON.stringify(snapshot, null, 2), "utf8"),
-          storage.setAppState(doctorRuntimeStateKey, snapshot),
         ]);
       } else {
         await Promise.allSettled([
           writeFile(doctorStateFile, JSON.stringify(snapshot, null, 2), "utf8"),
-          storage.setAppState(doctorRuntimeStateKey, snapshot),
         ]);
       }
     } catch {
@@ -1598,25 +1595,8 @@ export async function registerRoutes(
 
   const loadDoctorRuntime = async () => {
     try {
-      let loaded: Record<string, any> | null = null;
-
-      try {
-        const state = await storage.getAppState<Record<string, any>>(doctorRuntimeStateKey);
-        if (state && typeof state === "object") {
-          loaded = state;
-        }
-      } catch {
-      }
-
-      if (!loaded) {
-        const text = await readFile(doctorStateFile, "utf8");
-        loaded = JSON.parse(text) as Record<string, any>;
-      }
-
-      const normalizedOnLoad = applyDoctorRuntimeSnapshot(loaded);
-      if (normalizedOnLoad) {
-        await persistDoctorRuntime();
-      }
+      // Runtime state is isolated per user and loaded in loadDoctorRuntimeForUser.
+      return;
     } catch {
     }
   };
@@ -1653,28 +1633,9 @@ export async function registerRoutes(
       hydrateDoctorRuntimeWithDefaults();
       applyDoctorRuntimeSnapshot(loaded);
     } else {
-      let loadedLegacy = false;
-      try {
-        const legacy = await storage.getAppState<Record<string, any>>(doctorRuntimeStateKey);
-        const legacyOwnerUserId = String((legacy as any)?.ownerUserId || "").trim();
-        const canMigrateLegacyToUser = Boolean(
-          legacy
-          && typeof legacy === "object"
-          && legacyOwnerUserId
-          && legacyOwnerUserId === normalizedUserId,
-        );
-        if (canMigrateLegacyToUser && legacy) {
-          hydrateDoctorRuntimeWithDefaults();
-          applyDoctorRuntimeSnapshot(legacy);
-          loadedLegacy = true;
-          await persistDoctorRuntime(normalizedUserId);
-        }
-      } catch {
-      }
-
-      if (!loadedLegacy && !isCurrentRuntimeForSameUser) {
+      if (!isCurrentRuntimeForSameUser) {
         hydrateDoctorRuntimeWithDefaults();
-      } else if (!loadedLegacy && isCurrentRuntimeForSameUser) {
+      } else if (isCurrentRuntimeForSameUser) {
         Object.keys(doctorRuntime).forEach((key) => {
           (doctorRuntime as any)[key] = currentRuntimeSnapshot[key];
         });
@@ -5761,7 +5722,7 @@ export async function registerRoutes(
     });
   });
 
-  app.get("/api/doctor/health", async (_req, res) => {
+  app.get("/api/doctor/health", isAuthenticated, async (_req, res) => {
     return res.json({
       ok: true,
       service: "doctortrade-local",
@@ -6400,17 +6361,7 @@ export async function registerRoutes(
   const startDoctorCyclesForEnabledUsers = async () => {
     try {
       const runtimeByUser = await getStoredDoctorRuntimesByUser();
-      let userIds = Object.keys(runtimeByUser || {}).filter(Boolean);
-
-      if (userIds.length === 0) {
-        const legacy = await storage.getAppState<Record<string, any>>(doctorRuntimeStateKey);
-        const legacyOwner = String(legacy?.ownerUserId || "").trim();
-        if (legacy && typeof legacy === "object" && legacyOwner) {
-          runtimeByUser[legacyOwner] = legacy;
-          await setStoredDoctorRuntimesByUser(runtimeByUser);
-          userIds = [legacyOwner];
-        }
-      }
+      const userIds = Object.keys(runtimeByUser || {}).filter(Boolean);
 
       for (const userId of userIds) {
         const runtime = runtimeByUser[userId] as Record<string, any> | undefined;
@@ -6462,6 +6413,23 @@ export async function registerRoutes(
 
   const assistantStateKey = "assistant.runtime.v1";
   let assistantCurrentUserId = "";
+  let assistantRuntimeRequestQueue: Promise<void> = Promise.resolve();
+
+  const acquireAssistantRuntimeLock = async () => {
+    const previous = assistantRuntimeRequestQueue;
+    let release: (() => void) | null = null;
+    assistantRuntimeRequestQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      release?.();
+    };
+  };
 
   const getAssistantStateKeyForUser = (userId: string) => `${assistantStateKey}:${String(userId || "").trim()}`;
 
@@ -6657,14 +6625,26 @@ export async function registerRoutes(
   };
 
   app.use("/api/ai", isAuthenticated, async (req: any, res, next) => {
+    const releaseAssistantRuntimeLock = await acquireAssistantRuntimeLock();
+    let lockReleased = false;
+    const releaseLock = () => {
+      if (lockReleased) return;
+      lockReleased = true;
+      releaseAssistantRuntimeLock();
+    };
+    res.on("finish", releaseLock);
+    res.on("close", releaseLock);
+
     try {
       const userId = String(req?.user?.claims?.sub || "").trim();
       if (!userId) {
+        releaseLock();
         return res.status(401).json({ message: "Unauthorized" });
       }
       await loadAssistantRuntime(userId);
       return next();
     } catch {
+      releaseLock();
       return res.status(500).json({ message: "Failed to initialize assistant context" });
     }
   });
@@ -8929,28 +8909,32 @@ export async function registerRoutes(
   });
 
   // === WhaleWatch ===
-  app.get(api.whalewatch.wallets.list.path, async (req, res) => {
-    const wallets = await storage.getTrackedWallets();
+  app.get(api.whalewatch.wallets.list.path, isAuthenticated, async (req: any, res) => {
+    const userId = String(req.user?.claims?.sub || "").trim();
+    const wallets = await storage.getTrackedWallets(userId);
     res.json(wallets);
   });
 
-  app.post(api.whalewatch.wallets.create.path, async (req, res) => {
+  app.post(api.whalewatch.wallets.create.path, isAuthenticated, async (req: any, res) => {
     try {
+      const userId = String(req.user?.claims?.sub || "").trim();
       const input = api.whalewatch.wallets.create.input.parse(req.body);
-      const wallet = await storage.createTrackedWallet(input);
+      const wallet = await storage.createTrackedWallet(userId, input);
       res.status(201).json(wallet);
     } catch (err) {
       res.status(400).json({ message: "Invalid request" });
     }
   });
 
-  app.delete(api.whalewatch.wallets.delete.path, async (req, res) => {
-    await storage.deleteTrackedWallet(Number(req.params.id));
+  app.delete(api.whalewatch.wallets.delete.path, isAuthenticated, async (req: any, res) => {
+    const userId = String(req.user?.claims?.sub || "").trim();
+    await storage.deleteTrackedWallet(userId, Number(req.params.id));
     res.status(204).send();
   });
 
-  app.get(api.whalewatch.alerts.list.path, async (req, res) => {
-    const alerts = await storage.getWalletAlerts();
+  app.get(api.whalewatch.alerts.list.path, isAuthenticated, async (req: any, res) => {
+    const userId = String(req.user?.claims?.sub || "").trim();
+    const alerts = await storage.getWalletAlerts(userId);
     res.json(alerts);
   });
 
@@ -9273,57 +9257,6 @@ export async function registerRoutes(
 }
 
 async function seedDatabase() {
-  try {
-    const wallets = await storage.getTrackedWallets();
-    if (wallets.length === 0) {
-      await storage.createTrackedWallet({
-        address: "HN7cABPNH...k8j2xZp",
-        label: "Smart Money Alpha",
-        winRate: 87,
-        totalProfit: "1,250 SOL"
-      });
-      await storage.createTrackedWallet({
-        address: "Ab9qPmL...xY3zKvM",
-        label: "Insider Whale",
-        winRate: 92,
-        totalProfit: "3,400 SOL"
-      });
-      await storage.createTrackedWallet({
-        address: "Fg4rTyU...nM8pQwE",
-        label: "Degen King",
-        winRate: 78,
-        totalProfit: "890 SOL"
-      });
-
-      const allWallets = await storage.getTrackedWallets();
-      if (allWallets.length > 0) {
-        await storage.createWalletAlert({
-          walletId: allWallets[0].id,
-          tokenSymbol: "$BONK",
-          type: "BUY",
-          amount: "150 SOL",
-          price: "0.0000123",
-        });
-        await storage.createWalletAlert({
-          walletId: allWallets[1].id,
-          tokenSymbol: "$WIF",
-          type: "BUY",
-          amount: "500 SOL",
-          price: "2.34",
-        });
-        await storage.createWalletAlert({
-          walletId: allWallets[0].id,
-          tokenSymbol: "$MOODENG",
-          type: "SELL",
-          amount: "80 SOL",
-          price: "0.00015",
-        });
-      }
-    }
-  } catch (error) {
-    console.warn("Skipping tracked wallet seed due to schema availability:", error instanceof Error ? error.message : error);
-  }
-
   try {
     const trends = await storage.getTrendingCoins();
     if (trends.length === 0) {

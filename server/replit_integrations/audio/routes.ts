@@ -1,15 +1,27 @@
 import express, { type Express, type Request, type Response } from "express";
 import { chatStorage } from "../chat/storage";
 import { getOpenAI, speechToText, ensureCompatibleFormat } from "./client";
+import { isAuthenticated } from "../auth";
 
 // Body parser with 50MB limit for audio payloads
 const audioBodyParser = express.json({ limit: "50mb" });
 
 export function registerAudioRoutes(app: Express): void {
+  const getUserIdOrReject = (req: Request, res: Response): string | null => {
+    const userId = String((req as any)?.user?.claims?.sub || "").trim();
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return null;
+    }
+    return userId;
+  };
+
   // Get all conversations
-  app.get("/api/conversations", async (req: Request, res: Response) => {
+  app.get("/api/conversations", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const conversations = await chatStorage.getAllConversations();
+      const userId = getUserIdOrReject(req, res);
+      if (!userId) return;
+      const conversations = await chatStorage.getAllConversations(userId);
       res.json(conversations);
     } catch (error) {
       console.error("Error fetching conversations:", error);
@@ -18,14 +30,16 @@ export function registerAudioRoutes(app: Express): void {
   });
 
   // Get single conversation with messages
-  app.get("/api/conversations/:id", async (req: Request, res: Response) => {
+  app.get("/api/conversations/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
+      const userId = getUserIdOrReject(req, res);
+      if (!userId) return;
       const id = parseInt(req.params.id);
-      const conversation = await chatStorage.getConversation(id);
+      const conversation = await chatStorage.getConversation(id, userId);
       if (!conversation) {
         return res.status(404).json({ error: "Conversation not found" });
       }
-      const messages = await chatStorage.getMessagesByConversation(id);
+      const messages = await chatStorage.getMessagesByConversation(id, userId);
       res.json({ ...conversation, messages });
     } catch (error) {
       console.error("Error fetching conversation:", error);
@@ -34,10 +48,12 @@ export function registerAudioRoutes(app: Express): void {
   });
 
   // Create new conversation
-  app.post("/api/conversations", async (req: Request, res: Response) => {
+  app.post("/api/conversations", isAuthenticated, async (req: Request, res: Response) => {
     try {
+      const userId = getUserIdOrReject(req, res);
+      if (!userId) return;
       const { title } = req.body;
-      const conversation = await chatStorage.createConversation(title || "New Chat");
+      const conversation = await chatStorage.createConversation(title || "New Chat", userId);
       res.status(201).json(conversation);
     } catch (error) {
       console.error("Error creating conversation:", error);
@@ -46,10 +62,12 @@ export function registerAudioRoutes(app: Express): void {
   });
 
   // Delete conversation
-  app.delete("/api/conversations/:id", async (req: Request, res: Response) => {
+  app.delete("/api/conversations/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
+      const userId = getUserIdOrReject(req, res);
+      if (!userId) return;
       const id = parseInt(req.params.id);
-      await chatStorage.deleteConversation(id);
+      await chatStorage.deleteConversation(id, userId);
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting conversation:", error);
@@ -60,8 +78,10 @@ export function registerAudioRoutes(app: Express): void {
   // Send voice message and get streaming audio response
   // Auto-detects audio format and converts WebM/MP4/OGG to WAV
   // Uses gpt-4o-mini-transcribe for STT, gpt-audio for voice response
-  app.post("/api/conversations/:id/messages", audioBodyParser, async (req: Request, res: Response) => {
+  app.post("/api/conversations/:id/messages", isAuthenticated, audioBodyParser, async (req: Request, res: Response) => {
     try {
+      const userId = getUserIdOrReject(req, res);
+      if (!userId) return;
       const conversationId = parseInt(req.params.id);
       const { audio, voice = "alloy" } = req.body;
 
@@ -77,10 +97,10 @@ export function registerAudioRoutes(app: Express): void {
       const userTranscript = await speechToText(audioBuffer, inputFormat);
 
       // 3. Save user message
-      await chatStorage.createMessage(conversationId, "user", userTranscript);
+      await chatStorage.createMessage(conversationId, "user", userTranscript, userId);
 
       // 4. Get conversation history
-      const existingMessages = await chatStorage.getMessagesByConversation(conversationId);
+      const existingMessages = await chatStorage.getMessagesByConversation(conversationId, userId);
       const chatHistory = existingMessages.map((m) => ({
         role: m.role as "user" | "assistant",
         content: m.content,
@@ -119,7 +139,7 @@ export function registerAudioRoutes(app: Express): void {
       }
 
       // 7. Save assistant message
-      await chatStorage.createMessage(conversationId, "assistant", assistantTranscript);
+      await chatStorage.createMessage(conversationId, "assistant", assistantTranscript, userId);
 
       res.write(`data: ${JSON.stringify({ type: "done", transcript: assistantTranscript })}\n\n`);
       res.end();

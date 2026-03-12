@@ -1,16 +1,43 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.doctor.doctor_controller import doctor_controller
+from app.doctor.doctor_controller import DoctorTradeController
 from app.models.models import User
 from app.services.assistant_trading_service import get_wallet_chain_credentials
 from app.services.auth_service import get_current_user
 
 router = APIRouter(prefix="/api/doctor", tags=["DoctorTrade"])
+
+_user_doctor_controllers: dict[str, DoctorTradeController] = {}
+_user_doctor_lock = asyncio.Lock()
+
+
+async def _get_user_doctor_controller(user: User) -> DoctorTradeController:
+    user_id = str(user.id)
+    async with _user_doctor_lock:
+        controller = _user_doctor_controllers.get(user_id)
+        if controller is None:
+            controller = DoctorTradeController()
+            controller.set_owner_user_id(user_id)
+            try:
+                creds = get_wallet_chain_credentials(user, "solana")
+                private_key = str(creds.get("private_key") or "").strip()
+                public_address = str(creds.get("address") or "").strip()
+                if private_key and public_address:
+                    controller.configure_wallet(private_key=private_key, public_address=public_address)
+                    if not controller.enabled and not controller.kill_switch:
+                        await controller.start()
+            except Exception:
+                pass
+            _user_doctor_controllers[user_id] = controller
+        else:
+            controller.set_owner_user_id(user_id)
+        return controller
 
 
 class DoctorControlRequest(BaseModel):
@@ -70,66 +97,73 @@ class DoctorDirectBuyRequest(BaseModel):
 
 @router.get("/status")
 async def doctor_status(user: User = Depends(get_current_user)) -> dict[str, Any]:
-    _ = user
-    return await doctor_controller.status()
+    controller = await _get_user_doctor_controller(user)
+    return await controller.status()
+
+
+@router.get("/pnl")
+async def doctor_pnl(user: User = Depends(get_current_user)) -> dict[str, Any]:
+    controller = await _get_user_doctor_controller(user)
+    return controller.pnl_summary()
 
 
 @router.post("/control")
 async def doctor_control(req: DoctorControlRequest, user: User = Depends(get_current_user)) -> dict[str, Any]:
-    _ = user
+    controller = await _get_user_doctor_controller(user)
     if req.enabled:
-        await doctor_controller.start()
+        await controller.start()
     else:
-        await doctor_controller.stop()
-    return await doctor_controller.status()
+        await controller.stop()
+    return await controller.status()
 
 
 @router.post("/config")
 async def doctor_config(req: DoctorConfigRequest, user: User = Depends(get_current_user)) -> dict[str, Any]:
-    _ = user
+    controller = await _get_user_doctor_controller(user)
     if req.scan_interval_seconds is not None:
-        doctor_controller.scan_interval_seconds = max(5, min(300, int(req.scan_interval_seconds)))
+        controller.scan_interval_seconds = max(5, min(300, int(req.scan_interval_seconds)))
     if req.kill_switch is not None:
-        doctor_controller.kill_switch = bool(req.kill_switch)
-        if doctor_controller.kill_switch:
-            doctor_controller.enabled = False
+        controller.kill_switch = bool(req.kill_switch)
+        if controller.kill_switch:
+            controller.enabled = False
     if req.buy_amount_sol is not None:
-        doctor_controller.buy_amount_sol = max(float(doctor_controller.min_buy_amount_sol), min(5000.0, float(req.buy_amount_sol)))
+        controller.buy_amount_sol = max(float(controller.min_buy_amount_sol), min(5000.0, float(req.buy_amount_sol)))
     if req.max_trades_per_day is not None:
-        doctor_controller.max_trades_per_day = max(1, min(2000, int(req.max_trades_per_day)))
+        controller.max_trades_per_day = max(1, min(2000, int(req.max_trades_per_day)))
     if req.take_profit_multiplier is not None:
-        doctor_controller.take_profit_multiplier = max(1.01, min(100.0, float(req.take_profit_multiplier)))
+        controller.take_profit_multiplier = max(1.01, min(100.0, float(req.take_profit_multiplier)))
     if req.min_profit_pct is not None:
-        doctor_controller.min_profit_pct = max(0.1, min(500.0, float(req.min_profit_pct)))
+        controller.min_profit_pct = max(0.1, min(500.0, float(req.min_profit_pct)))
     if req.stop_loss_pct is not None:
-        doctor_controller.stop_loss_pct = max(0.1, min(95.0, float(req.stop_loss_pct)))
+        controller.stop_loss_pct = max(0.1, min(95.0, float(req.stop_loss_pct)))
     if req.trailing_stop_pct is not None:
-        doctor_controller.trailing_stop_pct = max(0.1, min(95.0, float(req.trailing_stop_pct)))
+        controller.trailing_stop_pct = max(0.1, min(95.0, float(req.trailing_stop_pct)))
     if req.min_liquidity_usd is not None:
-        doctor_controller.min_liquidity_usd = max(1000.0, min(20000000.0, float(req.min_liquidity_usd)))
+        controller.min_liquidity_usd = max(1000.0, min(20000000.0, float(req.min_liquidity_usd)))
     if req.max_slippage_pct is not None:
-        doctor_controller.max_slippage_pct = max(0.1, min(50.0, float(req.max_slippage_pct)))
+        controller.max_slippage_pct = max(0.1, min(50.0, float(req.max_slippage_pct)))
     if req.max_spread_pct is not None:
-        doctor_controller.max_spread_pct = max(0.1, min(50.0, float(req.max_spread_pct)))
+        controller.max_spread_pct = max(0.1, min(50.0, float(req.max_spread_pct)))
     if req.daily_loss_limit_usd is not None:
-        doctor_controller.daily_loss_limit_usd = max(10.0, min(500000.0, float(req.daily_loss_limit_usd)))
+        controller.daily_loss_limit_usd = max(10.0, min(500000.0, float(req.daily_loss_limit_usd)))
     if req.max_consecutive_losses is not None:
-        doctor_controller.max_consecutive_losses = max(1, min(20, int(req.max_consecutive_losses)))
+        controller.max_consecutive_losses = max(1, min(20, int(req.max_consecutive_losses)))
     if req.strong_move_threshold_pct is not None:
-        doctor_controller.strong_move_threshold_pct = max(5.0, min(500.0, float(req.strong_move_threshold_pct)))
+        controller.strong_move_threshold_pct = max(5.0, min(500.0, float(req.strong_move_threshold_pct)))
     if req.max_hold_minutes is not None:
-        doctor_controller.max_hold_minutes = max(5, min(10080, int(req.max_hold_minutes)))
+        controller.max_hold_minutes = max(5, min(10080, int(req.max_hold_minutes)))
     if req.min_momentum_profit_pct is not None:
-        doctor_controller.min_momentum_profit_pct = max(0.0, min(100.0, float(req.min_momentum_profit_pct)))
+        controller.min_momentum_profit_pct = max(0.0, min(100.0, float(req.min_momentum_profit_pct)))
     if req.quality_min_volume_spike_pct is not None:
-        doctor_controller.quality_min_volume_spike_pct = max(0.0, min(500.0, float(req.quality_min_volume_spike_pct)))
+        controller.quality_min_volume_spike_pct = max(0.0, min(500.0, float(req.quality_min_volume_spike_pct)))
     if req.quality_max_top_holder_pct is not None:
-        doctor_controller.quality_max_top_holder_pct = max(1.0, min(95.0, float(req.quality_max_top_holder_pct)))
-    return await doctor_controller.status()
+        controller.quality_max_top_holder_pct = max(1.0, min(95.0, float(req.quality_max_top_holder_pct)))
+    return await controller.status()
 
 
 @router.post("/connect-wallet")
 async def doctor_connect_wallet(req: DoctorWalletConnectRequest, user: User = Depends(get_current_user)) -> dict[str, Any]:
+    controller = await _get_user_doctor_controller(user)
     private_key = str(req.private_key or "").strip()
     public_address = str(req.public_address or "").strip()
 
@@ -146,28 +180,30 @@ async def doctor_connect_wallet(req: DoctorWalletConnectRequest, user: User = De
     if not private_key or not public_address:
         raise HTTPException(status_code=400, detail="wallet_setup_required_open_wallet_tab")
 
-    doctor_controller.configure_wallet(private_key=private_key, public_address=public_address)
-    return await doctor_controller.status()
+    controller.configure_wallet(private_key=private_key, public_address=public_address)
+    if not controller.enabled and not controller.kill_switch:
+        await controller.start()
+    return await controller.status()
 
 
 @router.post("/run-once")
 async def doctor_run_once(user: User = Depends(get_current_user)) -> dict[str, Any]:
-    _ = user
-    if not doctor_controller.enabled:
-        await doctor_controller.start()
-    result = await doctor_controller.run_once()
-    status = await doctor_controller.status()
+    controller = await _get_user_doctor_controller(user)
+    if not controller.enabled:
+        await controller.start()
+    result = await controller.run_once()
+    status = await controller.status()
     return {"result": result, "status": status}
 
 
 @router.post("/direct-buy")
 async def doctor_direct_buy(req: DoctorDirectBuyRequest, user: User = Depends(get_current_user)) -> dict[str, Any]:
-    _ = user
-    result = await doctor_controller.execute_direct_buy(
+    controller = await _get_user_doctor_controller(user)
+    result = await controller.execute_direct_buy(
         contract_address=req.contract_address,
         chain=req.chain,
     )
     if not result.get("executed"):
         raise HTTPException(status_code=400, detail=str(result.get("reason") or "direct_buy_failed"))
-    status = await doctor_controller.status()
+    status = await controller.status()
     return {"result": result, "status": status}

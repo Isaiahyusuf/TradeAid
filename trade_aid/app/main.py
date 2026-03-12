@@ -152,7 +152,11 @@ async def debug_db():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await ws_manager.connect(websocket)
+    user_id = str(websocket.query_params.get("user_id") or "").strip()
+    if not user_id:
+        await websocket.close(code=1008)
+        return
+    await ws_manager.connect(websocket, user_id)
     try:
         while True:
             data = await websocket.receive_text()
@@ -165,7 +169,11 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.websocket("/ws/alerts")
 async def alerts_websocket(websocket: WebSocket):
-    await ws_manager.connect(websocket)
+    user_id = str(websocket.query_params.get("user_id") or "").strip()
+    if not user_id:
+        await websocket.close(code=1008)
+        return
+    await ws_manager.connect(websocket, user_id)
     try:
         await websocket.send_json({"type": "connected", "channel": "alerts"})
         while True:

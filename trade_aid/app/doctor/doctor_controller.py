@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.config import get_settings
@@ -60,6 +60,7 @@ class DoctorTradeController:
         self.self_evolution: dict[str, Any] = {"cycles": 0, "last_updated_at": None}
         self._last_balance_sol: float = 0.0
         self._last_balance_checked_ts: float = 0.0
+        self.owner_user_id: str | None = None
 
         self.safety_systems = DoctorSafetySystems(
             api_error_threshold=int(getattr(self.settings, "DOCTOR_API_ERROR_PAUSE_THRESHOLD", 3) or 3),
@@ -84,6 +85,22 @@ class DoctorTradeController:
     def configure_wallet(self, *, private_key: str, public_address: str) -> None:
         self.wallet.private_key = str(private_key or "").strip()
         self.wallet.public_address = str(public_address or "").strip()
+
+    def set_owner_user_id(self, user_id: str | None) -> None:
+        self.owner_user_id = str(user_id or "").strip() or None
+
+    @staticmethod
+    def _parse_iso_datetime(value: Any) -> datetime | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if dt.tzinfo is not None:
+                return dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
+        except Exception:
+            return None
 
     def _roll_trade_day(self) -> None:
         today = datetime.utcnow().date().isoformat()
@@ -262,6 +279,9 @@ class DoctorTradeController:
         return exits
 
     async def _log_event(self, event_type: str, severity: str, message: str, *, contract_address: str | None = None, extra: dict[str, Any] | None = None) -> None:
+        meta = dict(extra or {})
+        if self.owner_user_id and not meta.get("owner_user_id"):
+            meta["owner_user_id"] = self.owner_user_id
         async with doctor_db_session() as db:
             db.add(
                 DoctorEventLog(
@@ -270,11 +290,14 @@ class DoctorTradeController:
                     message=message,
                     contract_address=contract_address,
                     strategy_mode=self.strategy_mode,
-                    extra_data=extra or {},
+                    extra_data=meta,
                 )
             )
 
     async def _log_trade(self, row: dict[str, Any]) -> None:
+        payload = dict(row)
+        if self.owner_user_id and not payload.get("owner_user_id"):
+            payload["owner_user_id"] = self.owner_user_id
         async with doctor_db_session() as db:
             db.add(
                 DoctorTradeLog(
@@ -293,7 +316,7 @@ class DoctorTradeController:
                     pnl_usd=float(row.get("pnl_usd") or 0.0),
                     reason=row.get("reason"),
                     tx_signature=row.get("signature"),
-                    extra_data=row,
+                    extra_data=payload,
                 )
             )
 
@@ -308,9 +331,93 @@ class DoctorTradeController:
                     daily_pnl_usd=float(self.risk_state.daily_realized_pnl_usd or 0.0),
                     high_watermark_usd=float(self.high_watermark_usd),
                     degraded=bool(degraded),
-                    tuning_suggestion=self.last_tuning_suggestion,
+                    tuning_suggestion=(
+                        f"[{self.owner_user_id}] {self.last_tuning_suggestion}"
+                        if self.owner_user_id and self.last_tuning_suggestion
+                        else self.last_tuning_suggestion
+                    ),
                 )
             )
+
+    def pnl_summary(self) -> dict[str, Any]:
+        now = datetime.utcnow()
+        closed_rows: list[dict[str, Any]] = []
+        buy_rows: list[dict[str, Any]] = []
+        for row in self.trade_log:
+            if str(row.get("status") or "") != "executed":
+                continue
+            action = str(row.get("action") or "").upper()
+            if action == "BUY":
+                buy_rows.append(row)
+            if action in {"SELL", "SELL_PARTIAL"}:
+                closed_rows.append(row)
+
+        realized_pnl_usd = float(sum(float(row.get("pnl_usd") or 0.0) for row in closed_rows))
+        wins = [row for row in closed_rows if float(row.get("pnl_usd") or 0.0) > 0]
+        losses = [row for row in closed_rows if float(row.get("pnl_usd") or 0.0) < 0]
+        win_rate = (len(wins) / len(closed_rows) * 100.0) if closed_rows else 0.0
+
+        unrealized_pnl_usd = 0.0
+        for pos in self.positions:
+            entry = float(pos.get("entry_price") or 0.0)
+            current = float(pos.get("current_price") or 0.0)
+            notional = float(pos.get("notional_usd") or 0.0)
+            if entry > 0 and current > 0 and notional > 0:
+                unrealized_pnl_usd += ((current - entry) / entry) * notional
+
+        def summarize_window(hours: int) -> dict[str, Any]:
+            threshold = now - timedelta(hours=hours)
+            rows = [
+                row
+                for row in closed_rows
+                if (self._parse_iso_datetime(row.get("timestamp")) or datetime.min) >= threshold
+            ]
+            window_wins = len([row for row in rows if float(row.get("pnl_usd") or 0.0) > 0])
+            total = len(rows)
+            avg = (sum(float(row.get("pnl_usd") or 0.0) for row in rows) / total) if total else 0.0
+            return {
+                "trades": total,
+                "win_rate_pct": round((window_wins / total * 100.0), 2) if total else 0.0,
+                "avg_pnl_usd": round(float(avg), 4),
+            }
+
+        wallet_connected = bool(str(self.wallet.public_address or "").strip() and str(self.wallet.private_key or "").strip())
+        blockers: list[str] = []
+        if not wallet_connected:
+            blockers.append("wallet_not_connected")
+        if self.kill_switch:
+            blockers.append("kill_switch_enabled")
+        if bool(self.risk_state.paused):
+            blockers.append(str(self.risk_state.pause_reason or "risk_paused"))
+        if not self.enabled:
+            blockers.append("doctortrade_not_enabled")
+
+        return {
+            "owner_user_id": self.owner_user_id,
+            "realized_pnl_usd": round(realized_pnl_usd, 4),
+            "unrealized_pnl_usd": round(float(unrealized_pnl_usd), 4),
+            "net_pnl_usd": round(realized_pnl_usd + float(unrealized_pnl_usd), 4),
+            "total_buys": len(buy_rows),
+            "total_closed": len(closed_rows),
+            "wins": len(wins),
+            "losses": len(losses),
+            "win_rate_pct": round(win_rate, 2),
+            "open_positions": len(self.positions),
+            "rolling": {
+                "24h": summarize_window(24),
+                "72h": summarize_window(72),
+                "7d": summarize_window(24 * 7),
+                "30d": summarize_window(24 * 30),
+            },
+            "sniping": {
+                "wallet_connected": wallet_connected,
+                "enabled": bool(self.enabled),
+                "kill_switch": bool(self.kill_switch),
+                "risk_paused": bool(self.risk_state.paused),
+                "can_snipe_now": len(blockers) == 0,
+                "blockers": blockers,
+            },
+        }
 
     async def start(self) -> None:
         if self.loop_task and not self.loop_task.done():
@@ -796,6 +903,7 @@ class DoctorTradeController:
                 balance_stale = False
 
         return {
+            "owner_user_id": self.owner_user_id,
             "enabled": self.enabled,
             "kill_switch": self.kill_switch,
             "scan_interval_seconds": int(self.scan_interval_seconds),
@@ -820,6 +928,25 @@ class DoctorTradeController:
                 "separate_wallet_enforced": True,
                 "balance_stale": bool(balance_stale),
                 "last_balance_checked_ts": float(self._last_balance_checked_ts or 0.0),
+            },
+            "sniping_readiness": {
+                "can_snipe_now": bool(
+                    str(self.wallet.public_address or "").strip()
+                    and str(self.wallet.private_key or "").strip()
+                    and not self.kill_switch
+                    and not bool(self.risk_state.paused)
+                    and bool(self.enabled)
+                ),
+                "blockers": [
+                    reason
+                    for reason in [
+                        None if str(self.wallet.public_address or "").strip() and str(self.wallet.private_key or "").strip() else "wallet_not_connected",
+                        "kill_switch_enabled" if self.kill_switch else None,
+                        str(self.risk_state.pause_reason or "risk_paused") if bool(self.risk_state.paused) else None,
+                        None if self.enabled else "doctortrade_not_enabled",
+                    ]
+                    if reason
+                ],
             },
             "trade_controls": {
                 "max_trades_per_day": int(self.max_trades_per_day),

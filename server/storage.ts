@@ -14,11 +14,11 @@ export interface IStorage {
   getScannedTokenByAddress(address: string): Promise<ScannedToken | undefined>;
 
   // WhaleWatch
-  createTrackedWallet(wallet: InsertTrackedWallet): Promise<TrackedWallet>;
-  getTrackedWallets(): Promise<TrackedWallet[]>;
-  deleteTrackedWallet(id: number): Promise<void>;
-  createWalletAlert(alert: InsertWalletAlert): Promise<WalletAlert>;
-  getWalletAlerts(): Promise<(WalletAlert & { walletLabel: string })[]>;
+  createTrackedWallet(userId: string, wallet: Omit<InsertTrackedWallet, "userId">): Promise<TrackedWallet>;
+  getTrackedWallets(userId: string): Promise<TrackedWallet[]>;
+  deleteTrackedWallet(userId: string, id: number): Promise<void>;
+  createWalletAlert(userId: string, alert: Omit<InsertWalletAlert, "userId">): Promise<WalletAlert>;
+  getWalletAlerts(userId: string): Promise<(WalletAlert & { walletLabel: string })[]>;
 
   // MemeTrend
   getTrendingCoins(): Promise<TrendingCoin[]>;
@@ -45,6 +45,7 @@ export interface IStorage {
 
 export class DatabaseStorage implements IStorage {
   private appStateTableReady: Promise<void> | null = null;
+  private whaleWatchTenantColumnsReady: Promise<void> | null = null;
 
   private async ensureAppStateTable(): Promise<void> {
     if (!this.appStateTableReady) {
@@ -57,6 +58,18 @@ export class DatabaseStorage implements IStorage {
       `).then(() => undefined);
     }
     await this.appStateTableReady;
+  }
+
+  private async ensureWhaleWatchTenantColumns(): Promise<void> {
+    if (!this.whaleWatchTenantColumnsReady) {
+      this.whaleWatchTenantColumnsReady = (async () => {
+        await db.execute(sql`ALTER TABLE tracked_wallets ADD COLUMN IF NOT EXISTS user_id TEXT`);
+        await db.execute(sql`ALTER TABLE wallet_alerts ADD COLUMN IF NOT EXISTS user_id TEXT`);
+        await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_tracked_wallets_user_id ON tracked_wallets(user_id)`);
+        await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_wallet_alerts_user_id ON wallet_alerts(user_id)`);
+      })();
+    }
+    await this.whaleWatchTenantColumnsReady;
   }
 
   // RugShield
@@ -83,26 +96,31 @@ export class DatabaseStorage implements IStorage {
   }
 
   // WhaleWatch
-  async createTrackedWallet(wallet: InsertTrackedWallet): Promise<TrackedWallet> {
-    const [newItem] = await db.insert(trackedWallets).values(wallet).returning();
+  async createTrackedWallet(userId: string, wallet: Omit<InsertTrackedWallet, "userId">): Promise<TrackedWallet> {
+    await this.ensureWhaleWatchTenantColumns();
+    const [newItem] = await db.insert(trackedWallets).values({ ...wallet, userId }).returning();
     return newItem;
   }
 
-  async getTrackedWallets(): Promise<TrackedWallet[]> {
-    return await db.select().from(trackedWallets);
+  async getTrackedWallets(userId: string): Promise<TrackedWallet[]> {
+    await this.ensureWhaleWatchTenantColumns();
+    return await db.select().from(trackedWallets).where(eq(trackedWallets.userId, userId));
   }
 
-  async deleteTrackedWallet(id: number): Promise<void> {
-    await db.delete(walletAlerts).where(eq(walletAlerts.walletId, id));
-    await db.delete(trackedWallets).where(eq(trackedWallets.id, id));
+  async deleteTrackedWallet(userId: string, id: number): Promise<void> {
+    await this.ensureWhaleWatchTenantColumns();
+    await db.delete(walletAlerts).where(sql`${walletAlerts.walletId} = ${id} AND ${walletAlerts.userId} = ${userId}`);
+    await db.delete(trackedWallets).where(sql`${trackedWallets.id} = ${id} AND ${trackedWallets.userId} = ${userId}`);
   }
 
-  async createWalletAlert(alert: InsertWalletAlert): Promise<WalletAlert> {
-    const [newItem] = await db.insert(walletAlerts).values(alert).returning();
+  async createWalletAlert(userId: string, alert: Omit<InsertWalletAlert, "userId">): Promise<WalletAlert> {
+    await this.ensureWhaleWatchTenantColumns();
+    const [newItem] = await db.insert(walletAlerts).values({ ...alert, userId }).returning();
     return newItem;
   }
 
-  async getWalletAlerts(): Promise<(WalletAlert & { walletLabel: string })[]> {
+  async getWalletAlerts(userId: string): Promise<(WalletAlert & { walletLabel: string })[]> {
+    await this.ensureWhaleWatchTenantColumns();
     const results = await db.select({
       id: walletAlerts.id,
       walletId: walletAlerts.walletId,
@@ -115,6 +133,7 @@ export class DatabaseStorage implements IStorage {
     })
     .from(walletAlerts)
     .innerJoin(trackedWallets, eq(walletAlerts.walletId, trackedWallets.id))
+    .where(eq(walletAlerts.userId, userId))
     .orderBy(desc(walletAlerts.timestamp))
     .limit(50);
     
