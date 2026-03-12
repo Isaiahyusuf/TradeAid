@@ -746,15 +746,15 @@ export async function registerRoutes(
       min_buys_5m: 1,
       max_sells_5m: 50,
       max_token_age_seconds: 240,
-      live_sell_fraction_pct: 50,
+      live_sell_fraction_pct: 100,
       max_sell_notional_usd: 300,
       max_wallet_allocation_pct: 10,
       min_buy_amount_sol: 0.1,
       buy_amount_sol: 0.1,
-      take_profit_multiplier: 2,
-      min_profit_pct: 100,
-      stop_loss_pct: 35,
-      trailing_stop_pct: 10,
+      take_profit_multiplier: 1.45,
+      min_profit_pct: 45,
+      stop_loss_pct: 12,
+      trailing_stop_pct: 8,
       min_liquidity_usd: 100,
       max_liquidity_usd: 7500,
       min_market_cap_usd: 1000,
@@ -768,14 +768,14 @@ export async function registerRoutes(
       daily_loss_limit_usd: 600,
       max_consecutive_losses: 3,
       strong_move_threshold_pct: 25,
-      max_hold_minutes: 180,
+      max_hold_minutes: 90,
       position_rotation_minutes: 1,
       min_momentum_profit_pct: 4,
       quality_min_volume_spike_pct: 12,
       quality_max_top_holder_pct: 15,
       max_dev_wallet_pct: 8,
       min_unique_buyers: 8,
-      min_buy_ratio_pct: 75,
+      min_buy_ratio_pct: 62,
       max_early_spike_pct: 200,
     },
     execution: {
@@ -3829,6 +3829,14 @@ export async function registerRoutes(
       configuredMinProfitPct,
       (configuredTakeProfitMultiplier - 1) * 100,
     );
+    const firstTakeProfitStagePct = Math.max(
+      configuredMinMomentumProfitPct,
+      Math.min(30, takeProfitPct * 0.5),
+    );
+    const secondTakeProfitStagePct = Math.max(
+      firstTakeProfitStagePct + 10,
+      Math.min(70, takeProfitPct * 0.8),
+    );
 
     for (let positionIndex = 0; positionIndex < doctorRuntime.positions.length; positionIndex += 1) {
       const position = doctorRuntime.positions[positionIndex];
@@ -3847,12 +3855,12 @@ export async function registerRoutes(
 
       let sellReason = "";
       let sellFractionPct = 100;
-      if (pnlPct >= 400 && tpStage < 2) {
-        sellReason = "take_profit_5x_partial";
+      if (pnlPct >= secondTakeProfitStagePct && tpStage < 2) {
+        sellReason = "take_profit_stage_2_partial";
         sellFractionPct = 50;
-      } else if (pnlPct >= 100 && tpStage < 1) {
-        sellReason = "take_profit_2x_partial";
-        sellFractionPct = 50;
+      } else if (pnlPct >= firstTakeProfitStagePct && tpStage < 1) {
+        sellReason = "take_profit_stage_1_partial";
+        sellFractionPct = 40;
       } else if (pnlPct >= takeProfitPct && tpStage >= 2) {
         sellReason = "take_profit_reached";
       } else if (pnlPct <= -configuredStopLossPct) {
@@ -3933,9 +3941,9 @@ export async function registerRoutes(
       sellCount += 1;
       const pnlUsd = Number(((soldAmountSol * currentPrice) - (soldAmountSol * entryPrice)).toFixed(2));
       const remainingAmountSol = Number((amountSol - soldAmountSol).toFixed(9));
-      const nextTpStage = sellReason === "take_profit_5x_partial"
+      const nextTpStage = sellReason === "take_profit_stage_2_partial"
         ? Math.max(tpStage, 2)
-        : sellReason === "take_profit_2x_partial"
+        : sellReason === "take_profit_stage_1_partial"
           ? Math.max(tpStage, 1)
           : tpStage;
 
