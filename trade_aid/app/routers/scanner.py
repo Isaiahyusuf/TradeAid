@@ -12,6 +12,7 @@ from app.models.models import Token
 from app.models.models import User
 from app.scanners.dexscreener import dex_scanner
 from app.services.auth_service import get_current_user
+from app.utils.logging_config import logger
 
 router = APIRouter(prefix="/api/scanner", tags=["Scanner"])
 ingest_router = APIRouter(prefix="/api", tags=["Scanner"])
@@ -119,6 +120,7 @@ async def ingest_new_token(
             created_at=created_at,
         )
         db.add(token)
+        logger.info(f"[NewTokenIngest] created mint={mint} symbol={token.symbol or ''} liq={liquidity:.2f} mcap={market_cap:.2f}")
     else:
         token.name = str(payload.token_name or token.name or "").strip() or token.name
         token.symbol = str(payload.symbol or token.symbol or "").strip() or token.symbol
@@ -134,6 +136,7 @@ async def ingest_new_token(
             volume,
         )
         token.extra_data = merged_meta
+        logger.info(f"[NewTokenIngest] updated mint={mint} symbol={token.symbol or ''} liq={token.liquidity_usd or 0:.2f} mcap={token.market_cap_usd or 0:.2f}")
 
     return {
         "ok": True,

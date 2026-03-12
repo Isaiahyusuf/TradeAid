@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from app.doctor.services.helius_service import HeliusService
+from app.utils.logging_config import logger
 
 
 class PumpListener:
@@ -84,6 +85,7 @@ class PumpListener:
         now_ts = datetime.now(tz=timezone.utc).timestamp()
         cached = self._dex_cache.get(mint)
         if cached and (now_ts - cached[0]) <= self._dex_cache_ttl_seconds:
+            logger.info(f"[PumpListener] Dex cache hit for {mint}")
             return dict(cached[1])
 
         payload: dict[str, Any] = {}
@@ -120,6 +122,9 @@ class PumpListener:
                 "dex_volume_24h": volume_24h,
                 "dex_liquidity": liquidity_usd,
             }
+            logger.info(
+                f"[PumpListener] Dex enriched {mint} liq={liquidity_usd:.2f} mcap={market_cap_computed:.2f} vol={float(payload['volume']):.2f}"
+            )
         except Exception:
             payload = {
                 "token_name": "",
@@ -134,15 +139,24 @@ class PumpListener:
                 "dex_volume_24h": 0.0,
                 "dex_liquidity": 0.0,
             }
+            logger.warning(f"[PumpListener] Dex enrichment failed for {mint}; using zeroed fallback")
 
         self._dex_cache[mint] = (now_ts, dict(payload))
         return payload
 
     async def _post_new_token(self, token_obj: dict[str, Any]) -> None:
+        mint = str(token_obj.get("mint_address") or "").strip()
         try:
             headers = {"x-tradeaid-ingest-key": self._ingest_key} if self._ingest_key else None
-            await self._post_client.post(self._new_token_webhook_url, json=token_obj, headers=headers)
-        except Exception:
+            response = await self._post_client.post(self._new_token_webhook_url, json=token_obj, headers=headers)
+            if 200 <= response.status_code < 300:
+                logger.info(f"[PumpListener] Posted token {mint} -> {self._new_token_webhook_url} status={response.status_code}")
+            else:
+                logger.warning(
+                    f"[PumpListener] Post failed for {mint} status={response.status_code} body={response.text[:180]}"
+                )
+        except Exception as error:
+            logger.warning(f"[PumpListener] Post exception for {mint}: {error}")
             return
 
     async def _build_and_send_token(self, row: dict[str, Any]) -> dict[str, Any] | None:
@@ -155,6 +169,9 @@ class PumpListener:
         timestamp = self._parse_datetime(block_time).astimezone(timezone.utc).isoformat()
         tx_signature = self._extract_signature(row)
         creator_wallet = str(row.get("authority") or row.get("creator") or row.get("creatorWallet") or "").strip()
+        logger.info(
+            f"[PumpListener] New token detected mint={mint} creator={creator_wallet or 'unknown'} sig={tx_signature or 'n/a'}"
+        )
 
         base_token_obj = {
             "token_name": "",
@@ -209,6 +226,8 @@ class PumpListener:
                 continue
             candidates.append(row)
 
+        logger.info(f"[PumpListener] Fresh mint candidates within {max_age_minutes}m: {len(candidates)}")
+
         # Run enrichment and webhook delivery concurrently to keep listener responsive.
         semaphore = asyncio.Semaphore(12)
 
@@ -222,4 +241,5 @@ class PumpListener:
             if isinstance(item, Exception) or not isinstance(item, dict):
                 continue
             out.append(item)
+        logger.info(f"[PumpListener] Enriched tokens emitted: {len(out)}")
         return out
