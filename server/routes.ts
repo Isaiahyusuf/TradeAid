@@ -1036,13 +1036,20 @@ export async function registerRoutes(
     const runtimeBelongsToUser = Boolean(normalizedUserId && runtimeOwnerUserId && normalizedUserId === runtimeOwnerUserId);
     const runtimeAddress = String(doctorRuntime.wallet.address || "").trim();
     const existingAddress = String(current?.address || "").trim();
+    const existingBalanceSol = Math.max(0, Number(current?.balanceSol || 0));
+    const existingSeparateWalletEnforced = current?.separateWalletEnforced !== false;
     const resolvedAddress = runtimeBelongsToUser
       ? (runtimeAddress || existingAddress)
       : existingAddress;
     wallets[userId] = {
       address: resolvedAddress,
-      balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0)),
-      separateWalletEnforced: doctorRuntime.wallet.separateWalletEnforced !== false,
+      // Never copy runtime wallet metrics across users.
+      balanceSol: runtimeBelongsToUser
+        ? Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0))
+        : existingBalanceSol,
+      separateWalletEnforced: runtimeBelongsToUser
+        ? (doctorRuntime.wallet.separateWalletEnforced !== false)
+        : existingSeparateWalletEnforced,
       livePrivateKey: String(current?.livePrivateKey || "").trim(),
       autoHydrateBlocked: Boolean(current?.autoHydrateBlocked),
       updatedAt: nowIso(),
@@ -5302,29 +5309,32 @@ export async function registerRoutes(
 
   const buildDoctorStatus = async (userId?: string) => {
     const statusUserId = String(userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
-    await refreshDoctorWalletBalanceFromChain();
-    const earlyTokens = await getSolanaEarlyScoredTokens(120, 220);
-    const activeTokens = await getDoctorActiveTokens();
+    const [earlyTokens, activeTokens] = await Promise.all([
+      getSolanaEarlyScoredTokens(120, 220),
+      getDoctorActiveTokens(),
+    ]);
     const { dailyRealizedPnlUsd, consecutiveLosses } = computeDoctorRiskMetrics();
     const activeTokenMap = new Map(activeTokens.map((token) => [String(token.address || "").trim(), token]));
 
     const paused = doctorRuntime.killSwitch;
     const safetyPaused = paused || !doctorRuntime.enabled;
 
-    const liveCredentials = await getDoctorLiveWalletCredentials(statusUserId);
+    const [liveCredentials, walletSnapshotBase] = await Promise.all([
+      getDoctorLiveWalletCredentials(statusUserId),
+      statusUserId
+        ? getDoctorWalletSnapshotForUser(statusUserId)
+        : Promise.resolve({
+            address: "",
+            balanceSol: 0,
+            separateWalletEnforced: true,
+            privateKeyConfigured: false,
+            connected: false,
+          }),
+    ]);
     const liveCapable =
       isDoctorLiveTradingEnabled() &&
       Boolean(String(liveCredentials.walletPublicKey || "").trim()) &&
       Boolean(String(liveCredentials.walletPrivateKey || "").trim());
-    const walletSnapshotBase = statusUserId
-      ? await getDoctorWalletSnapshotForUser(statusUserId)
-      : {
-          address: "",
-          balanceSol: 0,
-          separateWalletEnforced: true,
-          privateKeyConfigured: false,
-          connected: false,
-        };
     const runtimeBelongsToStatusUser = Boolean(
       statusUserId
       && String(doctorRuntime.ownerUserId || "").trim() === statusUserId,
@@ -5349,12 +5359,21 @@ export async function registerRoutes(
     const walletConnected = Boolean(walletSnapshot.connected);
     const walletAddressAvailable = Boolean(walletAddress);
 
-    const rawWalletTokens = walletAddressAvailable
-      ? await getDoctorLiveWalletTokenSnapshots(walletAddress, 20)
-      : [];
-    const statusWalletTransactions = walletAddressAvailable
-      ? await getDoctorWalletRecentTransactions(walletAddress, 20)
-      : [];
+    let resolvedWalletBalanceSol = Math.max(0, Number(walletSnapshot.balanceSol || 0));
+    if (walletAddressAvailable) {
+      try {
+        const chainBalance = await refreshDoctorWalletBalanceFromChain(walletAddress, false);
+        resolvedWalletBalanceSol = Math.max(0, Number(chainBalance || resolvedWalletBalanceSol));
+      } catch {
+      }
+    }
+
+    const [rawWalletTokens, statusWalletTransactions] = walletAddressAvailable
+      ? await Promise.all([
+          getDoctorLiveWalletTokenSnapshots(walletAddress, 20),
+          getDoctorWalletRecentTransactions(walletAddress, 20),
+        ])
+      : [[], []];
     const knownTokenDetailsByMint = new Map<string, Record<string, any>>();
     for (const token of activeTokens) {
       const mint = String((token as any).address || "").trim();
@@ -5505,7 +5524,7 @@ export async function registerRoutes(
       },
       wallet: {
         address: walletAddress,
-        balance_sol: walletSnapshot.balanceSol,
+        balance_sol: resolvedWalletBalanceSol,
         separate_wallet_enforced: walletSnapshot.separateWalletEnforced,
         private_key_configured: Boolean(walletSnapshot.privateKeyConfigured),
         connection_status: walletConnected ? "connected" : "disconnected",
@@ -5665,8 +5684,6 @@ export async function registerRoutes(
     const presetBeforeStatus = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
     const executionModeBeforeStatus = String(doctorRuntime.execution.mode || "live").trim().toLowerCase() === "paper" ? "paper" : "live";
     await syncDoctorWalletFromAssistantRuntime(userId);
-    await refreshDoctorWalletBalanceFromChain(undefined, true);
-    await saveDoctorWalletForUser(userId);
     doctorRuntime.enabled = enabledBeforeStatus;
     (doctorRuntime.controls as any).snipe_preset = presetBeforeStatus;
     doctorRuntime.execution.mode = executionModeBeforeStatus;

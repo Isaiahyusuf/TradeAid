@@ -21,6 +21,19 @@ Payments & webhooks
 - STRIPE_SECRET_KEY: (optional) Stripe secret for payments (if using Stripe).
 - STRIPE_WEBHOOK_SECRET: (optional) For webhook verification.
 
+Telegram bot (safe Solana calls)
+- TELEGRAM_BOT_TOKEN: (required for bot) Bot token from BotFather.
+- TELEGRAM_CHAT_ID: (optional but recommended) Default Telegram chat id allowed to interact with the bot.
+- TELEGRAM_ALLOWED_CHAT_IDS: (optional) Comma-separated chat ids allowed to use the bot.
+- TELEGRAM_BOT_POLL_SECONDS: (optional) Long-poll timeout in seconds. Default `25`.
+- TRADEAID_APP_URL: (optional) Base URL used for direct buy/view buttons in Telegram replies. Defaults to `FRONTEND_URL` or `https://tradeaid.ink`.
+
+Bot commands
+- /safe [n]: show top safe Solana buy candidates.
+- /new [n]: show newest safer Solana tokens (last 24h).
+- /token <symbol|address>: show full token information.
+- /help: show command help.
+
 Security & misc
 - ENCRYPTION_KEY: (required if server encrypts data) 32+ char symmetric key for encrypting sensitive data.
 - MASTER_ACCESS_KEY: (optional) administrative backdoor key—keep disabled in production unless needed.
