@@ -303,6 +303,105 @@ export async function registerRoutes(
     });
   });
 
+  app.post("/api/new-token", async (req, res) => {
+    try {
+      const expectedKey = String(
+        process.env.TRADEAID_NEW_TOKEN_INGEST_KEY
+        || process.env.NEW_TOKEN_INGEST_KEY
+        || "",
+      ).trim();
+      const providedKey = String(req.headers["x-tradeaid-ingest-key"] || "").trim();
+      if (expectedKey && providedKey !== expectedKey) {
+        return res.status(401).json({ ok: false, message: "Unauthorized" });
+      }
+
+      const mintAddress = String(req.body?.mint_address || "").trim();
+      if (!mintAddress) {
+        return res.status(400).json({ ok: false, message: "mint_address is required" });
+      }
+
+      const safeFloat = (value: unknown, fallback = 0) => {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : fallback;
+      };
+
+      const parsedTimestamp = (() => {
+        const value = String(req.body?.timestamp || "").trim();
+        if (!value) return new Date();
+        const dt = new Date(value);
+        return Number.isNaN(dt.getTime()) ? new Date() : dt;
+      })();
+
+      const dex = req.body?.dexscreener && typeof req.body.dexscreener === "object"
+        ? req.body.dexscreener as Record<string, any>
+        : {};
+      const dexVolume = dex?.volume && typeof dex.volume === "object"
+        ? dex.volume as Record<string, any>
+        : {};
+      const dexLiquidity = dex?.liquidity && typeof dex.liquidity === "object"
+        ? dex.liquidity as Record<string, any>
+        : {};
+
+      const inferredVolume24h = safeFloat(
+        dexVolume.h24,
+        safeFloat(req.body?.volume, 0),
+      );
+      const inferredLiquidity = safeFloat(
+        req.body?.initial_liquidity,
+        safeFloat(dexLiquidity.usd, 0),
+      );
+      const inferredMarketCap = safeFloat(req.body?.market_cap, 0);
+      const inferredPriceUsd = safeFloat(dex.priceUsd, 0);
+
+      const tokenPayload = {
+        address: mintAddress,
+        symbol: String(req.body?.symbol || "").trim() || String(mintAddress.slice(0, 6)).toUpperCase(),
+        name: String(req.body?.token_name || "").trim() || String(req.body?.symbol || "").trim() || `Token ${mintAddress.slice(0, 6)}`,
+        chain: "solana",
+        dexId: "pumpfun",
+        pairAddress: String(req.body?.transaction_signature || "").trim() || mintAddress,
+        priceUsd: inferredPriceUsd > 0 ? String(inferredPriceUsd) : "0",
+        liquidity: Math.max(0, inferredLiquidity),
+        marketCap: Math.max(0, inferredMarketCap),
+        volume24h: Math.max(0, inferredVolume24h),
+        priceChange1h: 0,
+        priceChange24h: 0,
+        buys24h: 0,
+        sells24h: 0,
+        safetyScore: 0,
+        isLiquidityLocked: false,
+        mintAuthorityDisabled: false,
+        topHoldersPercentage: 0,
+        devWalletPercentage: 0,
+        isHoneypot: false,
+        riskLevel: "unknown",
+        aiSignal: "hold",
+        aiAnalysis: "pump_listener_ingest",
+        socialLinks: {},
+        pairCreatedAt: parsedTimestamp,
+        lastScannedAt: new Date(),
+      };
+
+      const existing = await storage.getScannedTokenByAddress(mintAddress).catch(() => undefined);
+      if (existing?.id) {
+        await storage.updateScannedToken(existing.id, tokenPayload as any);
+      } else {
+        await storage.createScannedToken(tokenPayload as any);
+      }
+
+      return res.json({
+        ok: true,
+        mint_address: mintAddress,
+        saved: true,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        message: error instanceof Error ? error.message : "Failed to ingest token",
+      });
+    }
+  });
+
   app.post("/api/fresh/apify-sync/run", async (req, res) => {
     try {
       const limitRaw = Number(req.body?.limit || req.query?.limit || process.env.APIFY_DATASET_LIMIT || 10);

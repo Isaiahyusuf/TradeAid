@@ -17,8 +17,14 @@ class PumpListener:
         self._dex_cache: dict[str, tuple[float, dict[str, Any]]] = {}
         self._dex_client = httpx.AsyncClient(timeout=8.0, trust_env=False)
         self._post_client = httpx.AsyncClient(timeout=8.0, trust_env=False)
+        self._ingest_key = str(
+            os.getenv("TRADEAID_NEW_TOKEN_INGEST_KEY")
+            or os.getenv("NEW_TOKEN_INGEST_KEY")
+            or ""
+        ).strip()
         configured_webhook = str(
             os.getenv("TRADEAID_NEW_TOKEN_WEBHOOK_URL")
+            or os.getenv("TRADE_AID_BACKEND_URL")
             or os.getenv("TRADEAID_API_URL")
             or ""
         ).strip()
@@ -134,7 +140,8 @@ class PumpListener:
 
     async def _post_new_token(self, token_obj: dict[str, Any]) -> None:
         try:
-            await self._post_client.post(self._new_token_webhook_url, json=token_obj)
+            headers = {"x-tradeaid-ingest-key": self._ingest_key} if self._ingest_key else None
+            await self._post_client.post(self._new_token_webhook_url, json=token_obj, headers=headers)
         except Exception:
             return
 

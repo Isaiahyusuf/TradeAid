@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
+import os
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,9 +61,20 @@ async def scanner_health(user: User = Depends(get_current_user)):
 
 @ingest_router.post("/new-token", include_in_schema=False)
 async def ingest_new_token(
+    request: Request,
     payload: NewTokenPayload,
     db: AsyncSession = Depends(get_db),
 ):
+    expected_key = str(
+        os.getenv("TRADEAID_NEW_TOKEN_INGEST_KEY")
+        or os.getenv("NEW_TOKEN_INGEST_KEY")
+        or ""
+    ).strip()
+    provided_key = str(request.headers.get("x-tradeaid-ingest-key") or "").strip()
+    # Optional shared-key auth: enabled only when key is configured.
+    if expected_key and provided_key != expected_key:
+        return {"ok": False, "error": "unauthorized"}
+
     mint = str(payload.mint_address or "").strip()
     if not mint:
         return {"ok": False, "error": "mint_address_required"}
