@@ -4195,7 +4195,48 @@ export async function registerRoutes(
       }
     }
 
-    const evaluatePreTradeGuard = async (candidate: Record<string, any> | undefined) => {
+    let aiFallbackUsed = false;
+    let aiFallbackDecision: Record<string, any> | null = null;
+    const aiFallbackEnabled = String(process.env.DOCTOR_ENABLE_AI_FALLBACK || "true").trim().toLowerCase() !== "false";
+
+    if (!buyCandidate && aiFallbackEnabled) {
+      const aiFallbackPool = activeTokens
+        .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
+        .filter((token) => !openAddresses.has(String(token.address || "")))
+        .filter((token) => !hasDoctorBoughtMintBefore(String(token.address || "")))
+        .sort((a, b) => {
+          const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+          if (scoreDiff !== 0) return scoreDiff;
+          return Number(b.volume_5m || 0) - Number(a.volume_5m || 0);
+        })
+        .slice(0, 8);
+
+      const aiFallbackCandidate = aiFallbackPool.find((token) => {
+        const reasons = Array.isArray((token as any).reject_reasons) ? (token as any).reject_reasons : [];
+        return String((token as any).safety_tier || "").toLowerCase() === "soft" || reasons.length > 0;
+      }) || aiFallbackPool[0];
+
+      if (aiFallbackCandidate) {
+        buyCandidate = {
+          ...(aiFallbackCandidate as Record<string, any>),
+          source: "ai_fallback",
+        };
+        aiFallbackUsed = true;
+        appendDoctorSniperLog({
+          event: "candidate_selected",
+          source: "ai_fallback",
+          symbol: String((buyCandidate as any).symbol || "UNKNOWN"),
+          mint: String((buyCandidate as any).address || ""),
+          reason: "ai_fallback_candidate_selected",
+          preset: activeSnipePreset,
+        });
+      }
+    }
+
+    const evaluatePreTradeGuard = async (
+      candidate: Record<string, any> | undefined,
+      mode: "strict" | "ai_fallback" = "strict",
+    ) => {
       if (!candidate) {
         return { allowed: false, reason: "no_eligible_candidate" };
       }
@@ -4218,31 +4259,33 @@ export async function registerRoutes(
         return { allowed: false, reason: "chain_not_solana" };
       }
 
-      const candidateAgeSeconds = Math.max(0, Number(candidate.age_seconds || 0));
-      if (candidateAgeSeconds > strictMaxTokenAgeSeconds) {
-        return { allowed: false, reason: "token_too_old_for_sniping" };
-      }
+      if (mode === "strict") {
+        const candidateAgeSeconds = Math.max(0, Number(candidate.age_seconds || 0));
+        if (candidateAgeSeconds > strictMaxTokenAgeSeconds) {
+          return { allowed: false, reason: "token_too_old_for_sniping" };
+        }
 
-      const candidateMarketCapUsd = Number(candidate.market_cap_usd || 0);
-      if (candidateMarketCapUsd < minMarketCapUsd) {
-        return { allowed: false, reason: "low_market_cap" };
-      }
-      if (candidateMarketCapUsd > effectiveMaxMarketCapUsd) {
-        return { allowed: false, reason: "high_market_cap" };
-      }
+        const candidateMarketCapUsd = Number(candidate.market_cap_usd || 0);
+        if (candidateMarketCapUsd < minMarketCapUsd) {
+          return { allowed: false, reason: "low_market_cap" };
+        }
+        if (candidateMarketCapUsd > effectiveMaxMarketCapUsd) {
+          return { allowed: false, reason: "high_market_cap" };
+        }
 
-      const candidateVolume24hUsd = Number(candidate.volume_24h || 0);
-      if (candidateVolume24hUsd < hardMinVolume24hUsd) {
-        return { allowed: false, reason: "low_volume_hard_floor" };
-      }
+        const candidateVolume24hUsd = Number(candidate.volume_24h || 0);
+        if (candidateVolume24hUsd < hardMinVolume24hUsd) {
+          return { allowed: false, reason: "low_volume_hard_floor" };
+        }
 
-      const candidateSafetyScore = Number(candidate.score || 0);
-      if (candidateSafetyScore < hardMinSafetyScore) {
-        return { allowed: false, reason: "low_safety_score" };
-      }
+        const candidateSafetyScore = Number(candidate.score || 0);
+        if (candidateSafetyScore < hardMinSafetyScore) {
+          return { allowed: false, reason: "low_safety_score" };
+        }
 
-      if (!isLaunchSourceAllowed(String(candidate.launch_source || candidate.source || "unknown"))) {
-        return { allowed: false, reason: "unsupported_launch_source" };
+        if (!isLaunchSourceAllowed(String(candidate.launch_source || candidate.source || "unknown"))) {
+          return { allowed: false, reason: "unsupported_launch_source" };
+        }
       }
 
       if (Number(doctorRuntime.controls.trades_today || 0) >= maxTradesPerDay) {
@@ -4682,7 +4725,111 @@ export async function registerRoutes(
       }
     };
 
-    const guard = await evaluatePreTradeGuard(buyCandidate);
+    const evaluateDoctorOpenAiFallbackDecision = async (
+      candidate: Record<string, any>,
+      aiValidation: Record<string, any>,
+      contextReason: string,
+    ) => {
+      const apiKey = resolveOpenAiApiKey();
+      if (!apiKey) {
+        return {
+          allowed: false,
+          reason: "openai_api_key_missing",
+          source: "openai_unavailable",
+          confidence: 0,
+        };
+      }
+
+      const timeoutMs = Math.max(2000, Number(process.env.DOCTOR_OPENAI_FALLBACK_TIMEOUT_MS || 9000));
+      const minConfidence = Math.max(50, Math.min(99, Number(process.env.DOCTOR_AI_FALLBACK_CONFIDENCE_MIN || 78)));
+      const messages = [
+        {
+          role: "system" as const,
+          content: [
+            "You are an aggressive but risk-aware Solana sniper fallback model.",
+            "The token failed deterministic filters. Decide if it is still worth buying now.",
+            "Only approve if conviction is high and no obvious rug pattern.",
+            "Return JSON only with keys: allow_trade(boolean), confidence(integer 0-100), risk_level(low|medium|high|critical), reason(string), guardrails(string[]).",
+          ].join(" "),
+        },
+        {
+          role: "user" as const,
+          content: JSON.stringify({
+            context_reason: contextReason,
+            candidate: {
+              symbol: String(candidate.symbol || "UNKNOWN"),
+              address: String(candidate.address || ""),
+              market_cap_usd: Number(candidate.market_cap_usd || 0),
+              volume_24h_usd: Number(candidate.volume_24h || 0),
+              volume_5m_usd: Number(candidate.volume_5m || 0),
+              liquidity_usd: Number(candidate.liquidity || 0),
+              age_seconds: Number(candidate.age_seconds || 0),
+              score: Number(candidate.score || 0),
+              launch_source: String(candidate.launch_source || candidate.source || "unknown"),
+              buy_ratio_pct: Number(candidate.buy_ratio_pct || 0),
+              buys_5m: Number(candidate.buys_5m || 0),
+              sells_5m: Number(candidate.sells_5m || 0),
+              reject_reasons: Array.isArray(candidate.reject_reasons) ? candidate.reject_reasons : [],
+            },
+            deterministic_validation: aiValidation,
+            policy: {
+              allow_only_if_confidence_at_least: minConfidence,
+              never_allow_high_or_critical_risk: true,
+            },
+          }),
+        },
+      ];
+
+      try {
+        let completion: Awaited<ReturnType<OpenAI["chat"]["completions"]["create"]>> | null = null;
+        let lastError: unknown = null;
+
+        for (const model of resolveOpenAiModelFallbacks()) {
+          try {
+            completion = await Promise.race([
+              getOpenAI().chat.completions.create({
+                model,
+                temperature: 0.1,
+                messages,
+                response_format: { type: "json_object" },
+              }),
+              new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("openai_fallback_timeout")), timeoutMs)),
+            ]);
+            if (completion) break;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+
+        if (!completion) {
+          throw lastError instanceof Error ? lastError : new Error("openai_fallback_completion_failed");
+        }
+
+        const content = String(completion.choices?.[0]?.message?.content || "{}").trim();
+        const parsed = JSON.parse(content || "{}") as Record<string, any>;
+        const confidence = Math.max(0, Math.min(100, Math.trunc(Number(parsed.confidence || 0))));
+        const riskLevel = String(parsed.risk_level || "high").trim().toLowerCase();
+        const allowTrade = Boolean(parsed.allow_trade) && confidence >= minConfidence && riskLevel !== "high" && riskLevel !== "critical";
+
+        return {
+          allowed: allowTrade,
+          reason: allowTrade ? "openai_fallback_approved" : String(parsed.reason || "openai_fallback_denied"),
+          confidence,
+          risk_level: riskLevel,
+          guardrails: Array.isArray(parsed.guardrails) ? parsed.guardrails.map((item) => String(item || "")).filter(Boolean) : [],
+          source: "openai_fallback",
+        };
+      } catch (error: any) {
+        return {
+          allowed: false,
+          reason: String(error?.message || "openai_fallback_failed"),
+          source: "openai_unavailable",
+          confidence: 0,
+        };
+      }
+    };
+
+    const guard = await evaluatePreTradeGuard(buyCandidate, aiFallbackUsed ? "ai_fallback" : "strict");
     const canBuy = guard.allowed;
 
     let hasBlockingError = false;
@@ -4693,48 +4840,75 @@ export async function registerRoutes(
         || doctorRuntime.execution.mode === "live";
       const aiValidation = await evaluateDoctorAiValidation(buyCandidate);
       if (enforceAiValidation && !aiValidation.allowed) {
-        appendDoctorSniperLog({
-          event: "blocked",
-          source: String(buyCandidate.source || "scanner"),
-          symbol: String(buyCandidate.symbol || "UNKNOWN"),
-          mint: String(buyCandidate.address || ""),
-          reason: "ai_validation_gate",
-          failed_checks: Array.isArray(aiValidation.reasons) ? aiValidation.reasons : [],
-        });
-        appendDoctorExecutionAudit({
-          action: "buy",
-          symbol: String(buyCandidate.symbol || "UNKNOWN"),
-          mint: String(buyCandidate.address || ""),
-          amount_sol: buyAmountSol,
-          expected_price_usd: Number(buyCandidate.price_usd || 0),
-          expected_notional_usd: Number((buyAmountSol * Number(buyCandidate.price_usd || 0)).toFixed(2)),
-          trigger,
-          reason: "ai_validation_gate",
-          status: "blocked",
-          block_reason: aiValidation.reason,
-          ai_validation: aiValidation,
-        });
-        doctorRuntime.decisionJournal.unshift({
-          token: String(buyCandidate.symbol || "UNKNOWN"),
-          address: String(buyCandidate.address || ""),
-          decision: "skip",
-          reason: "ai_validation_gate",
-          confidence: Number(buyCandidate.score || 0),
-          size_pct: 0,
-          strategy_mode: "autonomous",
-          ai_validation: aiValidation,
-          timestamp: nowIso(),
-        });
-        doctorRuntime.lastDecision = {
-          action: "skip",
-          reason: aiValidation.reason,
-          trigger,
-          at: nowIso(),
-          token: String(buyCandidate.symbol || "UNKNOWN"),
-          mint: String(buyCandidate.address || ""),
-          ai_validation: aiValidation,
-        };
-      } else {
+        const fallbackDecision = aiFallbackEnabled
+          ? await evaluateDoctorOpenAiFallbackDecision(
+              buyCandidate,
+              aiValidation as Record<string, any>,
+              "ai_validation_gate",
+            )
+          : { allowed: false, reason: "ai_fallback_disabled" };
+
+        if (fallbackDecision.allowed) {
+          aiFallbackUsed = true;
+          aiFallbackDecision = fallbackDecision as Record<string, any>;
+          appendDoctorSniperLog({
+            event: "detected",
+            source: String(buyCandidate.source || "ai_fallback"),
+            symbol: String(buyCandidate.symbol || "UNKNOWN"),
+            mint: String(buyCandidate.address || ""),
+            reason: "ai_fallback_override_approved",
+            ai_confidence: Number((fallbackDecision as any).confidence || 0),
+          });
+        } else {
+          appendDoctorSniperLog({
+            event: "blocked",
+            source: String(buyCandidate.source || "scanner"),
+            symbol: String(buyCandidate.symbol || "UNKNOWN"),
+            mint: String(buyCandidate.address || ""),
+            reason: "ai_validation_gate",
+            failed_checks: Array.isArray(aiValidation.reasons) ? aiValidation.reasons : [],
+            ai_fallback_reason: String((fallbackDecision as any).reason || "ai_fallback_denied"),
+          });
+          appendDoctorExecutionAudit({
+            action: "buy",
+            symbol: String(buyCandidate.symbol || "UNKNOWN"),
+            mint: String(buyCandidate.address || ""),
+            amount_sol: buyAmountSol,
+            expected_price_usd: Number(buyCandidate.price_usd || 0),
+            expected_notional_usd: Number((buyAmountSol * Number(buyCandidate.price_usd || 0)).toFixed(2)),
+            trigger,
+            reason: "ai_validation_gate",
+            status: "blocked",
+            block_reason: aiValidation.reason,
+            ai_validation: aiValidation,
+            ai_fallback: fallbackDecision,
+          });
+          doctorRuntime.decisionJournal.unshift({
+            token: String(buyCandidate.symbol || "UNKNOWN"),
+            address: String(buyCandidate.address || ""),
+            decision: "skip",
+            reason: "ai_validation_gate",
+            confidence: Number(buyCandidate.score || 0),
+            size_pct: 0,
+            strategy_mode: "autonomous",
+            ai_validation: aiValidation,
+            ai_fallback: fallbackDecision,
+            timestamp: nowIso(),
+          });
+          doctorRuntime.lastDecision = {
+            action: "skip",
+            reason: aiValidation.reason,
+            trigger,
+            at: nowIso(),
+            token: String(buyCandidate.symbol || "UNKNOWN"),
+            mint: String(buyCandidate.address || ""),
+            ai_validation: aiValidation,
+            ai_fallback: fallbackDecision,
+          };
+        }
+      }
+
+      if (buyCandidate && (!enforceAiValidation || aiValidation.allowed || aiFallbackUsed)) {
       const requireOpenAiSafetyGate =
         doctorRuntime.execution.mode === "live"
         && String(process.env.DOCTOR_REQUIRE_OPENAI_SAFETY_GATE || "true").trim().toLowerCase() !== "false";
@@ -4777,13 +4951,16 @@ export async function registerRoutes(
 
       if (buyCandidate) {
       const tokenPriceUsd = resolveCurrentPriceUsd(buyCandidate, 0);
+      const buyReason = aiFallbackUsed
+        ? "ai_fallback_signal"
+        : String(buyCandidate.source || "scanner_signal");
       const buyExecution = await executeDoctorOrder({
         action: "buy",
         symbol: String(buyCandidate.symbol || "UNKNOWN"),
         mint: String(buyCandidate.address || ""),
         amountSol: buyAmountSol,
         expectedPriceUsd: tokenPriceUsd,
-        reason: String(buyCandidate.source || "scanner_signal"),
+        reason: buyReason,
         trigger,
         userId: scopedUserId,
         baseMint: String(buyCandidate.base_mint || getDoctorTradeBaseAssetMint()),
@@ -4833,7 +5010,7 @@ export async function registerRoutes(
         address: position.address,
         action: "BUY",
         status: "EXECUTED",
-        reason: position.source === "apify" ? "apify_early_launch_signal" : "scanner_signal",
+        reason: aiFallbackUsed ? "ai_fallback_signal" : (position.source === "apify" ? "apify_early_launch_signal" : "scanner_signal"),
         confidence: position.confidence,
         liquidity: position.liquidity,
         volume_5m: Number(buyCandidate.volume_5m || 0),
@@ -4860,22 +5037,24 @@ export async function registerRoutes(
         token: position.symbol,
         address: position.address,
         decision: "buy",
-        reason: position.source === "apify" ? "apify_early_launch_signal" : "scanner_signal",
+        reason: aiFallbackUsed ? "ai_fallback_signal" : (position.source === "apify" ? "apify_early_launch_signal" : "scanner_signal"),
         confidence: position.confidence,
         size_pct: 100,
         strategy_mode: "autonomous",
+        ai_fallback: aiFallbackUsed ? aiFallbackDecision : undefined,
         timestamp: nowIso(),
       });
 
       doctorRuntime.lastDecision = {
         action: "buy",
-        reason: position.source === "apify" ? "apify_early_launch_signal" : "scanner_signal",
+        reason: aiFallbackUsed ? "ai_fallback_signal" : (position.source === "apify" ? "apify_early_launch_signal" : "scanner_signal"),
         trigger,
         at: nowIso(),
         token: position.symbol,
         mint: position.address,
         confidence: Number(position.confidence || 0),
         ai_validation: aiValidation,
+        ai_fallback: aiFallbackUsed ? aiFallbackDecision : undefined,
       };
       }
       }
