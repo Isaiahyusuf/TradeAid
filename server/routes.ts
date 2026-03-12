@@ -948,6 +948,29 @@ export async function registerRoutes(
     await storage.setAppState(doctorWalletByUserStateKey, value);
   };
 
+  const getDoctorWalletStoredPrivateKey = (wallet: Record<string, any> | undefined) => {
+    if (!wallet || typeof wallet !== "object") {
+      return "";
+    }
+
+    const candidates = [
+      wallet.livePrivateKey,
+      wallet.privateKey,
+      wallet.walletPrivateKey,
+      wallet.encryptedPrivateKey,
+      wallet.secretKey,
+    ];
+
+    for (const candidate of candidates) {
+      const trimmed = String(candidate || "").trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+
+    return "";
+  };
+
   const getStoredDoctorRuntimesByUser = async (): Promise<Record<string, any>> => {
     try {
       const state = await storage.getAppState<Record<string, any>>(doctorRuntimeByUserStateKey);
@@ -1021,7 +1044,7 @@ export async function registerRoutes(
   const getDoctorWalletSnapshotForUser = async (userId: string) => {
     const wallets = await getStoredDoctorWalletsByUser();
     const userWallet = wallets[userId] as Record<string, any> | undefined;
-    const encryptedPrivateKey = String(userWallet?.livePrivateKey || "").trim();
+    const encryptedPrivateKey = getDoctorWalletStoredPrivateKey(userWallet);
     const decryptedPrivateKey = decryptDoctorPrivateKey(encryptedPrivateKey);
     const hasPrivateKey = Boolean(String(decryptedPrivateKey || "").trim());
     const configuredAddress = String(userWallet?.address || "").trim();
@@ -1155,7 +1178,7 @@ export async function registerRoutes(
     const wallets = await getStoredDoctorWalletsByUser();
     const ownerWallet = ownerUserId ? (wallets[ownerUserId] as Record<string, any> | undefined) : undefined;
     const resolvedWallet = ownerWallet;
-    const encryptedPrivateKey = String(resolvedWallet?.livePrivateKey || "").trim();
+    const encryptedPrivateKey = getDoctorWalletStoredPrivateKey(resolvedWallet);
     const userPrivateKey = decryptDoctorPrivateKey(encryptedPrivateKey);
     const configuredPublicKey = String(resolvedWallet?.address || "").trim();
     const derivedPublicKey = userPrivateKey
@@ -1167,20 +1190,32 @@ export async function registerRoutes(
       wallets[ownerUserId] = {
         ...resolvedWallet,
         address: userPublicKey,
+        livePrivateKey: encryptedPrivateKey,
         updatedAt: nowIso(),
       };
       await setStoredDoctorWalletsByUser(wallets);
     }
 
+    const privateKeyPresent = Boolean(String(userPrivateKey || "").trim());
+    const autoHydrateBlocked = Boolean(resolvedWallet?.autoHydrateBlocked);
+
     if (userPublicKey && userPrivateKey) {
       return {
         walletPublicKey: userPublicKey,
         walletPrivateKey: userPrivateKey,
+        resolvedUserId: ownerUserId,
+        privateKeyPresent,
+        walletRowFound: Boolean(resolvedWallet),
+        autoHydrateBlocked,
       };
     }
     return {
       walletPublicKey: "",
       walletPrivateKey: "",
+      resolvedUserId: ownerUserId,
+      privateKeyPresent,
+      walletRowFound: Boolean(resolvedWallet),
+      autoHydrateBlocked,
     };
   };
 
@@ -4421,6 +4456,22 @@ export async function registerRoutes(
         const hasWalletPublicKey = Boolean(String(liveCredentials.walletPublicKey || "").trim());
         const hasWalletPrivateKey = Boolean(String(liveCredentials.walletPrivateKey || "").trim());
         if (!hasWalletPublicKey || !hasWalletPrivateKey) {
+          appendDoctorSniperLog({
+            event: "guard_blocked",
+            source: "runtime",
+            symbol: String(candidate.symbol || "UNKNOWN"),
+            mint: String(candidate.address || ""),
+            reason: "wallet_key_not_connected",
+            details: {
+              scoped_user_id: scopedUserId || null,
+              resolved_user_id: String((liveCredentials as any)?.resolvedUserId || "") || null,
+              wallet_row_found: Boolean((liveCredentials as any)?.walletRowFound),
+              has_wallet_public_key: hasWalletPublicKey,
+              has_wallet_private_key: hasWalletPrivateKey,
+              private_key_present_after_decrypt: Boolean((liveCredentials as any)?.privateKeyPresent),
+              auto_hydrate_blocked: Boolean((liveCredentials as any)?.autoHydrateBlocked),
+            },
+          }, scopedUserId);
           return { allowed: false, reason: "wallet_key_not_connected" };
         }
       }
