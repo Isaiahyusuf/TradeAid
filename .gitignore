@@ -22,3 +22,6 @@ mobile/dist
 .env
 .env.local
 .env.production
+
+# Temporary runtime logs
+tmp-railway-live*.log
