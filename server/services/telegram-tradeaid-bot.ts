@@ -1093,7 +1093,7 @@ class TradeAidTelegramBot {
         const text = this.buildMilestoneMessage(snapshot, level);
         for (const chatId of subscribers) {
           try {
-            const sent = await this.sendMessage(chatId, text, buttons, { parseMode: "MarkdownV2" });
+            const sent = await this.sendMessage(chatId, text, buttons, { parseMode: "Markdown" });
             if (level >= 2 && sent?.message_id) {
               await this.pinMessage(chatId, sent.message_id).catch(() => undefined);
             }
@@ -1132,13 +1132,13 @@ class TradeAidTelegramBot {
     if (board.chartUrl) {
       try {
         await this.sendPhoto(chatId, board.chartUrl, board.chartCaption || "📊 *TRADEAID MULTIPLIER SNAPSHOT*", undefined, {
-          parseMode: "MarkdownV2",
+          parseMode: "Markdown",
         });
       } catch {
       }
     }
     await this.sendMessage(chatId, board.text, this.buildStartButtons(this.isSubscribed(chatId)), {
-      parseMode: "MarkdownV2",
+      parseMode: "Markdown",
     });
   }
 
@@ -1299,7 +1299,7 @@ class TradeAidTelegramBot {
     const buttons = useProfessionalFormat
       ? this.buildMarketButtons(token, project)
       : this.buildTokenButtons(token, project.chart);
-    const parseMode: "HTML" | "MarkdownV2" = useProfessionalFormat ? "MarkdownV2" : "HTML";
+    const parseMode: "HTML" | "Markdown" = useProfessionalFormat ? "Markdown" : "HTML";
 
     if (project.logoUrl && isHttpUrl(project.logoUrl)) {
       try {
