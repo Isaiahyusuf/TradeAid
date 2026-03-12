@@ -124,6 +124,51 @@ class AlertService:
 
         return False
 
+    async def send_fresh_launch_alert(self, token: dict, ai_result: dict, status: str) -> bool:
+        if not settings.TELEGRAM_BOT_TOKEN or not settings.TELEGRAM_CHAT_ID:
+            return False
+
+        token_name = str(token.get("token_name") or token.get("name") or "Unknown")
+        symbol = str(token.get("symbol") or "UNK")
+        market_cap = float(token.get("market_cap") or 0.0)
+        liquidity = float(token.get("liquidity") or 0.0)
+        score = float(ai_result.get("score") or 0.0)
+        risk = str(ai_result.get("risk") or "UNKNOWN")
+        confidence = str(ai_result.get("confidence") or "UNKNOWN")
+        mint = str(token.get("mint_address") or token.get("mint") or "")
+
+        text = (
+            "🚀 <b>TradeAid Fresh Launch</b>\n\n"
+            f"Name: <b>{token_name}</b>\n"
+            f"Symbol: <b>{symbol}</b>\n"
+            f"MC: <b>${market_cap:,.0f}</b>\n"
+            f"Liquidity: <b>${liquidity:,.0f}</b>\n"
+            f"AI Score: <b>{score:.2f}</b>\n"
+            f"Risk: <b>{risk}</b> | Confidence: <b>{confidence}</b>\n"
+            f"Status: <b>{status}</b>\n"
+            f"Mint: <code>{mint}</code>"
+        )
+
+        try:
+            url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage"
+            response = await self.telegram_client.post(
+                url,
+                json={
+                    "chat_id": settings.TELEGRAM_CHAT_ID,
+                    "text": text,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                },
+            )
+            if response.status_code == 200:
+                logger.info(f"[Telegram] Fresh launch sent: {symbol} {mint}")
+                return True
+            logger.warning(f"[Telegram] Fresh launch send failed: {response.text}")
+        except Exception as exc:
+            logger.error(f"[Telegram] Fresh launch error: {exc}")
+
+        return False
+
     async def get_alerts(
         self,
         db: AsyncSession,

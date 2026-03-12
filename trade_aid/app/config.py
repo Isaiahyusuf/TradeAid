@@ -60,6 +60,9 @@ class Settings(BaseSettings):
 
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
+    TELEGRAM_BOT_WEBHOOK_URL: str = ""
+    TELEGRAM_BOT_WEBHOOK_SECRET: str = ""
+    TELEGRAM_BOT_WEBHOOK_PATH: str = "/api/telegram/webhook"
 
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
@@ -80,6 +83,14 @@ class Settings(BaseSettings):
     SOLSCAN_API_KEY: str = ""
     BITQUERY_API_KEY: str = ""
     HELIUS_API_KEY: str = ""
+    TRADEAID_HELIUS_WS: str = ""
+    PUMPFUN_PROGRAM_ID: str = "6EF8rrecthR5Dkzk6t8hWb1Y4vZQqfZ"
+
+    ENABLE_FRESH_TOKEN_SNIPER: bool = True
+    FRESH_TOKEN_POLL_SECONDS: int = 8
+    FRESH_SNIPER_MIN_AI_SCORE: float = 80.0
+    FRESH_SNIPER_MIN_LIQUIDITY_USD: float = 3000.0
+    FRESH_SNIPER_MAX_DEV_WALLET_PCT: float = 10.0
     MORALIS_API_KEY: str = ""
     WALLETBOT_KEY: str = ""
     JUPITER_API_KEY: str = ""

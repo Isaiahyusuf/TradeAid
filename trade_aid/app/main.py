@@ -15,6 +15,7 @@ from app.websocket.manager import ws_manager
 from app.routers import auth, tokens, wallets, scoring, alerts, safe_buy, ai_assistant, doctor_trade, scanner
 from app.scanners.dexscreener import dex_scanner
 from app.scanners.chain_scanner import chain_scanner_manager
+from app.services.fresh_token_detector import fresh_token_detector
 
 settings = get_settings()
 
@@ -26,6 +27,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
     scanner_task = None
+    fresh_detector_started = False
 
     try:
         await ws_manager.start_redis_subscriber()
@@ -41,12 +43,22 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Scanner startup failed: {e}")
 
+    if str(os.getenv("ENABLE_FRESH_TOKEN_SNIPER", "true")).strip().lower() in ("1", "true", "yes", "on"):
+        try:
+            await fresh_token_detector.start()
+            fresh_detector_started = True
+            logger.info("Fresh token sniping detector started")
+        except Exception as e:
+            logger.warning(f"Fresh token detector startup failed: {e}")
+
     yield
 
     logger.info("Trade Aid API shutting down...")
     if scanner_task:
         await dex_scanner.stop()
         scanner_task.cancel()
+    if fresh_detector_started:
+        await fresh_token_detector.stop()
     await chain_scanner_manager.stop_all()
     await ws_manager.stop()
     await close_redis()
