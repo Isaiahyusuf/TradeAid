@@ -553,13 +553,19 @@ export class MultichainLaunchpadScanner {
           && tokenAgeMinutes <= 720
           && token.liquidity >= 8_000
           && safetyScore >= 65;
+        const isSafeFallback = token.chain === "solana"
+          && !EXCLUDED_SOL_MINTS.has(String(token.address || "").trim())
+          && !EXCLUDED_SOL_SYMBOLS.has(symbol)
+          && token.liquidity >= 20_000
+          && token.volume24h >= 10_000
+          && safetyScore >= 75;
 
-        if (isEarlySafe && !this.emittedFreshMints.has(token.address)) {
+        if ((isEarlySafe || isSafeFallback) && !this.emittedFreshMints.has(token.address)) {
           this.emittedFreshMints.set(token.address, nowMs);
           logStructured("info", "pump_listener.token_ingested", {
             mintAddress: token.address,
             symbol: token.symbol,
-            source: "multichain_pump_listener_fallback",
+            source: isEarlySafe ? "multichain_pump_listener_fallback" : "multichain_safe_listener_fallback",
             creatorWallet: null,
             transactionSignature: null,
             liquidityUsd: Number(token.liquidity || 0),
