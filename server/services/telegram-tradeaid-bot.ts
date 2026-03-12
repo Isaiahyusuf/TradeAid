@@ -201,6 +201,22 @@ const formatHoldTime = (minutesRaw: number) => {
   return `${days}d ${hours % 24}h`;
 };
 
+const summarizeWindow = (rows: PnlSnapshot[], hours: number) => {
+  const nowMs = Date.now();
+  const cutoffMs = nowMs - (hours * 60 * 60 * 1000);
+  const windowRows = rows.filter((row) => new Date(row.call.calledAt).getTime() >= cutoffMs);
+  if (!windowRows.length) {
+    return { calls: 0, winRate: 0, avgPnl: 0 };
+  }
+  const winners = windowRows.filter((row) => row.pnlPct > 0).length;
+  const avgPnl = windowRows.reduce((sum, row) => sum + row.pnlPct, 0) / windowRows.length;
+  return {
+    calls: windowRows.length,
+    winRate: (winners / windowRows.length) * 100,
+    avgPnl,
+  };
+};
+
 const statusBadgeFromPnl = (pnlPct: number) => {
   if (pnlPct >= 0.01) return "🟢 WIN";
   if (pnlPct <= -0.01) return "🔴 LOSS";
@@ -245,6 +261,16 @@ class TradeAidTelegramBot {
   private pushState: PushState = { chats: {}, sentMintAt: {} };
   private callState: BotCallState = { calls: [] };
   private pushInFlight = false;
+
+  private pruneCallHistory() {
+    const maxAgeMs = 45 * 24 * 60 * 60 * 1000;
+    const nowMs = Date.now();
+    const filtered = this.callState.calls.filter((row) => {
+      const calledAtMs = new Date(String(row.calledAt || "")).getTime();
+      return Number.isFinite(calledAtMs) && (nowMs - calledAtMs) <= maxAgeMs;
+    });
+    this.callState.calls = filtered.slice(-5000);
+  }
 
   constructor(token: string) {
     this.token = token;
@@ -619,8 +645,9 @@ class TradeAidTelegramBot {
               : [],
           }))
           .filter((row) => Boolean(row.mint))
-          .slice(-1200),
+          .slice(-5000),
       };
+      this.pruneCallHistory();
     } catch {
       this.callState = { calls: [] };
     }
@@ -663,10 +690,7 @@ class TradeAidTelegramBot {
     };
 
     this.callState.calls.push(created);
-
-    if (this.callState.calls.length > 1200) {
-      this.callState.calls = this.callState.calls.slice(-1200);
-    }
+    this.pruneCallHistory();
     await this.persistCallState();
     return created;
   }
@@ -780,6 +804,10 @@ class TradeAidTelegramBot {
     const x2 = snapshots.filter((row) => row.multiplier >= 2).length;
     const x3 = snapshots.filter((row) => row.multiplier >= 3).length;
     const x4 = snapshots.filter((row) => row.multiplier >= 4).length;
+    const window24h = summarizeWindow(snapshots, 24);
+    const window72h = summarizeWindow(snapshots, 72);
+    const window7d = summarizeWindow(snapshots, 24 * 7);
+    const window30d = summarizeWindow(snapshots, 24 * 30);
 
     const topWins = [...winners].sort((a, b) => b.pnlPct - a.pnlPct).slice(0, Math.max(1, Math.min(limit, 8)));
     const topLosses = [...losers].sort((a, b) => a.pnlPct - b.pnlPct).slice(0, Math.max(1, Math.min(limit, 6)));
@@ -835,6 +863,12 @@ class TradeAidTelegramBot {
       `Closed Calls: *${escapeMarkdown(String(closedSnapshots.length))}*`,
       `Median Hold: *${escapeMarkdown(formatHoldTime(medianHoldMinutes))}*`,
       `2x: *${escapeMarkdown(String(x2))}* \\| 3x: *${escapeMarkdown(String(x3))}* \\| 4x\+: *${escapeMarkdown(String(x4))}*`,
+      "",
+      "⏱️ *Rolling Win Rate*",
+      `24h: *${escapeMarkdown(`${window24h.winRate.toFixed(1)}%`)}* \(${escapeMarkdown(String(window24h.calls))} calls, ${escapeMarkdown(fmtPct(window24h.avgPnl))}\)`,
+      `72h: *${escapeMarkdown(`${window72h.winRate.toFixed(1)}%`)}* \(${escapeMarkdown(String(window72h.calls))} calls, ${escapeMarkdown(fmtPct(window72h.avgPnl))}\)`,
+      `7d: *${escapeMarkdown(`${window7d.winRate.toFixed(1)}%`)}* \(${escapeMarkdown(String(window7d.calls))} calls, ${escapeMarkdown(fmtPct(window7d.avgPnl))}\)`,
+      `30d: *${escapeMarkdown(`${window30d.winRate.toFixed(1)}%`)}* \(${escapeMarkdown(String(window30d.calls))} calls, ${escapeMarkdown(fmtPct(window30d.avgPnl))}\)`,
       "",
       DIVIDER,
       "",
@@ -1093,7 +1127,12 @@ class TradeAidTelegramBot {
         const text = this.buildMilestoneMessage(snapshot, level);
         for (const chatId of subscribers) {
           try {
-            const sent = await this.sendMessage(chatId, text, buttons, { parseMode: "Markdown" });
+            let sent: TelegramSentMessage | undefined;
+            if (project.logoUrl && isHttpUrl(project.logoUrl)) {
+              sent = await this.sendPhoto(chatId, project.logoUrl, text, buttons, { parseMode: "Markdown" });
+            } else {
+              sent = await this.sendMessage(chatId, text, buttons, { parseMode: "Markdown" });
+            }
             if (level >= 2 && sent?.message_id) {
               await this.pinMessage(chatId, sent.message_id).catch(() => undefined);
             }
