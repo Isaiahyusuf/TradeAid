@@ -25,6 +25,8 @@ export type DoctorPosition = {
   size_pct: number;
   risk_status: string;
   trailing_stop_pct?: number;
+  pnl_pct?: number;
+  worth_usd?: number;
 };
 
 export type DoctorRecentTrade = {
@@ -141,6 +143,11 @@ export type DoctorStatus = {
     ui_amount: number;
     amount_raw?: string;
     decimals?: number;
+    symbol?: string;
+    name?: string;
+    logo_url?: string;
+    price_usd?: number;
+    worth_usd?: number;
   }>;
   wallet_transactions?: Array<{
     signature: string;
@@ -148,6 +155,7 @@ export type DoctorStatus = {
     err?: unknown;
     memo?: string | null;
     confirmation_status?: string;
+    explorer_url?: string | null;
   }>;
   recent_trades: DoctorRecentTrade[];
   decision_journal?: DoctorDecisionJournalRow[];

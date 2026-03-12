@@ -1276,6 +1276,9 @@ export default function DoctorTrade() {
                     </div>
                     <p className="text-[11px] text-muted-foreground">Entry ${Number(position.entry_price || 0).toFixed(6)} · Now ${Number(position.current_price || 0).toFixed(6)}</p>
                     <p className="text-[11px] text-muted-foreground">Liq {fmtUsd(Number(position.liquidity || 0))} · Conf {Number(position.confidence || 0)}</p>
+                    <p className={`text-[11px] ${Number((position as any).pnl_pct || 0) >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                      PnL {Number((position as any).pnl_pct || 0).toFixed(2)}% · Value {fmtUsd(Number((position as any).worth_usd || 0))}
+                    </p>
                   </div>
                 ))}
                 {!viewData?.positions?.length && <p className="text-sm text-muted-foreground">No open positions.</p>}
@@ -1298,6 +1301,10 @@ export default function DoctorTrade() {
                       <p className="text-xs font-semibold break-all">{token.mint}</p>
                     </div>
                     <p className="text-[11px] text-muted-foreground">Balance {Number(token.ui_amount || 0).toFixed(6)}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {(token as any).symbol ? `${String((token as any).symbol)} · ` : ""}
+                      Value {fmtUsd(Number((token as any).worth_usd || 0))}
+                    </p>
                   </div>
                 ))}
                 {!viewData?.wallet_tokens?.length && <p className="text-sm text-muted-foreground">No SPL tokens detected in connected wallet.</p>}
@@ -1312,6 +1319,16 @@ export default function DoctorTrade() {
                     <p className="text-xs font-semibold break-all">{tx.signature}</p>
                     <p className="text-[11px] text-muted-foreground">{fmtTs(tx.block_time || undefined)} · {String(tx.confirmation_status || "unknown")}</p>
                     {tx.err ? <p className="text-[11px] text-red-500">Failed</p> : <p className="text-[11px] text-emerald-500">Confirmed</p>}
+                    {(tx as any).explorer_url ? (
+                      <a
+                        href={String((tx as any).explorer_url)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[11px] text-primary underline"
+                      >
+                        View on Solscan
+                      </a>
+                    ) : null}
                   </div>
                 ))}
                 {!viewData?.wallet_transactions?.length && <p className="text-sm text-muted-foreground">No recent on-chain transactions found.</p>}

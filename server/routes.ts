@@ -1608,6 +1608,8 @@ export async function registerRoutes(
   let doctorWalletBalanceCache: { address: string; at: number; balanceSol: number } | null = null;
   let doctorWalletTokensCache: { address: string; at: number; tokens: Array<Record<string, any>> } | null = null;
   let doctorWalletTransactionsCache: { address: string; at: number; transactions: Array<Record<string, any>> } | null = null;
+  const splTokenProgramId = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+  const splToken2022ProgramId = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
   const doctorProcessedMints = new Map<string, number>();
   const doctorRejectedMints = new Map<string, number>();
   let doctorSniperLogsByUser = new Map<string, Array<Record<string, any>>>();
@@ -1622,6 +1624,20 @@ export async function registerRoutes(
     if (safe >= 1_000) return `$${(safe / 1_000).toFixed(0)}K`;
     if (safe >= 1) return `$${safe.toFixed(2)}`;
     return `$${safe.toFixed(6)}`;
+  };
+
+  const invalidateDoctorWalletCaches = (walletAddress?: string) => {
+    const resolvedWallet = String(walletAddress || doctorRuntime.wallet.address || "").trim();
+    if (!resolvedWallet) {
+      doctorWalletBalanceCache = null;
+      doctorWalletTokensCache = null;
+      doctorWalletTransactionsCache = null;
+      return;
+    }
+
+    if (doctorWalletBalanceCache?.address === resolvedWallet) doctorWalletBalanceCache = null;
+    if (doctorWalletTokensCache?.address === resolvedWallet) doctorWalletTokensCache = null;
+    if (doctorWalletTransactionsCache?.address === resolvedWallet) doctorWalletTransactionsCache = null;
   };
 
   const getTickerSourceLabel = (source: string, launchSource: string, smartMoney = false) => {
@@ -2031,24 +2047,31 @@ export async function registerRoutes(
     try {
       const ownerPk = new PublicKey(resolvedWallet);
       const mintPk = new PublicKey(resolvedMint);
-      const accounts = await getSolanaConnection().getParsedTokenAccountsByOwner(ownerPk, { mint: mintPk }, "confirmed");
+      const [legacyAccounts, token2022Accounts] = await Promise.all([
+        getSolanaConnection().getParsedTokenAccountsByOwner(ownerPk, { mint: mintPk, programId: splTokenProgramId }, "confirmed").catch(() => ({ value: [] as Array<any> })),
+        getSolanaConnection().getParsedTokenAccountsByOwner(ownerPk, { mint: mintPk, programId: splToken2022ProgramId }, "confirmed").catch(() => ({ value: [] as Array<any> })),
+      ]);
+      const mergedAccounts = [...legacyAccounts.value, ...token2022Accounts.value];
       let uiAmount = 0;
       let amountRawBigInt = BigInt(0);
       let decimals = 0;
 
-      for (const entry of accounts.value) {
+      for (const entry of mergedAccounts) {
         const tokenAmount = (entry.account.data as any)?.parsed?.info?.tokenAmount as Record<string, any> | undefined;
-        const parsedUi = Number(tokenAmount?.uiAmount || 0);
-        if (Number.isFinite(parsedUi) && parsedUi > 0) {
-          uiAmount += parsedUi;
-        }
         const parsedDecimals = Number(tokenAmount?.decimals || 0);
         if (Number.isFinite(parsedDecimals) && parsedDecimals >= 0) {
           decimals = Math.max(decimals, parsedDecimals);
         }
         const parsedRaw = String(tokenAmount?.amount || "0");
         try {
-          amountRawBigInt += BigInt(parsedRaw);
+          const raw = BigInt(parsedRaw);
+          amountRawBigInt += raw;
+          const parsedUi = Number(tokenAmount?.uiAmount ?? tokenAmount?.uiAmountString ?? 0);
+          if (Number.isFinite(parsedUi) && parsedUi > 0) {
+            uiAmount += parsedUi;
+          } else if (parsedDecimals >= 0) {
+            uiAmount += Number(raw) / Math.pow(10, parsedDecimals);
+          }
         } catch {
         }
       }
@@ -2081,25 +2104,51 @@ export async function registerRoutes(
 
     try {
       const ownerPk = new PublicKey(resolvedWallet);
-      const tokenProgram = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
-      const accounts = await getSolanaConnection().getParsedTokenAccountsByOwner(ownerPk, { programId: tokenProgram }, "confirmed");
+      const [legacyAccounts, token2022Accounts] = await Promise.all([
+        getSolanaConnection().getParsedTokenAccountsByOwner(ownerPk, { programId: splTokenProgramId }, "confirmed").catch(() => ({ value: [] as Array<any> })),
+        getSolanaConnection().getParsedTokenAccountsByOwner(ownerPk, { programId: splToken2022ProgramId }, "confirmed").catch(() => ({ value: [] as Array<any> })),
+      ]);
+      const mergedAccounts = [...legacyAccounts.value, ...token2022Accounts.value];
 
-      const tokens: Array<Record<string, any>> = [];
-      for (const entry of accounts.value) {
+      const tokenByMint = new Map<string, { raw: bigint; decimals: number; uiAmount: number }>();
+      for (const entry of mergedAccounts) {
         const parsedInfo = (entry.account.data as any)?.parsed?.info as Record<string, any> | undefined;
         const tokenAmount = (parsedInfo?.tokenAmount || {}) as Record<string, any>;
         const mint = String(parsedInfo?.mint || "").trim();
-        const uiAmount = Number(tokenAmount?.uiAmount || 0);
         const amountRaw = String(tokenAmount?.amount || "0");
         const decimals = Math.max(0, Math.trunc(Number(tokenAmount?.decimals || 0)));
-        if (!mint || !(uiAmount > 0)) continue;
-        tokens.push({
-          mint,
-          ui_amount: Number(uiAmount.toFixed(9)),
-          amount_raw: amountRaw,
-          decimals,
+        if (!mint) continue;
+        let raw = BigInt(0);
+        try {
+          raw = BigInt(amountRaw);
+        } catch {
+          continue;
+        }
+        if (raw <= BigInt(0)) continue;
+
+        const existing = tokenByMint.get(mint) || { raw: BigInt(0), decimals, uiAmount: 0 };
+        const parsedUi = Number(tokenAmount?.uiAmount ?? tokenAmount?.uiAmountString ?? 0);
+        const uiValue = Number.isFinite(parsedUi) && parsedUi > 0
+          ? parsedUi
+          : (Number(raw) / Math.pow(10, decimals));
+        tokenByMint.set(mint, {
+          raw: existing.raw + raw,
+          decimals: Math.max(existing.decimals, decimals),
+          uiAmount: existing.uiAmount + Math.max(0, uiValue),
         });
       }
+
+      const tokens: Array<Record<string, any>> = Array.from(tokenByMint.entries()).map(([mint, entry]) => {
+        const uiAmount = entry.uiAmount > 0
+          ? entry.uiAmount
+          : (Number(entry.raw) / Math.pow(10, entry.decimals));
+        return {
+          mint,
+          ui_amount: Number(uiAmount.toFixed(9)),
+          amount_raw: entry.raw.toString(),
+          decimals: entry.decimals,
+        };
+      });
       tokens.sort((a, b) => Number(b.ui_amount || 0) - Number(a.ui_amount || 0));
 
       doctorWalletTokensCache = {
@@ -2133,6 +2182,7 @@ export async function registerRoutes(
         err: item.err || null,
         memo: item.memo || null,
         confirmation_status: String(item.confirmationStatus || "unknown"),
+        explorer_url: String(item.signature || "") ? `https://solscan.io/tx/${item.signature}` : null,
       }));
 
       doctorWalletTransactionsCache = {
@@ -2795,6 +2845,38 @@ export async function registerRoutes(
     return Number(fallbackPriceUsd || 0);
   };
 
+  const resolveDoctorPositionMarketSnapshot = async (
+    mint: string,
+    existing: Record<string, any> | null,
+  ) => {
+    const normalizedMint = String(mint || "").trim();
+    if (!normalizedMint) return existing;
+
+    if (existing && Number(existing.price_usd || 0) > 0) {
+      return existing;
+    }
+
+    try {
+      const pairs = await getTokenPairsFast(normalizedMint);
+      const bestPair = pairs.find((pair) => String(pair.chainId || "").toLowerCase() === "solana") || pairs[0];
+      if (!bestPair) return existing;
+      const mapped = pairToTokenData(bestPair);
+      return {
+        ...(existing || {}),
+        address: normalizedMint,
+        symbol: String((existing as any)?.symbol || (mapped as any)?.symbol || bestPair.baseToken?.symbol || "UNKNOWN"),
+        price_usd: Number((mapped as any)?.priceUsd || bestPair.priceUsd || (existing as any)?.price_usd || 0),
+        liquidity: Number((mapped as any)?.liquidity || bestPair?.liquidity?.usd || (existing as any)?.liquidity || 0),
+        volume_5m: Number(bestPair?.volume?.m5 || (existing as any)?.volume_5m || 0),
+        score: Number((existing as any)?.score || 0),
+        holders_count: Number((existing as any)?.holders_count || 0),
+        top_holder_pct: Number((existing as any)?.top_holder_pct || 0),
+      };
+    } catch {
+      return existing;
+    }
+  };
+
   const computeDoctorRiskMetrics = (nowMs = Date.now()) => {
     const todaysSellTrades = doctorRuntime.recentTrades.filter((trade) => {
       if (String(trade.action || "").toUpperCase() !== "SELL") return false;
@@ -3347,6 +3429,8 @@ export async function registerRoutes(
             base_asset_mint: tradeBaseMint,
             timestamp: nowIso(),
           });
+          invalidateDoctorWalletCaches(walletPublicKey);
+          await refreshDoctorWalletBalanceFromChain(walletPublicKey, true).catch(() => Number(doctorRuntime.wallet.balanceSol || 0));
 
           return {
             executed: true,
@@ -3593,6 +3677,8 @@ export async function registerRoutes(
           base_asset_mint: tradeBaseMint,
           timestamp: nowIso(),
         });
+        invalidateDoctorWalletCaches(walletPublicKey);
+        await refreshDoctorWalletBalanceFromChain(walletPublicKey, true).catch(() => Number(doctorRuntime.wallet.balanceSol || 0));
         return {
           executed: true,
           status: "executed",
@@ -3822,6 +3908,7 @@ export async function registerRoutes(
     const configuredStopLossPct = Math.max(0.1, getDoctorEffectiveControlNumber("stop_loss_pct", Number(doctorRuntime.controls.stop_loss_pct || 0)));
     const configuredTrailingStopPct = Math.max(0.1, getDoctorEffectiveControlNumber("trailing_stop_pct", Number(doctorRuntime.controls.trailing_stop_pct || 0)));
     const configuredMaxHoldMinutes = Math.max(5, getDoctorEffectiveControlNumber("max_hold_minutes", Number(doctorRuntime.controls.max_hold_minutes || 0)));
+    const configuredLiveSellFractionPct = Math.max(1, Math.min(100, getDoctorEffectiveControlNumber("live_sell_fraction_pct", Number(doctorRuntime.controls.live_sell_fraction_pct || 100))));
     const configuredMinMomentumProfitPct = Math.max(0, getDoctorEffectiveControlNumber("min_momentum_profit_pct", Number(doctorRuntime.controls.min_momentum_profit_pct || 0)));
     const configuredStrongMoveThresholdPct = Math.max(1, getDoctorEffectiveControlNumber("strong_move_threshold_pct", Number(doctorRuntime.controls.strong_move_threshold_pct || 40)));
     const configuredMaxTopHolderPct = Math.max(1, getDoctorEffectiveControlNumber("quality_max_top_holder_pct", Number(doctorRuntime.controls.quality_max_top_holder_pct || 24)));
@@ -3840,7 +3927,8 @@ export async function registerRoutes(
 
     for (let positionIndex = 0; positionIndex < doctorRuntime.positions.length; positionIndex += 1) {
       const position = doctorRuntime.positions[positionIndex];
-      const market = tokenMap.get(String(position.address || "")) || null;
+      const positionMint = String(position.address || "").trim();
+      const market = await resolveDoctorPositionMarketSnapshot(positionMint, tokenMap.get(positionMint) || null);
       const entryPrice = Number(position.entry_price || 0);
       const currentPrice = resolveCurrentPriceUsd(market || {}, entryPrice);
       const peakPrice = Math.max(Number(position.peak_price || entryPrice || currentPrice || 0), currentPrice || 0);
@@ -3861,8 +3949,9 @@ export async function registerRoutes(
       } else if (pnlPct >= firstTakeProfitStagePct && tpStage < 1) {
         sellReason = "take_profit_stage_1_partial";
         sellFractionPct = 40;
-      } else if (pnlPct >= takeProfitPct && tpStage >= 2) {
-        sellReason = "take_profit_reached";
+      } else if (pnlPct >= takeProfitPct) {
+        sellReason = "take_profit_target_hit";
+        sellFractionPct = configuredLiveSellFractionPct;
       } else if (pnlPct <= -configuredStopLossPct) {
         sellReason = "stop_loss_hit";
       } else if (
@@ -5169,12 +5258,40 @@ export async function registerRoutes(
     const walletAddress = String(walletSnapshot.address || "").trim();
     const walletConnected = Boolean(walletSnapshot.connected);
 
-    const statusWalletTokens = walletConnected
+    const rawWalletTokens = walletConnected
       ? await getDoctorLiveWalletTokenSnapshots(walletAddress, 20)
       : [];
     const statusWalletTransactions = walletConnected
       ? await getDoctorWalletRecentTransactions(walletAddress, 20)
       : [];
+    const knownTokenDetailsByMint = new Map<string, Record<string, any>>();
+    for (const token of activeTokens) {
+      const mint = String((token as any).address || "").trim();
+      if (!mint) continue;
+      knownTokenDetailsByMint.set(mint, token as Record<string, any>);
+    }
+    for (const position of doctorRuntime.positions) {
+      const mint = String((position as any).address || "").trim();
+      if (!mint) continue;
+      if (!knownTokenDetailsByMint.has(mint)) {
+        knownTokenDetailsByMint.set(mint, position as Record<string, any>);
+      }
+    }
+    const statusWalletTokens = rawWalletTokens.map((token) => {
+      const mint = String((token as any).mint || "").trim();
+      const details = knownTokenDetailsByMint.get(mint) || {};
+      const priceUsd = Number((details as any).price_usd || 0);
+      const uiAmount = Number((token as any).ui_amount || 0);
+      const worthUsd = Number((uiAmount * Math.max(0, priceUsd)).toFixed(6));
+      return {
+        ...token,
+        symbol: String((details as any).symbol || mint.slice(0, 4) || "TOK"),
+        name: String((details as any).name || (details as any).symbol || mint),
+        logo_url: String((details as any).logo_url || ""),
+        price_usd: priceUsd,
+        worth_usd: worthUsd,
+      };
+    });
     const requiresLiveWallet = isDoctorLiveOnlyMode() || doctorRuntime.execution.mode === "live";
     const maxTradesPerDay = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_trades_per_day || 1)));
     const maxOpenPositions = getDoctorEffectiveMaxOpenPositions();
