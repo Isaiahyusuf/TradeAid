@@ -432,7 +432,7 @@ export default function AlphaScanner() {
                     </div>
                     <p className="text-xs text-muted-foreground font-mono truncate">{token.contract_address}</p>
                   </div>
-                  <div className="hidden md:block text-right shrink-0">
+                  <div className="text-right shrink-0 min-w-[78px]">
                     <p className="font-mono text-sm">{formatNumber(token.market_cap_usd)}</p>
                     <p className="text-xs text-muted-foreground"><MetricLabel label="MCap" tooltip="Estimated market capitalization for this token." className="inline-flex items-center gap-1 text-xs" /></p>
                   </div>

@@ -83,60 +83,66 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="absolute inset-0 pointer-events-none wow-spotlight" />
         <div className="absolute inset-x-0 top-24 h-40 bg-gradient-to-b from-white/[0.04] to-transparent pointer-events-none" />
         <div className="absolute top-10 left-0 right-0 p-4 md:p-6 z-20">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/80 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.28)] px-3 py-2 md:px-4 md:py-3">
             <button
               type="button"
               onClick={() => setLocation("/")}
-              className="inline-flex items-center rounded-md px-2 py-1 bg-card/70 backdrop-blur-md border border-primary/20 hover:border-primary/40"
+              className="inline-flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-primary/10 transition-colors"
               data-testid="button-global-logo-home"
             >
-              <TradeAidLogo withText={false} className="scale-90" />
+              <TradeAidLogo withText className="scale-[0.92] sm:scale-100" />
+              <span className="hidden md:inline text-xs text-muted-foreground">Live Trading Console</span>
             </button>
-            <Select value={chain} onValueChange={(value) => setChain(value as AppChain)}>
-              <SelectTrigger className="w-[150px] bg-card/70 backdrop-blur-md border-primary/20 hover:border-primary/40" data-testid="select-global-chain">
-                <SelectValue placeholder="Select chain" />
-              </SelectTrigger>
-              <SelectContent align="end">
-                {SUPPORTED_CHAINS.map((item) => (
-                  <SelectItem key={item} value={item} className="capitalize">
-                    {item}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="gap-2 bg-card/70 backdrop-blur-md border-primary/20 hover:border-primary/40 solana-card"
-                  data-testid="button-open-profile-menu"
-                >
-                  <Avatar className="h-6 w-6">
-                    {user?.avatar_url ? <AvatarImage src={user.avatar_url} alt={user.display_name || user.username} /> : null}
-                    <AvatarFallback className="bg-primary/20 text-primary text-xs">
-                      {(user?.display_name || user?.username || "U").slice(0, 1).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="hidden sm:inline">Profile</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44" data-testid="menu-profile-dropdown">
-                <DropdownMenuItem onClick={() => setLocation("/account")} data-testid="menu-item-account">
-                  <Settings2 className="h-4 w-4 mr-2" />
-                  Settings
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={logout}
-                  data-testid="menu-item-logout"
-                >
-                  <LogOut className="h-4 w-4 mr-2" />
-                  Logout
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div className="flex items-center gap-2 md:gap-3 shrink-0">
+              <Select value={chain} onValueChange={(value) => setChain(value as AppChain)}>
+                <SelectTrigger className="w-[126px] sm:w-[150px] bg-card/70 border-primary/25 hover:border-primary/45" data-testid="select-global-chain">
+                  <SelectValue placeholder="Select chain" />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {SUPPORTED_CHAINS.map((item) => (
+                    <SelectItem key={item} value={item} className="capitalize">
+                      {item}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="h-10 gap-2 px-2.5 md:px-3 bg-card/70 border-primary/25 hover:border-primary/45"
+                    data-testid="button-open-profile-menu"
+                  >
+                    <Avatar className="h-6 w-6">
+                      {user?.avatar_url ? <AvatarImage src={user.avatar_url} alt={user.display_name || user.username} /> : null}
+                      <AvatarFallback className="bg-primary/20 text-primary text-xs">
+                        {(user?.display_name || user?.username || "U").slice(0, 1).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="text-xs sm:text-sm font-medium max-w-[96px] truncate">
+                      {user?.display_name || user?.username || "Profile"}
+                    </span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44" data-testid="menu-profile-dropdown">
+                  <DropdownMenuItem onClick={() => setLocation("/account")} data-testid="menu-item-account">
+                    <Settings2 className="h-4 w-4 mr-2" />
+                    Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={logout}
+                    data-testid="menu-item-logout"
+                  >
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Logout
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </div>
 
