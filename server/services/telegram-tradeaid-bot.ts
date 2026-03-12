@@ -90,6 +90,20 @@ type BotCallState = {
   calls: BotCallRecord[];
 };
 
+type PnlSnapshot = {
+  call: BotCallRecord;
+  currentPriceUsd: number;
+  multiplier: number;
+  pnlPct: number;
+  holdMinutes: number;
+};
+
+type PnlBoardResult = {
+  text: string;
+  chartUrl?: string;
+  chartCaption?: string;
+};
+
 type TokenProjectMeta = {
   logoUrl: string;
   website: string;
@@ -140,6 +154,23 @@ const formatAge = (dateValue: Date | string | null | undefined) => {
   const ms = Date.now() - date.getTime();
   if (!Number.isFinite(ms) || ms < 0) return "n/a";
   const minutes = Math.max(0, Math.floor(ms / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${minutes % 60}m`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ${hours % 24}h`;
+};
+
+const median = (values: number[]) => {
+  const rows = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+  if (!rows.length) return 0;
+  const mid = Math.floor(rows.length / 2);
+  if (rows.length % 2 === 1) return rows[mid];
+  return (rows[mid - 1] + rows[mid]) / 2;
+};
+
+const formatHoldTime = (minutesRaw: number) => {
+  const minutes = Math.max(0, Math.floor(Number(minutesRaw || 0)));
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ${minutes % 60}m`;
@@ -203,9 +234,35 @@ class TradeAidTelegramBot {
     this.running = true;
     await this.loadPushState();
     await this.loadCallState();
+    await this.configureBotMenu();
     this.startPushLoop();
     console.log("[TelegramBot] TradeAid Telegram bot started.");
     void this.pollLoop();
+  }
+
+  private async configureBotMenu() {
+    const commands = [
+      { command: "start", description: "Open TradeAid menu" },
+      { command: "safe", description: "Top safer calls" },
+      { command: "new", description: "Early safe calls" },
+      { command: "pnl", description: "SpyDefi-style PnL board" },
+      { command: "token", description: "Lookup token by symbol or CA" },
+      { command: "projects", description: "Show project links" },
+      { command: "push", description: "Push alerts on/off/status" },
+      { command: "help", description: "Show help" },
+    ];
+
+    try {
+      await axios.post(`${this.apiBase}/setMyCommands`, { commands }, { timeout: 12_000 });
+      await axios.post(
+        `${this.apiBase}/setChatMenuButton`,
+        { menu_button: { type: "commands" } },
+        { timeout: 12_000 },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || "menu_config_failed");
+      console.warn(`[TelegramBot] Menu setup failed: ${message}`);
+    }
   }
 
   private async pollLoop(): Promise<void> {
@@ -414,25 +471,18 @@ class TradeAidTelegramBot {
     await this.persistCallState();
   }
 
-  private async buildPnlBoard(limit = 8) {
+  private async buildPnlBoard(limit = 10): Promise<PnlBoardResult> {
     const calls = [...this.callState.calls]
       .filter((row) => Boolean(row?.mint))
-      .sort((a, b) => new Date(a.calledAt).getTime() - new Date(b.calledAt).getTime());
+      .sort((a, b) => new Date(b.calledAt).getTime() - new Date(a.calledAt).getTime());
 
     if (!calls.length) {
-      return "<b>PnL Board</b>\nNo tracked calls yet. Use Safe Calls or Early Safe first.";
+      return { text: "<b>PnL Board</b>\nNo tracked calls yet. Use Safe Calls or Early Safe first." };
     }
 
-    const firstCallByMint = new Map<string, BotCallRecord>();
-    for (const call of calls) {
-      if (!firstCallByMint.has(call.mint)) {
-        firstCallByMint.set(call.mint, call);
-      }
-    }
-
-    const mints = Array.from(firstCallByMint.keys()).slice(0, 350);
+    const mints = Array.from(new Set(calls.map((row) => row.mint))).slice(0, 500);
     if (!mints.length) {
-      return "<b>PnL Board</b>\nNo tracked calls yet.";
+      return { text: "<b>PnL Board</b>\nNo tracked calls yet." };
     }
 
     const rows = await db
@@ -441,56 +491,169 @@ class TradeAidTelegramBot {
       .where(and(eq(scannedTokens.chain, "solana"), inArray(scannedTokens.address, mints)));
 
     const tokenMap = new Map(rows.map((row) => [String(row.address || "").trim(), row]));
-    const performance = Array.from(firstCallByMint.values())
+    const snapshots = calls
       .map((call) => {
         const token = tokenMap.get(call.mint);
-        const current = Number(token?.priceUsd || 0);
-        const called = Number(call.calledPriceUsd || 0);
-        if (!Number.isFinite(current) || current <= 0 || !Number.isFinite(called) || called <= 0) {
+        const currentPriceUsd = Number(token?.priceUsd || 0);
+        const calledPriceUsd = Number(call.calledPriceUsd || 0);
+        if (!Number.isFinite(currentPriceUsd) || currentPriceUsd <= 0 || !Number.isFinite(calledPriceUsd) || calledPriceUsd <= 0) {
           return null;
         }
-        const pnlPct = ((current - called) / called) * 100;
+        const multiplier = currentPriceUsd / calledPriceUsd;
+        const pnlPct = (multiplier - 1) * 100;
+        const holdMinutes = Math.max(0, (Date.now() - new Date(call.calledAt).getTime()) / 60_000);
         return {
           call,
-          token,
-          current,
-          called,
+          currentPriceUsd,
+          multiplier,
           pnlPct,
-        };
+          holdMinutes,
+        } satisfies PnlSnapshot;
       })
-      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+      .filter((row): row is PnlSnapshot => Boolean(row));
 
-    if (!performance.length) {
-      return [
+    if (!snapshots.length) {
+      return {
+        text: [
         "<b>PnL Board</b>",
         "Tracked calls found, but live price snapshots are not available yet.",
-      ].join("\n");
+      ].join("\n"),
+      };
     }
 
-    const winners = performance.filter((row) => row.pnlPct > 0).length;
-    const winRate = (winners / performance.length) * 100;
-    const avgPnl = performance.reduce((sum, row) => sum + row.pnlPct, 0) / performance.length;
-    const best = [...performance].sort((a, b) => b.pnlPct - a.pnlPct).slice(0, Math.max(1, Math.min(limit, 12)));
+    const winners = snapshots.filter((row) => row.pnlPct > 0);
+    const losers = snapshots.filter((row) => row.pnlPct < 0);
+    const breakeven = snapshots.length - winners.length - losers.length;
+    const winRate = (winners.length / snapshots.length) * 100;
+    const avgPnl = snapshots.reduce((sum, row) => sum + row.pnlPct, 0) / snapshots.length;
+    const medianHoldMinutes = median(snapshots.map((row) => row.holdMinutes));
+
+    const x2 = snapshots.filter((row) => row.multiplier >= 2).length;
+    const x3 = snapshots.filter((row) => row.multiplier >= 3).length;
+    const x4 = snapshots.filter((row) => row.multiplier >= 4).length;
+
+    const topWins = [...winners].sort((a, b) => b.pnlPct - a.pnlPct).slice(0, Math.max(1, Math.min(limit, 8)));
+    const topLosses = [...losers].sort((a, b) => a.pnlPct - b.pnlPct).slice(0, Math.max(1, Math.min(limit, 6)));
+    const recent = [...snapshots].sort((a, b) => new Date(b.call.calledAt).getTime() - new Date(a.call.calledAt).getTime()).slice(0, 8);
 
     const lines = [
-      "<b>SpyDefi-Style PnL Board</b>",
-      `Calls tracked: <b>${calls.length}</b> | Unique coins: <b>${firstCallByMint.size}</b>`,
-      `Coins with price data: <b>${performance.length}</b>`,
+      "<b>SpyDefi PnL Board</b>",
+      `Calls tracked: <b>${calls.length}</b> | Snapshots priced: <b>${snapshots.length}</b>`,
       `Win rate: <b>${winRate.toFixed(1)}%</b> | Avg PnL: <b>${fmtPct(avgPnl)}</b>`,
+      `Win bucket: <b>${winners.length}</b> | Loss bucket: <b>${losers.length}</b> | Flat: <b>${breakeven}</b>`,
+      `Median hold time: <b>${escapeHtml(formatHoldTime(medianHoldMinutes))}</b>`,
+      `2x: <b>${x2}</b> | 3x: <b>${x3}</b> | 4x+: <b>${x4}</b>`,
       "",
-      "<b>Top Movers Since First Call</b>",
+      "<b>Recent Per-Call Snapshots</b>",
     ];
 
-    for (const row of best) {
+    for (const row of recent) {
       const calledAgo = formatAge(row.call.calledAt);
+      const xText = `${row.multiplier.toFixed(2)}x`;
+      const direction = row.pnlPct >= 0 ? "WIN" : "LOSS";
       lines.push(
-        `${escapeHtml(String(row.call.symbol || row.token?.symbol || "UNK"))}: <b>${fmtPct(row.pnlPct)}</b> | ` +
-        `Call ${escapeHtml(fmtUsd(row.called))} -> Now ${escapeHtml(fmtUsd(row.current))} | ` +
-        `Age ${escapeHtml(calledAgo)} | Safety ${Number(row.call.safetyScore || 0)}`,
+        `${direction} ${escapeHtml(String(row.call.symbol || "UNK"))}: <b>${escapeHtml(xText)}</b> (${fmtPct(row.pnlPct)}) | ` +
+        `Call ${escapeHtml(fmtUsd(row.call.calledPriceUsd))} -> ${escapeHtml(fmtUsd(row.currentPriceUsd))} | ` +
+        `Age ${escapeHtml(calledAgo)}`,
       );
     }
 
-    return lines.join("\n");
+    if (topWins.length) {
+      lines.push("", "<b>Top Wins</b>");
+      for (const row of topWins) {
+        lines.push(`${escapeHtml(String(row.call.symbol || "UNK"))}: <b>${row.multiplier.toFixed(2)}x</b> (${fmtPct(row.pnlPct)})`);
+      }
+    }
+
+    if (topLosses.length) {
+      lines.push("", "<b>Top Losses</b>");
+      for (const row of topLosses) {
+        lines.push(`${escapeHtml(String(row.call.symbol || "UNK"))}: <b>${row.multiplier.toFixed(2)}x</b> (${fmtPct(row.pnlPct)})`);
+      }
+    }
+
+    const chartSnapshots = [...snapshots]
+      .sort((a, b) => b.multiplier - a.multiplier)
+      .slice(0, 12);
+    const chartUrl = this.buildPnlMultiplierChartUrl(chartSnapshots);
+    const chartCaption = [
+      "<b>PnL Multipliers</b>",
+      `2x: <b>${x2}</b> | 3x: <b>${x3}</b> | 4x+: <b>${x4}</b>`,
+      "Green bars are stronger multiples.",
+    ].join("\n");
+
+    return {
+      text: lines.join("\n"),
+      chartUrl,
+      chartCaption,
+    };
+  }
+
+  private buildPnlMultiplierChartUrl(rows: PnlSnapshot[]) {
+    if (!rows.length) return "";
+    const labels = rows.map((row, idx) => {
+      const sym = String(row.call.symbol || "UNK").toUpperCase();
+      return `${sym}-${idx + 1}`;
+    });
+    const values = rows.map((row) => Number(row.multiplier.toFixed(3)));
+    const colors = rows.map((row) => {
+      if (row.multiplier >= 4) return "#15803d";
+      if (row.multiplier >= 3) return "#16a34a";
+      if (row.multiplier >= 2) return "#65a30d";
+      if (row.multiplier >= 1) return "#f59e0b";
+      return "#dc2626";
+    });
+
+    const chartConfig = {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Multiple (x)",
+            data: values,
+            backgroundColor: colors,
+            borderColor: "#0f172a",
+            borderWidth: 1,
+          },
+        ],
+      },
+      options: {
+        plugins: {
+          title: {
+            display: true,
+            text: "TradeAid SpyDefi-Style PnL Multipliers",
+            color: "#111827",
+            font: { size: 16 },
+          },
+          legend: { display: false },
+        },
+        scales: {
+          x: {
+            ticks: { color: "#111827", maxRotation: 65, minRotation: 30 },
+            grid: { color: "#e5e7eb" },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { color: "#111827" },
+            grid: { color: "#e5e7eb" },
+          },
+        },
+      },
+    };
+
+    return `https://quickchart.io/chart?width=1200&height=628&c=${encodeURIComponent(JSON.stringify(chartConfig))}`;
+  }
+
+  private async sendPnlBoard(chatId: string, limit = 10) {
+    const board = await this.buildPnlBoard(limit);
+    if (board.chartUrl) {
+      try {
+        await this.sendPhoto(chatId, board.chartUrl, board.chartCaption || "<b>PnL Multipliers</b>");
+      } catch {
+      }
+    }
+    await this.sendMessage(chatId, board.text, this.buildStartButtons(this.isSubscribed(chatId)));
   }
 
   private async loadPushState() {
@@ -697,7 +860,11 @@ class TradeAidTelegramBot {
     const lower = text.toLowerCase();
     if (lower === "/start" || lower === "/help") {
       await this.updateChatSubscription(chatId, this.isSubscribed(chatId), firstName, username);
-      await this.sendMessage(chatId, this.helpText(), this.buildStartButtons(this.isSubscribed(chatId)));
+      await this.sendMessage(
+        chatId,
+        `${this.helpText()}\n\nTap a menu command or use buttons below to open the bot menu quickly.`,
+        this.buildStartButtons(this.isSubscribed(chatId)),
+      );
       return;
     }
 
@@ -738,8 +905,7 @@ class TradeAidTelegramBot {
     }
 
     if (lower.startsWith("/pnl")) {
-      const textOut = await this.buildPnlBoard(10);
-      await this.sendMessage(chatId, textOut, this.buildStartButtons(this.isSubscribed(chatId)));
+      await this.sendPnlBoard(chatId, 10);
       return;
     }
 
@@ -799,8 +965,7 @@ class TradeAidTelegramBot {
     }
 
     if (dataLower === "pnl_board") {
-      const textOut = await this.buildPnlBoard(10);
-      await this.sendMessage(chatId, textOut, this.buildStartButtons(this.isSubscribed(chatId)));
+      await this.sendPnlBoard(chatId, 10);
       await this.answerCallbackQuery(callbackQuery.id, "Loaded PnL board").catch(() => undefined);
       return;
     }
