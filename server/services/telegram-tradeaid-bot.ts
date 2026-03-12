@@ -72,6 +72,7 @@ type PushState = {
   chats: Record<string, ChatSubscription>;
   sentMintAt: Record<string, string>;
   lastPushAt?: string;
+  lastBoardAt?: string;
 };
 
 type BotCallRecord = {
@@ -90,6 +91,7 @@ type BotCallRecord = {
   closedAt?: string;
   closedPriceUsd?: number;
   closeReason?: string;
+  milestonesHit?: number[];
 };
 
 type BotCallState = {
@@ -98,6 +100,7 @@ type BotCallState = {
 
 type PnlSnapshot = {
   call: BotCallRecord;
+  token: TokenRow | undefined;
   currentPriceUsd: number;
   multiplier: number;
   pnlPct: number;
@@ -122,6 +125,11 @@ type TokenProjectMeta = {
 
 const PUSH_STATE_KEY = "telegram.bot.push.v1";
 const CALL_STATE_KEY = "telegram.bot.calls.v1";
+const DIVIDER = "━━━━━━━━━━━━━━";
+
+type TelegramSentMessage = {
+  message_id: number;
+};
 
 const nowIso = () => new Date().toISOString();
 
@@ -131,6 +139,9 @@ const escapeHtml = (value: unknown) => String(value ?? "")
   .replace(/>/g, "&gt;")
   .replace(/"/g, "&quot;")
   .replace(/'/g, "&#39;");
+
+const escapeMarkdown = (value: unknown) => String(value ?? "")
+  .replace(/([_\*\[\]\(\)~`>#\+\-=\|\{\}\.!\\])/g, "\\$1");
 
 const fmtUsd = (value: unknown) => {
   const n = Number(value || 0);
@@ -186,6 +197,25 @@ const formatHoldTime = (minutesRaw: number) => {
   return `${days}d ${hours % 24}h`;
 };
 
+const statusBadgeFromPnl = (pnlPct: number) => {
+  if (pnlPct >= 0.01) return "🟢 WIN";
+  if (pnlPct <= -0.01) return "🔴 LOSS";
+  return "🟡 FLAT";
+};
+
+const statusBadgeFromMultiplier = (multiplier: number) => {
+  if (multiplier > 1.0001) return "🟢 WIN";
+  if (multiplier < 0.9999) return "🔴 LOSS";
+  return "🟡 FLAT";
+};
+
+const progressBar = (multiplier: number, width = 14, maxScale = 3) => {
+  const normalized = Math.max(0, Math.min(1, (Number(multiplier || 0) - 1) / Math.max(0.0001, maxScale - 1)));
+  const filled = Math.max(0, Math.min(width, Math.round(width * normalized)));
+  const empty = Math.max(0, width - filled);
+  return `[${"█".repeat(filled)}${"░".repeat(empty)}] ${Number(multiplier || 0).toFixed(2)}x`;
+};
+
 class TradeAidTelegramBot {
   private readonly token: string;
   private readonly apiBase: string;
@@ -201,6 +231,7 @@ class TradeAidTelegramBot {
   private readonly earlyMinSafetyScore: number;
   private readonly earlyMinLiquidityUsd: number;
   private readonly earlyMinVolume24hUsd: number;
+  private readonly boardIntervalSeconds: number;
   private readonly useWebhookMode: boolean;
   private readonly webhookUrl: string;
   private readonly webhookSecret: string;
@@ -238,6 +269,7 @@ class TradeAidTelegramBot {
     this.earlyMinSafetyScore = Math.max(55, Math.trunc(Number(process.env.TELEGRAM_BOT_EARLY_MIN_SAFETY_SCORE || 76)));
     this.earlyMinLiquidityUsd = Math.max(5_000, Number(process.env.TELEGRAM_BOT_EARLY_MIN_LIQUIDITY_USD || 30_000));
     this.earlyMinVolume24hUsd = Math.max(2_000, Number(process.env.TELEGRAM_BOT_EARLY_MIN_VOLUME24H_USD || 15_000));
+    this.boardIntervalSeconds = Math.max(300, Math.trunc(Number(process.env.TELEGRAM_BOT_BOARD_INTERVAL_SECONDS || 1800)));
     const webhookPath = String(process.env.TELEGRAM_BOT_WEBHOOK_PATH || "/api/telegram/webhook").trim() || "/api/telegram/webhook";
     this.webhookUrl = String(process.env.TELEGRAM_BOT_WEBHOOK_URL || `${this.appBaseUrl}${webhookPath}`).trim();
     this.webhookSecret = String(process.env.TELEGRAM_BOT_WEBHOOK_SECRET || "").trim();
@@ -359,19 +391,20 @@ class TradeAidTelegramBot {
     chatId: string,
     text: string,
     replyMarkup?: Record<string, any>,
-    options?: { disablePreview?: boolean },
+    options?: { disablePreview?: boolean; parseMode?: "HTML" | "Markdown" | "MarkdownV2" },
   ) {
-    await axios.post(
+    const response = await axios.post<TelegramApiResponse<TelegramSentMessage>>(
       `${this.apiBase}/sendMessage`,
       {
         chat_id: chatId,
         text,
-        parse_mode: "HTML",
+        parse_mode: options?.parseMode || "HTML",
         disable_web_page_preview: options?.disablePreview !== false,
         reply_markup: replyMarkup,
       },
       { timeout: 15_000 },
     );
+    return response.data?.result;
   }
 
   private async sendPhoto(
@@ -379,17 +412,31 @@ class TradeAidTelegramBot {
     photoUrl: string,
     caption: string,
     replyMarkup?: Record<string, any>,
+    options?: { parseMode?: "HTML" | "Markdown" | "MarkdownV2" },
   ) {
-    await axios.post(
+    const response = await axios.post<TelegramApiResponse<TelegramSentMessage>>(
       `${this.apiBase}/sendPhoto`,
       {
         chat_id: chatId,
         photo: photoUrl,
         caption,
-        parse_mode: "HTML",
+        parse_mode: options?.parseMode || "HTML",
         reply_markup: replyMarkup,
       },
       { timeout: 20_000 },
+    );
+    return response.data?.result;
+  }
+
+  private async pinMessage(chatId: string, messageId: number) {
+    await axios.post(
+      `${this.apiBase}/pinChatMessage`,
+      {
+        chat_id: chatId,
+        message_id: messageId,
+        disable_notification: true,
+      },
+      { timeout: 10_000 },
     );
   }
 
@@ -451,6 +498,86 @@ class TradeAidTelegramBot {
     };
   }
 
+  private buildMarketButtons(token: TokenRow, project: TokenProjectMeta) {
+    const mint = String(token.address || "").trim();
+    const pairOrMint = String(token.pairAddress || mint).trim();
+    const dexUrl = project.chart || (pairOrMint ? `https://dexscreener.com/solana/${pairOrMint}` : "https://dexscreener.com");
+    const pumpUrl = mint ? `https://pump.fun/coin/${encodeURIComponent(mint)}` : "https://pump.fun";
+    const solscanUrl = mint ? `https://solscan.io/token/${encodeURIComponent(mint)}` : "https://solscan.io";
+
+    return {
+      inline_keyboard: [
+        [
+          { text: "DexScreener", url: dexUrl },
+          { text: "Pump.fun", url: pumpUrl },
+          { text: "Solscan", url: solscanUrl },
+        ],
+        [
+          { text: "Buy", url: this.buildTradeAidBuyUrl(mint) },
+          { text: "View", url: this.buildTradeAidTokenUrl(mint) },
+        ],
+      ],
+    };
+  }
+
+  private buildProfessionalCallMessage(token: TokenRow, project: TokenProjectMeta, call?: BotCallRecord) {
+    const entryPrice = Number(call?.calledPriceUsd || token.priceUsd || 0);
+    const priceNow = Number(token.priceUsd || 0);
+    const multiplier = entryPrice > 0 && priceNow > 0 ? priceNow / entryPrice : 1;
+    const pnlPct = (multiplier - 1) * 100;
+    const peakPrice = Math.max(Number(call?.peakPriceUsd || 0), priceNow, entryPrice);
+    const drawdownPct = peakPrice > 0 ? ((peakPrice - priceNow) / peakPrice) * 100 : 0;
+    const age = call?.calledAt ? formatAge(call.calledAt) : formatAge(token.pairCreatedAt);
+    const status = statusBadgeFromPnl(pnlPct);
+    const stampedAt = new Date().toISOString().replace("T", " ").replace(".000Z", " UTC");
+
+    const dexUrl = project.chart || "https://dexscreener.com";
+    const pumpUrl = token.address ? `https://pump.fun/coin/${encodeURIComponent(String(token.address))}` : "https://pump.fun";
+    const solscanUrl = token.address ? `https://solscan.io/token/${encodeURIComponent(String(token.address))}` : "https://solscan.io";
+
+    return [
+      "🚨 *TRADEAID CALL DETECTED*",
+      "",
+      `Token: *${escapeMarkdown(String(token.symbol || token.name || "UNK"))}*`,
+      "Pair: *SOL*",
+      `Entry Price: *${escapeMarkdown(fmtUsd(entryPrice))}*`,
+      "",
+      DIVIDER,
+      "",
+      "📊 *Live Performance*",
+      `Price Now: *${escapeMarkdown(fmtUsd(priceNow))}*`,
+      `PnL: *${escapeMarkdown(fmtPct(pnlPct))}*`,
+      `Multiplier: *${escapeMarkdown(multiplier.toFixed(2))}x*`,
+      `Age: *${escapeMarkdown(age)}*`,
+      "",
+      "Price Progress",
+      escapeMarkdown(progressBar(multiplier)),
+      "",
+      DIVIDER,
+      "",
+      "📈 *Trade Stats*",
+      `Liquidity: *${escapeMarkdown(fmtUsd(token.liquidity))}*`,
+      `Market Cap: *${escapeMarkdown(fmtUsd(token.marketCap))}*`,
+      `Volume: *${escapeMarkdown(fmtUsd(token.volume24h))}*`,
+      "",
+      DIVIDER,
+      "",
+      "📉 *Risk Metrics*",
+      `Drawdown: *${escapeMarkdown(fmtPct(-drawdownPct))}*`,
+      `Status: *${escapeMarkdown(status)}*`,
+      "",
+      DIVIDER,
+      "",
+      "🔗 *Links*",
+      `[DexScreener](${dexUrl}) \| [Pump\.fun](${pumpUrl}) \| [Solscan](${solscanUrl})`,
+      "",
+      DIVIDER,
+      `Updated: ${escapeMarkdown(stampedAt)}`,
+      "TradeAid Intelligence Engine",
+      "Powered by Solana Data",
+    ].join("\n");
+  }
+
   private async loadCallState() {
     try {
       const loaded = await storage.getAppState<BotCallState>(CALL_STATE_KEY);
@@ -474,6 +601,9 @@ class TradeAidTelegramBot {
             closedAt: row.closedAt ? String(row.closedAt) : undefined,
             closedPriceUsd: Number(row.closedPriceUsd || 0) || undefined,
             closeReason: row.closeReason ? String(row.closeReason) : undefined,
+            milestonesHit: Array.isArray((row as any).milestonesHit)
+              ? (row as any).milestonesHit.map((value: unknown) => Math.trunc(Number(value || 0))).filter((value: number) => value > 0)
+              : [],
           }))
           .filter((row) => Boolean(row.mint))
           .slice(-1200),
@@ -490,9 +620,9 @@ class TradeAidTelegramBot {
     }
   }
 
-  private async recordBotCall(token: TokenRow, origin: string) {
+  private async recordBotCall(token: TokenRow, origin: string): Promise<BotCallRecord | null> {
     const mint = String(token.address || "").trim();
-    if (!mint) return;
+    if (!mint) return null;
 
     const now = nowIso();
     const price = Number(token.priceUsd || 0);
@@ -501,9 +631,9 @@ class TradeAidTelegramBot {
       const ageMs = Date.now() - new Date(String(row.calledAt || "")).getTime();
       return Number.isFinite(ageMs) && ageMs >= 0 && ageMs < 10 * 60 * 1000;
     });
-    if (recentDuplicate) return;
+    if (recentDuplicate) return recentDuplicate;
 
-    this.callState.calls.push({
+    const created: BotCallRecord = {
       id: `${mint}:${now}:${Math.random().toString(36).slice(2, 8)}`,
       mint,
       symbol: String(token.symbol || "").trim(),
@@ -516,12 +646,16 @@ class TradeAidTelegramBot {
       origin: String(origin || "bot_call").trim() || "bot_call",
       peakPriceUsd: Number.isFinite(price) && price > 0 ? price : undefined,
       peakAt: Number.isFinite(price) && price > 0 ? now : undefined,
-    });
+      milestonesHit: [],
+    };
+
+    this.callState.calls.push(created);
 
     if (this.callState.calls.length > 1200) {
       this.callState.calls = this.callState.calls.slice(-1200);
     }
     await this.persistCallState();
+    return created;
   }
 
   private async buildPnlBoard(limit = 10): Promise<PnlBoardResult> {
@@ -530,12 +664,12 @@ class TradeAidTelegramBot {
       .sort((a, b) => new Date(b.calledAt).getTime() - new Date(a.calledAt).getTime());
 
     if (!calls.length) {
-      return { text: "<b>PnL Board</b>\nNo tracked calls yet. Use Safe Calls or Early Safe first." };
+      return { text: "🏆 *TRADEAID PERFORMANCE BOARD*\nNo tracked calls yet\. Use /safe or /new first\." };
     }
 
     const mints = Array.from(new Set(calls.map((row) => row.mint))).slice(0, 500);
     if (!mints.length) {
-      return { text: "<b>PnL Board</b>\nNo tracked calls yet." };
+      return { text: "🏆 *TRADEAID PERFORMANCE BOARD*\nNo tracked calls yet\." };
     }
 
     const rows = await db
@@ -597,6 +731,7 @@ class TradeAidTelegramBot {
         const pnlPct = (multiplier - 1) * 100;
         return {
           call,
+          token,
           currentPriceUsd: effectiveCurrent,
           multiplier,
           pnlPct,
@@ -614,9 +749,9 @@ class TradeAidTelegramBot {
     if (!snapshots.length) {
       return {
         text: [
-        "<b>PnL Board</b>",
-        "Tracked calls found, but live price snapshots are not available yet.",
-      ].join("\n"),
+          "🏆 *TRADEAID PERFORMANCE BOARD*",
+          "Tracked calls found, but live price snapshots are not available yet\.",
+        ].join("\n"),
       };
     }
 
@@ -636,65 +771,91 @@ class TradeAidTelegramBot {
     const topWins = [...winners].sort((a, b) => b.pnlPct - a.pnlPct).slice(0, Math.max(1, Math.min(limit, 8)));
     const topLosses = [...losers].sort((a, b) => a.pnlPct - b.pnlPct).slice(0, Math.max(1, Math.min(limit, 6)));
     const recent = [...snapshots].sort((a, b) => new Date(b.call.calledAt).getTime() - new Date(a.call.calledAt).getTime()).slice(0, 8);
+    const topWinner = topWins[0];
+    const secondWinner = topWins[1];
+    const worstLoss = topLosses[0];
 
     const lines = [
-      "<b>SpyDefi PnL Board</b>",
-      `Calls tracked: <b>${calls.length}</b> | Snapshots priced: <b>${snapshots.length}</b>`,
-      `Win rate: <b>${winRate.toFixed(1)}%</b> | Avg PnL: <b>${fmtPct(avgPnl)}</b>`,
-      `Win bucket: <b>${winners.length}</b> | Loss bucket: <b>${losers.length}</b> | Flat: <b>${breakeven}</b>`,
-      `Open: <b>${openSnapshots.length}</b> | Closed: <b>${closedSnapshots.length}</b>`,
-      `Median hold time: <b>${escapeHtml(formatHoldTime(medianHoldMinutes))}</b>`,
-      `2x: <b>${x2}</b> | 3x: <b>${x3}</b> | 4x+: <b>${x4}</b>`,
+      "🏆 *TRADEAID PERFORMANCE BOARD*",
       "",
-      "<b>Recent Per-Call Snapshots</b>",
+      `Calls Tracked: *${escapeMarkdown(String(calls.length))}*`,
+      `Win Rate: *${escapeMarkdown(`${winRate.toFixed(1)}%`)}*`,
+      `Average PnL: *${escapeMarkdown(fmtPct(avgPnl))}*`,
+      "",
+      DIVIDER,
     ];
+
+    if (topWinner) {
+      lines.push(
+        "",
+        "🥇 *Top Winner*",
+        `${escapeMarkdown(String(topWinner.call.symbol || "UNK"))}`,
+        `${escapeMarkdown(topWinner.multiplier.toFixed(2))}x \(${escapeMarkdown(fmtPct(topWinner.pnlPct))}\)`,
+      );
+    }
+
+    if (secondWinner) {
+      lines.push(
+        "",
+        "🥈 *Second*",
+        `${escapeMarkdown(String(secondWinner.call.symbol || "UNK"))}`,
+        `${escapeMarkdown(secondWinner.multiplier.toFixed(2))}x \(${escapeMarkdown(fmtPct(secondWinner.pnlPct))}\)`,
+      );
+    }
+
+    lines.push("", DIVIDER);
+
+    if (worstLoss) {
+      lines.push(
+        "",
+        "💀 *Worst Loss*",
+        `${escapeMarkdown(String(worstLoss.call.symbol || "UNK"))}`,
+        `${escapeMarkdown(fmtPct(worstLoss.pnlPct))}`,
+        "",
+        DIVIDER,
+      );
+    }
+
+    lines.push(
+      "",
+      `Open Calls: *${escapeMarkdown(String(openSnapshots.length))}*`,
+      `Closed Calls: *${escapeMarkdown(String(closedSnapshots.length))}*`,
+      `Median Hold: *${escapeMarkdown(formatHoldTime(medianHoldMinutes))}*`,
+      `2x: *${escapeMarkdown(String(x2))}* | 3x: *${escapeMarkdown(String(x3))}* | 4x\+: *${escapeMarkdown(String(x4))}*`,
+      "",
+      DIVIDER,
+      "",
+      "📡 *Recent Calls*",
+    );
 
     for (const row of recent) {
       const calledAgo = formatAge(row.call.calledAt);
       const xText = `${row.multiplier.toFixed(2)}x`;
-      const direction = row.pnlPct >= 0 ? "WIN" : "LOSS";
+      const direction = statusBadgeFromPnl(row.pnlPct);
       const status = row.isClosed ? `CLOSED:${String(row.call.closeReason || "exit").toUpperCase()}` : "OPEN";
       lines.push(
-        `${direction} ${escapeHtml(String(row.call.symbol || "UNK"))}: <b>${escapeHtml(xText)}</b> (${fmtPct(row.pnlPct)}) | ` +
-        `Call ${escapeHtml(fmtUsd(row.call.calledPriceUsd))} -> ${escapeHtml(fmtUsd(row.currentPriceUsd))} | ` +
-        `Age ${escapeHtml(calledAgo)} | DD ${fmtPct(-row.drawdownPct)} | ${escapeHtml(status)}`,
+        `${escapeMarkdown(direction)} ${escapeMarkdown(String(row.call.symbol || "UNK"))}: *${escapeMarkdown(xText)}* \(${escapeMarkdown(fmtPct(row.pnlPct))}\)`,
+        `Age ${escapeMarkdown(calledAgo)} | DD ${escapeMarkdown(fmtPct(-row.drawdownPct))} | ${escapeMarkdown(status)}`,
       );
     }
 
-    if (closedSnapshots.length) {
-      lines.push("", "<b>Closed Snapshot Ledger</b>");
-      for (const row of closedSnapshots.slice(0, 8)) {
-        const reason = String(row.call.closeReason || "exit").toUpperCase();
-        lines.push(
-          `${escapeHtml(String(row.call.symbol || "UNK"))}: Entry ${escapeHtml(fmtUsd(row.call.calledPriceUsd))} | ` +
-          `Peak ${escapeHtml(fmtUsd(row.call.peakPriceUsd || row.currentPriceUsd))} | ` +
-          `Close ${escapeHtml(fmtUsd(row.currentPriceUsd))} | DD ${fmtPct(-row.drawdownPct)} | ${escapeHtml(reason)}`,
-        );
-      }
-    }
-
-    if (topWins.length) {
-      lines.push("", "<b>Top Wins</b>");
-      for (const row of topWins) {
-        lines.push(`${escapeHtml(String(row.call.symbol || "UNK"))}: <b>${row.multiplier.toFixed(2)}x</b> (${fmtPct(row.pnlPct)})`);
-      }
-    }
-
-    if (topLosses.length) {
-      lines.push("", "<b>Top Losses</b>");
-      for (const row of topLosses) {
-        lines.push(`${escapeHtml(String(row.call.symbol || "UNK"))}: <b>${row.multiplier.toFixed(2)}x</b> (${fmtPct(row.pnlPct)})`);
-      }
-    }
+    const stampedAt = new Date().toISOString().replace("T", " ").replace(".000Z", " UTC");
+    lines.push(
+      "",
+      DIVIDER,
+      `Updated: ${escapeMarkdown(stampedAt)}`,
+      "TradeAid Intelligence Engine",
+      "Powered by Solana Data",
+    );
 
     const chartSnapshots = [...snapshots]
       .sort((a, b) => b.multiplier - a.multiplier)
       .slice(0, 12);
     const chartUrl = this.buildPnlMultiplierChartUrl(chartSnapshots);
     const chartCaption = [
-      "<b>PnL Multipliers</b>",
-      `2x: <b>${x2}</b> | 3x: <b>${x3}</b> | 4x+: <b>${x4}</b>`,
-      "Green bars are stronger multiples.",
+      "📊 *TRADEAID MULTIPLIER SNAPSHOT*",
+      `2x: *${escapeMarkdown(String(x2))}* | 3x: *${escapeMarkdown(String(x3))}* | 4x\+: *${escapeMarkdown(String(x4))}*`,
+      "Green bars indicate stronger winners\.",
     ].join("\n");
 
     return {
@@ -778,15 +939,194 @@ class TradeAidTelegramBot {
     return `https://quickchart.io/chart?width=1200&height=628&c=${encodeURIComponent(JSON.stringify(chartConfig))}`;
   }
 
+  private async getLiveSnapshots(): Promise<PnlSnapshot[]> {
+    const calls = [...this.callState.calls]
+      .filter((row) => Boolean(row?.mint))
+      .sort((a, b) => new Date(b.calledAt).getTime() - new Date(a.calledAt).getTime());
+    if (!calls.length) return [];
+
+    const mints = Array.from(new Set(calls.map((row) => row.mint))).slice(0, 500);
+    if (!mints.length) return [];
+
+    const rows = await db
+      .select()
+      .from(scannedTokens)
+      .where(and(eq(scannedTokens.chain, "solana"), inArray(scannedTokens.address, mints)));
+
+    const tokenMap = new Map(rows.map((row) => [String(row.address || "").trim(), row]));
+    let stateChanged = false;
+    const snapshots = calls
+      .map((call) => {
+        const token = tokenMap.get(call.mint);
+        const currentPriceUsd = Number(token?.priceUsd || 0);
+        const calledPriceUsd = Number(call.calledPriceUsd || 0);
+        if (!Number.isFinite(currentPriceUsd) || currentPriceUsd <= 0 || !Number.isFinite(calledPriceUsd) || calledPriceUsd <= 0) {
+          return null;
+        }
+        const nowMs = Date.now();
+        const holdMinutes = Math.max(0, (nowMs - new Date(call.calledAt).getTime()) / 60_000);
+
+        if (!call.closedAt) {
+          const peak = Number(call.peakPriceUsd || 0);
+          if (!Number.isFinite(peak) || peak <= 0 || currentPriceUsd > peak) {
+            call.peakPriceUsd = currentPriceUsd;
+            call.peakAt = new Date(nowMs).toISOString();
+            stateChanged = true;
+          }
+        }
+
+        const peakPriceUsd = Math.max(Number(call.peakPriceUsd || 0), currentPriceUsd, calledPriceUsd);
+        const drawdownPct = peakPriceUsd > 0 ? ((peakPriceUsd - currentPriceUsd) / peakPriceUsd) * 100 : 0;
+
+        if (!call.closedAt) {
+          const liveMultiplier = currentPriceUsd / calledPriceUsd;
+          const livePnlPct = (liveMultiplier - 1) * 100;
+          let closeReason = "";
+          if (liveMultiplier >= 4) {
+            closeReason = "tp_4x";
+          } else if (holdMinutes >= 24 * 60) {
+            closeReason = "time_exit";
+          } else if (liveMultiplier <= 0.45 && holdMinutes >= 30) {
+            closeReason = "hard_stop";
+          } else if (drawdownPct >= 45 && livePnlPct > 10) {
+            closeReason = "trailing_stop";
+          }
+
+          if (closeReason) {
+            call.closedAt = new Date(nowMs).toISOString();
+            call.closedPriceUsd = currentPriceUsd;
+            call.closeReason = closeReason;
+            stateChanged = true;
+          }
+        }
+
+        const effectiveCurrent = call.closedAt && Number(call.closedPriceUsd || 0) > 0
+          ? Number(call.closedPriceUsd || 0)
+          : currentPriceUsd;
+        const multiplier = effectiveCurrent / calledPriceUsd;
+        const pnlPct = (multiplier - 1) * 100;
+        return {
+          call,
+          token,
+          currentPriceUsd: effectiveCurrent,
+          multiplier,
+          pnlPct,
+          holdMinutes,
+          drawdownPct,
+          isClosed: Boolean(call.closedAt),
+        } satisfies PnlSnapshot;
+      })
+      .filter((row): row is PnlSnapshot => Boolean(row));
+
+    if (stateChanged) {
+      await this.persistCallState();
+    }
+
+    return snapshots;
+  }
+
+  private buildMilestoneMessage(snapshot: PnlSnapshot, milestone: number) {
+    const token = snapshot.token;
+    const symbol = String(snapshot.call.symbol || token?.symbol || "UNK");
+    const age = formatHoldTime(snapshot.holdMinutes);
+    const milestones = [1.5, 2, 3, 5].filter((level) => snapshot.multiplier >= level).map((level) => `${level}x`);
+    const stampedAt = new Date().toISOString().replace("T", " ").replace(".000Z", " UTC");
+
+    return [
+      "🚀 *TRADEAID UPDATE*",
+      "",
+      `Token: *${escapeMarkdown(symbol)}*`,
+      "",
+      "New Milestone Reached",
+      `Multiplier: *${escapeMarkdown(snapshot.multiplier.toFixed(2))}x*`,
+      `PnL: *${escapeMarkdown(fmtPct(snapshot.pnlPct))}*`,
+      "",
+      `Age: *${escapeMarkdown(age)}*`,
+      "",
+      "Milestones:",
+      escapeMarkdown(milestones.join(" • ") || `${milestone}x`),
+      "",
+      "Price Progress",
+      escapeMarkdown(progressBar(snapshot.multiplier)),
+      "",
+      DIVIDER,
+      `Updated: ${escapeMarkdown(stampedAt)}`,
+      "TradeAid Intelligence Engine",
+      "Powered by Solana Data",
+    ].join("\n");
+  }
+
+  private async sendMilestoneUpdates(subscribers: string[]) {
+    if (!subscribers.length) return;
+
+    const snapshots = await this.getLiveSnapshots();
+    if (!snapshots.length) return;
+
+    const milestones = [1.5, 2, 3, 5];
+    let stateChanged = false;
+
+    for (const snapshot of snapshots) {
+      if (snapshot.isClosed) continue;
+      const hit = new Set((snapshot.call.milestonesHit || []).map((value) => Math.trunc(Number(value || 0) * 10) / 10));
+      const newlyHit = milestones.filter((level) => snapshot.multiplier >= level && !hit.has(level));
+      if (!newlyHit.length) continue;
+
+      const token = snapshot.token;
+      if (!token) continue;
+      const project = await this.fetchProjectMeta(token);
+      const buttons = this.buildMarketButtons(token, project);
+
+      for (const level of newlyHit) {
+        const text = this.buildMilestoneMessage(snapshot, level);
+        for (const chatId of subscribers) {
+          try {
+            const sent = await this.sendMessage(chatId, text, buttons, { parseMode: "MarkdownV2" });
+            if (level >= 2 && sent?.message_id) {
+              await this.pinMessage(chatId, sent.message_id).catch(() => undefined);
+            }
+          } catch {
+          }
+        }
+        hit.add(level);
+      }
+
+      snapshot.call.milestonesHit = Array.from(hit).sort((a, b) => a - b);
+      stateChanged = true;
+    }
+
+    if (stateChanged) {
+      await this.persistCallState();
+    }
+  }
+
+  private async maybeSendPeriodicBoard(subscribers: string[]) {
+    if (!subscribers.length) return;
+    const lastAtMs = new Date(String(this.pushState.lastBoardAt || 0)).getTime();
+    const elapsed = Date.now() - (Number.isFinite(lastAtMs) ? lastAtMs : 0);
+    if (elapsed >= 0 && elapsed < this.boardIntervalSeconds * 1000) {
+      return;
+    }
+
+    for (const chatId of subscribers) {
+      await this.sendPnlBoard(chatId, 10).catch(() => undefined);
+    }
+    this.pushState.lastBoardAt = nowIso();
+    await this.persistPushState();
+  }
+
   private async sendPnlBoard(chatId: string, limit = 10) {
     const board = await this.buildPnlBoard(limit);
     if (board.chartUrl) {
       try {
-        await this.sendPhoto(chatId, board.chartUrl, board.chartCaption || "<b>PnL Multipliers</b>");
+        await this.sendPhoto(chatId, board.chartUrl, board.chartCaption || "📊 *TRADEAID MULTIPLIER SNAPSHOT*", undefined, {
+          parseMode: "MarkdownV2",
+        });
       } catch {
       }
     }
-    await this.sendMessage(chatId, board.text, this.buildStartButtons(this.isSubscribed(chatId)));
+    await this.sendMessage(chatId, board.text, this.buildStartButtons(this.isSubscribed(chatId)), {
+      parseMode: "MarkdownV2",
+    });
   }
 
   private async loadPushState() {
@@ -798,6 +1138,7 @@ class TradeAidTelegramBot {
         chats,
         sentMintAt,
         lastPushAt: typeof loaded?.lastPushAt === "string" ? loaded.lastPushAt : undefined,
+        lastBoardAt: typeof loaded?.lastBoardAt === "string" ? loaded.lastBoardAt : undefined,
       };
     } catch {
       this.pushState = { chats: {}, sentMintAt: {} };
@@ -932,23 +1273,30 @@ class TradeAidTelegramBot {
     badge?: string,
     options?: { trackCall?: boolean; origin?: string },
   ) {
+    let callRecord: BotCallRecord | null = null;
     if (options?.trackCall) {
-      await this.recordBotCall(token, String(options.origin || "bot_call"));
+      callRecord = await this.recordBotCall(token, String(options.origin || "bot_call"));
     }
 
     const project = await this.fetchProjectMeta(token);
-    const caption = this.buildTokenCaption(token, project, mode, badge);
-    const buttons = this.buildTokenButtons(token, project.chart);
+    const useProfessionalFormat = mode === "compact";
+    const caption = useProfessionalFormat
+      ? this.buildProfessionalCallMessage(token, project, callRecord || undefined)
+      : this.buildTokenCaption(token, project, mode, badge);
+    const buttons = useProfessionalFormat
+      ? this.buildMarketButtons(token, project)
+      : this.buildTokenButtons(token, project.chart);
+    const parseMode: "HTML" | "MarkdownV2" = useProfessionalFormat ? "MarkdownV2" : "HTML";
 
     if (project.logoUrl && isHttpUrl(project.logoUrl)) {
       try {
-        await this.sendPhoto(chatId, project.logoUrl, caption, buttons);
+        await this.sendPhoto(chatId, project.logoUrl, caption, buttons, { parseMode });
         return;
       } catch {
       }
     }
 
-    await this.sendMessage(chatId, caption, buttons);
+    await this.sendMessage(chatId, caption, buttons, { parseMode });
   }
 
   private helpText() {
@@ -1318,6 +1666,9 @@ class TradeAidTelegramBot {
     try {
       const subscribers = this.getSubscribedChatIds();
       if (!subscribers.length) return;
+
+      await this.sendMilestoneUpdates(subscribers);
+      await this.maybeSendPeriodicBoard(subscribers);
 
       const since = new Date(Date.now() - this.pushLookbackMinutes * 60 * 1000);
       const candidates = await db

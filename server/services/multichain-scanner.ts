@@ -50,6 +50,15 @@ const EXCLUDED_SOL_MINTS = new Set([
 ]);
 
 const EXCLUDED_SOL_SYMBOLS = new Set(["SOL", "WSOL", "USDC", "USDT", "USD1", "USDC.S"]);
+const FRESH_LISTENER_MAX_AGE_SECONDS = Math.max(
+  1,
+  Number(
+    process.env.PUMP_LISTENER_MAX_AGE_SECONDS
+      || process.env.FRESH_SNIPER_MAX_TOKEN_AGE_SECONDS
+      || 5,
+  ),
+);
+const FRESH_LISTENER_MAX_AGE_MINUTES = FRESH_LISTENER_MAX_AGE_SECONDS / 60;
 
 export class MultichainLaunchpadScanner {
   private isScanning = false;
@@ -619,12 +628,14 @@ export class MultichainLaunchpadScanner {
           && !EXCLUDED_SOL_MINTS.has(String(token.address || "").trim())
           && !EXCLUDED_SOL_SYMBOLS.has(symbol)
           && Number.isFinite(tokenAgeMinutes)
-          && tokenAgeMinutes <= 720
+          && tokenAgeMinutes <= FRESH_LISTENER_MAX_AGE_MINUTES
           && token.liquidity >= 8_000
           && safetyScore >= 65;
         const isSafeFallback = token.chain === "solana"
           && !EXCLUDED_SOL_MINTS.has(String(token.address || "").trim())
           && !EXCLUDED_SOL_SYMBOLS.has(symbol)
+          && Number.isFinite(tokenAgeMinutes)
+          && tokenAgeMinutes <= FRESH_LISTENER_MAX_AGE_MINUTES
           && token.liquidity >= 20_000
           && token.volume24h >= 10_000
           && safetyScore >= 75;
@@ -641,6 +652,7 @@ export class MultichainLaunchpadScanner {
             marketCapUsd: Number(token.marketCap || 0),
             volumeUsd: Number(token.volume24h || 0),
             pairAgeMinutes: Number(tokenAgeMinutes.toFixed(4)),
+            ageLimitSeconds: FRESH_LISTENER_MAX_AGE_SECONDS,
           });
         }
       } catch (error) {

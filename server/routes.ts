@@ -22,8 +22,6 @@ import { multichainScanner } from "./services/multichain-scanner";
 import { getNewPairs, getTokenPairs, getTokenPairsFast, getTokenPairsProjectInfo, pairToTokenData } from "./services/dexscreener";
 import { FREE_TIER_LIMITS, SUBSCRIPTION_PRICE_USD, SUPPORTED_PAYMENT_CHAINS } from "@shared/schema";
 import { cryptoPaymentService } from "./services/crypto-payment";
-import { fetchFreshPumpfunTokens, normalizeApifyDatasetItems, type FreshTokenItem } from "./services/fresh-token-service";
-import { runApifyWorkflowOnce, startApifyWorkflowScheduler } from "./services/apify-workflow";
 import { enrichTokenWithHelius } from "./services/helius-enrichment-service";
 import { scoreFreshToken } from "./services/token-scoring-engine";
 import { getAutoTradeConfig, maybeTriggerAutoTrade } from "./services/auto-trade-hook";
@@ -124,6 +122,21 @@ function getOpenAI(): OpenAI {
   return openaiClient;
 }
 
+type FreshTokenRecord = {
+  mintAddress: string;
+  token_name: string;
+  symbol: string;
+  creator_wallet: string | null;
+  timestamp: string;
+  initial_liquidity: number;
+  transaction_signature: string | null;
+  market_cap: number;
+  volume: number;
+  price_usd: number;
+  source: string;
+  raw: Record<string, unknown>;
+};
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -187,121 +200,43 @@ export async function registerRoutes(
   // Register token scanner routes (new powerful scanner)
   registerScannerRoutes(app);
 
-  let lastApifyIngest: {
-    run_id: string | null;
-    dataset_id: string | null;
-    received_at: string | null;
-    received_count: number;
-  } = {
-    run_id: null,
-    dataset_id: null,
-    received_at: null,
-    received_count: 0,
-  };
-
-  const apifyIngestItemsStateKey = "apify:fresh:items:v1";
-
-  const getStoredApifyFreshTokens = async (limit = 10): Promise<FreshTokenItem[]> => {
-    try {
-      const snapshot = await storage.getAppState<{ items?: FreshTokenItem[] }>(apifyIngestItemsStateKey);
-      const rows = Array.isArray(snapshot?.items) ? snapshot.items : [];
-      return rows.slice(0, Math.max(1, Math.min(500, Math.trunc(limit))));
-    } catch {
-      return [];
-    }
-  };
-
-  const getMergedFreshPumpfunTokens = async (limit = 10): Promise<FreshTokenItem[]> => {
+  const getFreshPumpfunTokensFromStorage = async (limit = 10): Promise<FreshTokenRecord[]> => {
     const safeLimit = Math.max(1, Math.min(500, Math.trunc(limit)));
-    const fromApifyApi = await (async () => {
-      try {
-        return await fetchFreshPumpfunTokens(safeLimit);
-      } catch {
-        return [] as FreshTokenItem[];
-      }
-    })();
+    const rows = await storage.getScannedTokens().catch(() => [] as Array<Record<string, any>>);
 
-    const fromIngest = await getStoredApifyFreshTokens(safeLimit);
-    if (!fromIngest.length) {
-      return fromApifyApi.slice(0, safeLimit);
-    }
-
-    const merged = new Map<string, FreshTokenItem>();
-    for (const row of [...fromApifyApi, ...fromIngest]) {
-      const key = String(row?.mintAddress || "").trim();
-      if (!key) continue;
-      if (!merged.has(key)) {
-        merged.set(key, row);
-      }
-    }
-
-    return Array.from(merged.values()).slice(0, safeLimit);
+    return rows
+      .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
+      .filter((token) => {
+        const source = String((token as any).aiAnalysis || "").toLowerCase();
+        const dexId = String((token as any).dexId || "").toLowerCase();
+        return source.includes("pump_listener") || dexId.includes("pump");
+      })
+      .sort((a, b) => {
+        const aTime = new Date(String((a as any).createdAt || 0)).getTime();
+        const bTime = new Date(String((b as any).createdAt || 0)).getTime();
+        return bTime - aTime;
+      })
+      .slice(0, safeLimit)
+      .map((token) => {
+        const createdAt = new Date(String((token as any).createdAt || ""));
+        const timestamp = Number.isNaN(createdAt.getTime()) ? nowIso() : createdAt.toISOString();
+        return {
+          mintAddress: String((token as any).address || "").trim(),
+          token_name: String((token as any).name || (token as any).symbol || "Unknown").trim(),
+          symbol: String((token as any).symbol || "UNKNOWN").trim(),
+          creator_wallet: null,
+          timestamp,
+          initial_liquidity: Number((token as any).liquidity || 0),
+          transaction_signature: String((token as any).pairAddress || "").trim() || null,
+          market_cap: Number((token as any).marketCap || 0),
+          volume: Number((token as any).volume24h || 0),
+          price_usd: Number((token as any).priceUsd || 0),
+          source: "pump_fun_listener",
+          raw: token as Record<string, unknown>,
+        } satisfies FreshTokenRecord;
+      })
+      .filter((row) => Boolean(row.mintAddress));
   };
-
-  app.post("/api/fresh/apify-ingest", async (req, res) => {
-    try {
-      const expectedKey = String(process.env.TRADEAID_APIFY_INGEST_KEY || "").trim();
-      const providedKey = String(req.headers["x-tradeaid-ingest-key"] || "").trim();
-      if (expectedKey && providedKey !== expectedKey) {
-        return res.status(401).json({ ok: false, message: "Unauthorized" });
-      }
-
-      const runId = String(req.body?.run_id || "").trim() || null;
-      const datasetId = String(req.body?.dataset_id || "").trim() || null;
-      const items = Array.isArray(req.body?.items) ? req.body.items : [];
-      const normalizedItems = normalizeApifyDatasetItems(items)
-        .slice(0, 500)
-        .map((item) => ({
-          ...item,
-          raw: {
-            ...item.raw,
-            ingestedAt: new Date().toISOString(),
-          },
-        }));
-
-      lastApifyIngest = {
-        run_id: runId,
-        dataset_id: datasetId,
-        received_at: new Date().toISOString(),
-        received_count: items.length,
-      };
-
-      await storage.setAppState(apifyIngestItemsStateKey, {
-        run_id: runId,
-        dataset_id: datasetId,
-        received_at: lastApifyIngest.received_at,
-        items: normalizedItems,
-      });
-
-      logStructured("info", "apify.dataset_ingested", {
-        runId,
-        datasetId,
-        itemCount: items.length,
-        normalizedCount: normalizedItems.length,
-      });
-
-      return res.json({
-        ok: true,
-        received: items.length,
-        normalized: normalizedItems.length,
-        run_id: runId,
-        dataset_id: datasetId,
-        received_at: lastApifyIngest.received_at,
-      });
-    } catch (error) {
-      logStructured("error", "apify.dataset_ingest_failed", {
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
-      return res.status(500).json({ ok: false, message: "Failed to ingest Apify dataset" });
-    }
-  });
-
-  app.get("/api/fresh/apify-ingest/status", (_req, res) => {
-    return res.json({
-      ok: true,
-      ingest: lastApifyIngest,
-    });
-  });
 
   app.post("/api/new-token", async (req, res) => {
     try {
@@ -413,33 +348,19 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/fresh/apify-sync/run", async (req, res) => {
-    try {
-      const limitRaw = Number(req.body?.limit || req.query?.limit || process.env.APIFY_DATASET_LIMIT || 10);
-      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, Math.trunc(limitRaw))) : 10;
-      const result = await runApifyWorkflowOnce(limit);
-      return res.json({ ok: true, result });
-    } catch (error) {
-      return res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : "Failed to run Apify workflow",
-      });
-    }
-  });
-
   app.get("/process-fresh", async (req, res) => {
     const limitRaw = Number(req.query.limit || 20);
     const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(100, limitRaw)) : 20;
 
     try {
-      const freshTokens = await fetchFreshPumpfunTokens(limit);
+      const freshTokens = await getFreshPumpfunTokensFromStorage(limit);
       const processed: Array<Record<string, unknown>> = [];
 
       for (const token of freshTokens) {
         const enrichment = await enrichTokenWithHelius(token.mintAddress);
 
         const scoreResult = scoreFreshToken({
-          liquidityUsd: Number(token.liquidityUsd || 0),
+          liquidityUsd: Number(token.initial_liquidity || 0),
           holdersCount: Number(enrichment.holdersCount || 0),
           mintAuthorityActive: enrichment.authorities.mintAuthorityActive,
           freezeAuthorityActive: enrichment.authorities.freezeAuthorityActive,
@@ -2710,32 +2631,31 @@ export async function registerRoutes(
       })
       .filter((token) => token.mint);
 
-    const apifyTokens = await (async () => {
-      const rows = await getMergedFreshPumpfunTokens(10);
+    const listenerTokens = await (async () => {
+      const rows = await getFreshPumpfunTokensFromStorage(80);
       return rows
         .map((token) => {
-          const raw = (token.raw || {}) as Record<string, unknown>;
-          const createdAtRaw = String(raw.discoveredAt || raw.created_at || raw.createdAt || raw.timestamp || "").trim();
+          const createdAtRaw = String(token.timestamp || "").trim();
           const createdAt = createdAtRaw ? new Date(createdAtRaw) : new Date();
           const firstSeenAt = Number.isNaN(createdAt.getTime()) ? nowIso() : createdAt.toISOString();
-          const volume24h = Number(raw.volume24h || raw.volume_24h || 0);
-          const launchSource = normalizeLaunchSource(String(raw.sourcePlatform || raw.source_platform || token.eventType || "pumpfun"));
+          const volume24h = Number(token.volume || 0);
+          const launchSource = normalizeLaunchSource("pumpfun");
           return {
             mint: String(token.mintAddress || "").trim(),
-            symbol: String(token.symbol || token.name || "UNKNOWN"),
-            name: String(token.name || token.symbol || "Unknown"),
-            source: "apify",
+            symbol: String(token.symbol || token.token_name || "UNKNOWN"),
+            name: String(token.token_name || token.symbol || "Unknown"),
+            source: "pump_listener",
             first_seen_at: firstSeenAt,
-            liquidity_usd: Number(token.liquidityUsd || raw.liquidityUsd || raw.liquidity_usd || raw.liquidity || 0),
-            market_cap_usd: Number(raw.marketCapUsd || raw.market_cap_usd || raw.marketCap || 0),
+            liquidity_usd: Number(token.initial_liquidity || 0),
+            market_cap_usd: Number(token.market_cap || 0),
             volume_24h: volume24h,
             volume_5m: Number((volume24h / 288).toFixed(2)),
-            holders_count: Number(raw.holdersCount || raw.holder_count || 0),
-            top_holder_pct: Number(raw.topHoldersPercentage || raw.top_holder_pct || 0),
-            dev_wallet_pct: Number(raw.devWalletPercentage || raw.dev_wallet_pct || 0),
-            price_change_1h: Number(raw.priceChange1h || raw.price_change_1h || 0),
-            price_usd: Number(raw.priceUsd || raw.price_usd || raw.usdPrice || 0),
-            liquidity_locked: Boolean(raw.isLiquidityLocked || raw.liquidity_locked || raw.lpLocked) || launchSource === "raydium" || launchSource === "bonk",
+            holders_count: 0,
+            top_holder_pct: 0,
+            dev_wallet_pct: 0,
+            price_change_1h: 0,
+            price_usd: Number(token.price_usd || 0),
+            liquidity_locked: launchSource === "raydium" || launchSource === "bonk",
             launch_source: launchSource,
           };
         })
@@ -2822,7 +2742,7 @@ export async function registerRoutes(
     })();
 
     const byMint = new Map<string, Record<string, any>>();
-    for (const token of [...dexscreenerTokens, ...raydiumTokens, ...apifyTokens, ...scannedTokens]) {
+    for (const token of [...dexscreenerTokens, ...raydiumTokens, ...listenerTokens, ...scannedTokens]) {
       const tokenAny = token as Record<string, any>;
       const mint = String(token.mint || "").trim();
       if (!mint) continue;
@@ -2850,7 +2770,7 @@ export async function registerRoutes(
         dev_wallet_pct: Number(tokenAny.dev_wallet_pct || prev.dev_wallet_pct || 0),
         liquidity_locked: Boolean(tokenAny.liquidity_locked || prev.liquidity_locked),
         launch_source: normalizeLaunchSource(String(tokenAny.launch_source || prev.launch_source || prev.source || "unknown")),
-        source: prev.source === "apify" || tokenAny.source === "apify" ? "apify+scanner" : prev.source,
+        source: prev.source === "pump_listener" || tokenAny.source === "pump_listener" ? "pump_listener+scanner" : prev.source,
       });
     }
 
@@ -5303,7 +5223,7 @@ export async function registerRoutes(
         address: position.address,
         action: "BUY",
         status: "EXECUTED",
-        reason: aiFallbackUsed ? "ai_fallback_signal" : (position.source === "apify" ? "apify_early_launch_signal" : "scanner_signal"),
+        reason: aiFallbackUsed ? "ai_fallback_signal" : (String(position.source || "").includes("pump") ? "pump_listener_signal" : "scanner_signal"),
         confidence: position.confidence,
         liquidity: position.liquidity,
         volume_5m: Number(buyCandidate.volume_5m || 0),
@@ -5330,7 +5250,7 @@ export async function registerRoutes(
         token: position.symbol,
         address: position.address,
         decision: "buy",
-        reason: aiFallbackUsed ? "ai_fallback_signal" : (position.source === "apify" ? "apify_early_launch_signal" : "scanner_signal"),
+        reason: aiFallbackUsed ? "ai_fallback_signal" : (String(position.source || "").includes("pump") ? "pump_listener_signal" : "scanner_signal"),
         confidence: position.confidence,
         size_pct: 100,
         strategy_mode: "autonomous",
@@ -5340,7 +5260,7 @@ export async function registerRoutes(
 
       doctorRuntime.lastDecision = {
         action: "buy",
-        reason: aiFallbackUsed ? "ai_fallback_signal" : (position.source === "apify" ? "apify_early_launch_signal" : "scanner_signal"),
+        reason: aiFallbackUsed ? "ai_fallback_signal" : (String(position.source || "").includes("pump") ? "pump_listener_signal" : "scanner_signal"),
         trigger,
         at: nowIso(),
         token: position.symbol,
@@ -8557,7 +8477,7 @@ export async function registerRoutes(
       uptime_seconds: uptimeSeconds,
       token_feed: {
         scanned_count: tokens.length,
-        fresh_apify_configured: Boolean(String(process.env.APIFY_TOKEN || "").trim()),
+        pump_listener_configured: Boolean(String(process.env.HELIUS_API_KEY || "").trim()),
       },
       api_metrics: {
         requests_total: observability.requestsTotal,
@@ -8680,57 +8600,7 @@ export async function registerRoutes(
       const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.trunc(limitRaw))) : 50;
       const effectiveMaxAgeHours = Number.isFinite(maxAgeHours) && maxAgeHours > 0 ? maxAgeHours : 24;
 
-      const freshRows = await (async () => {
-        const fresh = await getMergedFreshPumpfunTokens(10);
-        return fresh.map((token, index) => {
-          const raw = (token.raw || {}) as Record<string, unknown>;
-          const sourcePlatform = String(raw.sourcePlatform || raw.source_platform || raw.platform || token.eventType || "pumpfun");
-          const priceUsd = Number(raw.priceUsd || raw.price_usd || raw.usdPrice || 0);
-          const marketCapUsd = Number(raw.marketCapUsd || raw.market_cap_usd || raw.marketCap || 0);
-          const createdAtRaw = String(raw.discoveredAt || raw.created_at || raw.createdAt || raw.timestamp || "").trim();
-          const createdAt = createdAtRaw ? new Date(createdAtRaw) : new Date();
-          const logoUrl = String(raw.logoUrl || raw.logo_url || raw.imageUrl || raw.image || "").trim();
-          const social = {
-            twitter: String(raw.twitterUrl || raw.twitter || raw.x || "").trim() || undefined,
-            telegram: String(raw.telegramUrl || raw.telegram || "").trim() || undefined,
-            website: String(raw.websiteUrl || raw.website || "").trim() || undefined,
-          };
-          return {
-            id: -(index + 1),
-            address: token.mintAddress,
-            symbol: token.symbol,
-            name: token.name,
-            chain: "solana",
-            dexId: sourcePlatform || "pumpfun",
-            pairAddress: null,
-            priceUsd: String(priceUsd || 0),
-            liquidity: Number(token.liquidityUsd || 0),
-            marketCap: Number(marketCapUsd || 0),
-            volume24h: Number(raw.volume24h || raw.volume_24h || 0),
-            priceChange1h: Number(raw.priceChange1h || raw.price_change_1h || 0),
-            priceChange24h: Number(raw.priceChange24h || raw.price_change_24h || 0),
-            buys24h: Number(raw.buys24h || raw.buys_24h || 0),
-            sells24h: Number(raw.sells24h || raw.sells_24h || 0),
-            safetyScore: Number(scoreFreshToken({
-              liquidityUsd: Number(token.liquidityUsd || 0),
-              holdersCount: Number(raw.holdersCount || raw.holder_count || 0),
-              mintAuthorityActive: true,
-              freezeAuthorityActive: true,
-            }).score || 0),
-            holdersCount: Number(raw.holdersCount || raw.holder_count || 0),
-            mintAuthorityDisabled:
-              typeof raw.mintAuthorityDisabled === "boolean"
-                ? Boolean(raw.mintAuthorityDisabled)
-                : (typeof raw.mintAuthorityActive === "boolean" ? !Boolean(raw.mintAuthorityActive) : undefined),
-            topHoldersPercentage: Number(raw.topHoldersPercentage || raw.top_holder_pct || 0),
-            devWalletPercentage: Number(raw.devWalletPercentage || raw.dev_wallet_pct || 0),
-            logoUrl: logoUrl || null,
-            socialLinks: social,
-            aiAnalysis: null,
-            createdAt,
-          };
-        });
-      })();
+      const freshRows: Array<Record<string, any>> = [];
 
       const dexsFreshRows = await (async () => {
         try {
@@ -9015,7 +8885,7 @@ export async function registerRoutes(
 
   // Start periodic multichain launchpad scans
   try {
-    const multichainIntervalMs = Math.max(20_000, Number(process.env.MULTICHAIN_SCAN_INTERVAL_MS || 60_000));
+    const multichainIntervalMs = Math.max(2_000, Number(process.env.MULTICHAIN_SCAN_INTERVAL_MS || 5_000));
     setInterval(() => {
       multichainScanner.scanAllLaunchpads().catch(console.error);
     }, multichainIntervalMs);
@@ -9023,14 +8893,6 @@ export async function registerRoutes(
     multichainScanner.scanAllLaunchpads().catch(console.error);
   } catch (e) {
     console.error("Failed to start multichain scanner:", e);
-  }
-
-  // Start Apify workflow scheduler (default 5 minutes, configurable)
-  try {
-    const apifyIntervalMs = Math.max(60_000, Number(process.env.APIFY_WORKFLOW_INTERVAL_MS || 5 * 60 * 1000));
-    startApifyWorkflowScheduler(apifyIntervalMs);
-  } catch (e) {
-    console.error("Failed to start Apify workflow scheduler:", e);
   }
 
   // === RugShield ===

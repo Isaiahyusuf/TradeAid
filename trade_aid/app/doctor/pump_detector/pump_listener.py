@@ -287,7 +287,7 @@ class PumpListener:
         dex = await self._fetch_dexscreener_enrichment(mint)
         is_pump_pair = bool(dex.get("is_pump_fun_pair"))
         pair_age_minutes = dex.get("pair_age_minutes")
-        effective_max_age_minutes = max(0.5, float(max_age_minutes or 5.0))
+        effective_max_age_minutes = max((1.0 / 60.0), float(max_age_minutes or (5.0 / 60.0)))
 
         if not is_pump_pair:
             logger.info(f"[PumpListener] Skipping non-pump token {mint}")
@@ -329,14 +329,21 @@ class PumpListener:
         await self._post_new_token(token_obj)
         return token_obj
 
-    async def detect_fresh_tokens(self, max_age_minutes: float = 5.0, limit: int = 150) -> list[dict[str, Any]]:
-        configured_max_age = float(
-            os.getenv("PUMP_LISTENER_MAX_AGE_MINUTES")
-            or os.getenv("DOCTOR_PUMP_LISTENER_MAX_AGE_MINUTES")
-            or max_age_minutes
-            or 5.0
+    async def detect_fresh_tokens(self, max_age_minutes: float = (5.0 / 60.0), limit: int = 150) -> list[dict[str, Any]]:
+        configured_max_age_seconds = float(
+            os.getenv("PUMP_LISTENER_MAX_AGE_SECONDS")
+            or os.getenv("DOCTOR_PUMP_LISTENER_MAX_AGE_SECONDS")
+            or (
+                float(
+                    os.getenv("PUMP_LISTENER_MAX_AGE_MINUTES")
+                    or os.getenv("DOCTOR_PUMP_LISTENER_MAX_AGE_MINUTES")
+                    or (5.0 / 60.0)
+                )
+                * 60.0
+            )
         )
-        max_age_minutes = max(0.5, min(float(max_age_minutes or 5.0), configured_max_age))
+        requested_max_age_seconds = float(max_age_minutes or (5.0 / 60.0)) * 60.0
+        max_age_minutes = max((1.0 / 60.0), min(requested_max_age_seconds, configured_max_age_seconds) / 60.0)
         rows = await self.helius_service.detect_fresh_mints(limit=limit)
         helius_with_mint = [row for row in rows if self._extract_mint(row)]
 

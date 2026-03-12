@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     BITQUERY_API_KEY: str = ""
     HELIUS_API_KEY: str = ""
     TRADEAID_HELIUS_WS: str = ""
-    PUMPFUN_PROGRAM_ID: str = "6EF8rrecthR5Dkzk6t8hWb1Y4vZQqfZ"
+    PUMPFUN_PROGRAM_ID: str = "6EF8rrecthR5Dkzon8Nwu78hRjzJ3AL9rS6pNqB7pump"
 
     ENABLE_FRESH_TOKEN_SNIPER: bool = True
     FRESH_TOKEN_POLL_SECONDS: int = 8

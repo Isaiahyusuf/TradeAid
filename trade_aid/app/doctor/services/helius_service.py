@@ -88,3 +88,62 @@ class HeliusService(BaseDoctorApiService):
             lamports = float((((data or {}).get("result") or {}).get("value") or 0.0) if isinstance(data, dict) else 0.0)
             result[wallet] = {"balance_sol": lamports / 1_000_000_000}
         return result
+
+    async def get_transaction(self, signature: str) -> dict[str, Any] | None:
+        sig = str(signature or "").strip()
+        if not sig:
+            return None
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getTransaction",
+            "params": [
+                sig,
+                {
+                    "commitment": "processed",
+                    "encoding": "jsonParsed",
+                    "maxSupportedTransactionVersion": 0,
+                },
+            ],
+        }
+        data = await self._rpc_request(payload)
+        result = (data or {}).get("result") if isinstance(data, dict) else None
+        return result if isinstance(result, dict) else None
+
+    async def get_mint_account_info(self, mint_address: str) -> dict[str, Any] | None:
+        mint = str(mint_address or "").strip()
+        if not mint:
+            return None
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getAccountInfo",
+            "params": [
+                mint,
+                {
+                    "encoding": "jsonParsed",
+                    "commitment": "processed",
+                },
+            ],
+        }
+        data = await self._rpc_request(payload)
+        result = (data or {}).get("result") if isinstance(data, dict) else None
+        value = (result or {}).get("value") if isinstance(result, dict) else None
+        return value if isinstance(value, dict) else None
+
+    async def is_mint_authority_active(self, mint_address: str) -> bool:
+        account = await self.get_mint_account_info(mint_address)
+        parsed = (((account or {}).get("data") or {}).get("parsed") or {}) if isinstance(account, dict) else {}
+        info = (parsed or {}).get("info") if isinstance(parsed, dict) else {}
+        if not isinstance(info, dict):
+            return False
+
+        # Any non-null mint authority implies token supply can still be minted.
+        authority = info.get("mintAuthority")
+        if authority:
+            return True
+        authority_option = info.get("mintAuthorityOption")
+        try:
+            return int(authority_option or 0) > 0
+        except Exception:
+            return False

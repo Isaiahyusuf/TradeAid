@@ -31,8 +31,8 @@ def pre_filter(token: dict[str, Any]) -> tuple[bool, str]:
     volume = _safe_float(token.get("volume"), 0.0)
     age_minutes = _age_minutes(token)
 
-    if liquidity < 2000.0:
-        return False, "liquidity_below_2000"
+    if liquidity < 3000.0:
+        return False, "liquidity_below_3000"
     if market_cap > 500000.0:
         return False, "market_cap_above_500k"
     if age_minutes > 3.0:
