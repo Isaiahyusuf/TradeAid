@@ -1,5 +1,6 @@
 import { storage } from "../storage";
 import type { InsertScannedToken } from "@shared/schema";
+import { logStructured } from "./structured-logger";
 
 interface LaunchpadToken {
   address: string;
@@ -43,6 +44,7 @@ const SAFE_THRESHOLDS = {
 
 export class MultichainLaunchpadScanner {
   private isScanning = false;
+  private readonly emittedFreshMints = new Map<string, number>();
 
   async scanAllLaunchpads(): Promise<LaunchpadToken[]> {
     if (this.isScanning) {
@@ -458,6 +460,13 @@ export class MultichainLaunchpadScanner {
   }
 
   private async saveTokens(tokens: LaunchpadToken[]): Promise<void> {
+    const nowMs = Date.now();
+    for (const [mint, at] of Array.from(this.emittedFreshMints.entries())) {
+      if (nowMs - at > 30 * 60 * 1000) {
+        this.emittedFreshMints.delete(mint);
+      }
+    }
+
     for (const token of tokens) {
       try {
         const existing = await storage.getScannedTokenByAddress(token.address);
@@ -496,6 +505,24 @@ export class MultichainLaunchpadScanner {
           await storage.updateScannedToken(existing.id, tokenData);
         } else {
           await storage.createScannedToken(tokenData);
+        }
+
+        const tokenAgeMinutes = Math.max(0, (Date.now() - new Date(token.createdAt).getTime()) / 60000);
+        const isEarlySafe = token.chain === "solana" && Boolean(String(token.address || "").trim());
+
+        if (isEarlySafe && !this.emittedFreshMints.has(token.address)) {
+          this.emittedFreshMints.set(token.address, nowMs);
+          logStructured("info", "pump_listener.token_ingested", {
+            mintAddress: token.address,
+            symbol: token.symbol,
+            source: "multichain_pump_listener_fallback",
+            creatorWallet: null,
+            transactionSignature: null,
+            liquidityUsd: Number(token.liquidity || 0),
+            marketCapUsd: Number(token.marketCap || 0),
+            volumeUsd: Number(token.volume24h || 0),
+            pairAgeMinutes: Number(tokenAgeMinutes.toFixed(4)),
+          });
         }
       } catch (error) {
         console.error(`[Multichain] Failed to save token ${token.symbol}:`, error);

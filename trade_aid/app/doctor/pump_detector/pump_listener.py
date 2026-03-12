@@ -64,7 +64,10 @@ class PumpListener:
         if value is None:
             return 99999.0
         if isinstance(value, (int, float)):
-            dt = datetime.fromtimestamp(float(value), tz=timezone.utc)
+            numeric = float(value)
+            if numeric > 1_000_000_000_000:
+                numeric = numeric / 1000.0
+            dt = datetime.fromtimestamp(numeric, tz=timezone.utc)
             return max(0.0, (datetime.now(tz=timezone.utc) - dt).total_seconds() / 60.0)
         raw = str(value).strip()
         if not raw:
@@ -78,7 +81,10 @@ class PumpListener:
     @staticmethod
     def _parse_datetime(value: Any) -> datetime:
         if isinstance(value, (int, float)):
-            return datetime.fromtimestamp(float(value), tz=timezone.utc)
+            numeric = float(value)
+            if numeric > 1_000_000_000_000:
+                numeric = numeric / 1000.0
+            return datetime.fromtimestamp(numeric, tz=timezone.utc)
         raw = str(value or "").strip()
         if not raw:
             return datetime.now(tz=timezone.utc)
@@ -103,6 +109,68 @@ class PumpListener:
             or row.get("sig")
             or ""
         ).strip()
+
+    @staticmethod
+    def _extract_mint(row: dict[str, Any]) -> str:
+        return str(
+            row.get("mint")
+            or row.get("mint_address")
+            or row.get("address")
+            or row.get("tokenAddress")
+            or ""
+        ).strip()
+
+    async def _fetch_dex_fresh_candidates(self, max_age_minutes: float, limit: int) -> list[dict[str, Any]]:
+        terms = ["pump.fun", "solana new pair", "raydium pump", "pump token"]
+        out: dict[str, dict[str, Any]] = {}
+        hard_limit = max(10, min(int(limit or 50), 300))
+
+        for term in terms:
+            try:
+                response = await self._dex_client.get(f"https://api.dexscreener.com/latest/dex/search?q={term}")
+                response.raise_for_status()
+                data = response.json() if response.content else {}
+            except Exception:
+                continue
+
+            pairs = data.get("pairs") if isinstance(data, dict) else []
+            pair_rows = [row for row in pairs if isinstance(row, dict)] if isinstance(pairs, list) else []
+            for pair in pair_rows:
+                if str((pair or {}).get("chainId") or "").strip().lower() != "solana":
+                    continue
+                if not self._is_pumpfun_pair(pair):
+                    continue
+
+                pair_age_minutes = self._pair_age_minutes(pair)
+                if isinstance(pair_age_minutes, (int, float)) and float(pair_age_minutes) > float(max_age_minutes):
+                    continue
+
+                base_token = (pair or {}).get("baseToken") or {}
+                mint = str((base_token or {}).get("address") or "").strip()
+                if not mint:
+                    continue
+
+                created_ms = (pair or {}).get("pairCreatedAt")
+                try:
+                    created_ts = float(created_ms) / 1000.0 if created_ms is not None else datetime.now(tz=timezone.utc).timestamp()
+                    created_iso = datetime.fromtimestamp(created_ts, tz=timezone.utc).isoformat()
+                except Exception:
+                    created_iso = datetime.now(tz=timezone.utc).isoformat()
+
+                out[mint] = {
+                    "mint": mint,
+                    "address": mint,
+                    "createdAt": created_iso,
+                    "name": str((base_token or {}).get("name") or "").strip(),
+                    "symbol": str((base_token or {}).get("symbol") or "").strip(),
+                    "source": "dex_fresh_pairs",
+                }
+                if len(out) >= hard_limit:
+                    break
+            if len(out) >= hard_limit:
+                break
+
+        return list(out.values())
 
     async def _fetch_dexscreener_enrichment(self, mint: str) -> dict[str, Any]:
         now_ts = datetime.now(tz=timezone.utc).timestamp()
@@ -191,7 +259,7 @@ class PumpListener:
             return
 
     async def _build_and_send_token(self, row: dict[str, Any], max_age_minutes: float) -> dict[str, Any] | None:
-        mint = str(row.get("mint") or row.get("address") or row.get("tokenAddress") or "").strip()
+        mint = self._extract_mint(row)
         if not mint:
             return None
 
@@ -270,9 +338,24 @@ class PumpListener:
         )
         max_age_minutes = max(0.5, min(float(max_age_minutes or 5.0), configured_max_age))
         rows = await self.helius_service.detect_fresh_mints(limit=limit)
+        helius_with_mint = [row for row in rows if self._extract_mint(row)]
+
+        dex_fallback_candidates: list[dict[str, Any]] = []
+        if len(helius_with_mint) < max(5, int(limit * 0.2)):
+            dex_fallback_candidates = await self._fetch_dex_fresh_candidates(max_age_minutes=max_age_minutes, limit=limit)
+
+        merged_rows: list[dict[str, Any]] = []
+        seen_mints: set[str] = set()
+        for row in [*helius_with_mint, *dex_fallback_candidates]:
+            mint = self._extract_mint(row)
+            if not mint or mint in seen_mints:
+                continue
+            seen_mints.add(mint)
+            merged_rows.append(row)
+
         candidates: list[dict[str, Any]] = []
-        for row in rows:
-            mint = str(row.get("mint") or row.get("address") or row.get("tokenAddress") or "").strip()
+        for row in merged_rows:
+            mint = self._extract_mint(row)
             if not mint:
                 continue
             block_time = row.get("blockTime") or row.get("createdAt") or row.get("created_at")
@@ -281,7 +364,10 @@ class PumpListener:
                 continue
             candidates.append(row)
 
-        logger.info(f"[PumpListener] Fresh mint candidates within {max_age_minutes}m: {len(candidates)}")
+        logger.info(
+            f"[PumpListener] Fresh mint candidates within {max_age_minutes}m: {len(candidates)} "
+            f"(helius_rows={len(rows)} helius_with_mint={len(helius_with_mint)} dex_fallback={len(dex_fallback_candidates)})"
+        )
 
         # Run enrichment and webhook delivery concurrently to keep listener responsive.
         semaphore = asyncio.Semaphore(12)

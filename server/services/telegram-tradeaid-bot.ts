@@ -1,5 +1,5 @@
 import axios from "axios";
-import { and, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { storage } from "../storage";
 import { scannedTokens } from "@shared/schema";
@@ -73,6 +73,23 @@ type PushState = {
   lastPushAt?: string;
 };
 
+type BotCallRecord = {
+  id: string;
+  mint: string;
+  symbol: string;
+  name: string;
+  calledAt: string;
+  calledPriceUsd: number;
+  safetyScore: number;
+  liquidityUsd: number;
+  volume24hUsd: number;
+  origin: string;
+};
+
+type BotCallState = {
+  calls: BotCallRecord[];
+};
+
 type TokenProjectMeta = {
   logoUrl: string;
   website: string;
@@ -82,6 +99,7 @@ type TokenProjectMeta = {
 };
 
 const PUSH_STATE_KEY = "telegram.bot.push.v1";
+const CALL_STATE_KEY = "telegram.bot.calls.v1";
 
 const nowIso = () => new Date().toISOString();
 
@@ -140,10 +158,15 @@ class TradeAidTelegramBot {
   private readonly pushMinSafetyScore: number;
   private readonly pushMinLiquidityUsd: number;
   private readonly pushMinVolume24hUsd: number;
+  private readonly earlyLookbackMinutes: number;
+  private readonly earlyMinSafetyScore: number;
+  private readonly earlyMinLiquidityUsd: number;
+  private readonly earlyMinVolume24hUsd: number;
   private offset = 0;
   private running = false;
   private pushTimer: NodeJS.Timeout | null = null;
   private pushState: PushState = { chats: {}, sentMintAt: {} };
+  private callState: BotCallState = { calls: [] };
   private pushInFlight = false;
 
   constructor(token: string) {
@@ -169,12 +192,17 @@ class TradeAidTelegramBot {
     this.pushMinSafetyScore = Math.max(50, Math.trunc(Number(process.env.TELEGRAM_BOT_PUSH_MIN_SAFETY_SCORE || 78)));
     this.pushMinLiquidityUsd = Math.max(5_000, Number(process.env.TELEGRAM_BOT_PUSH_MIN_LIQUIDITY_USD || 35_000));
     this.pushMinVolume24hUsd = Math.max(2_000, Number(process.env.TELEGRAM_BOT_PUSH_MIN_VOLUME24H_USD || 20_000));
+    this.earlyLookbackMinutes = Math.max(10, Math.trunc(Number(process.env.TELEGRAM_BOT_EARLY_LOOKBACK_MINUTES || 240)));
+    this.earlyMinSafetyScore = Math.max(55, Math.trunc(Number(process.env.TELEGRAM_BOT_EARLY_MIN_SAFETY_SCORE || 76)));
+    this.earlyMinLiquidityUsd = Math.max(5_000, Number(process.env.TELEGRAM_BOT_EARLY_MIN_LIQUIDITY_USD || 30_000));
+    this.earlyMinVolume24hUsd = Math.max(2_000, Number(process.env.TELEGRAM_BOT_EARLY_MIN_VOLUME24H_USD || 15_000));
   }
 
   async start() {
     if (this.running) return;
     this.running = true;
     await this.loadPushState();
+    await this.loadCallState();
     this.startPushLoop();
     console.log("[TelegramBot] TradeAid Telegram bot started.");
     void this.pollLoop();
@@ -289,9 +317,10 @@ class TradeAidTelegramBot {
       inline_keyboard: [
         [
           { text: "Safe Calls", callback_data: "safe_calls" },
-          { text: "New Safe", callback_data: "new_safe" },
+          { text: "Early Safe", callback_data: "new_safe" },
         ],
         [
+          { text: "PnL Board", callback_data: "pnl_board" },
           { text: subscribed ? "Push: ON" : "Push: OFF", callback_data: subscribed ? "push_off" : "push_on" },
           { text: "Push Status", callback_data: "push_status" },
         ],
@@ -317,6 +346,151 @@ class TradeAidTelegramBot {
         ],
       ],
     };
+  }
+
+  private async loadCallState() {
+    try {
+      const loaded = await storage.getAppState<BotCallState>(CALL_STATE_KEY);
+      const calls = Array.isArray(loaded?.calls) ? loaded.calls : [];
+      this.callState = {
+        calls: calls
+          .filter((row) => row && typeof row === "object")
+          .map((row) => ({
+            id: String(row.id || "").trim() || `${String(row.mint || "")}:${String(row.calledAt || nowIso())}`,
+            mint: String(row.mint || "").trim(),
+            symbol: String(row.symbol || "").trim(),
+            name: String(row.name || "").trim(),
+            calledAt: String(row.calledAt || nowIso()),
+            calledPriceUsd: Number(row.calledPriceUsd || 0),
+            safetyScore: Number(row.safetyScore || 0),
+            liquidityUsd: Number(row.liquidityUsd || 0),
+            volume24hUsd: Number(row.volume24hUsd || 0),
+            origin: String(row.origin || "bot_call").trim() || "bot_call",
+          }))
+          .filter((row) => Boolean(row.mint))
+          .slice(-1200),
+      };
+    } catch {
+      this.callState = { calls: [] };
+    }
+  }
+
+  private async persistCallState() {
+    try {
+      await storage.setAppState(CALL_STATE_KEY, this.callState);
+    } catch {
+    }
+  }
+
+  private async recordBotCall(token: TokenRow, origin: string) {
+    const mint = String(token.address || "").trim();
+    if (!mint) return;
+
+    const now = nowIso();
+    const price = Number(token.priceUsd || 0);
+    const recentDuplicate = this.callState.calls.find((row) => {
+      if (row.mint !== mint || row.origin !== origin) return false;
+      const ageMs = Date.now() - new Date(String(row.calledAt || "")).getTime();
+      return Number.isFinite(ageMs) && ageMs >= 0 && ageMs < 10 * 60 * 1000;
+    });
+    if (recentDuplicate) return;
+
+    this.callState.calls.push({
+      id: `${mint}:${now}:${Math.random().toString(36).slice(2, 8)}`,
+      mint,
+      symbol: String(token.symbol || "").trim(),
+      name: String(token.name || "").trim(),
+      calledAt: now,
+      calledPriceUsd: Number.isFinite(price) && price > 0 ? price : 0,
+      safetyScore: Number(token.safetyScore || 0),
+      liquidityUsd: Number(token.liquidity || 0),
+      volume24hUsd: Number(token.volume24h || 0),
+      origin: String(origin || "bot_call").trim() || "bot_call",
+    });
+
+    if (this.callState.calls.length > 1200) {
+      this.callState.calls = this.callState.calls.slice(-1200);
+    }
+    await this.persistCallState();
+  }
+
+  private async buildPnlBoard(limit = 8) {
+    const calls = [...this.callState.calls]
+      .filter((row) => Boolean(row?.mint))
+      .sort((a, b) => new Date(a.calledAt).getTime() - new Date(b.calledAt).getTime());
+
+    if (!calls.length) {
+      return "<b>PnL Board</b>\nNo tracked calls yet. Use Safe Calls or Early Safe first.";
+    }
+
+    const firstCallByMint = new Map<string, BotCallRecord>();
+    for (const call of calls) {
+      if (!firstCallByMint.has(call.mint)) {
+        firstCallByMint.set(call.mint, call);
+      }
+    }
+
+    const mints = Array.from(firstCallByMint.keys()).slice(0, 350);
+    if (!mints.length) {
+      return "<b>PnL Board</b>\nNo tracked calls yet.";
+    }
+
+    const rows = await db
+      .select()
+      .from(scannedTokens)
+      .where(and(eq(scannedTokens.chain, "solana"), inArray(scannedTokens.address, mints)));
+
+    const tokenMap = new Map(rows.map((row) => [String(row.address || "").trim(), row]));
+    const performance = Array.from(firstCallByMint.values())
+      .map((call) => {
+        const token = tokenMap.get(call.mint);
+        const current = Number(token?.priceUsd || 0);
+        const called = Number(call.calledPriceUsd || 0);
+        if (!Number.isFinite(current) || current <= 0 || !Number.isFinite(called) || called <= 0) {
+          return null;
+        }
+        const pnlPct = ((current - called) / called) * 100;
+        return {
+          call,
+          token,
+          current,
+          called,
+          pnlPct,
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+    if (!performance.length) {
+      return [
+        "<b>PnL Board</b>",
+        "Tracked calls found, but live price snapshots are not available yet.",
+      ].join("\n");
+    }
+
+    const winners = performance.filter((row) => row.pnlPct > 0).length;
+    const winRate = (winners / performance.length) * 100;
+    const avgPnl = performance.reduce((sum, row) => sum + row.pnlPct, 0) / performance.length;
+    const best = [...performance].sort((a, b) => b.pnlPct - a.pnlPct).slice(0, Math.max(1, Math.min(limit, 12)));
+
+    const lines = [
+      "<b>SpyDefi-Style PnL Board</b>",
+      `Calls tracked: <b>${calls.length}</b> | Unique coins: <b>${firstCallByMint.size}</b>`,
+      `Coins with price data: <b>${performance.length}</b>`,
+      `Win rate: <b>${winRate.toFixed(1)}%</b> | Avg PnL: <b>${fmtPct(avgPnl)}</b>`,
+      "",
+      "<b>Top Movers Since First Call</b>",
+    ];
+
+    for (const row of best) {
+      const calledAgo = formatAge(row.call.calledAt);
+      lines.push(
+        `${escapeHtml(String(row.call.symbol || row.token?.symbol || "UNK"))}: <b>${fmtPct(row.pnlPct)}</b> | ` +
+        `Call ${escapeHtml(fmtUsd(row.called))} -> Now ${escapeHtml(fmtUsd(row.current))} | ` +
+        `Age ${escapeHtml(calledAgo)} | Safety ${Number(row.call.safetyScore || 0)}`,
+      );
+    }
+
+    return lines.join("\n");
   }
 
   private async loadPushState() {
@@ -455,7 +629,17 @@ class TradeAidTelegramBot {
     return sections.join("\n");
   }
 
-  private async sendTokenCard(chatId: string, token: TokenRow, mode: "full" | "compact", badge?: string) {
+  private async sendTokenCard(
+    chatId: string,
+    token: TokenRow,
+    mode: "full" | "compact",
+    badge?: string,
+    options?: { trackCall?: boolean; origin?: string },
+  ) {
+    if (options?.trackCall) {
+      await this.recordBotCall(token, String(options.origin || "bot_call"));
+    }
+
     const project = await this.fetchProjectMeta(token);
     const caption = this.buildTokenCaption(token, project, mode, badge);
     const buttons = this.buildTokenButtons(token, project.chart);
@@ -479,7 +663,9 @@ class TradeAidTelegramBot {
       "",
       "<b>Commands</b>",
       "/safe [n] - top safer calls",
-      "/new [n] - newest safer tokens",
+      "/new [n] - early safer tokens",
+      "/early [n] - alias for /new",
+      "/pnl - bot call performance board",
       "/token &lt;symbol|address&gt; - full token card",
       "/projects &lt;symbol|address&gt; - project links",
       "/push on|off|status - manage alerts",
@@ -544,6 +730,19 @@ class TradeAidTelegramBot {
       return;
     }
 
+    if (lower.startsWith("/early")) {
+      const limitArg = text.split(/\s+/)[1];
+      const limit = takeLimit(limitArg, 5, 8);
+      await this.handleNewSafe(chatId, limit);
+      return;
+    }
+
+    if (lower.startsWith("/pnl")) {
+      const textOut = await this.buildPnlBoard(10);
+      await this.sendMessage(chatId, textOut, this.buildStartButtons(this.isSubscribed(chatId)));
+      return;
+    }
+
     if (lower.startsWith("/token ")) {
       const query = text.slice(7).trim();
       if (!query) {
@@ -596,6 +795,13 @@ class TradeAidTelegramBot {
     if (dataLower === "new_safe") {
       await this.handleNewSafe(chatId, 5);
       await this.answerCallbackQuery(callbackQuery.id, "Loaded new safe tokens").catch(() => undefined);
+      return;
+    }
+
+    if (dataLower === "pnl_board") {
+      const textOut = await this.buildPnlBoard(10);
+      await this.sendMessage(chatId, textOut, this.buildStartButtons(this.isSubscribed(chatId)));
+      await this.answerCallbackQuery(callbackQuery.id, "Loaded PnL board").catch(() => undefined);
       return;
     }
 
@@ -712,22 +918,24 @@ class TradeAidTelegramBot {
     );
 
     for (const token of rows) {
-      await this.sendTokenCard(chatId, token, "compact", "SAFE CALL");
+      await this.sendTokenCard(chatId, token, "compact", "SAFE CALL", { trackCall: true, origin: "safe_calls" });
     }
   }
 
   private async handleNewSafe(chatId: string, limit: number) {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const since = new Date(Date.now() - this.earlyLookbackMinutes * 60 * 1000);
     const rows = await db
       .select()
       .from(scannedTokens)
       .where(
         and(
           eq(scannedTokens.chain, "solana"),
-          gte(scannedTokens.safetyScore, 70),
-          gte(scannedTokens.liquidity, 25_000),
-          gte(scannedTokens.volume24h, 10_000),
+          gte(scannedTokens.safetyScore, this.earlyMinSafetyScore),
+          gte(scannedTokens.liquidity, this.earlyMinLiquidityUsd),
+          gte(scannedTokens.volume24h, this.earlyMinVolume24hUsd),
           eq(scannedTokens.isHoneypot, false),
+          lte(scannedTokens.topHoldersPercentage, 30),
+          lte(scannedTokens.devWalletPercentage, 12),
           gte(scannedTokens.pairCreatedAt, since),
         ),
       )
@@ -735,18 +943,18 @@ class TradeAidTelegramBot {
       .limit(limit);
 
     if (!rows.length) {
-      await this.sendMessage(chatId, "No new safer tokens in the last 24h yet.");
+      await this.sendMessage(chatId, "No early safer tokens found in the current window yet.");
       return;
     }
 
     await this.sendMessage(
       chatId,
-      `<b>New Safe Solana Tokens (24h)</b>\nShowing ${rows.length} newly discovered picks.`,
+      `<b>Early Safe Solana Calls</b>\nShowing ${rows.length} fresh picks from scanned app tokens.`,
       this.buildStartButtons(this.isSubscribed(chatId)),
     );
 
     for (const token of rows) {
-      await this.sendTokenCard(chatId, token, "compact", "NEW SAFE");
+      await this.sendTokenCard(chatId, token, "compact", "EARLY SAFE", { trackCall: true, origin: "early_safe" });
     }
   }
 
@@ -812,6 +1020,8 @@ class TradeAidTelegramBot {
             gte(scannedTokens.liquidity, this.pushMinLiquidityUsd),
             gte(scannedTokens.volume24h, this.pushMinVolume24hUsd),
             eq(scannedTokens.isHoneypot, false),
+            lte(scannedTokens.topHoldersPercentage, 30),
+            lte(scannedTokens.devWalletPercentage, 12),
             gte(scannedTokens.pairCreatedAt, since),
           ),
         )
@@ -832,7 +1042,10 @@ class TradeAidTelegramBot {
         if (this.pushState.sentMintAt[mint]) continue;
 
         for (const chatId of subscribers) {
-          await this.sendTokenCard(chatId, token, "compact", "PUSH ALERT").catch(() => undefined);
+          await this.sendTokenCard(chatId, token, "compact", "EARLY SAFE ALERT", {
+            trackCall: true,
+            origin: "push_alert",
+          }).catch(() => undefined);
         }
 
         this.pushState.sentMintAt[mint] = nowIso();
