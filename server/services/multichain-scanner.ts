@@ -195,6 +195,10 @@ export class MultichainLaunchpadScanner {
   private async scanDexScreenerLaunches(chain: "solana" | "ethereum" | "bsc" | "base"): Promise<LaunchpadToken[]> {
     console.log(`[Multichain] Scanning ${chain} via DexScreener...`);
     try {
+      if (chain === "solana") {
+        return await this.scanDexScreenerProfiles(chain);
+      }
+
       const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${chain === "solana" ? "So11111111111111111111111111111111111111112" : chain === "ethereum" ? "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" : chain === "bsc" ? "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c" : "0x4200000000000000000000000000000000000006"}`);
       
       if (!response.ok) {
@@ -289,6 +293,77 @@ export class MultichainLaunchpadScanner {
       console.error(`[Multichain] ${chain} scan error:`, error);
       return [];
     }
+  }
+
+  private async scanDexScreenerProfiles(chain: "solana" | "ethereum" | "bsc" | "base"): Promise<LaunchpadToken[]> {
+    const tokenProfilesResponse = await fetch("https://api.dexscreener.com/token-profiles/latest/v1");
+    if (!tokenProfilesResponse.ok) return [];
+
+    const profiles = await tokenProfilesResponse.json();
+    const chainTokens = (Array.isArray(profiles) ? profiles : [])
+      .filter((t: any) => t.chainId === chain)
+      .slice(0, 80);
+
+    const tokens: LaunchpadToken[] = [];
+    const wrappedSolMint = "So11111111111111111111111111111111111111112";
+
+    for (const token of chainTokens) {
+      const tokenAddress = String(token?.tokenAddress || "").trim();
+      if (!tokenAddress) continue;
+      if (EXCLUDED_SOL_MINTS.has(tokenAddress)) continue;
+
+      const pairsResponse = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${tokenAddress}`);
+      if (!pairsResponse.ok) {
+        continue;
+      }
+
+      const pairsPayload = await pairsResponse.json();
+      const chainPairs = ((pairsPayload?.pairs || []) as any[])
+        .filter((pair) => String(pair?.chainId || "") === chain)
+        .sort((left, right) => Number(right?.liquidity?.usd || 0) - Number(left?.liquidity?.usd || 0));
+
+      const bestPair = chainPairs[0] || null;
+      if (!bestPair) {
+        continue;
+      }
+
+      const baseToken = bestPair?.baseToken || {};
+      const quoteToken = bestPair?.quoteToken || {};
+      const baseAddress = String(baseToken?.address || "").trim();
+      const quoteAddress = String(quoteToken?.address || "").trim();
+      const selectedToken = (baseAddress === wrappedSolMint && quoteAddress) ? quoteToken : baseToken;
+      const selectedAddress = String(selectedToken?.address || tokenAddress).trim();
+      const selectedSymbol = String(selectedToken?.symbol || "???").trim().toUpperCase();
+
+      if (!selectedAddress || EXCLUDED_SOL_MINTS.has(selectedAddress)) {
+        continue;
+      }
+      if (EXCLUDED_SOL_SYMBOLS.has(selectedSymbol)) {
+        continue;
+      }
+
+      const holderAnalysis = await this.analyzeHolders(selectedAddress, chain);
+      tokens.push({
+        address: selectedAddress,
+        symbol: selectedSymbol || "???",
+        name: String(selectedToken?.name || token?.description || "Unknown").slice(0, 80),
+        chain,
+        launchpad: String(bestPair?.dexId || "dexscreener"),
+        priceUsd: String(bestPair?.priceUsd || "0"),
+        liquidity: Number(bestPair?.liquidity?.usd || 0),
+        marketCap: Number(bestPair?.marketCap || bestPair?.fdv || 0),
+        volume24h: Number(bestPair?.volume?.h24 || 0),
+        topHoldersPercentage: holderAnalysis.topHoldersPercentage,
+        devWalletPercentage: holderAnalysis.devWalletPercentage,
+        createdAt: bestPair?.pairCreatedAt ? new Date(bestPair.pairCreatedAt) : new Date(),
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      if (tokens.length >= 30) break;
+    }
+
+    console.log(`[Multichain] Found ${tokens.length} tokens from ${chain}`);
+    return tokens;
   }
 
   private async analyzeHolders(tokenAddress: string, chain: string): Promise<{ topHoldersPercentage: number; devWalletPercentage: number; holders: HolderInfo[]; analyzed: boolean }> {
