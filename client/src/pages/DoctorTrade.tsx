@@ -168,6 +168,10 @@ export default function DoctorTrade() {
       hydratedFromLocalRef.current = true;
       try {
         const runtimeUserId = String(viewData?.user_id || "").trim();
+        // Do not hydrate from local fallback until we know which user is signed in.
+        if (!runtimeUserId) {
+          return;
+        }
         const scopedRaw = window.localStorage.getItem(getDoctorSettingsLocalKey(runtimeUserId));
         const legacyRaw = window.localStorage.getItem(DOCTOR_SETTINGS_LOCAL_KEY_LEGACY);
         const candidatePayloads = [scopedRaw, legacyRaw].filter(Boolean) as string[];
@@ -176,7 +180,8 @@ export default function DoctorTrade() {
           const parsed = JSON.parse(raw) as Record<string, any>;
           if (!parsed || typeof parsed !== "object") continue;
           const parsedUserId = String(parsed.user_id || "").trim();
-          if (runtimeUserId && parsedUserId && runtimeUserId !== parsedUserId) continue;
+          // Never apply fallback values that are not explicitly owned by this user.
+          if (!parsedUserId || runtimeUserId !== parsedUserId) continue;
           hydrateSettingsInputs(parsed);
           break;
         }
@@ -184,6 +189,14 @@ export default function DoctorTrade() {
       }
     }
   }, [viewData?.trade_controls, viewData?.user_id]);
+
+  useEffect(() => {
+    const controls = viewData?.trade_controls as Record<string, any> | undefined;
+    if (!controls) return;
+    const presetFromServer = normalizePreset(controls.snipe_preset);
+    setSelectedSnipePreset((prev) => (prev === presetFromServer ? prev : presetFromServer));
+    setPresetMode(presetFromServer === "custom" ? "custom" : "default");
+  }, [viewData?.trade_controls?.snipe_preset]);
 
   useEffect(() => {
     if (autoAction !== "buy" || autoBuyHandled || !autoBuyContract) {
