@@ -1300,6 +1300,38 @@ export async function registerRoutes(
     return Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("max_open_positions", Number(doctorRuntime.controls.max_open_positions || 3))));
   };
 
+  const shouldForceDoctorCustomPreset = (
+    activePreset: "insider" | "conservative" | "balanced" | "aggressive" | "custom",
+    controlsPayload: Record<string, any>,
+  ) => {
+    if (activePreset === "custom") return false;
+    const profile = (doctorPresetNumericProfiles as Record<string, Record<string, number>>)[activePreset];
+    if (!profile) return false;
+
+    const presetSensitiveKeys = [
+      "take_profit_multiplier",
+      "min_profit_pct",
+      "stop_loss_pct",
+      "trailing_stop_pct",
+      "max_hold_minutes",
+    ] as const;
+
+    for (const key of presetSensitiveKeys) {
+      if (!Number.isFinite(Number(controlsPayload[key]))) {
+        continue;
+      }
+      const payloadValue = Number(controlsPayload[key]);
+      const presetValue = Number(profile[key]);
+      if (!Number.isFinite(presetValue)) {
+        continue;
+      }
+      if (Math.abs(payloadValue - presetValue) > 1e-9) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   const ensureDoctorLiveExecutionModeIfCapable = async (
     preferredUserId?: string,
     options?: { persistRuntime?: boolean },
@@ -1595,6 +1627,7 @@ export async function registerRoutes(
   };
 
   const doctorCycleRunningByUser = new Set<string>();
+  let doctorCycleGlobalLock: Promise<void> = Promise.resolve();
   const doctorCycleTimerByUser = new Map<string, NodeJS.Timeout>();
   const doctorSchedulerStateKey = "doctortrade.scheduler.v1";
   const doctorSchedulerInstanceId = `${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
@@ -2202,7 +2235,13 @@ export async function registerRoutes(
     if (!normalizedUserId) return { ok: false, error: "missing_user_id" } as const;
     if (doctorCycleRunningByUser.has(normalizedUserId)) return { ok: false, error: "cycle_already_running" } as const;
     doctorCycleRunningByUser.add(normalizedUserId);
+    let releaseGlobalLock: () => void = () => {};
+    const previousGlobalLock = doctorCycleGlobalLock;
+    doctorCycleGlobalLock = new Promise<void>((resolve) => {
+      releaseGlobalLock = resolve;
+    });
     try {
+      await previousGlobalLock;
       await loadDoctorRuntimeForUser(normalizedUserId);
       await executeDoctorCycle(trigger, normalizedUserId);
       await persistDoctorRuntime(normalizedUserId);
@@ -2221,6 +2260,7 @@ export async function registerRoutes(
       await persistDoctorRuntime(normalizedUserId);
       return { ok: false, error: doctorRuntime.lastError } as const;
     } finally {
+      releaseGlobalLock();
       doctorCycleRunningByUser.delete(normalizedUserId);
     }
   };
@@ -5851,6 +5891,17 @@ export async function registerRoutes(
     for (const key of numericKeys) {
       if (Number.isFinite(Number(payload[key]))) {
         (doctorRuntime.controls as any)[key] = Number(payload[key]);
+      }
+    }
+
+    const presetAfterPayload = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
+    if (shouldForceDoctorCustomPreset(presetAfterPayload, payload)) {
+      (doctorRuntime.controls as any).snipe_preset = "custom";
+      try {
+        const presetsByUser = await getStoredDoctorPresetsByUser();
+        presetsByUser[userId] = "custom";
+        await setStoredDoctorPresetsByUser(presetsByUser);
+      } catch {
       }
     }
 
