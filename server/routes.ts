@@ -3943,7 +3943,11 @@ export async function registerRoutes(
         const positionMint = String(position.address || "").trim();
         if (liveWalletAddress && positionMint) {
           const liveBalance = await getDoctorLiveTokenBalanceSnapshot(liveWalletAddress, positionMint);
-          if (liveBalance.balanceKnown && !(liveBalance.uiAmount > 0)) {
+          const openedAtMs = new Date(String((position as any).opened_at || "")).getTime();
+          const isFreshPosition = Number.isFinite(openedAtMs)
+            ? (Date.now() - openedAtMs) <= Math.max(60_000, Number(process.env.DOCTOR_LIVE_POSITION_BALANCE_GRACE_MS || 10 * 60 * 1000))
+            : true;
+          if (liveBalance.balanceKnown && !(liveBalance.uiAmount > 0) && !isFreshPosition) {
             const symbol = String(position.symbol || "UNKNOWN");
             doctorRuntime.decisionJournal.unshift({
               token: symbol,
@@ -5318,7 +5322,8 @@ export async function registerRoutes(
       getDoctorActiveTokens(),
     ]);
     const { dailyRealizedPnlUsd, consecutiveLosses } = computeDoctorRiskMetrics();
-    const activeTokenMap = new Map(activeTokens.map((token) => [String(token.address || "").trim(), token]));
+    const toMintKey = (value: unknown) => String(value || "").trim().toLowerCase();
+    const activeTokenMap = new Map(activeTokens.map((token) => [toMintKey((token as any).address), token]));
 
     const paused = doctorRuntime.killSwitch;
     const safetyPaused = paused || !doctorRuntime.enabled;
@@ -5380,20 +5385,49 @@ export async function registerRoutes(
       : [[], []];
     const knownTokenDetailsByMint = new Map<string, Record<string, any>>();
     for (const token of activeTokens) {
-      const mint = String((token as any).address || "").trim();
+      const mint = toMintKey((token as any).address);
       if (!mint) continue;
       knownTokenDetailsByMint.set(mint, token as Record<string, any>);
     }
     for (const position of doctorRuntime.positions) {
-      const mint = String((position as any).address || "").trim();
+      const mint = toMintKey((position as any).address);
       if (!mint) continue;
       if (!knownTokenDetailsByMint.has(mint)) {
         knownTokenDetailsByMint.set(mint, position as Record<string, any>);
       }
     }
-    const statusWalletTokens = rawWalletTokens.map((token) => {
+    const missingMintsForDbLookup = new Set<string>();
+    for (const token of rawWalletTokens) {
+      const mint = toMintKey((token as any).mint);
+      if (mint && !knownTokenDetailsByMint.has(mint)) {
+        missingMintsForDbLookup.add(mint);
+      }
+    }
+    for (const position of doctorRuntime.positions) {
+      const mint = toMintKey((position as any).address);
+      if (mint && !knownTokenDetailsByMint.has(mint)) {
+        missingMintsForDbLookup.add(mint);
+      }
+    }
+    if (missingMintsForDbLookup.size > 0) {
+      const lookups = Array.from(missingMintsForDbLookup).slice(0, 80);
+      const rows = await Promise.all(
+        lookups.map(async (mint) => {
+          const row = await storage.getScannedTokenByAddress(mint).catch(() => undefined);
+          return { mint, row };
+        }),
+      );
+      for (const item of rows) {
+        if (item?.mint && item?.row) {
+          knownTokenDetailsByMint.set(item.mint, item.row as unknown as Record<string, any>);
+        }
+      }
+    }
+
+    let statusWalletTokens: Array<Record<string, any>> = rawWalletTokens.map((token) => {
       const mint = String((token as any).mint || "").trim();
-      const details = knownTokenDetailsByMint.get(mint) || {};
+      const mintKey = toMintKey(mint);
+      const details = knownTokenDetailsByMint.get(mintKey) || {};
       const priceUsd = Number((details as any).price_usd || 0);
       const uiAmount = Number((token as any).ui_amount || 0);
       const worthUsd = Number((uiAmount * Math.max(0, priceUsd)).toFixed(6));
@@ -5450,11 +5484,15 @@ export async function registerRoutes(
           }
 
           const tokenBalance = await getDoctorLiveTokenBalanceSnapshot(walletForLivePositions, mint);
-          if (tokenBalance.balanceKnown && !(tokenBalance.uiAmount > 0)) {
+          const openedAtMs = new Date(String((position as any).opened_at || "")).getTime();
+          const isFreshPosition = Number.isFinite(openedAtMs)
+            ? (Date.now() - openedAtMs) <= Math.max(60_000, Number(process.env.DOCTOR_LIVE_POSITION_BALANCE_GRACE_MS || 10 * 60 * 1000))
+            : true;
+          if (tokenBalance.balanceKnown && !(tokenBalance.uiAmount > 0) && !isFreshPosition) {
             continue;
           }
 
-          const marketToken = activeTokenMap.get(mint);
+          const marketToken = activeTokenMap.get(toMintKey(mint)) || knownTokenDetailsByMint.get(toMintKey(mint));
           const entryPriceUsd = Number(position.entry_price || 0);
           const currentPriceUsd = resolveCurrentPriceUsd(marketToken || {}, Number(position.current_price || entryPriceUsd || 0));
           const fallbackAmountTokens = Math.max(0, Number(position.amount_tokens || 0));
@@ -5482,6 +5520,38 @@ export async function registerRoutes(
         statusPositions = enrichedLivePositions;
       }
     }
+
+    // Ensure wallet asset list includes open positions even when token-account indexing lags.
+    const walletTokenMints = new Set(
+      statusWalletTokens
+        .map((token) => toMintKey((token as any).mint))
+        .filter(Boolean),
+    );
+    for (const position of statusPositions) {
+      const mint = String((position as any).address || "").trim();
+      const mintKey = toMintKey(mint);
+      if (!mint || walletTokenMints.has(mintKey)) continue;
+      const details = knownTokenDetailsByMint.get(mintKey) || {};
+      const priceUsd = Number((details as any).price_usd || (position as any).current_price || (position as any).entry_price || 0);
+      const uiAmount = Math.max(0, Number((position as any).amount_tokens || 0));
+      const worthUsd = Number((Math.max(0, uiAmount) * Math.max(0, priceUsd)).toFixed(6));
+      statusWalletTokens.push({
+        mint,
+        ui_amount: uiAmount,
+        amount_raw: String((position as any).amount_raw || "0"),
+        decimals: Math.max(0, Number((position as any).token_decimals || 0)),
+        symbol: String((position as any).symbol || (details as any).symbol || mint.slice(0, 4) || "TOK"),
+        name: String((details as any).name || (position as any).symbol || mint),
+        logo_url: String((details as any).logo_url || ""),
+        price_usd: priceUsd,
+        worth_usd: worthUsd,
+      });
+      walletTokenMints.add(mintKey);
+    }
+
+    statusWalletTokens = statusWalletTokens
+      .sort((a, b) => Number((b as any).worth_usd || 0) - Number((a as any).worth_usd || 0))
+      .slice(0, 40);
     const statusOpenPositions = statusPositions.length;
 
     let autoTradeBlockReason: string | null = null;
