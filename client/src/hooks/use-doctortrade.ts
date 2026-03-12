@@ -181,8 +181,18 @@ export type DoctorStatus = {
 };
 
 export function useDoctorStatus() {
-    // Cloud sync: always fetch from backend, no localStorage fallback
-    const readCached = (): DoctorStatus | undefined => undefined;
+  const readCached = (): DoctorStatus | undefined => {
+    if (typeof window === "undefined") return undefined;
+    try {
+      const raw = window.localStorage.getItem(DOCTOR_STATUS_CACHE_KEY);
+      if (!raw) return undefined;
+      const parsed = JSON.parse(raw) as DoctorStatus;
+      if (!parsed || typeof parsed !== "object") return undefined;
+      return parsed;
+    } catch {
+      return undefined;
+    }
+  };
 
   return useQuery({
     queryKey: ["doctortrade", "status"],
