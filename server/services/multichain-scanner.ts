@@ -244,12 +244,6 @@ export class MultichainLaunchpadScanner {
         if (Number(pair?.liquidity?.usd || 0) <= 0) {
           continue;
         }
-        const createdAtMs = Number(pair?.pairCreatedAt || 0);
-        const pairAgeMinutes = createdAtMs > 0 ? (Date.now() - createdAtMs) / 60000 : Number.POSITIVE_INFINITY;
-        if (chain === "solana" && (!Number.isFinite(pairAgeMinutes) || pairAgeMinutes < 0 || pairAgeMinutes > 720)) {
-          continue;
-        }
-
         const baseToken = pair?.baseToken || {};
         const quoteToken = pair?.quoteToken || {};
         const baseAddress = String(baseToken?.address || "").trim();
