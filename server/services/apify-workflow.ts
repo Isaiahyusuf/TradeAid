@@ -2,8 +2,23 @@ import { logStructured } from "./structured-logger";
 
 const APIFY_API_BASE = "https://api.apify.com/v2";
 const DEFAULT_PUMPFUN_ACTOR_ID = "mscrpt/pump-fun-real-time-monitor";
+const APIFY_QUOTA_ERROR_RE = /(dataset-locked|platform-feature-disabled|monthly usage hard limit exceeded)/i;
 
 const terminalStatuses = new Set(["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"]);
+
+class ApifyQuotaError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApifyQuotaError";
+    this.status = status;
+  }
+}
+
+function isQuotaError(status: number, body: string): boolean {
+  return (status === 402 || status === 403) && APIFY_QUOTA_ERROR_RE.test(body || "");
+}
 
 function extractRunIdFromUrl(runUrl: string): string {
   const trimmed = String(runUrl || "").trim();
@@ -81,6 +96,9 @@ export async function runApifyWorkflowOnce(limit: number = 10): Promise<ApifyWor
         status: startResponse.status,
         body: body.slice(0, 400),
       });
+      if (isQuotaError(startResponse.status, body)) {
+        throw new ApifyQuotaError(startResponse.status, "Apify monthly quota reached");
+      }
       throw new Error(`Failed to start Apify actor run (${startResponse.status})`);
     }
 
@@ -121,6 +139,9 @@ export async function runApifyWorkflowOnce(limit: number = 10): Promise<ApifyWor
         status: runResponse.status,
         body: body.slice(0, 400),
       });
+      if (isQuotaError(runResponse.status, body)) {
+        throw new ApifyQuotaError(runResponse.status, "Apify monthly quota reached");
+      }
       throw new Error(`Failed to poll Apify run ${runId} (${runResponse.status})`);
     }
 
@@ -149,6 +170,9 @@ export async function runApifyWorkflowOnce(limit: number = 10): Promise<ApifyWor
       status: itemsResponse.status,
       body: body.slice(0, 400),
     });
+    if (isQuotaError(itemsResponse.status, body)) {
+      throw new ApifyQuotaError(itemsResponse.status, "Apify monthly quota reached");
+    }
     throw new Error(`Failed to fetch Apify dataset items (${itemsResponse.status})`);
   }
 
@@ -203,6 +227,7 @@ export async function runApifyWorkflowOnce(limit: number = 10): Promise<ApifyWor
 }
 
 let schedulerTimer: NodeJS.Timeout | null = null;
+let apifyPausedUntil = 0;
 
 export function startApifyWorkflowScheduler(intervalMs: number = 5 * 60 * 1000): void {
   if (schedulerTimer) {
@@ -222,9 +247,24 @@ export function startApifyWorkflowScheduler(intervalMs: number = 5 * 60 * 1000):
   }
 
   const runCycle = async () => {
+    if (apifyPausedUntil > Date.now()) {
+      return;
+    }
+
     try {
       await runApifyWorkflowOnce(Number(process.env.APIFY_DATASET_LIMIT || 10));
     } catch (error) {
+      if (error instanceof ApifyQuotaError) {
+        const cooldownMs = Math.max(60_000, Number(process.env.APIFY_QUOTA_COOLDOWN_MS || 12 * 60 * 60 * 1000));
+        apifyPausedUntil = Date.now() + cooldownMs;
+        logStructured("warn", "apify.workflow.paused_quota", {
+          status: error.status,
+          cooldownMs,
+          resumeAt: new Date(apifyPausedUntil).toISOString(),
+        });
+        return;
+      }
+
       logStructured("error", "apify.workflow.cycle_failed", {
         message: error instanceof Error ? error.message : "Unknown error",
       });

@@ -2,6 +2,7 @@ import { logStructured } from "./structured-logger";
 
 const APIFY_API_BASE = "https://api.apify.com/v2";
 const DEFAULT_PUMPFUN_ACTOR_ID = "mscrpt/pump-fun-real-time-monitor";
+const APIFY_QUOTA_ERROR_RE = /(dataset-locked|platform-feature-disabled|monthly usage hard limit exceeded)/i;
 
 export interface FreshTokenItem {
   mintAddress: string;
@@ -92,6 +93,10 @@ function extractRunIdFromUrl(runUrl: string): string {
   return (match?.[1] || "").trim();
 }
 
+function isQuotaError(status: number, body: string): boolean {
+  return (status === 402 || status === 403) && APIFY_QUOTA_ERROR_RE.test(body || "");
+}
+
 export async function fetchFreshPumpfunTokens(limit = 10): Promise<FreshTokenItem[]> {
   const apifyToken = String(process.env.APIFY_TOKEN || "").trim();
   const actorId = String(process.env.APIFY_PUMPFUN_ACTOR_ID || DEFAULT_PUMPFUN_ACTOR_ID).trim();
@@ -121,6 +126,10 @@ export async function fetchFreshPumpfunTokens(limit = 10): Promise<FreshTokenIte
           runId,
           body: body.slice(0, 400),
         });
+        if (isQuotaError(runResponse.status, body)) {
+          logStructured("warn", "apify.quota_exceeded", { status: runResponse.status, actorId });
+          return [];
+        }
         throw new Error(`Apify run request failed with ${runResponse.status}`);
       }
 
@@ -139,6 +148,10 @@ export async function fetchFreshPumpfunTokens(limit = 10): Promise<FreshTokenIte
           actorId,
           body: body.slice(0, 400),
         });
+        if (isQuotaError(runsResponse.status, body)) {
+          logStructured("warn", "apify.quota_exceeded", { status: runsResponse.status, actorId });
+          return [];
+        }
         throw new Error(`Apify runs request failed with ${runsResponse.status}`);
       }
 
@@ -166,6 +179,10 @@ export async function fetchFreshPumpfunTokens(limit = 10): Promise<FreshTokenIte
         datasetId,
         body: body.slice(0, 400),
       });
+      if (isQuotaError(itemsResponse.status, body)) {
+        logStructured("warn", "apify.quota_exceeded", { status: itemsResponse.status, actorId, datasetId });
+        return [];
+      }
       throw new Error(`Apify dataset items request failed with ${itemsResponse.status}`);
     }
 
