@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+import os
 from typing import Any
 
 import httpx
@@ -18,6 +19,23 @@ class FreshTokenProcessor:
     def __init__(self) -> None:
         self._client = httpx.AsyncClient(timeout=8.0, trust_env=False)
         self._semaphore = asyncio.Semaphore(24)
+        self._ingest_key = str(
+            os.getenv("TRADEAID_NEW_TOKEN_INGEST_KEY")
+            or os.getenv("NEW_TOKEN_INGEST_KEY")
+            or ""
+        ).strip()
+        base_url = str(
+            os.getenv("TRADEAID_NEW_TOKEN_WEBHOOK_URL")
+            or os.getenv("TRADE_AID_BACKEND_URL")
+            or os.getenv("TRADEAID_API_URL")
+            or ""
+        ).strip()
+        if base_url.endswith("/api/new-token"):
+            self._ingest_url = base_url
+        elif base_url:
+            self._ingest_url = f"{base_url.rstrip('/')}/api/new-token"
+        else:
+            self._ingest_url = ""
 
     async def close(self) -> None:
         await self._client.aclose()
@@ -89,6 +107,38 @@ class FreshTokenProcessor:
         token.update(payload)
         return token
 
+    async def _post_to_tradeaid_ingest(self, token: dict[str, Any]) -> None:
+        if not self._ingest_url:
+            return
+
+        payload = {
+            "token_name": token.get("token_name") or token.get("name") or "",
+            "symbol": token.get("symbol") or "",
+            "mint_address": token.get("mint_address") or token.get("mint") or "",
+            "creator_wallet": token.get("creator_wallet") or token.get("creator") or "",
+            "timestamp": token.get("timestamp") or datetime.now(tz=timezone.utc).isoformat(),
+            "transaction_signature": token.get("transaction_signature") or token.get("tx") or "",
+            "initial_liquidity": self._safe_float(token.get("liquidity"), 0.0),
+            "market_cap": self._safe_float(token.get("market_cap"), 0.0),
+            "volume": self._safe_float(token.get("volume"), 0.0),
+            "source": token.get("source") or "fresh_token_detector",
+            "source_platform": token.get("source_platform") or token.get("source") or "multi_source",
+            "dexscreener": token.get("dex") or {},
+        }
+
+        headers = {"Content-Type": "application/json"}
+        if self._ingest_key:
+            headers["x-tradeaid-ingest-key"] = self._ingest_key
+
+        try:
+            response = await self._client.post(self._ingest_url, json=payload, headers=headers)
+            if response.status_code >= 400:
+                logger.warning(
+                    f"[FreshProcessor] Ingest post failed {payload['mint_address']} status={response.status_code}"
+                )
+        except Exception as exc:
+            logger.warning(f"[FreshProcessor] Ingest post exception: {exc}")
+
     async def process_token(self, token: dict[str, Any], source: str = "helius_ws") -> dict[str, Any]:
         async with self._semaphore:
             token = dict(token)
@@ -105,6 +155,8 @@ class FreshTokenProcessor:
             if not passed:
                 await publish_event("fresh_tokens", {"status": "filtered", "token": enriched})
                 return {"status": "filtered", "token": enriched}
+
+            await self._post_to_tradeaid_ingest(enriched)
 
             sniper_result = await sniper_controller.maybe_trigger(enriched, ai_result)
             status = "SNIPING" if sniper_result.get("triggered") else "WATCHING"
