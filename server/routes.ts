@@ -1118,7 +1118,7 @@ export async function registerRoutes(
   };
 
   const getDoctorLiveWalletCredentials = async (preferredUserId?: string) => {
-    const requestedUserId = String(preferredUserId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
+    const requestedUserId = String(preferredUserId || doctorCurrentCycleUserId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
     await ensureDoctorOwnerAndWalletHydrated(requestedUserId);
 
     const ownerUserId = requestedUserId;
@@ -1435,6 +1435,7 @@ export async function registerRoutes(
   };
 
   let doctorActiveUserId = "";
+  let doctorCurrentCycleUserId = "";
 
   const persistDoctorRuntime = async (userId?: string) => {
     const snapshot = JSON.parse(JSON.stringify(doctorRuntime));
@@ -1825,13 +1826,13 @@ export async function registerRoutes(
   };
 
   const getDoctorSniperLogsForUser = (userId?: string) => {
-    const scopedUserId = String(userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
+    const scopedUserId = String(userId || doctorCurrentCycleUserId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
     if (!scopedUserId) return [] as Array<Record<string, any>>;
     return doctorSniperLogsByUser.get(scopedUserId) || [];
   };
 
   const appendDoctorSniperLog = (entry: Record<string, any>, userId?: string) => {
-    const scopedUserId = String(userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
+    const scopedUserId = String(userId || doctorCurrentCycleUserId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
     if (!scopedUserId) return;
 
     const existing = doctorSniperLogsByUser.get(scopedUserId) || [];
@@ -2273,6 +2274,8 @@ export async function registerRoutes(
     if (!normalizedUserId) return { ok: false, error: "missing_user_id" } as const;
     if (doctorCycleRunningByUser.has(normalizedUserId)) return { ok: false, error: "cycle_already_running" } as const;
     doctorCycleRunningByUser.add(normalizedUserId);
+    const previousCycleUserId = doctorCurrentCycleUserId;
+    doctorCurrentCycleUserId = normalizedUserId;
     let releaseGlobalLock: () => void = () => {};
     const previousGlobalLock = doctorCycleGlobalLock;
     doctorCycleGlobalLock = new Promise<void>((resolve) => {
@@ -2298,6 +2301,7 @@ export async function registerRoutes(
       await persistDoctorRuntime(normalizedUserId);
       return { ok: false, error: doctorRuntime.lastError } as const;
     } finally {
+      doctorCurrentCycleUserId = previousCycleUserId;
       releaseGlobalLock();
       doctorCycleRunningByUser.delete(normalizedUserId);
     }
@@ -3871,7 +3875,7 @@ export async function registerRoutes(
     }
 
     await ensureDoctorLiveExecutionModeIfCapable(scopedUserId);
-    await refreshDoctorWalletBalanceFromChain();
+    await refreshDoctorWalletBalanceFromChain(resolvedWalletAddress || undefined);
     clampDoctorPaperBalance();
 
     // Self-heal transient enabled drift: if auto scheduler is active for this user,
