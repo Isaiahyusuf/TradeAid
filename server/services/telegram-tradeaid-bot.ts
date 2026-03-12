@@ -131,6 +131,10 @@ type TelegramSentMessage = {
   message_id: number;
 };
 
+const isAxiosError = (error: unknown): error is { response?: { status?: number; data?: any } } => {
+  return Boolean(error) && typeof error === "object" && "response" in (error as Record<string, unknown>);
+};
+
 const nowIso = () => new Date().toISOString();
 
 const escapeHtml = (value: unknown) => String(value ?? "")
@@ -393,18 +397,27 @@ class TradeAidTelegramBot {
     replyMarkup?: Record<string, any>,
     options?: { disablePreview?: boolean; parseMode?: "HTML" | "Markdown" | "MarkdownV2" },
   ) {
-    const response = await axios.post<TelegramApiResponse<TelegramSentMessage>>(
-      `${this.apiBase}/sendMessage`,
-      {
-        chat_id: chatId,
-        text,
-        parse_mode: options?.parseMode || "HTML",
-        disable_web_page_preview: options?.disablePreview !== false,
-        reply_markup: replyMarkup,
-      },
-      { timeout: 15_000 },
-    );
-    return response.data?.result;
+    try {
+      const response = await axios.post<TelegramApiResponse<TelegramSentMessage>>(
+        `${this.apiBase}/sendMessage`,
+        {
+          chat_id: chatId,
+          text,
+          parse_mode: options?.parseMode || "HTML",
+          disable_web_page_preview: options?.disablePreview !== false,
+          reply_markup: replyMarkup,
+        },
+        { timeout: 15_000 },
+      );
+      return response.data?.result;
+    } catch (error) {
+      if (isAxiosError(error)) {
+        const status = Number(error.response?.status || 0);
+        const body = JSON.stringify(error.response?.data || {});
+        console.error(`[TelegramBot] sendMessage failed status=${status} parseMode=${options?.parseMode || "HTML"} body=${body.slice(0, 400)}`);
+      }
+      throw error;
+    }
   }
 
   private async sendPhoto(
@@ -821,7 +834,7 @@ class TradeAidTelegramBot {
       `Open Calls: *${escapeMarkdown(String(openSnapshots.length))}*`,
       `Closed Calls: *${escapeMarkdown(String(closedSnapshots.length))}*`,
       `Median Hold: *${escapeMarkdown(formatHoldTime(medianHoldMinutes))}*`,
-      `2x: *${escapeMarkdown(String(x2))}* | 3x: *${escapeMarkdown(String(x3))}* | 4x\+: *${escapeMarkdown(String(x4))}*`,
+      `2x: *${escapeMarkdown(String(x2))}* \\| 3x: *${escapeMarkdown(String(x3))}* \\| 4x\+: *${escapeMarkdown(String(x4))}*`,
       "",
       DIVIDER,
       "",
@@ -835,7 +848,7 @@ class TradeAidTelegramBot {
       const status = row.isClosed ? `CLOSED:${String(row.call.closeReason || "exit").toUpperCase()}` : "OPEN";
       lines.push(
         `${escapeMarkdown(direction)} ${escapeMarkdown(String(row.call.symbol || "UNK"))}: *${escapeMarkdown(xText)}* \(${escapeMarkdown(fmtPct(row.pnlPct))}\)`,
-        `Age ${escapeMarkdown(calledAgo)} | DD ${escapeMarkdown(fmtPct(-row.drawdownPct))} | ${escapeMarkdown(status)}`,
+        `Age ${escapeMarkdown(calledAgo)} \\| DD ${escapeMarkdown(fmtPct(-row.drawdownPct))} \\| ${escapeMarkdown(status)}`,
       );
     }
 
@@ -854,7 +867,7 @@ class TradeAidTelegramBot {
     const chartUrl = this.buildPnlMultiplierChartUrl(chartSnapshots);
     const chartCaption = [
       "📊 *TRADEAID MULTIPLIER SNAPSHOT*",
-      `2x: *${escapeMarkdown(String(x2))}* | 3x: *${escapeMarkdown(String(x3))}* | 4x\+: *${escapeMarkdown(String(x4))}*`,
+      `2x: *${escapeMarkdown(String(x2))}* \\| 3x: *${escapeMarkdown(String(x3))}* \\| 4x\+: *${escapeMarkdown(String(x4))}*`,
       "Green bars indicate stronger winners\.",
     ].join("\n");
 
@@ -1323,7 +1336,12 @@ class TradeAidTelegramBot {
   async processUpdate(update: TelegramUpdate) {
     if (!update || typeof update !== "object") return;
     this.offset = Math.max(this.offset, Number(update.update_id || 0) + 1);
-    await this.handleUpdate(update);
+    try {
+      await this.handleUpdate(update);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || "update_failed");
+      console.error(`[TelegramBot] handleUpdate failed: ${message}`);
+    }
   }
 
   isWebhookAuthorized(req: Request) {
