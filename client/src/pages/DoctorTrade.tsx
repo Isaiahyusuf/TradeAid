@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
 import { TokenAvatar } from "@/components/token/TokenAvatar";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 function fmtUsd(value: number) {
   if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
@@ -678,57 +679,69 @@ export default function DoctorTrade() {
         <Card className="p-4 bg-gradient-to-br from-primary/10 via-card/80 to-accent/10 backdrop-blur-sm border-primary/30 shadow-[0_0_20px_rgba(99,102,241,0.15)] space-y-3 animate-in fade-in-0">
           <div className="flex items-center gap-2">
             <BookOpen className="w-4 h-4 text-primary animate-pulse" />
-            <p className="text-sm font-semibold text-primary">DoctorTrade Manual (In-App)</p>
-            <Badge variant="outline" className="ml-auto border-primary/40 text-primary">Quick Guide</Badge>
+            <p className="text-sm font-semibold text-primary">DoctorTrade Operating Guide</p>
+            <Badge variant="outline" className="ml-auto border-primary/40 text-primary">Updated 2026</Badge>
           </div>
           <p className="text-xs text-muted-foreground">
-            Quick step-by-step guide for setup, wallet connection, execution, and troubleshooting.
+            Professional quick-reference for setup, execution, controls, and issue recovery.
           </p>
 
-          <details className="group rounded-md border border-primary/25 bg-background/60 p-3 hover:border-primary/45 transition-colors">
-            <summary className="cursor-pointer text-sm font-medium">1) Connect wallet correctly</summary>
-            <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
-              <li>Use <span className="font-medium text-foreground">Connect Existing Wallet</span> or paste private key under Manual Private Key Import.</li>
-              <li>After connect, verify <span className="font-medium text-foreground">Connection = Connected</span>.</li>
-              <li>Private key is encrypted and persisted until you disconnect or replace it.</li>
-            </ul>
-          </details>
+          <Accordion type="single" collapsible className="rounded-md border border-primary/25 bg-background/60 px-3">
+            <AccordionItem value="setup" className="border-border/60">
+              <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">1) First-time setup</AccordionTrigger>
+              <AccordionContent className="text-xs text-muted-foreground">
+                <ul className="space-y-1 list-disc pl-5">
+                  <li>Connect using <span className="font-medium text-foreground">Connect Existing Wallet</span> or Manual Private Key Import.</li>
+                  <li>Confirm the wallet shows <span className="font-medium text-foreground">Connected</span> before trading.</li>
+                  <li>Review buy size, slippage, and risk guardrails before enabling automation.</li>
+                </ul>
+              </AccordionContent>
+            </AccordionItem>
 
-          <details className="group rounded-md border border-accent/25 bg-background/60 p-3 hover:border-accent/45 transition-colors">
-            <summary className="cursor-pointer text-sm font-medium">2) Configure risk controls</summary>
-            <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
-              <li>Pick a preset (Conservative, Balanced, Aggressive, Insider Default).</li>
-              <li>Adjust buy size, slippage, daily loss, hold time, and trade limits.</li>
-              <li>Click <span className="font-medium text-foreground">Save Settings</span> before starting DoctorTrade.</li>
-            </ul>
-          </details>
+            <AccordionItem value="controls" className="border-border/60">
+              <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">2) Risk controls and presets</AccordionTrigger>
+              <AccordionContent className="text-xs text-muted-foreground">
+                <ul className="space-y-1 list-disc pl-5">
+                  <li>Start with a preset: Conservative, Balanced, Aggressive, or Insider Default.</li>
+                  <li>Set daily loss cap, max trades, stop loss, take profit, and max hold time.</li>
+                  <li>Press <span className="font-medium text-foreground">Save Settings</span> after every config change.</li>
+                </ul>
+              </AccordionContent>
+            </AccordionItem>
 
-          <details className="group rounded-md border border-primary/25 bg-background/60 p-3 hover:border-primary/45 transition-colors">
-            <summary className="cursor-pointer text-sm font-medium">3) Start and monitor</summary>
-            <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
-              <li>Click <span className="font-medium text-foreground">Start DoctorTrade</span> to enable autonomous cycles.</li>
-              <li>Use <span className="font-medium text-foreground">Run Cycle</span> for an immediate evaluation pass.</li>
-              <li>Use <span className="font-medium text-foreground">Refresh Data</span> to pull latest status and logs.</li>
-            </ul>
-          </details>
+            <AccordionItem value="operations" className="border-border/60">
+              <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">3) Daily operating flow</AccordionTrigger>
+              <AccordionContent className="text-xs text-muted-foreground">
+                <ul className="space-y-1 list-disc pl-5">
+                  <li>Use <span className="font-medium text-foreground">Start DoctorTrade</span> to begin autonomous cycles.</li>
+                  <li>Use <span className="font-medium text-foreground">Run Cycle</span> for immediate one-pass execution.</li>
+                  <li>Use <span className="font-medium text-foreground">Refresh Data</span> to inspect live status, decisions, and positions.</li>
+                </ul>
+              </AccordionContent>
+            </AccordionItem>
 
-          <details className="group rounded-md border border-accent/25 bg-background/60 p-3 hover:border-accent/45 transition-colors">
-            <summary className="cursor-pointer text-sm font-medium">4) Understand sniper rejections</summary>
-            <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
-              <li>If reason ends with <span className="font-medium text-foreground">_conditions_failed</span>, check <span className="font-medium text-foreground">failed_checks</span> in sniper logs.</li>
-              <li>Typical checks: liquidity window, buy/sell pressure, and 5m volume.</li>
-              <li>Tune settings gradually; avoid over-loosening risk controls.</li>
-            </ul>
-          </details>
+            <AccordionItem value="troubleshooting" className="border-border/60">
+              <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">4) Troubleshooting and rejection reasons</AccordionTrigger>
+              <AccordionContent className="text-xs text-muted-foreground">
+                <ul className="space-y-1 list-disc pl-5">
+                  <li>If entries are skipped, inspect sniper logs for <span className="font-medium text-foreground">failed_checks</span>.</li>
+                  <li>Common blockers: liquidity floor, spread cap, volume filter, or buy/sell pressure checks.</li>
+                  <li>Adjust thresholds incrementally and avoid disabling multiple safeguards at once.</li>
+                </ul>
+              </AccordionContent>
+            </AccordionItem>
 
-          <details className="group rounded-md border border-primary/25 bg-background/60 p-3 hover:border-primary/45 transition-colors">
-            <summary className="cursor-pointer text-sm font-medium">5) Direct Buy behavior</summary>
-            <ul className="mt-2 space-y-1 text-xs text-muted-foreground list-disc pl-5">
-              <li>Direct Buy opens Wallet swap with token contract prefilled.</li>
-              <li>Enter SOL amount and review estimated token output.</li>
-              <li>Submit swap from wallet flow.</li>
-            </ul>
-          </details>
+            <AccordionItem value="security" className="border-b-0">
+              <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">5) Security and emergency controls</AccordionTrigger>
+              <AccordionContent className="text-xs text-muted-foreground">
+                <ul className="space-y-1 list-disc pl-5">
+                  <li>Use the <span className="font-medium text-foreground">Kill Switch</span> for immediate forced stop.</li>
+                  <li>Disconnect wallet when rotating keys or ending a trading session.</li>
+                  <li>Use Direct Buy only for supervised manual entries, not unattended execution.</li>
+                </ul>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
         </Card>
 
         <SettingsMenuCard

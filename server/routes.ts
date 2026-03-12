@@ -1561,7 +1561,7 @@ export async function registerRoutes(
           && legacyOwnerUserId
           && legacyOwnerUserId === normalizedUserId,
         );
-        if (canMigrateLegacyToUser) {
+        if (canMigrateLegacyToUser && legacy) {
           hydrateDoctorRuntimeWithDefaults();
           applyDoctorRuntimeSnapshot(legacy);
           loadedLegacy = true;
@@ -3569,6 +3569,16 @@ export async function registerRoutes(
     await refreshDoctorWalletBalanceFromChain();
     clampDoctorPaperBalance();
 
+    // Self-heal transient enabled drift: if auto scheduler is active for this user,
+    // runtime should not remain disabled unless kill switch is explicitly on.
+    if (!doctorRuntime.enabled && trigger === "auto" && scopedUserId && !doctorRuntime.killSwitch) {
+      const schedulerJob = await getDoctorSchedulerJobForUser(scopedUserId);
+      if (Boolean(schedulerJob?.enabled)) {
+        doctorRuntime.enabled = true;
+        doctorRuntime.lastError = null;
+      }
+    }
+
     if (!doctorRuntime.enabled) {
       doctorRuntime.lastDecision = { action: "skip", reason: "doctortrade_disabled", trigger, at: nowIso() };
       return { executed: false, reason: "doctortrade_disabled", trigger };
@@ -4930,11 +4940,6 @@ export async function registerRoutes(
       autoTradeBlockReason = "daily_loss_limit_reached";
     } else if (consecutiveLosses >= Math.max(1, Number(doctorRuntime.controls.max_consecutive_losses || 1))) {
       autoTradeBlockReason = "max_consecutive_losses_reached";
-    } else if (String((doctorRuntime.lastDecision as any)?.action || "").toLowerCase() === "skip") {
-      const lastSkipReason = String((doctorRuntime.lastDecision as any)?.reason || "").trim();
-      if (lastSkipReason) {
-        autoTradeBlockReason = lastSkipReason;
-      }
     }
 
     return {
@@ -5085,6 +5090,18 @@ export async function registerRoutes(
     doctorRuntime.enabled = enabledBeforeStatus;
     (doctorRuntime.controls as any).snipe_preset = presetBeforeStatus;
     doctorRuntime.execution.mode = executionModeBeforeStatus;
+
+    // If scheduler is active but enabled drifted false, repair the runtime flag so
+    // status and execution behavior stay consistent across refreshes.
+    if (!doctorRuntime.enabled && !doctorRuntime.killSwitch) {
+      const schedulerJob = await getDoctorSchedulerJobForUser(userId);
+      if (Boolean(schedulerJob?.enabled)) {
+        doctorRuntime.enabled = true;
+        doctorRuntime.lastError = null;
+        await persistDoctorRuntime(userId);
+      }
+    }
+
     const status = await buildDoctorStatus(userId);
     return res.json(status);
   });
@@ -5241,6 +5258,13 @@ export async function registerRoutes(
     if (doctorRuntime.enabled) {
       await ensureDoctorLiveExecutionModeIfCapable(userId);
       await startDoctorCycleForUser(userId);
+      // Guard against stale runtime snapshots immediately after start.
+      await loadDoctorRuntimeForUser(userId);
+      if (!doctorRuntime.killSwitch && !doctorRuntime.enabled) {
+        doctorRuntime.enabled = true;
+        doctorRuntime.lastError = null;
+        await persistDoctorRuntime(userId);
+      }
     }
 
     await saveDoctorWalletForUser(userId);
