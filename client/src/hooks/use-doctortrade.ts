@@ -1,8 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost } from "@/lib/api";
 
-const DOCTOR_STATUS_CACHE_KEY = "doctortrade:status:snapshot:v1";
-
 export type DoctorToken = {
   symbol: string;
   address: string;
@@ -189,32 +187,9 @@ export type DoctorStatus = {
 };
 
 export function useDoctorStatus() {
-  const readCached = (): DoctorStatus | undefined => {
-    if (typeof window === "undefined") return undefined;
-    try {
-      const raw = window.localStorage.getItem(DOCTOR_STATUS_CACHE_KEY);
-      if (!raw) return undefined;
-      const parsed = JSON.parse(raw) as DoctorStatus;
-      if (!parsed || typeof parsed !== "object") return undefined;
-      return parsed;
-    } catch {
-      return undefined;
-    }
-  };
-
   return useQuery({
     queryKey: ["doctortrade", "status"],
-    queryFn: async () => {
-      const payload = await apiGet<DoctorStatus>("/api/doctor/status");
-      if (typeof window !== "undefined") {
-        try {
-          window.localStorage.setItem(DOCTOR_STATUS_CACHE_KEY, JSON.stringify(payload));
-        } catch {
-        }
-      }
-      return payload;
-    },
-    initialData: readCached,
+    queryFn: async () => apiGet<DoctorStatus>("/api/doctor/status"),
     enabled: true,
     staleTime: 2000,
     refetchInterval: 2000,

@@ -5245,15 +5245,31 @@ export async function registerRoutes(
       isDoctorLiveTradingEnabled() &&
       Boolean(String(liveCredentials.walletPublicKey || "").trim()) &&
       Boolean(String(liveCredentials.walletPrivateKey || "").trim());
-    const walletSnapshot = statusUserId
+    const walletSnapshotBase = statusUserId
       ? await getDoctorWalletSnapshotForUser(statusUserId)
       : {
-          address: String(doctorRuntime.wallet.address || "").trim(),
-          balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0)),
-          separateWalletEnforced: doctorRuntime.wallet.separateWalletEnforced !== false,
+          address: "",
+          balanceSol: 0,
+          separateWalletEnforced: true,
           privateKeyConfigured: false,
           connected: false,
         };
+    const runtimeBelongsToStatusUser = Boolean(
+      statusUserId
+      && String(doctorRuntime.ownerUserId || "").trim() === statusUserId,
+    );
+    const runtimeWalletAddress = String(doctorRuntime.wallet.address || "").trim();
+    const runtimeWalletBalanceSol = Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0));
+    const walletSnapshot = runtimeBelongsToStatusUser
+      ? {
+          ...walletSnapshotBase,
+          address: runtimeWalletAddress || String(walletSnapshotBase.address || "").trim(),
+          balanceSol: runtimeWalletBalanceSol,
+          separateWalletEnforced: doctorRuntime.wallet.separateWalletEnforced !== false,
+          connected: Boolean(runtimeWalletAddress || String(walletSnapshotBase.address || "").trim())
+            && Boolean(walletSnapshotBase.privateKeyConfigured),
+        }
+      : walletSnapshotBase;
 
     const walletAddress = String(walletSnapshot.address || "").trim();
     const walletConnected = Boolean(walletSnapshot.connected);
@@ -5571,6 +5587,7 @@ export async function registerRoutes(
     const executionModeBeforeStatus = String(doctorRuntime.execution.mode || "live").trim().toLowerCase() === "paper" ? "paper" : "live";
     await syncDoctorWalletFromAssistantRuntime(userId);
     await refreshDoctorWalletBalanceFromChain(undefined, true);
+    await saveDoctorWalletForUser(userId);
     doctorRuntime.enabled = enabledBeforeStatus;
     (doctorRuntime.controls as any).snipe_preset = presetBeforeStatus;
     doctorRuntime.execution.mode = executionModeBeforeStatus;
