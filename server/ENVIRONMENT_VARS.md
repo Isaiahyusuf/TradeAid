@@ -26,12 +26,19 @@ Telegram bot (safe Solana calls)
 - TELEGRAM_CHAT_ID: (optional but recommended) Default Telegram chat id allowed to interact with the bot.
 - TELEGRAM_ALLOWED_CHAT_IDS: (optional) Comma-separated chat ids allowed to use the bot.
 - TELEGRAM_BOT_POLL_SECONDS: (optional) Long-poll timeout in seconds. Default `25`.
+- TELEGRAM_BOT_PUSH_INTERVAL_SECONDS: (optional) Push alert interval in seconds. Default `60`.
+- TELEGRAM_BOT_PUSH_LOOKBACK_MINUTES: (optional) How far back to scan for fresh push candidates. Default `45`.
+- TELEGRAM_BOT_PUSH_MIN_SAFETY_SCORE: (optional) Minimum safety score for push alerts. Default `78`.
+- TELEGRAM_BOT_PUSH_MIN_LIQUIDITY_USD: (optional) Minimum liquidity for push alerts. Default `35000`.
+- TELEGRAM_BOT_PUSH_MIN_VOLUME24H_USD: (optional) Minimum 24h volume for push alerts. Default `20000`.
 - TRADEAID_APP_URL: (optional) Base URL used for direct buy/view buttons in Telegram replies. Defaults to `FRONTEND_URL` or `https://tradeaid.ink`.
 
 Bot commands
 - /safe [n]: show top safe Solana buy candidates.
 - /new [n]: show newest safer Solana tokens (last 24h).
 - /token <symbol|address>: show full token information.
+- /projects <symbol|address>: show project links (website/twitter/telegram/chart).
+- /push on|off|status: enable, disable, or inspect Telegram push alerts.
 - /help: show command help.
 
 Security & misc
