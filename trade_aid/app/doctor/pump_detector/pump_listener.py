@@ -37,6 +37,29 @@ class PumpListener:
             self._new_token_webhook_url = "http://127.0.0.1:8000/api/new-token"
 
     @staticmethod
+    def _is_pumpfun_pair(pair: dict[str, Any]) -> bool:
+        dex_id = str((pair or {}).get("dexId") or "").strip().lower()
+        pair_url = str((pair or {}).get("url") or "").strip().lower()
+        labels = " ".join([str(item or "").strip().lower() for item in ((pair or {}).get("labels") or [])])
+        return (
+            "pump" in dex_id
+            or "pump.fun" in pair_url
+            or "pump" in labels
+        )
+
+    @staticmethod
+    def _pair_age_minutes(pair: dict[str, Any]) -> float | None:
+        created_at_ms = pair.get("pairCreatedAt")
+        try:
+            created_at_ms_value = float(created_at_ms)
+            if created_at_ms_value <= 0:
+                return None
+            age_seconds = max(0.0, (datetime.now(tz=timezone.utc).timestamp() * 1000.0 - created_at_ms_value) / 1000.0)
+            return round(age_seconds / 60.0, 4)
+        except Exception:
+            return None
+
+    @staticmethod
     def _age_minutes(value: Any) -> float:
         if value is None:
             return 99999.0
@@ -94,7 +117,9 @@ class PumpListener:
             response.raise_for_status()
             data = response.json() if response.content else {}
             pairs = data.get("pairs") if isinstance(data, dict) else []
-            pair = pairs[0] if isinstance(pairs, list) and pairs else {}
+            pair_rows = [row for row in pairs if isinstance(row, dict)] if isinstance(pairs, list) else []
+            pump_pairs = [row for row in pair_rows if self._is_pumpfun_pair(row)]
+            pair = pump_pairs[0] if pump_pairs else {}
             price_usd = self._safe_float((pair or {}).get("priceUsd"), 0.0)
             fdv = self._safe_float((pair or {}).get("fdv"), 0.0)
             market_cap = self._safe_float((pair or {}).get("marketCap"), 0.0)
@@ -121,6 +146,9 @@ class PumpListener:
                 "dex_volume_1h": volume_1h,
                 "dex_volume_24h": volume_24h,
                 "dex_liquidity": liquidity_usd,
+                "is_pump_fun_pair": bool(pair),
+                "pair_created_at_ms": (pair or {}).get("pairCreatedAt"),
+                "pair_age_minutes": self._pair_age_minutes(pair),
             }
             logger.info(
                 f"[PumpListener] Dex enriched {mint} liq={liquidity_usd:.2f} mcap={market_cap_computed:.2f} vol={float(payload['volume']):.2f}"
@@ -138,6 +166,9 @@ class PumpListener:
                 "dex_volume_1h": 0.0,
                 "dex_volume_24h": 0.0,
                 "dex_liquidity": 0.0,
+                "is_pump_fun_pair": False,
+                "pair_created_at_ms": None,
+                "pair_age_minutes": None,
             }
             logger.warning(f"[PumpListener] Dex enrichment failed for {mint}; using zeroed fallback")
 
@@ -159,7 +190,7 @@ class PumpListener:
             logger.warning(f"[PumpListener] Post exception for {mint}: {error}")
             return
 
-    async def _build_and_send_token(self, row: dict[str, Any]) -> dict[str, Any] | None:
+    async def _build_and_send_token(self, row: dict[str, Any], max_age_minutes: float) -> dict[str, Any] | None:
         mint = str(row.get("mint") or row.get("address") or row.get("tokenAddress") or "").strip()
         if not mint:
             return None
@@ -186,6 +217,20 @@ class PumpListener:
         }
 
         dex = await self._fetch_dexscreener_enrichment(mint)
+        is_pump_pair = bool(dex.get("is_pump_fun_pair"))
+        pair_age_minutes = dex.get("pair_age_minutes")
+        effective_max_age_minutes = max(0.5, float(max_age_minutes or 5.0))
+
+        if not is_pump_pair:
+            logger.info(f"[PumpListener] Skipping non-pump token {mint}")
+            return None
+
+        if isinstance(pair_age_minutes, (int, float)) and float(pair_age_minutes) > effective_max_age_minutes:
+            logger.info(
+                f"[PumpListener] Skipping stale pump token {mint} age={float(pair_age_minutes):.2f}m max={effective_max_age_minutes:.2f}m"
+            )
+            return None
+
         token_obj = {
             **base_token_obj,
             "token_name": str(dex.get("token_name") or "").strip() or str(row.get("name") or "").strip(),
@@ -194,6 +239,7 @@ class PumpListener:
             "market_cap": self._safe_float(dex.get("market_cap"), 0.0),
             "volume": self._safe_float(dex.get("volume"), 0.0),
             "source": "pump_fun_listener",
+            "source_platform": "pump.fun",
             "age_minutes": round(age, 4),
             "dexscreener": {
                 "priceUsd": self._safe_float(dex.get("dex_price_usd"), 0.0),
@@ -206,6 +252,8 @@ class PumpListener:
                 "liquidity": {
                     "usd": self._safe_float(dex.get("dex_liquidity"), 0.0),
                 },
+                "pairCreatedAt": dex.get("pair_created_at_ms"),
+                "pairAgeMinutes": dex.get("pair_age_minutes"),
             },
             "raw": row,
         }
@@ -214,6 +262,13 @@ class PumpListener:
         return token_obj
 
     async def detect_fresh_tokens(self, max_age_minutes: float = 5.0, limit: int = 150) -> list[dict[str, Any]]:
+        configured_max_age = float(
+            os.getenv("PUMP_LISTENER_MAX_AGE_MINUTES")
+            or os.getenv("DOCTOR_PUMP_LISTENER_MAX_AGE_MINUTES")
+            or max_age_minutes
+            or 5.0
+        )
+        max_age_minutes = max(0.5, min(float(max_age_minutes or 5.0), configured_max_age))
         rows = await self.helius_service.detect_fresh_mints(limit=limit)
         candidates: list[dict[str, Any]] = []
         for row in rows:
@@ -233,7 +288,7 @@ class PumpListener:
 
         async def _worker(raw: dict[str, Any]) -> dict[str, Any] | None:
             async with semaphore:
-                return await self._build_and_send_token(raw)
+                return await self._build_and_send_token(raw, max_age_minutes=max_age_minutes)
 
         enriched = await asyncio.gather(*[_worker(row) for row in candidates], return_exceptions=True)
         out: list[dict[str, Any]] = []
