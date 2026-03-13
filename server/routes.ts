@@ -838,6 +838,8 @@ export async function registerRoutes(
   const doctorRuntimeByUserStateKey = "doctortrade.runtime.by_user.v1";
   const doctorPresetByUserStateKey = "doctortrade.preset.by_user.v1";
   const doctorWalletByUserStateKey = "doctortrade.wallets.by_user.v1";
+  const assistantRuntimeByUserStateKeyPrefix = "assistant.runtime.v1";
+  const userSettingsByUserStateKey = "tradeaid.user.settings.by_user.v1";
 
   const encodeBase64 = (value: Uint8Array) => Buffer.from(value).toString("base64");
   const decodeBase64 = (value: string) => Buffer.from(value, "base64");
@@ -933,6 +935,56 @@ export async function registerRoutes(
 
   const getRequestUserId = (req: any): string => {
     return String(req?.user?.claims?.sub || "").trim();
+  };
+
+  const getStoredUserSettingsByUser = async (): Promise<Record<string, any>> => {
+    try {
+      const state = await storage.getAppState<Record<string, any>>(userSettingsByUserStateKey);
+      if (state && typeof state === "object" && !Array.isArray(state)) {
+        return state;
+      }
+      return {};
+    } catch {
+      return {};
+    }
+  };
+
+  const setStoredUserSettingsByUser = async (value: Record<string, any>) => {
+    await storage.setAppState(userSettingsByUserStateKey, value);
+  };
+
+  const getUserSettings = async (userId: string) => {
+    const byUser = await getStoredUserSettingsByUser();
+    const row = byUser[userId] as Record<string, any> | undefined;
+    const selectedChainRaw = String(row?.selected_chain || "solana").trim().toLowerCase();
+    const selected_chain = (selectedChainRaw === "all" || selectedChainRaw === "solana")
+      ? selectedChainRaw
+      : "solana";
+    return {
+      selected_chain,
+      updated_at: String(row?.updated_at || "") || null,
+    };
+  };
+
+  const updateUserSettings = async (userId: string, patch: { selected_chain?: string }) => {
+    const byUser = await getStoredUserSettingsByUser();
+    const current = byUser[userId] && typeof byUser[userId] === "object"
+      ? byUser[userId] as Record<string, any>
+      : {};
+    const nextSelectedChainRaw = patch.selected_chain !== undefined
+      ? String(patch.selected_chain || "").trim().toLowerCase()
+      : String(current.selected_chain || "solana").trim().toLowerCase();
+    const nextSelectedChain = (nextSelectedChainRaw === "all" || nextSelectedChainRaw === "solana")
+      ? nextSelectedChainRaw
+      : "solana";
+
+    byUser[userId] = {
+      ...current,
+      selected_chain: nextSelectedChain,
+      updated_at: nowIso(),
+    };
+    await setStoredUserSettingsByUser(byUser);
+    return getUserSettings(userId);
   };
 
   const resolveSavatarDisplayName = async (userId: string) => {
@@ -1253,10 +1305,68 @@ export async function registerRoutes(
     if (!normalizedUserId) {
       return { synced: false, reason: "missing_user_id" } as const;
     }
+
+    const autoHydrateBlocked = await isDoctorWalletAutoHydrateBlockedForUser(normalizedUserId);
+    if (autoHydrateBlocked) {
+      return {
+        synced: false,
+        reason: "auto_hydrate_blocked",
+        userId: normalizedUserId,
+      } as const;
+    }
+
+    const doctorSnapshot = await getDoctorWalletSnapshotForUser(normalizedUserId);
+    if (doctorSnapshot.connected) {
+      return {
+        synced: false,
+        reason: "already_connected",
+        userId: normalizedUserId,
+      } as const;
+    }
+
+    let assistantState: Record<string, any> | null = null;
+    try {
+      assistantState = await storage.getAppState<Record<string, any>>(`${assistantRuntimeByUserStateKeyPrefix}:${normalizedUserId}`);
+    } catch {
+      assistantState = null;
+    }
+
+    const privateKey = String(
+      assistantState?.wallet?.private_keys_by_chain?.solana
+      || assistantState?.wallet?.privateKey
+      || "",
+    ).trim();
+    if (!privateKey) {
+      return {
+        synced: false,
+        reason: "manual_wallet_required",
+        userId: normalizedUserId,
+      } as const;
+    }
+
+    const configuredAddress = String(assistantState?.wallet?.addresses_by_chain?.solana || "").trim();
+    const derivedAddress = deriveWalletPublicKeyFromPrivateKey(privateKey);
+    const resolvedAddress = configuredAddress || derivedAddress;
+    if (!resolvedAddress) {
+      return {
+        synced: false,
+        reason: "assistant_wallet_invalid",
+        userId: normalizedUserId,
+      } as const;
+    }
+
+    if (String(doctorRuntime.ownerUserId || "").trim() === normalizedUserId) {
+      doctorRuntime.wallet.address = resolvedAddress;
+    }
+
+    await setDoctorLivePrivateKeyForUser(normalizedUserId, privateKey);
+    await persistDoctorRuntime(normalizedUserId);
+
     return {
-      synced: false,
-      reason: "manual_wallet_required",
+      synced: true,
+      reason: "synced_from_wallet",
       userId: normalizedUserId,
+      walletAddress: resolvedAddress,
     } as const;
   };
 
@@ -6392,6 +6502,33 @@ export async function registerRoutes(
       items: doctorTickerQueue.slice(0, limit),
       as_of: nowIso(),
     });
+  });
+
+  app.get("/api/user/settings", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const settings = await getUserSettings(userId);
+    return res.json({ ok: true, settings });
+  });
+
+  app.patch("/api/user/settings", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const selected_chain = req.body?.selected_chain;
+    if (selected_chain !== undefined) {
+      const normalized = String(selected_chain || "").trim().toLowerCase();
+      if (normalized !== "solana" && normalized !== "all") {
+        return res.status(400).json({ message: "invalid_selected_chain" });
+      }
+    }
+
+    const settings = await updateUserSettings(userId, { selected_chain });
+    return res.json({ ok: true, settings });
   });
 
   app.get("/api/doctor/health", isAuthenticated, async (_req, res) => {

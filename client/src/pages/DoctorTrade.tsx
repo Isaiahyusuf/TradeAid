@@ -35,15 +35,8 @@ function fmtSol(value: number) {
   return `${numeric.toFixed(8)} SOL`;
 }
 
-const DOCTOR_SETTINGS_LOCAL_KEY_PREFIX = "doctortrade.settings.local.v2";
-const DOCTOR_SETTINGS_LOCAL_KEY_LEGACY = "doctortrade.settings.local.v1";
 const TRADEAID_TELEGRAM_BOT_URL = "https://t.me/Tradeaid_bot";
 type SnipePreset = "conservative" | "momentum_trader" | "balanced" | "aggressive" | "insider" | "in_out_2x" | "custom";
-
-function getDoctorSettingsLocalKey(userId?: string | null) {
-  const normalizedUserId = String(userId || "").trim() || "anonymous";
-  return `${DOCTOR_SETTINGS_LOCAL_KEY_PREFIX}:${normalizedUserId}`;
-}
 
 function isDoctorWalletConnected(wallet?: Record<string, any> | null, tradeControls?: Record<string, any> | null) {
   const address = String(wallet?.address || "").trim();
@@ -101,7 +94,6 @@ export default function DoctorTrade() {
   const [presetMode, setPresetMode] = useState<"default" | "custom">("default");
   const [selectedSnipePreset, setSelectedSnipePreset] = useState<SnipePreset>("in_out_2x");
   const [privateKeyInput, setPrivateKeyInput] = useState("");
-  const hydratedFromLocalRef = useRef(false);
   const hydratedFromServerRef = useRef(false);
   const viewData = data;
   const hasData = Boolean(viewData);
@@ -173,45 +165,11 @@ export default function DoctorTrade() {
     setPresetMode(preset === "custom" ? "custom" : "default");
   };
 
-  const persistSettingsLocalBackup = (payload: Record<string, any>, userId?: string | null) => {
-    if (typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(getDoctorSettingsLocalKey(userId), JSON.stringify(payload));
-    } catch {
-    }
-  };
-
   useEffect(() => {
     const controls = viewData?.trade_controls as Record<string, any> | undefined;
     if (controls && !hydratedFromServerRef.current) {
       hydrateSettingsInputs(controls);
       hydratedFromServerRef.current = true;
-      return;
-    }
-
-    if (!controls && !hydratedFromLocalRef.current && typeof window !== "undefined") {
-      hydratedFromLocalRef.current = true;
-      try {
-        const runtimeUserId = String(viewData?.user_id || "").trim();
-        // Do not hydrate from local fallback until we know which user is signed in.
-        if (!runtimeUserId) {
-          return;
-        }
-        const scopedRaw = window.localStorage.getItem(getDoctorSettingsLocalKey(runtimeUserId));
-        const legacyRaw = window.localStorage.getItem(DOCTOR_SETTINGS_LOCAL_KEY_LEGACY);
-        const candidatePayloads = [scopedRaw, legacyRaw].filter(Boolean) as string[];
-
-        for (const raw of candidatePayloads) {
-          const parsed = JSON.parse(raw) as Record<string, any>;
-          if (!parsed || typeof parsed !== "object") continue;
-          const parsedUserId = String(parsed.user_id || "").trim();
-          // Never apply fallback values that are not explicitly owned by this user.
-          if (!parsedUserId || runtimeUserId !== parsedUserId) continue;
-          hydrateSettingsInputs(parsed);
-          break;
-        }
-      } catch {
-      }
     }
   }, [viewData?.trade_controls, viewData?.user_id]);
 
@@ -497,31 +455,6 @@ export default function DoctorTrade() {
       },
       {
         onSuccess: () => {
-          persistSettingsLocalBackup({
-            scan_interval_seconds: scanIntervalSeconds,
-            buy_amount_sol: buyAmountSol,
-            max_trades_per_day: maxTradesPerDay,
-            take_profit_multiplier: takeProfitMultiplier,
-            min_profit_pct: minProfitPct,
-            stop_loss_pct: stopLossPct,
-            trailing_stop_pct: trailingStopPct,
-            min_liquidity_usd: minLiquidityUsd,
-            max_slippage_pct: maxSlippagePct,
-            max_spread_pct: maxSpreadPct,
-            daily_loss_limit_usd: dailyLossLimitUsd,
-            max_consecutive_losses: maxConsecutiveLosses,
-            strong_move_threshold_pct: strongMoveThresholdPct,
-            max_hold_minutes: maxHoldMinutes,
-            min_momentum_profit_pct: minMomentumProfitPct,
-            quality_min_volume_spike_pct: qualityMinVolumeSpikePct,
-            quality_max_top_holder_pct: qualityMaxTopHolderPct,
-            gas_priority_lamports: gasPriorityLamports,
-            live_sell_fraction_pct: liveSellFractionPct,
-            max_sell_notional_usd: maxSellNotionalUsd,
-            snipe_preset: presetForSave,
-            user_id: String(viewData?.user_id || ""),
-            wallet_address: String(viewData?.wallet?.address || ""),
-          }, viewData?.user_id);
           setSettingsOpen(false);
           toast({ title: "Risk rules saved", description: "DoctorTrade settings updated." });
         },
@@ -716,11 +649,6 @@ export default function DoctorTrade() {
             void refetch();
           }
           setPrivateKeyInput("");
-          persistSettingsLocalBackup({
-            ...(viewData?.trade_controls || {}),
-            wallet_address: String(status?.wallet?.address || ""),
-            user_id: String(viewData?.user_id || ""),
-          }, viewData?.user_id);
           toast({ title: "Wallet connected", description: "DoctorTrade wallet connected from private key." });
         },
         onError: (error) => {
@@ -745,11 +673,6 @@ export default function DoctorTrade() {
   const handleDisconnectWallet = () => {
     disconnectWalletMutation.mutate(undefined, {
       onSuccess: () => {
-        persistSettingsLocalBackup({
-          ...(viewData?.trade_controls || {}),
-          wallet_address: "",
-          user_id: String(viewData?.user_id || ""),
-        }, viewData?.user_id);
         toast({ title: "Wallet disconnected", description: "DoctorTrade wallet has been disconnected." });
       },
       onError: (error) => {
