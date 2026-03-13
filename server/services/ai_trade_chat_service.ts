@@ -1,9 +1,18 @@
 import OpenAI from "openai";
 import type { AdvisorResult } from "./preset_advisor_engine";
 
+export type AiChatMemoryMessage = {
+  role: "user" | "assistant";
+  text: string;
+  at?: string;
+};
+
 export type AiTradeChatRequest = {
   message: string;
   advisor: AdvisorResult;
+  username?: string;
+  displayName?: string;
+  memory?: AiChatMemoryMessage[];
 };
 
 export type AiTradeChatResponse = {
@@ -33,8 +42,21 @@ const resolveOpenAiBaseUrl = () => {
 };
 
 const resolveModel = () => {
-  const preferred = String(process.env.DOCTOR_AI_ASSISTANT_MODEL || "gpt-4.1-mini").trim() || "gpt-4.1-mini";
+  const preferred = String(process.env.DOCTOR_AI_ASSISTANT_MODEL || "gpt-4.1").trim() || "gpt-4.1";
   return preferred;
+};
+
+const normalizeMemory = (rows: AiChatMemoryMessage[] | undefined, limit = 16) => {
+  if (!Array.isArray(rows)) return [] as AiChatMemoryMessage[];
+  return rows
+    .filter((row) => row && (row.role === "user" || row.role === "assistant"))
+    .map((row) => ({
+      role: row.role,
+      text: String(row.text || "").trim().slice(0, 2000),
+      at: row.at ? String(row.at) : undefined,
+    }))
+    .filter((row) => row.text.length > 0)
+    .slice(-Math.max(0, limit));
 };
 
 const buildFallbackAnswer = (message: string, advisor: AdvisorResult) => {
@@ -57,14 +79,19 @@ const buildFallbackAnswer = (message: string, advisor: AdvisorResult) => {
 export const askAiTradeAssistant = async (
   payload: AiTradeChatRequest,
 ): Promise<AiTradeChatResponse> => {
+  const assistantName = "Savatar";
   const riskNotice = "Not financial advice. No preset guarantees profits. Use stop losses and risk limits.";
   const message = String(payload.message || "").trim();
   const advisor = payload.advisor;
   const model = resolveModel();
+  const username = String(payload.username || "").trim();
+  const displayName = String(payload.displayName || "").trim();
+  const userAddressingName = displayName || username || "Trader";
+  const memory = normalizeMemory(payload.memory, 16);
 
   if (!message) {
     return {
-      answer: `Please ask a trading question. ${riskNotice}`,
+      answer: `${userAddressingName}, please ask a trading question. ${riskNotice}`,
       model,
       generated_at: nowIso(),
       risk_notice: riskNotice,
@@ -74,7 +101,7 @@ export const askAiTradeAssistant = async (
   const apiKey = resolveOpenAiApiKey();
   if (!apiKey) {
     return {
-      answer: `${buildFallbackAnswer(message, advisor)} ${riskNotice}`,
+      answer: `${userAddressingName}, ${buildFallbackAnswer(message, advisor)} ${riskNotice}`,
       model: "fallback_no_openai_key",
       generated_at: nowIso(),
       risk_notice: riskNotice,
@@ -87,10 +114,13 @@ export const askAiTradeAssistant = async (
   });
 
   const systemPrompt = [
-    "You are a crypto trading assistant inside the TradeAid DoctorTrade app.",
+    `You are ${assistantName}, an elite crypto trading assistant inside the TradeAid DoctorTrade app.`,
+    `You are speaking to user ${userAddressingName}.`,
     "Your job is to help traders understand market conditions, token momentum, risk management, and trading strategies for Solana meme coin markets.",
     "Use real-time market metrics provided by the backend to explain current trading conditions.",
-    "Keep answers concise and actionable.",
+    "Address the user by name naturally in your answer.",
+    "Keep answers concise, sharp, and actionable.",
+    "Prefer structured guidance: market read, preset recommendation, entry/exit and risk controls.",
     "Never guarantee profits.",
     "Always mention risk and encourage stop-loss usage.",
   ].join(" ");
@@ -106,17 +136,22 @@ export const askAiTradeAssistant = async (
     buy_sell_ratio: advisor.metrics.buy_sell_ratio,
     top_gainers: advisor.metrics.top_gainers,
     reason: advisor.reason,
+    user_name: userAddressingName,
+    assistant_name: assistantName,
+    memory,
   };
 
   try {
     const completion = await client.chat.completions.create({
       model,
-      temperature: 0.2,
+      temperature: 0.15,
       messages: [
         { role: "system", content: systemPrompt },
         {
           role: "user",
           content: [
+            `Assistant Name: ${assistantName}`,
+            `User Name: ${userAddressingName}`,
             `User Question: ${message}`,
             `Context Data: ${JSON.stringify(contextPayload)}`,
             `Mandatory risk reminder: ${riskNotice}`,
@@ -135,7 +170,7 @@ export const askAiTradeAssistant = async (
     };
   } catch {
     return {
-      answer: `${buildFallbackAnswer(message, advisor)} ${riskNotice}`,
+      answer: `${userAddressingName}, ${buildFallbackAnswer(message, advisor)} ${riskNotice}`,
       model: "fallback_openai_error",
       generated_at: nowIso(),
       risk_notice: riskNotice,

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy, BookOpen, Zap } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useDoctorAiAssistantChat, useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorPresetAdvisor, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
+import { useDoctorAiAssistantChat, useDoctorAiAssistantClearHistory, useDoctorAiAssistantHistory, useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorPresetAdvisor, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -67,18 +67,17 @@ export default function DoctorTrade() {
   const directBuyMutation = useDoctorDirectBuy();
   const directSellMutation = useDoctorDirectSell();
   const advisorQuery = useDoctorPresetAdvisor();
+  const assistantHistoryQuery = useDoctorAiAssistantHistory();
   const aiAssistantMutation = useDoctorAiAssistantChat();
+  const clearAssistantHistoryMutation = useDoctorAiAssistantClearHistory();
   const [guideOpen, setGuideOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [doctorTab, setDoctorTab] = useState<"trading" | "presets" | "ai-assistant">("trading");
   const [assistantPrompt, setAssistantPrompt] = useState("");
-  const [assistantMessages, setAssistantMessages] = useState<Array<{ id: string; role: "user" | "assistant"; text: string }>>([
-    {
-      id: "assistant-welcome",
-      role: "assistant",
-      text: "Ask about market conditions, preset selection, risk level, or momentum quality. I use live DoctorTrade metrics.",
-    },
-  ]);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantName, setAssistantName] = useState("Savatar");
+  const [assistantUserName, setAssistantUserName] = useState("Trader");
+  const [assistantMessages, setAssistantMessages] = useState<Array<{ id: string; role: "user" | "assistant"; text: string }>>([]);
   const [intervalInput, setIntervalInput] = useState("10");
   const [buyAmountInput, setBuyAmountInput] = useState("0.1");
   const [maxTradesInput, setMaxTradesInput] = useState("12");
@@ -326,6 +325,22 @@ export default function DoctorTrade() {
   const walletPrivateKeyConfigured = Boolean(viewData?.wallet?.private_key_configured);
   const advisor = advisorQuery.data;
 
+  useEffect(() => {
+    const payload = assistantHistoryQuery.data;
+    if (!payload || !payload.ok) return;
+
+    const incomingMessages = Array.isArray(payload.messages) ? payload.messages : [];
+    setAssistantName(String(payload.assistant_name || "Savatar"));
+    setAssistantUserName(String(payload.user_name || "Trader"));
+    setAssistantMessages(
+      incomingMessages.map((msg, index) => ({
+        id: `${msg.role}-${index}-${msg.at || Date.now()}`,
+        role: (msg.role === "user" ? "user" : "assistant") as "user" | "assistant",
+        text: String(msg.text || "").trim(),
+      })).filter((msg) => msg.text.length > 0),
+    );
+  }, [assistantHistoryQuery.data]);
+
   const sendAssistantPrompt = (rawPrompt: string) => {
     const prompt = String(rawPrompt || "").trim();
     if (!prompt || aiAssistantMutation.isPending) return;
@@ -339,6 +354,12 @@ export default function DoctorTrade() {
       {
         onSuccess: (response) => {
           const assistantText = String(response?.chat?.answer || "No response available.").trim();
+          if (response?.assistant_name) {
+            setAssistantName(String(response.assistant_name));
+          }
+          if (response?.user_name) {
+            setAssistantUserName(String(response.user_name));
+          }
           setAssistantMessages((prev) => [
             ...prev,
             {
@@ -355,7 +376,7 @@ export default function DoctorTrade() {
             {
               id: `assistant-error-${Date.now()}`,
               role: "assistant",
-              text: `Unable to answer right now: ${fallback}`,
+              text: `Unable to answer right now, ${assistantUserName}: ${fallback}`,
             },
           ]);
         },
@@ -878,57 +899,92 @@ export default function DoctorTrade() {
           <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60">
             <div className="flex items-center justify-between gap-3 mb-3">
               <h3 className="text-sm font-semibold flex items-center gap-2">
-                <Bot className="w-4 h-4 text-primary" /> AI Trade Assistant
+                <Bot className="w-4 h-4 text-primary" /> {assistantName}
               </h3>
-              <Badge variant="outline">Risk-aware guidance only</Badge>
-            </div>
-
-            <div className="flex flex-wrap gap-2 mb-3">
-              {[
-                "Market Overview",
-                "Best Preset Right Now",
-                "Risk Level Today",
-                "Sniping Conditions",
-                "Volume Analysis",
-              ].map((quick) => (
-                <Button key={quick} size="sm" variant="outline" onClick={() => sendAssistantPrompt(quick)} disabled={aiAssistantMutation.isPending}>
-                  {quick}
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">Remembers your chat</Badge>
+                <Button size="sm" variant="outline" onClick={() => setAssistantOpen((prev) => !prev)}>
+                  {assistantOpen ? "Close Chat" : "Open Chat"}
                 </Button>
-              ))}
+              </div>
             </div>
 
-            <div className="space-y-2 max-h-[320px] overflow-auto rounded-md border border-border/60 bg-background/40 p-3">
-              {assistantMessages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={msg.role === "assistant"
-                    ? "rounded-md border border-primary/20 bg-primary/5 p-2 text-sm"
-                    : "rounded-md border border-border/60 bg-background/70 p-2 text-sm"}
-                >
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">{msg.role === "assistant" ? "AI Assistant" : "You"}</p>
-                  <p className="whitespace-pre-wrap">{msg.text}</p>
+            {!assistantOpen && (
+              <div className="rounded-md border border-border/60 bg-background/40 px-3 py-2 text-xs text-muted-foreground">
+                Open chat to talk with {assistantName}. It remembers your previous conversation and responds using your profile name, {assistantUserName}.
+              </div>
+            )}
+
+            {assistantOpen && (
+              <>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {[
+                    "Market Overview",
+                    "Best Preset Right Now",
+                    "Risk Level Today",
+                    "Sniping Conditions",
+                    "Volume Analysis",
+                  ].map((quick) => (
+                    <Button key={quick} size="sm" variant="outline" onClick={() => sendAssistantPrompt(quick)} disabled={aiAssistantMutation.isPending}>
+                      {quick}
+                    </Button>
+                  ))}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={clearAssistantHistoryMutation.isPending}
+                    onClick={() => {
+                      clearAssistantHistoryMutation.mutate(undefined, {
+                        onSuccess: (payload) => {
+                          const rows = Array.isArray(payload?.messages) ? payload.messages : [];
+                          setAssistantMessages(rows.map((msg, index) => ({
+                            id: `${msg.role}-${index}-${msg.at || Date.now()}`,
+                            role: (msg.role === "user" ? "user" : "assistant") as "user" | "assistant",
+                            text: String(msg.text || ""),
+                          })));
+                        },
+                      });
+                    }}
+                  >
+                    Clear Memory
+                  </Button>
                 </div>
-              ))}
-              {aiAssistantMutation.isPending && <p className="text-xs text-muted-foreground">Assistant is thinking...</p>}
-            </div>
 
-            <div className="mt-3 flex gap-2">
-              <Input
-                value={assistantPrompt}
-                onChange={(event) => setAssistantPrompt(event.target.value)}
-                placeholder="Ask about presets, momentum, risk, or market conditions..."
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    sendAssistantPrompt(assistantPrompt);
-                  }
-                }}
-              />
-              <Button onClick={() => sendAssistantPrompt(assistantPrompt)} disabled={aiAssistantMutation.isPending || !assistantPrompt.trim()}>
-                Send
-              </Button>
-            </div>
-            <p className="mt-2 text-[11px] text-muted-foreground">AI guidance is informational only. No guaranteed profits. Always use stop loss and risk limits.</p>
+                <div className="space-y-2 max-h-[320px] overflow-auto rounded-md border border-border/60 bg-background/40 p-3">
+                  {assistantMessages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={msg.role === "assistant"
+                        ? "rounded-md border border-primary/20 bg-primary/5 p-2 text-sm"
+                        : "rounded-md border border-border/60 bg-background/70 p-2 text-sm"}
+                    >
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">{msg.role === "assistant" ? assistantName : assistantUserName}</p>
+                      <p className="whitespace-pre-wrap">{msg.text}</p>
+                    </div>
+                  ))}
+                  {assistantHistoryQuery.isLoading && <p className="text-xs text-muted-foreground">Loading conversation memory...</p>}
+                  {aiAssistantMutation.isPending && <p className="text-xs text-muted-foreground">{assistantName} is thinking...</p>}
+                </div>
+
+                <div className="mt-3 flex gap-2">
+                  <Input
+                    value={assistantPrompt}
+                    onChange={(event) => setAssistantPrompt(event.target.value)}
+                    placeholder={`Ask ${assistantName} about presets, momentum, risk, or market conditions...`}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        sendAssistantPrompt(assistantPrompt);
+                      }
+                    }}
+                  />
+                  <Button onClick={() => sendAssistantPrompt(assistantPrompt)} disabled={aiAssistantMutation.isPending || !assistantPrompt.trim()}>
+                    Send
+                  </Button>
+                </div>
+                <p className="mt-2 text-[11px] text-muted-foreground">{assistantName} guidance is informational only. No guaranteed profits. Always use stop loss and risk limits.</p>
+              </>
+            )}
           </Card>
         )}
 

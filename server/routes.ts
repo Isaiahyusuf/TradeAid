@@ -838,6 +838,7 @@ export async function registerRoutes(
   const doctorRuntimeByUserStateKey = "doctortrade.runtime.by_user.v1";
   const doctorPresetByUserStateKey = "doctortrade.preset.by_user.v1";
   const doctorWalletByUserStateKey = "doctortrade.wallets.by_user.v1";
+  const doctorAiAssistantHistoryByUserStateKey = "doctortrade.ai_assistant.history.by_user.v1";
 
   const encodeBase64 = (value: Uint8Array) => Buffer.from(value).toString("base64");
   const decodeBase64 = (value: string) => Buffer.from(value, "base64");
@@ -933,6 +934,134 @@ export async function registerRoutes(
 
   const getRequestUserId = (req: any): string => {
     return String(req?.user?.claims?.sub || "").trim();
+  };
+
+  const resolveSavatarDisplayName = async (userId: string) => {
+    const fallback = `Trader_${String(userId || "").trim().slice(0, 6) || "user"}`;
+    try {
+      const user = await authStorage.getUser(userId);
+      const username = String(user?.username || "").trim();
+      const firstName = String(user?.firstName || "").trim();
+      const displayName = firstName || username || fallback;
+      return {
+        username: username || displayName,
+        displayName,
+      };
+    } catch {
+      return {
+        username: fallback,
+        displayName: fallback,
+      };
+    }
+  };
+
+  type SavatarHistoryMessage = {
+    role: "user" | "assistant";
+    text: string;
+    at: string;
+  };
+
+  const buildSavatarGreeting = (displayName: string) => {
+    const userName = String(displayName || "Trader").trim() || "Trader";
+    return `Hi ${userName}, I am Savatar. I remember our DoctorTrade conversation and can guide preset selection, entries, exits, and risk with live market context.`;
+  };
+
+  const normalizeSavatarHistoryMessage = (row: any): SavatarHistoryMessage | null => {
+    const role = row?.role === "user" ? "user" : row?.role === "assistant" ? "assistant" : "";
+    if (!role) return null;
+    const text = String(row?.text || "").trim().slice(0, 2000);
+    if (!text) return null;
+    const at = String(row?.at || new Date().toISOString()).trim() || new Date().toISOString();
+    return {
+      role,
+      text,
+      at,
+    };
+  };
+
+  const getStoredSavatarHistoryByUser = async (): Promise<Record<string, SavatarHistoryMessage[]>> => {
+    try {
+      const state = await storage.getAppState<Record<string, any>>(doctorAiAssistantHistoryByUserStateKey);
+      if (!state || typeof state !== "object" || Array.isArray(state)) {
+        return {};
+      }
+      const normalized: Record<string, SavatarHistoryMessage[]> = {};
+      for (const [userId, rawMessages] of Object.entries(state)) {
+        const normalizedUserId = String(userId || "").trim();
+        if (!normalizedUserId) continue;
+        const messages = Array.isArray(rawMessages) ? rawMessages : [];
+        normalized[normalizedUserId] = messages
+          .map((row) => normalizeSavatarHistoryMessage(row))
+          .filter((row): row is SavatarHistoryMessage => Boolean(row))
+          .slice(-40);
+      }
+      return normalized;
+    } catch {
+      return {};
+    }
+  };
+
+  const setStoredSavatarHistoryByUser = async (value: Record<string, SavatarHistoryMessage[]>) => {
+    await storage.setAppState(doctorAiAssistantHistoryByUserStateKey, value);
+  };
+
+  const getSavatarHistoryForUser = async (userId: string, displayName: string) => {
+    const byUser = await getStoredSavatarHistoryByUser();
+    const messages = Array.isArray(byUser[userId]) ? byUser[userId].slice(-40) : [];
+    if (messages.length > 0) {
+      return messages;
+    }
+    return [
+      {
+        role: "assistant" as const,
+        text: buildSavatarGreeting(displayName),
+        at: new Date().toISOString(),
+      },
+    ];
+  };
+
+  const appendSavatarConversationForUser = async (
+    userId: string,
+    displayName: string,
+    userMessage: string,
+    assistantMessage: string,
+  ) => {
+    const userText = String(userMessage || "").trim();
+    const assistantText = String(assistantMessage || "").trim();
+    if (!userText && !assistantText) return;
+
+    const byUser = await getStoredSavatarHistoryByUser();
+    const current = Array.isArray(byUser[userId]) ? byUser[userId].slice(-40) : [
+      {
+        role: "assistant" as const,
+        text: buildSavatarGreeting(displayName),
+        at: new Date().toISOString(),
+      },
+    ];
+
+    if (userText) {
+      current.push({
+        role: "user",
+        text: userText.slice(0, 2000),
+        at: new Date().toISOString(),
+      });
+    }
+    if (assistantText) {
+      current.push({
+        role: "assistant",
+        text: assistantText.slice(0, 2000),
+        at: new Date().toISOString(),
+      });
+    }
+
+    byUser[userId] = current.slice(-40);
+    await setStoredSavatarHistoryByUser(byUser);
+  };
+
+  const clearSavatarHistoryForUser = async (userId: string) => {
+    const byUser = await getStoredSavatarHistoryByUser();
+    delete byUser[userId];
+    await setStoredSavatarHistoryByUser(byUser);
   };
 
   const maskDoctorWalletAddress = (address: string) => {
@@ -6267,6 +6396,39 @@ export async function registerRoutes(
     });
   });
 
+  app.get("/api/doctor/ai-assistant-history", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const profile = await resolveSavatarDisplayName(userId);
+    const messages = await getSavatarHistoryForUser(userId, profile.displayName);
+    return res.json({
+      ok: true,
+      assistant_name: "Savatar",
+      user_name: profile.displayName,
+      messages,
+    });
+  });
+
+  app.delete("/api/doctor/ai-assistant-history", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    await clearSavatarHistoryForUser(userId);
+    const profile = await resolveSavatarDisplayName(userId);
+    const messages = await getSavatarHistoryForUser(userId, profile.displayName);
+    return res.json({
+      ok: true,
+      assistant_name: "Savatar",
+      user_name: profile.displayName,
+      messages,
+    });
+  });
+
   app.post("/api/doctor/ai-assistant-chat", isAuthenticated, async (req: any, res) => {
     const userId = getRequestUserId(req);
     if (!userId) {
@@ -6278,15 +6440,26 @@ export async function registerRoutes(
       return res.status(400).json({ message: "message_required" });
     }
 
+    const profile = await resolveSavatarDisplayName(userId);
+    const memory = await getSavatarHistoryForUser(userId, profile.displayName);
     const advisor = await buildDoctorAdvisor(userId);
     const chat = await askAiTradeAssistant({
       message,
       advisor,
+      username: profile.username,
+      displayName: profile.displayName,
+      memory,
     });
+
+    await appendSavatarConversationForUser(userId, profile.displayName, message, String(chat.answer || ""));
+    const latestMemory = await getSavatarHistoryForUser(userId, profile.displayName);
 
     return res.json({
       ok: true,
       advisor,
+      assistant_name: "Savatar",
+      user_name: profile.displayName,
+      memory_count: latestMemory.length,
       chat,
     });
   });

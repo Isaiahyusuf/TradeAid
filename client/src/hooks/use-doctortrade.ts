@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiGet, apiPost } from "@/lib/api";
+import { apiFetch, apiGet, apiPost } from "@/lib/api";
 
 export type DoctorToken = {
   symbol: string;
@@ -270,12 +270,28 @@ export type DoctorAdvisor = {
 export type DoctorAiAssistantResponse = {
   ok: boolean;
   advisor: Omit<DoctorAdvisor, "ok">;
+  assistant_name?: string;
+  user_name?: string;
+  memory_count?: number;
   chat: {
     answer: string;
     model: string;
     generated_at: string;
     risk_notice: string;
   };
+};
+
+export type DoctorAiAssistantHistoryMessage = {
+  role: "user" | "assistant";
+  text: string;
+  at?: string;
+};
+
+export type DoctorAiAssistantHistoryResponse = {
+  ok: boolean;
+  assistant_name: string;
+  user_name: string;
+  messages: DoctorAiAssistantHistoryMessage[];
 };
 
 export function useDoctorPresetAdvisor() {
@@ -293,8 +309,30 @@ export function useDoctorPresetAdvisor() {
 }
 
 export function useDoctorAiAssistantChat() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: { message: string }) => apiPost<DoctorAiAssistantResponse>("/api/doctor/ai-assistant-chat", payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade", "ai-assistant-history"] }),
+  });
+}
+
+export function useDoctorAiAssistantHistory() {
+  return useQuery({
+    queryKey: ["doctortrade", "ai-assistant-history"],
+    queryFn: () => apiGet<DoctorAiAssistantHistoryResponse>("/api/doctor/ai-assistant-history"),
+    enabled: true,
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    retry: 1,
+  });
+}
+
+export function useDoctorAiAssistantClearHistory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<DoctorAiAssistantHistoryResponse>("/api/doctor/ai-assistant-history", { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade", "ai-assistant-history"] }),
   });
 }
 
