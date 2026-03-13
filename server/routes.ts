@@ -1213,6 +1213,13 @@ export async function registerRoutes(
   const saveDoctorWalletForUser = async (userId: string) => {
     const wallets = await getStoredDoctorWalletsByUser();
     const current = wallets[userId] as Record<string, any> | undefined;
+    // Safety guard: only update an existing wallet row here.
+    // Wallet creation should happen via explicit connect-wallet flow so routine
+    // status/config saves can never wipe secrets during transient read issues.
+    if (!current || typeof current !== "object") {
+      return;
+    }
+
     const normalizedUserId = String(userId || "").trim();
     const runtimeOwnerUserId = String(doctorRuntime.ownerUserId || "").trim();
     const runtimeBelongsToUser = Boolean(normalizedUserId && runtimeOwnerUserId && normalizedUserId === runtimeOwnerUserId);
@@ -1224,6 +1231,7 @@ export async function registerRoutes(
       ? (runtimeAddress || existingAddress)
       : existingAddress;
     wallets[userId] = {
+      ...current,
       address: resolvedAddress,
       // Never copy runtime wallet metrics across users.
       balanceSol: runtimeBelongsToUser
@@ -1232,6 +1240,7 @@ export async function registerRoutes(
       separateWalletEnforced: runtimeBelongsToUser
         ? (doctorRuntime.wallet.separateWalletEnforced !== false)
         : existingSeparateWalletEnforced,
+      // Preserve encrypted key exactly as stored; never overwrite with runtime values.
       livePrivateKey: String(current?.livePrivateKey || "").trim(),
       autoHydrateBlocked: Boolean(current?.autoHydrateBlocked),
       updatedAt: nowIso(),
