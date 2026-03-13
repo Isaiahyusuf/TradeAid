@@ -766,12 +766,18 @@ export async function registerRoutes(
     },
     controls: {
       snipe_preset: "insider",
+      buy_mode: "dynamic",
       max_trades_per_day: 20,
+      max_trades_per_hour: 12,
       trades_today: 0,
       max_open_positions: 3,
       strategy_window_minutes: 5,
       ai_min_signals_required: 4,
+      ai_scoring_enabled: true,
+      ai_trade_filter: true,
+      ai_prediction_check: true,
       cooldown_minutes_per_mint: 30,
+      cooldown_between_trades_seconds: 12,
       min_wallet_fee_buffer_sol: 0.02,
       gas_priority_lamports: Math.max(0, Math.trunc(Number(process.env.DOCTORTRADE_PRIORITY_FEE_LAMPORTS || 500000))),
       min_liquidity_sol: 0.05,
@@ -1242,6 +1248,7 @@ export async function registerRoutes(
     if (preset === "conservative") return "conservative" as const;
     if (preset === "balanced") return "balanced" as const;
     if (preset === "aggressive" || preset === "agressive") return "aggressive" as const;
+    if (preset === "in_out_2x" || preset === "inout2x" || preset === "in_and_out_2x") return "in_out_2x" as const;
     if (preset === "custom") return "custom" as const;
     return "insider" as const;
   };
@@ -1250,7 +1257,7 @@ export async function registerRoutes(
     return normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
   };
 
-  const doctorPresetNumericProfiles: Record<"insider" | "conservative" | "balanced" | "aggressive", Record<string, number>> = {
+  const doctorPresetNumericProfiles: Record<"insider" | "conservative" | "balanced" | "aggressive" | "in_out_2x", Record<string, number>> = {
     insider: {
       max_open_positions: 3,
       take_profit_multiplier: 1.5,
@@ -1383,6 +1390,87 @@ export async function registerRoutes(
       max_early_spike_pct: 260,
       strategy_window_minutes: 4,
     },
+    in_out_2x: {
+      max_open_positions: 2,
+      buy_amount_sol: 0.1,
+      max_trades_per_day: 24,
+      max_trades_per_hour: 12,
+      take_profit_multiplier: 2.0,
+      min_profit_pct: 100,
+      stop_loss_pct: 30,
+      trailing_stop_pct: 18,
+      max_hold_minutes: 4,
+      position_rotation_minutes: 1,
+      live_sell_fraction_pct: 100,
+      max_sell_notional_usd: 100000,
+      strong_move_threshold_pct: 1,
+      min_liquidity_usd: 2500,
+      max_liquidity_usd: 250000,
+      min_market_cap_usd: 6000,
+      max_market_cap_usd: 100000,
+      min_volume_24h_usd: 1,
+      min_token_age_minutes: 0,
+      max_token_age_minutes: 2,
+      max_token_age_seconds: 90,
+      min_liquidity_sol: 15,
+      max_liquidity_sol: 250,
+      min_buys_5m: 8,
+      max_sells_5m: 50,
+      min_unique_buyers: 1,
+      min_buy_ratio_pct: 1,
+      quality_max_top_holder_pct: 25,
+      max_dev_wallet_pct: 8,
+      ai_min_signals_required: 1,
+      min_lock_hours: 0,
+      quality_min_volume_spike_pct: 0,
+      max_early_spike_pct: 500,
+      strategy_window_minutes: 3,
+      max_slippage_pct: 15,
+      gas_priority_lamports: 1500000,
+      cooldown_between_trades_seconds: 12,
+    },
+  };
+
+  const isDoctorSpeedModePreset = (preset?: string) => {
+    return normalizeDoctorSnipePreset(preset || getDoctorActiveSnipePreset()) === "in_out_2x";
+  };
+
+  const isDoctorAiBypassedPreset = (preset?: string) => {
+    return isDoctorSpeedModePreset(preset);
+  };
+
+  const estimateBuys1m = (token: Record<string, any>) => {
+    const buys1m = Number((token as any).buys_1m || (token as any).buys_last_60s || 0);
+    if (buys1m > 0) return buys1m;
+    const buys5m = Number((token as any).buys_5m || 0);
+    return buys5m > 0 ? Math.ceil(buys5m / 5) : 0;
+  };
+
+  const estimateBuys30s = (token: Record<string, any>) => {
+    const buys30s = Number((token as any).buys_30s || (token as any).buys_last_30s || 0);
+    if (buys30s > 0) return buys30s;
+    const buys1m = estimateBuys1m(token);
+    return buys1m > 0 ? Math.floor(buys1m / 2) : 0;
+  };
+
+  const estimateVolume1mUsd = (token: Record<string, any>) => {
+    const volume1m = Number((token as any).volume_1m || (token as any).volume_1m_usd || 0);
+    if (volume1m > 0) return volume1m;
+    const volume5m = Number((token as any).volume_5m || 0);
+    if (volume5m > 0) return volume5m / 5;
+    const volume24h = Number((token as any).volume_24h || 0);
+    return volume24h > 0 ? volume24h / 1440 : 0;
+  };
+
+  const estimatePriceChange30sPct = (token: Record<string, any>) => {
+    const price30s = Number((token as any).price_change_30s || (token as any).price_change_30s_pct || 0);
+    if (Number.isFinite(price30s) && price30s !== 0) return price30s;
+    const price1m = Number((token as any).price_change_1m || 0);
+    if (Number.isFinite(price1m) && price1m !== 0) return price1m / 2;
+    const price5m = Number((token as any).price_change_5m || 0);
+    if (Number.isFinite(price5m) && price5m !== 0) return price5m / 10;
+    const price1h = Number((token as any).price_change_1h || 0);
+    return Number.isFinite(price1h) ? price1h / 120 : 0;
   };
 
   const getDoctorEffectiveControlNumber = (key: string, fallbackValue: number) => {
@@ -1406,7 +1494,7 @@ export async function registerRoutes(
   };
 
   const shouldForceDoctorCustomPreset = (
-    activePreset: "insider" | "conservative" | "balanced" | "aggressive" | "custom",
+    activePreset: "insider" | "conservative" | "balanced" | "aggressive" | "in_out_2x" | "custom",
     controlsPayload: Record<string, any>,
   ) => {
     if (activePreset === "custom") return false;
@@ -1563,7 +1651,26 @@ export async function registerRoutes(
 
     const controls = loaded.controls as Record<string, any> | undefined;
     if (controls && typeof controls === "object") {
+      const booleanControlKeys = new Set([
+        "ai_scoring_enabled",
+        "ai_trade_filter",
+        "ai_prediction_check",
+      ]);
       for (const key of Object.keys(doctorRuntime.controls) as Array<keyof typeof doctorRuntime.controls>) {
+        if (key === "buy_mode") {
+          if (typeof controls[key] === "string") {
+            (doctorRuntime.controls as any)[key] = String(controls[key] || "dynamic").trim().toLowerCase() === "fixed"
+              ? "fixed"
+              : "dynamic";
+          }
+          continue;
+        }
+        if (booleanControlKeys.has(String(key))) {
+          if (typeof controls[key] === "boolean") {
+            (doctorRuntime.controls as any)[key] = controls[key];
+          }
+          continue;
+        }
         if (Number.isFinite(Number(controls[key]))) {
           (doctorRuntime.controls as any)[key] = Number(controls[key]);
         }
@@ -1613,7 +1720,15 @@ export async function registerRoutes(
     doctorRuntime.controls.max_token_age_minutes = Math.min(10, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
     doctorRuntime.controls.max_token_age_seconds = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
     (doctorRuntime.controls as any).snipe_preset = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
-    if (isDoctorDexTurboEnabled() && doctorRuntime.controls.max_token_age_seconds < 120) {
+    if (isDoctorSpeedModePreset()) {
+      (doctorRuntime.controls as any).buy_mode = "fixed";
+      doctorRuntime.controls.buy_amount_sol = 0.1;
+      doctorRuntime.controls.min_buy_amount_sol = 0.1;
+      (doctorRuntime.controls as any).ai_scoring_enabled = false;
+      (doctorRuntime.controls as any).ai_trade_filter = false;
+      (doctorRuntime.controls as any).ai_prediction_check = false;
+    }
+    if (isDoctorDexTurboEnabled() && !isDoctorSpeedModePreset() && doctorRuntime.controls.max_token_age_seconds < 120) {
       doctorRuntime.controls.max_token_age_seconds = 120;
     }
     if (doctorRuntime.killSwitch) {
@@ -3294,9 +3409,11 @@ export async function registerRoutes(
       } as const;
     }
     const orderControls = { ...doctorRuntime.controls };
+    const activePresetForOrder = getDoctorActiveSnipePreset();
     const orderExecutionMode = String(doctorRuntime.execution.mode || "live").trim().toLowerCase() === "paper"
       ? "paper"
       : "live";
+    const txMaxRetries = isDoctorSpeedModePreset(activePresetForOrder) ? 2 : 3;
 
     if (params.trigger === "auto") {
       const autoEnabled = await isDoctorAutoTradingEnabledForUser(scopedUserId);
@@ -3555,7 +3672,7 @@ export async function registerRoutes(
 
           const signature = await connection.sendRawTransaction(versioned.serialize(), {
             skipPreflight: false,
-            maxRetries: 3,
+            maxRetries: txMaxRetries,
           });
           const latestBlockhash = await connection.getLatestBlockhash("confirmed");
           await connection.confirmTransaction(
@@ -3808,7 +3925,7 @@ export async function registerRoutes(
 
         const signature = await connection.sendRawTransaction(versioned.serialize(), {
           skipPreflight: false,
-          maxRetries: 3,
+          maxRetries: txMaxRetries,
         });
         const latestBlockhash = await connection.getLatestBlockhash("confirmed");
         await connection.confirmTransaction(
@@ -4081,11 +4198,13 @@ export async function registerRoutes(
     let sellCount = 0;
     const updatedPositions: Array<Record<string, any>> = [];
     const maxOpenPositions = getDoctorEffectiveMaxOpenPositions();
+    const activeSnipePreset = getDoctorActiveSnipePreset();
+    const isSpeedMode = isDoctorSpeedModePreset(activeSnipePreset);
     const configuredMinProfitPct = Math.max(0.1, getDoctorEffectiveControlNumber("min_profit_pct", Number(doctorRuntime.controls.min_profit_pct || 0)));
     const configuredTakeProfitMultiplier = Math.max(1.01, getDoctorEffectiveControlNumber("take_profit_multiplier", Number(doctorRuntime.controls.take_profit_multiplier || 2)));
     const configuredStopLossPct = Math.max(0.1, getDoctorEffectiveControlNumber("stop_loss_pct", Number(doctorRuntime.controls.stop_loss_pct || 0)));
     const configuredTrailingStopPct = Math.max(0.1, getDoctorEffectiveControlNumber("trailing_stop_pct", Number(doctorRuntime.controls.trailing_stop_pct || 0)));
-    const configuredMaxHoldMinutes = Math.max(5, getDoctorEffectiveControlNumber("max_hold_minutes", Number(doctorRuntime.controls.max_hold_minutes || 0)));
+    const configuredMaxHoldMinutes = Math.max(1, getDoctorEffectiveControlNumber("max_hold_minutes", Number(doctorRuntime.controls.max_hold_minutes || 0)));
     const configuredLiveSellFractionPct = Math.max(1, Math.min(100, getDoctorEffectiveControlNumber("live_sell_fraction_pct", Number(doctorRuntime.controls.live_sell_fraction_pct || 100))));
     const configuredMinMomentumProfitPct = Math.max(0, getDoctorEffectiveControlNumber("min_momentum_profit_pct", Number(doctorRuntime.controls.min_momentum_profit_pct || 0)));
     const configuredStrongMoveThresholdPct = Math.max(1, getDoctorEffectiveControlNumber("strong_move_threshold_pct", Number(doctorRuntime.controls.strong_move_threshold_pct || 40)));
@@ -4118,10 +4237,14 @@ export async function registerRoutes(
       const marketScore = Number(market?.score || 0);
       const topHolderPct = Number(market?.top_holder_pct || 0);
       const tpStage = Math.max(0, Math.trunc(Number((position as any).tp_stage || 0)));
+      const buys30s = estimateBuys30s((market || {}) as Record<string, any>);
+      const priceChange30sPct = estimatePriceChange30sPct((market || {}) as Record<string, any>);
 
       let sellReason = "";
       let sellFractionPct = 100;
-      if (pnlPct >= secondTakeProfitStagePct && tpStage < 2) {
+      if (isSpeedMode && buys30s <= 2 && priceChange30sPct <= -12) {
+        sellReason = "fast_momentum_exit";
+      } else if (pnlPct >= secondTakeProfitStagePct && tpStage < 2) {
         sellReason = "take_profit_stage_2_partial";
         sellFractionPct = 50;
       } else if (pnlPct >= firstTakeProfitStagePct && tpStage < 1) {
@@ -4259,16 +4382,17 @@ export async function registerRoutes(
     doctorRuntime.positions = updatedPositions.slice(0, 30);
 
     let buyCount = 0;
-    const maxTradesPerDay = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_trades_per_day || 1)));
+    const maxTradesPerDay = Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("max_trades_per_day", Number(doctorRuntime.controls.max_trades_per_day || 1))));
+    const maxTradesPerHour = Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("max_trades_per_hour", Number((doctorRuntime.controls as any).max_trades_per_hour || 12))));
     const cooldownMinutes = Math.max(0, Number(doctorRuntime.controls.cooldown_minutes_per_mint || 0));
+    const cooldownBetweenTradesSeconds = Math.max(0, Math.trunc(getDoctorEffectiveControlNumber("cooldown_between_trades_seconds", Number((doctorRuntime.controls as any).cooldown_between_trades_seconds || 0))));
     const routeRejectRetryMs = Math.max(10_000, Number(process.env.DOCTOR_ROUTE_REJECTED_RETRY_MS || 120_000));
     const feeBufferSol = Math.max(0, Number(doctorRuntime.controls.min_wallet_fee_buffer_sol || 0));
-    const buyAmountSol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
-    const activeSnipePreset = getDoctorActiveSnipePreset();
+    const buyAmountSol = Math.max(0.1, getDoctorEffectiveControlNumber("buy_amount_sol", Number(doctorRuntime.controls.buy_amount_sol || 0.1)));
     const maxLiquidityUsd = Math.max(1, getDoctorEffectiveControlNumber("max_liquidity_usd", 500000));
     const maxTokenAgeSeconds = Math.max(60, Math.min(10, Math.trunc(getDoctorEffectiveControlNumber("max_token_age_minutes", 10))) * 60);
     const strictMaxTokenAgeSecondsRaw = Math.max(30, getDoctorEffectiveControlNumber("max_token_age_seconds", 240));
-    const strictMaxTokenAgeSeconds = isDoctorDexTurboEnabled()
+    const strictMaxTokenAgeSeconds = isDoctorDexTurboEnabled() && !isSpeedMode
       ? Math.max(120, strictMaxTokenAgeSecondsRaw)
       : strictMaxTokenAgeSecondsRaw;
     const maxDevWalletPct = Math.max(0, getDoctorEffectiveControlNumber("max_dev_wallet_pct", 3));
@@ -4324,6 +4448,30 @@ export async function registerRoutes(
         const topHolderPct = Number(token.top_holder_pct || 0);
         if (topHolderPct <= 0) return true;
         return topHolderPct <= Math.max(1, getDoctorEffectiveControlNumber("quality_max_top_holder_pct", 24));
+      })
+      .filter((token) => {
+        if (!isSpeedMode) return true;
+        const tokenAny = token as Record<string, any>;
+        const ageSeconds = Math.max(0, Number(tokenAny.age_seconds || 0));
+        const liquiditySol = Number(tokenAny.liquidity_sol || 0);
+        const marketCapUsd = Number(tokenAny.market_cap_usd || 0);
+        const volume1mUsd = estimateVolume1mUsd(tokenAny);
+        const buys1m = estimateBuys1m(tokenAny);
+        return ageSeconds <= 90
+          && liquiditySol >= 15
+          && marketCapUsd >= 6000
+          && marketCapUsd <= 100000
+          && volume1mUsd >= 2500
+          && buys1m >= 8;
+      })
+      .filter((token) => {
+        if (!isSpeedMode) return true;
+        const tokenAny = token as Record<string, any>;
+        const topHolderPct = Number(tokenAny.top_holder_pct || 0);
+        const creatorHoldingPct = Number(tokenAny.creator_wallet_holding || tokenAny.dev_wallet_pct || 0);
+        const mintAuthorityDisabled = Boolean(tokenAny.mint_authority_disabled ?? tokenAny.mintAuthorityDisabled ?? tokenAny.isMintAuthorityDisabled);
+        const freezeAuthorityDisabled = Boolean(tokenAny.freeze_authority_disabled ?? tokenAny.freezeAuthorityDisabled ?? tokenAny.isFreezeAuthorityDisabled);
+        return mintAuthorityDisabled && freezeAuthorityDisabled && topHolderPct <= 25 && creatorHoldingPct <= 8;
       })
       .sort((a, b) => {
         const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
@@ -4472,7 +4620,8 @@ export async function registerRoutes(
 
     let aiFallbackUsed = false;
     let aiFallbackDecision: Record<string, any> | null = null;
-    const aiFallbackEnabled = String(process.env.DOCTOR_ENABLE_AI_FALLBACK || "true").trim().toLowerCase() !== "false";
+    const aiFallbackEnabled = !isDoctorAiBypassedPreset(activeSnipePreset)
+      && String(process.env.DOCTOR_ENABLE_AI_FALLBACK || "true").trim().toLowerCase() !== "false";
 
     if (!buyCandidate && aiFallbackEnabled) {
       const aiFallbackPool = activeTokens
@@ -4583,6 +4732,29 @@ export async function registerRoutes(
         return { allowed: false, reason: "max_trades_reached" };
       }
 
+      if (maxTradesPerHour > 0) {
+        const oneHourAgoMs = nowMs - 60 * 60 * 1000;
+        const recentHourTrades = doctorRuntime.recentTrades.filter((trade) => {
+          const action = String((trade as any).action || "").toUpperCase();
+          if (action !== "BUY" && action !== "SELL") return false;
+          const ts = new Date(String((trade as any).timestamp || "")).getTime();
+          return Number.isFinite(ts) && ts >= oneHourAgoMs;
+        }).length;
+        if (recentHourTrades >= maxTradesPerHour) {
+          return { allowed: false, reason: "max_trades_per_hour_reached" };
+        }
+      }
+
+      if (cooldownBetweenTradesSeconds > 0) {
+        const lastTradeTsMs = doctorRuntime.recentTrades
+          .map((trade) => new Date(String((trade as any).timestamp || "")).getTime())
+          .filter((ts) => Number.isFinite(ts) && ts > 0)
+          .sort((a, b) => b - a)[0] || 0;
+        if (lastTradeTsMs > 0 && nowMs - lastTradeTsMs < cooldownBetweenTradesSeconds * 1000) {
+          return { allowed: false, reason: "cooldown_between_trades_active" };
+        }
+      }
+
       if (dailyRealizedPnlUsd <= -Math.abs(Number(doctorRuntime.controls.daily_loss_limit_usd || 0))) {
         return { allowed: false, reason: "daily_loss_limit_reached" };
       }
@@ -4604,6 +4776,29 @@ export async function registerRoutes(
 
       if (hasDoctorBoughtMintBefore(String(candidate.address || ""))) {
         return { allowed: false, reason: "duplicate_buy_blocked" };
+      }
+
+      if (isSpeedMode) {
+        const candidateAny = candidate as Record<string, any>;
+        const candidateAgeSeconds = Math.max(0, Number(candidateAny.age_seconds || 0));
+        const candidateLiquiditySol = Number(candidateAny.liquidity_sol || 0);
+        const candidateMarketCapUsd = Number(candidateAny.market_cap_usd || 0);
+        const candidateVolume1mUsd = estimateVolume1mUsd(candidateAny);
+        const candidateBuys1m = estimateBuys1m(candidateAny);
+        const candidateTopHolderPct = Number(candidateAny.top_holder_pct || 0);
+        const candidateCreatorHoldingPct = Number(candidateAny.creator_wallet_holding || candidateAny.dev_wallet_pct || 0);
+        const mintAuthorityDisabled = Boolean(candidateAny.mint_authority_disabled ?? candidateAny.mintAuthorityDisabled ?? candidateAny.isMintAuthorityDisabled);
+        const freezeAuthorityDisabled = Boolean(candidateAny.freeze_authority_disabled ?? candidateAny.freezeAuthorityDisabled ?? candidateAny.isFreezeAuthorityDisabled);
+
+        if (candidateAgeSeconds > 90) return { allowed: false, reason: "speed_age_window_failed" };
+        if (candidateLiquiditySol < 15) return { allowed: false, reason: "speed_min_liquidity_sol_failed" };
+        if (candidateMarketCapUsd < 6000 || candidateMarketCapUsd > 100000) return { allowed: false, reason: "speed_market_cap_window_failed" };
+        if (candidateVolume1mUsd < 2500) return { allowed: false, reason: "speed_volume_1m_failed" };
+        if (candidateBuys1m < 8) return { allowed: false, reason: "speed_buys_60s_failed" };
+        if (!mintAuthorityDisabled) return { allowed: false, reason: "speed_mint_authority_enabled" };
+        if (!freezeAuthorityDisabled) return { allowed: false, reason: "speed_freeze_authority_enabled" };
+        if (candidateTopHolderPct > 25) return { allowed: false, reason: "speed_top_holder_pct_failed" };
+        if (candidateCreatorHoldingPct > 8) return { allowed: false, reason: "speed_creator_wallet_pct_failed" };
       }
 
       const baseAssetMint = getDoctorTradeBaseAssetMint();
@@ -5127,9 +5322,30 @@ export async function registerRoutes(
 
     if (buyCandidate && canBuy) {
       const enforceAiValidation =
-        String(process.env.DOCTOR_ENFORCE_AI_VALIDATION || "true").trim().toLowerCase() !== "false"
-        || doctorRuntime.execution.mode === "live";
-      const aiValidation = await evaluateDoctorAiValidation(buyCandidate);
+        !isDoctorAiBypassedPreset(activeSnipePreset)
+        && (
+          String(process.env.DOCTOR_ENFORCE_AI_VALIDATION || "true").trim().toLowerCase() !== "false"
+          || doctorRuntime.execution.mode === "live"
+        );
+      const aiValidation = enforceAiValidation
+        ? await evaluateDoctorAiValidation(buyCandidate)
+        : {
+            allowed: true,
+            reason: "ai_bypassed_for_speed_mode",
+            checks: {},
+            passed_signals: 0,
+            required_signals: 0,
+            required_all_checks: false,
+            all_checks_passed: true,
+            checked_at: nowIso(),
+            age_seconds: Number((buyCandidate as any)?.age_seconds || 0),
+            token: {
+              symbol: String((buyCandidate as any)?.symbol || "UNKNOWN"),
+              address: String((buyCandidate as any)?.address || ""),
+            },
+            reasons: [],
+            turbo_ai_pass: true,
+          };
       if (enforceAiValidation && !aiValidation.allowed) {
         const fallbackDecision = aiFallbackEnabled
           ? await evaluateDoctorOpenAiFallbackDecision(
@@ -5201,6 +5417,8 @@ export async function registerRoutes(
 
       if (buyCandidate && (!enforceAiValidation || aiValidation.allowed || aiFallbackUsed)) {
       const requireOpenAiSafetyGate =
+        !isDoctorAiBypassedPreset(activeSnipePreset)
+        &&
         doctorRuntime.execution.mode === "live"
         && String(process.env.DOCTOR_REQUIRE_OPENAI_SAFETY_GATE || "true").trim().toLowerCase() !== "false";
       if (requireOpenAiSafetyGate) {
@@ -5718,7 +5936,7 @@ export async function registerRoutes(
         min_profit_pct: Math.max(0.1, getDoctorEffectiveControlNumber("min_profit_pct", Number(doctorRuntime.controls.min_profit_pct || 0.1))),
         stop_loss_pct: Math.max(0.1, getDoctorEffectiveControlNumber("stop_loss_pct", Number(doctorRuntime.controls.stop_loss_pct || 0.1))),
         trailing_stop_pct: Math.max(0.1, getDoctorEffectiveControlNumber("trailing_stop_pct", Number(doctorRuntime.controls.trailing_stop_pct || 0.1))),
-        max_hold_minutes: Math.max(5, getDoctorEffectiveControlNumber("max_hold_minutes", Number(doctorRuntime.controls.max_hold_minutes || 5))),
+        max_hold_minutes: Math.max(1, getDoctorEffectiveControlNumber("max_hold_minutes", Number(doctorRuntime.controls.max_hold_minutes || 5))),
         position_rotation_minutes: Math.max(1, getDoctorEffectiveControlNumber("position_rotation_minutes", Number(doctorRuntime.controls.position_rotation_minutes || 1))),
         live_sell_fraction_pct: Math.max(1, Math.min(100, getDoctorEffectiveControlNumber("live_sell_fraction_pct", Number(doctorRuntime.controls.live_sell_fraction_pct || 100)))),
         max_sell_notional_usd: Math.max(1, getDoctorEffectiveControlNumber("max_sell_notional_usd", Number(doctorRuntime.controls.max_sell_notional_usd || 1))),
@@ -6082,6 +6300,7 @@ export async function registerRoutes(
 
     const numericKeys = [
       "buy_amount_sol",
+      "max_trades_per_hour",
       "max_trades_per_day",
       "max_wallet_allocation_pct",
       "take_profit_multiplier",
@@ -6090,6 +6309,7 @@ export async function registerRoutes(
       "strategy_window_minutes",
       "ai_min_signals_required",
       "cooldown_minutes_per_mint",
+      "cooldown_between_trades_seconds",
       "min_wallet_fee_buffer_sol",
       "min_liquidity_sol",
       "max_liquidity_sol",
@@ -6131,6 +6351,21 @@ export async function registerRoutes(
       }
     }
 
+    if (typeof payload.buy_mode === "string") {
+      (doctorRuntime.controls as any).buy_mode = String(payload.buy_mode || "dynamic").trim().toLowerCase() === "fixed"
+        ? "fixed"
+        : "dynamic";
+    }
+    if (typeof payload.ai_scoring_enabled === "boolean") {
+      (doctorRuntime.controls as any).ai_scoring_enabled = payload.ai_scoring_enabled;
+    }
+    if (typeof payload.ai_trade_filter === "boolean") {
+      (doctorRuntime.controls as any).ai_trade_filter = payload.ai_trade_filter;
+    }
+    if (typeof payload.ai_prediction_check === "boolean") {
+      (doctorRuntime.controls as any).ai_prediction_check = payload.ai_prediction_check;
+    }
+
     const presetAfterPayload = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
     if (shouldForceDoctorCustomPreset(presetAfterPayload, payload)) {
       (doctorRuntime.controls as any).snipe_preset = "custom";
@@ -6147,11 +6382,19 @@ export async function registerRoutes(
     doctorRuntime.controls.buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     doctorRuntime.controls.min_buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     (doctorRuntime.controls as any).snipe_preset = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
+    if (isDoctorSpeedModePreset()) {
+      (doctorRuntime.controls as any).buy_mode = "fixed";
+      doctorRuntime.controls.buy_amount_sol = 0.1;
+      doctorRuntime.controls.min_buy_amount_sol = 0.1;
+      (doctorRuntime.controls as any).ai_scoring_enabled = false;
+      (doctorRuntime.controls as any).ai_trade_filter = false;
+      (doctorRuntime.controls as any).ai_prediction_check = false;
+    }
     doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
     doctorRuntime.controls.min_token_age_minutes = Math.max(0, Number(doctorRuntime.controls.min_token_age_minutes || 0));
     doctorRuntime.controls.max_token_age_minutes = Math.min(10, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
     doctorRuntime.controls.max_token_age_seconds = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
-    if (isDoctorDexTurboEnabled() && doctorRuntime.controls.max_token_age_seconds < 120) {
+    if (isDoctorDexTurboEnabled() && !isDoctorSpeedModePreset() && doctorRuntime.controls.max_token_age_seconds < 120) {
       doctorRuntime.controls.max_token_age_seconds = 120;
     }
     await persistDoctorRuntime(userId);

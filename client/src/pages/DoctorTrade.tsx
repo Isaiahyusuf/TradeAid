@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy, BookOpen } from "lucide-react";
+import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy, BookOpen, Zap } from "lucide-react";
 import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -35,7 +35,7 @@ function fmtSol(value: number) {
 
 const DOCTOR_SETTINGS_LOCAL_KEY_PREFIX = "doctortrade.settings.local.v2";
 const DOCTOR_SETTINGS_LOCAL_KEY_LEGACY = "doctortrade.settings.local.v1";
-type SnipePreset = "conservative" | "balanced" | "aggressive" | "insider" | "custom";
+type SnipePreset = "conservative" | "balanced" | "aggressive" | "insider" | "in_out_2x" | "custom";
 
 function getDoctorSettingsLocalKey(userId?: string | null) {
   const normalizedUserId = String(userId || "").trim() || "anonymous";
@@ -88,7 +88,7 @@ export default function DoctorTrade() {
   const [liveSellFractionInput, setLiveSellFractionInput] = useState("50");
   const [maxSellNotionalInput, setMaxSellNotionalInput] = useState("300");
   const [presetMode, setPresetMode] = useState<"default" | "custom">("default");
-  const [selectedSnipePreset, setSelectedSnipePreset] = useState<SnipePreset>("insider");
+  const [selectedSnipePreset, setSelectedSnipePreset] = useState<SnipePreset>("in_out_2x");
   const [privateKeyInput, setPrivateKeyInput] = useState("");
   const hydratedFromLocalRef = useRef(false);
   const hydratedFromServerRef = useRef(false);
@@ -129,8 +129,10 @@ export default function DoctorTrade() {
     if (preset === "conservative") return "conservative";
     if (preset === "balanced") return "balanced";
     if (preset === "aggressive" || preset === "agressive") return "aggressive";
+    if (preset === "insider") return "in_out_2x";
+    if (preset === "in_out_2x" || preset === "inout2x" || preset === "in_and_out_2x") return "in_out_2x";
     if (preset === "custom") return "custom";
-    return "insider";
+    return "in_out_2x";
   };
 
   const hydrateSettingsInputs = (controls: Record<string, any>) => {
@@ -370,7 +372,7 @@ export default function DoctorTrade() {
     const dailyLossLimitUsd = Math.max(10, Number.parseFloat(dailyLossInput) || 600);
     const maxConsecutiveLosses = Math.max(1, Math.trunc(Number.parseFloat(maxConsecutiveLossesInput) || 3));
     const strongMoveThresholdPct = Math.max(5, Number.parseFloat(strongMoveInput) || 40);
-    const maxHoldMinutes = Math.max(5, Math.trunc(Number.parseFloat(maxHoldMinutesInput) || 180));
+    const maxHoldMinutes = Math.max(1, Math.trunc(Number.parseFloat(maxHoldMinutesInput) || 180));
     const minMomentumProfitPct = Math.max(0, Number.parseFloat(minMomentumInput) || 4);
     const qualityMinVolumeSpikePct = Math.max(0, Number.parseFloat(qualityMinSpikeInput) || 12);
     const qualityMaxTopHolderPct = Math.max(1, Number.parseFloat(qualityMaxHolderInput) || 35);
@@ -382,6 +384,7 @@ export default function DoctorTrade() {
       balanced: 0.15,
       aggressive: 0.25,
       insider: 0.3,
+      in_out_2x: 0.1,
     };
     const selectedPresetBeforeSave = selectedSnipePreset;
     const manualBuyOverrideDetected = selectedPresetBeforeSave !== "custom"
@@ -542,6 +545,28 @@ export default function DoctorTrade() {
       setGasPriorityInput("500000");
       setLiveSellFractionInput("50");
       setMaxSellNotionalInput("10000");
+    }
+    if (preset === "in_out_2x") {
+      setIntervalInput("5");
+      setBuyAmountInput("0.1");
+      setMaxTradesInput("12");
+      setTpMultInput("2.0");
+      setMinProfitInput("100");
+      setStopLossInput("30");
+      setTrailInput("18");
+      setMinLiquidityInput("2500");
+      setMaxSlippageInput("15");
+      setMaxSpreadInput("10");
+      setDailyLossInput("1000");
+      setMaxConsecutiveLossesInput("5");
+      setStrongMoveInput("1");
+      setMaxHoldMinutesInput("4");
+      setMinMomentumInput("0");
+      setQualityMinSpikeInput("0");
+      setQualityMaxHolderInput("25");
+      setGasPriorityInput("1500000");
+      setLiveSellFractionInput("100");
+      setMaxSellNotionalInput("100000");
     }
     configMutation.mutate(
       { snipe_preset: preset },
@@ -947,17 +972,18 @@ export default function DoctorTrade() {
           </div>
 
           <div className="flex flex-wrap gap-2 mb-3 overflow-x-auto">
-            <Button variant="outline" size="sm" onClick={() => applyPreset("conservative")}>Conservative</Button>
-            <Button variant="outline" size="sm" onClick={() => applyPreset("balanced")}>Balanced</Button>
-            <Button variant="outline" size="sm" onClick={() => applyPreset("aggressive")}>Aggressive</Button>
+            <Button variant="outline" size="sm" onClick={() => applyPreset("conservative")}>Safe Buy</Button>
+            <Button variant="outline" size="sm" onClick={() => applyPreset("balanced")}>Momentum Hunter</Button>
+            <Button variant="outline" size="sm" onClick={() => applyPreset("aggressive")}>Whale Rider</Button>
             <Button
-              variant={presetMode === "default" ? "default" : "outline"}
+              variant={selectedSnipePreset === "in_out_2x" ? "default" : "outline"}
               size="sm"
               onClick={() => {
-                applyPreset("insider");
+                applyPreset("in_out_2x");
               }}
+              className={selectedSnipePreset === "in_out_2x" ? "bg-orange-500 hover:bg-orange-600 text-black" : "border-orange-500/50 text-orange-500 hover:bg-orange-500/10"}
             >
-              Insider
+              <Zap className="w-4 h-4 mr-1" /> In & Out 2x ⚡
             </Button>
             <Button
               variant={presetMode === "custom" ? "default" : "outline"}
@@ -985,6 +1011,14 @@ export default function DoctorTrade() {
               Custom
             </Button>
           </div>
+          {selectedSnipePreset === "in_out_2x" && (
+            <div className="mb-3 rounded-md border border-orange-500/40 bg-orange-500/10 px-3 py-2 text-xs text-orange-200">
+              <div className="flex items-center gap-2 font-medium">
+                <Zap className="w-4 h-4 text-orange-400" /> ⚡ Speed Mode
+              </div>
+              <p className="mt-1">Buy: 0.1 SOL | Target: 2x | AI: OFF</p>
+            </div>
+          )}
           <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 items-end">
             <div>
               <p className="text-xs text-muted-foreground mb-1">Scan Interval (sec)</p>
