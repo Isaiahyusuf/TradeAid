@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, List
 
 import requests
 
+from core.dedup_store import dedup_store
 from core.token_queue import send_to_tradeaid
 
 logger = logging.getLogger("tradeaid.listener.pumpfun")
@@ -31,17 +32,16 @@ def _fetch_pumpfun() -> Iterable[Dict[str, Any]]:
 
 
 def run_pumpfun_listener() -> None:
-    seen: set[str] = set()
     logger.info("[Pump.fun Feed] listener started")
 
     while True:
         try:
             for token in _fetch_pumpfun():
                 mint = str(token.get("mint") or token.get("address") or "").strip()
-                if not mint or mint in seen:
+                if not mint:
                     continue
-
-                seen.add(mint)
+                if not dedup_store.mark_if_new(f"listener:pumpfun:{mint}"):
+                    continue
                 launch = {
                     "source": "pumpfun",
                     "name": token.get("name"),

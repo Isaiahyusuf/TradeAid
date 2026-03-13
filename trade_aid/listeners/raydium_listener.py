@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, List
 
 import requests
 
+from core.dedup_store import dedup_store
 from core.token_queue import send_to_tradeaid
 
 logger = logging.getLogger("tradeaid.listener.raydium")
@@ -89,8 +90,6 @@ def _extract_mints_from_initialize_pool(tx: Dict[str, Any]) -> List[str]:
 
 
 def run_raydium_listener() -> None:
-    seen_signatures: set[str] = set()
-    seen_mints: set[str] = set()
     logger.info("[Raydium] listener started")
 
     while True:
@@ -98,19 +97,20 @@ def run_raydium_listener() -> None:
             signatures = _get_recent_signatures()
             for row in signatures:
                 signature = str(row.get("signature") or "").strip()
-                if not signature or signature in seen_signatures:
+                if not signature:
                     continue
-
-                seen_signatures.add(signature)
+                if not dedup_store.mark_if_new(f"listener:raydium:sig:{signature}"):
+                    continue
                 tx = _get_transaction(signature)
                 if not tx:
                     continue
 
                 mints = _extract_mints_from_initialize_pool(tx)
                 for mint in mints:
-                    if not mint or mint in seen_mints:
+                    if not mint:
                         continue
-                    seen_mints.add(mint)
+                    if not dedup_store.mark_if_new(f"listener:raydium:mint:{mint}"):
+                        continue
                     token = {
                         "source": "raydium",
                         "mint": mint,

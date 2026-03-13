@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import logging
 import os
+import asyncio
 from typing import Any, Dict
 
+from app.doctor import doctor_controller
+from core.dedup_store import dedup_store
 from core.token_queue import token_queue
 
 logger = logging.getLogger("tradeaid.pipeline")
@@ -34,8 +37,17 @@ def analyze_token(token: TokenPayload) -> int:
 
 
 def trigger_sniper(token: TokenPayload) -> None:
-    """Hook point for DoctorTrade buy engine integration."""
-    logger.info("[Sniper] Triggering buy path for %s", token.get("mint"))
+    """Route scored tokens into DoctorTrade direct-buy execution path."""
+    mint = str(token.get("mint") or token.get("address") or "").strip()
+    if not mint:
+        logger.info("[Sniper] Skipping empty mint token payload")
+        return
+
+    try:
+        result = asyncio.run(doctor_controller.execute_direct_buy(mint, chain="solana"))
+        logger.info("[Sniper] DoctorTrade result mint=%s result=%s", mint, result)
+    except Exception as exc:
+        logger.warning("[Sniper] DoctorTrade execution failed mint=%s error=%s", mint, exc)
 
 
 def scanner_loop() -> None:
@@ -45,8 +57,14 @@ def scanner_loop() -> None:
     while True:
         token = token_queue.get()
         logger.info("[Scanner] Scanning token: %s", token)
+        mint = str(token.get("mint") or token.get("address") or "").strip()
+        source = str(token.get("source") or "unknown").strip().lower()
+        if mint and not dedup_store.mark_if_new(f"pipeline:{source}:{mint}"):
+            logger.info("[Scanner] Duplicate skipped source=%s mint=%s", source, mint)
+            continue
+
         score = analyze_token(token)
-        logger.info("[Scanner] Score=%s mint=%s", score, token.get("mint"))
+        logger.info("[Scanner] Score=%s mint=%s", score, mint)
 
         if score >= threshold:
             trigger_sniper(token)
