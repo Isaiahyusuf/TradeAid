@@ -255,6 +255,20 @@ export class MultichainLaunchpadScanner {
     const instructions = Array.isArray(message?.instructions) ? message.instructions as Array<Record<string, any>> : [];
     const accountKeys = this.getTxAccountKeys(tx);
     const mints: string[] = [];
+    const seen = new Set<string>();
+
+    const pushMint = (value: unknown) => {
+      const mint = String(value || "").trim();
+      if (!mint) return;
+      if (seen.has(mint)) return;
+      if (EXCLUDED_SOL_MINTS.has(mint)) return;
+      if (RAYDIUM_PROGRAM_IDS.includes(mint)) return;
+      if (mint === PUMPFUN_PROGRAM_ID) return;
+      if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)) return;
+
+      seen.add(mint);
+      mints.push(mint);
+    };
 
     for (const instruction of instructions) {
       const programId = this.getInstructionProgramId(instruction, accountKeys);
@@ -267,9 +281,29 @@ export class MultichainLaunchpadScanner {
 
       const info = (parsed?.info || {}) as Record<string, any>;
       for (const key of ["coinMint", "pcMint", "baseMint", "quoteMint", "tokenMint"]) {
-        const mint = String(info?.[key] || "").trim();
-        if (!mint || EXCLUDED_SOL_MINTS.has(mint)) continue;
-        mints.push(mint);
+        pushMint(info?.[key]);
+      }
+    }
+
+    // Fallback for txs where parser omits mint fields but logs indicate pool initialization.
+    if (mints.length === 0) {
+      const logs = Array.isArray(tx?.meta?.logMessages) ? tx!.meta.logMessages as Array<unknown> : [];
+      const hasInitializePoolLog = logs.some((line) => {
+        const text = String(line || "").toLowerCase();
+        return text.includes("initialize") && text.includes("pool");
+      });
+
+      if (hasInitializePoolLog) {
+        const postTokenBalances = Array.isArray(tx?.meta?.postTokenBalances)
+          ? tx!.meta.postTokenBalances as Array<Record<string, any>>
+          : [];
+        for (const row of postTokenBalances) {
+          pushMint(row?.mint);
+        }
+
+        for (const key of accountKeys) {
+          pushMint(key);
+        }
       }
     }
 
