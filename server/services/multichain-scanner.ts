@@ -257,12 +257,20 @@ export class MultichainLaunchpadScanner {
   }
 
   private async handlePumpLogNotification(notification: Record<string, any>) {
-    console.log("[Pump.fun Raw Event]", JSON.stringify(notification));
+    console.log("[Pump.fun Event]", JSON.stringify(notification));
 
     const value = (notification?.params?.result?.value || {}) as Record<string, any>;
     const signature = String(value?.signature || "").trim();
     const logs = Array.isArray(value?.logs) ? value.logs.map((row: unknown) => String(row || "")) : [];
     if (!signature || logs.length === 0) return;
+
+    for (const logLine of logs) {
+      const line = String(logLine || "");
+      if (line.toLowerCase().includes("instruction: create")) {
+        console.log("[Pump.fun] Possible token launch");
+        break;
+      }
+    }
 
     const nowMs = Date.now();
     this.prunePumpListenerCaches(nowMs);
@@ -317,7 +325,7 @@ export class MultichainLaunchpadScanner {
                 method: "logsSubscribe",
                 params: [
                   { mentions: [PUMPFUN_PROGRAM_ID] },
-                  { commitment: "confirmed" },
+                  { commitment: "processed" },
                 ],
               };
               ws.send(JSON.stringify(payload));
@@ -328,6 +336,12 @@ export class MultichainLaunchpadScanner {
               try {
                 const text = typeof raw === "string" ? raw : raw.toString("utf8");
                 const payload = JSON.parse(text) as Record<string, any>;
+
+                // Confirm logsSubscribe activation with the explicit RPC ack frame.
+                if (payload?.id === 1 && Object.prototype.hasOwnProperty.call(payload, "result")) {
+                  console.log("[Pump.fun] Subscription response:", JSON.stringify(payload));
+                }
+
                 void this.handlePumpLogNotification(payload);
               } catch {
               }
