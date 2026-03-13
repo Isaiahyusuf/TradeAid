@@ -902,7 +902,7 @@ export default function DoctorTrade() {
                 <Bot className="w-4 h-4 text-primary" /> {assistantName}
               </h3>
               <div className="flex items-center gap-2">
-                <Badge variant="outline">Remembers your chat</Badge>
+                <Badge variant="outline">AI guidance</Badge>
                 <Button size="sm" variant="outline" onClick={() => setAssistantOpen((prev) => !prev)}>
                   {assistantOpen ? "Close Chat" : "Open Chat"}
                 </Button>
@@ -911,7 +911,7 @@ export default function DoctorTrade() {
 
             {!assistantOpen && (
               <div className="rounded-md border border-border/60 bg-background/40 px-3 py-2 text-xs text-muted-foreground">
-                Open chat to talk with {assistantName}. It remembers your previous conversation and responds using your profile name, {assistantUserName}.
+                Open chat to talk with {assistantName}. It responds using your profile name, {assistantUserName}.
               </div>
             )}
 

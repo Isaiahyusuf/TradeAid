@@ -579,7 +579,7 @@ export default function AuthPage() {
               </p>
             ) : mode === "forgot" ? (
               <p className="text-muted-foreground">
-                Remembered your password?{" "}
+                Got your password?{" "}
                 <button onClick={() => setMode("login")} className="text-primary font-medium">Sign in</button>
               </p>
             ) : (
