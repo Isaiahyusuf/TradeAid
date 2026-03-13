@@ -256,38 +256,51 @@ export class MultichainLaunchpadScanner {
     return "";
   }
 
+  private extractPumpLaunchFromProgramEvent(notification: Record<string, any>) {
+    const result = (notification?.params?.result || {}) as Record<string, any>;
+    const value = (result?.value || {}) as Record<string, any>;
+    const context = (result?.context || {}) as Record<string, any>;
+    const slot = Number(context?.slot || 0);
+
+    const account = (value?.account || {}) as Record<string, any>;
+    const data = (account?.data || {}) as Record<string, any>;
+    const parsed = (data?.parsed || {}) as Record<string, any>;
+    const info = (parsed?.info || {}) as Record<string, any>;
+
+    const mint = String(info?.mint || "").trim();
+    const creator = String(info?.owner || "").trim();
+    if (!mint || EXCLUDED_SOL_MINTS.has(mint) || mint === PUMPFUN_PROGRAM_ID) {
+      return null;
+    }
+
+    return {
+      mint,
+      creator,
+      signature: `program:${mint}:${slot || Date.now()}`,
+    };
+  }
+
   private async handlePumpLogNotification(notification: Record<string, any>) {
     console.log("[Pump.fun Event]", JSON.stringify(notification));
 
-    const value = (notification?.params?.result?.value || {}) as Record<string, any>;
-    const signature = String(value?.signature || "").trim();
-    const logs = Array.isArray(value?.logs) ? value.logs.map((row: unknown) => String(row || "")) : [];
-    if (!signature || logs.length === 0) return;
-
-    for (const logLine of logs) {
-      const line = String(logLine || "");
-      if (line.toLowerCase().includes("instruction: create")) {
-        console.log("[Pump.fun] Possible token launch");
-        break;
-      }
-    }
+    const detected = this.extractPumpLaunchFromProgramEvent(notification);
+    if (!detected) return;
+    console.log("[Pump.fun] Possible token launch");
 
     const nowMs = Date.now();
     this.prunePumpListenerCaches(nowMs);
-    if (this.seenPumpSignatures.has(signature)) return;
-    this.seenPumpSignatures.set(signature, nowMs);
+    if (this.seenPumpSignatures.has(detected.signature)) return;
+    this.seenPumpSignatures.set(detected.signature, nowMs);
 
-    const tx = await this.fetchSolanaParsedTransaction(signature);
-    const pumpLaunch = this.extractPumpLaunchFromTransaction(tx, signature, logs);
-    const mint = String(pumpLaunch?.mint || "").trim();
+    const mint = String(detected.mint || "").trim();
     if (!mint || this.seenPumpMints.has(mint)) return;
 
-    const creator = String(pumpLaunch?.creator || this.extractCreatorFromTransaction(tx) || "").trim();
+    const creator = String(detected.creator || "").trim();
     this.seenPumpMints.set(mint, nowMs);
     this.pendingPumpLaunches.unshift({
       mint,
       creator,
-      signature,
+      signature: detected.signature,
       detectedAt: new Date(),
       retries: 0,
     });
@@ -295,7 +308,7 @@ export class MultichainLaunchpadScanner {
     console.log("[Pump.fun] NEW TOKEN DETECTED");
     console.log(`[Pump.fun] Mint: ${mint}`);
     console.log(`[Pump.fun] Creator: ${creator || "unknown"}`);
-    console.log(`[Pump.fun] Signature: ${signature}`);
+    console.log(`[Pump.fun] Signature: ${detected.signature}`);
   }
 
   private startPumpFunListener() {
@@ -316,20 +329,31 @@ export class MultichainLaunchpadScanner {
         try {
           await new Promise<void>((resolve, reject) => {
             const ws = new WebSocket(wsUrl);
+            let keepaliveTimer: NodeJS.Timeout | null = null;
 
             ws.on("open", () => {
               retryMs = 2000;
               const payload = {
                 jsonrpc: "2.0",
                 id: 1,
-                method: "logsSubscribe",
+                method: "programSubscribe",
                 params: [
-                  { mentions: [PUMPFUN_PROGRAM_ID] },
-                  { commitment: "processed" },
+                  PUMPFUN_PROGRAM_ID,
+                  {
+                    encoding: "jsonParsed",
+                    commitment: "confirmed",
+                  },
                 ],
               };
               ws.send(JSON.stringify(payload));
               console.log("[Pump.fun] Subscribed to program logs via Helius WS");
+
+              keepaliveTimer = setInterval(() => {
+                try {
+                  ws.ping();
+                } catch {
+                }
+              }, 20_000);
             });
 
             ws.on("message", (raw) => {
@@ -348,10 +372,18 @@ export class MultichainLaunchpadScanner {
             });
 
             ws.on("error", (error) => {
+              if (keepaliveTimer) {
+                clearInterval(keepaliveTimer);
+                keepaliveTimer = null;
+              }
               reject(error);
             });
 
             ws.on("close", () => {
+              if (keepaliveTimer) {
+                clearInterval(keepaliveTimer);
+                keepaliveTimer = null;
+              }
               resolve();
             });
           });
