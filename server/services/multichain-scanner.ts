@@ -76,6 +76,8 @@ const FRESH_LISTENER_MAX_AGE_MINUTES = FRESH_LISTENER_MAX_AGE_SECONDS / 60;
 
 export class MultichainLaunchpadScanner {
   private isScanning = false;
+  private runtimeInitialized = false;
+  private readonly scannerInstanceId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   private readonly emittedFreshMints = new Map<string, number>();
   private pumpListenerStarted = false;
   private readonly pendingPumpLaunches: PumpLaunchEvent[] = [];
@@ -600,6 +602,10 @@ export class MultichainLaunchpadScanner {
     }
 
     this.isScanning = true;
+    if (!this.runtimeInitialized) {
+      this.runtimeInitialized = true;
+      console.log(`[Pipeline] Runtime initialized instance=${this.scannerInstanceId}`);
+    }
     console.log("[Multichain] Starting multi-chain launchpad scan...");
     this.startPumpFunListener();
     this.startSupplementalLaunchListeners();

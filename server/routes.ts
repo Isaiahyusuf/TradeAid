@@ -54,6 +54,8 @@ const bs58Codec = (() => {
 })();
 
 let openaiClient: OpenAI | null = null;
+let multichainSchedulerStarted = false;
+let multichainSchedulerTickCount = 0;
 
 function resolveOpenAiApiKey(): string {
   return String(
@@ -8917,11 +8919,23 @@ export async function registerRoutes(
   // Start periodic multichain launchpad scans
   try {
     const multichainIntervalMs = Math.max(2_000, Number(process.env.MULTICHAIN_SCAN_INTERVAL_MS || 5_000));
-    setInterval(() => {
+    if (!multichainSchedulerStarted) {
+      multichainSchedulerStarted = true;
+      console.log(`[Multichain] Scheduler started (interval=${multichainIntervalMs}ms)`);
+
+      setInterval(() => {
+        multichainSchedulerTickCount += 1;
+        if (multichainSchedulerTickCount % 30 === 1) {
+          console.log(`[Multichain] Scheduler heartbeat tick=${multichainSchedulerTickCount}`);
+        }
+        multichainScanner.scanAllLaunchpads().catch(console.error);
+      }, multichainIntervalMs);
+
+      // Run one immediate scan at boot.
       multichainScanner.scanAllLaunchpads().catch(console.error);
-    }, multichainIntervalMs);
-    // run once on startup
-    multichainScanner.scanAllLaunchpads().catch(console.error);
+    } else {
+      console.log("[Multichain] Scheduler already started; skipping duplicate bootstrap");
+    }
   } catch (e) {
     console.error("Failed to start multichain scanner:", e);
   }
