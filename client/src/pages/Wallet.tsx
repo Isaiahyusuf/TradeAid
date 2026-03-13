@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { SUPPORTED_CHAINS } from "@/hooks/use-chain";
 import { useLocation } from "wouter";
@@ -42,6 +43,7 @@ import {
 type SupportedWalletChain = (typeof SUPPORTED_CHAINS)[number];
 
 export default function WalletPage() {
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const [location, setLocation] = useLocation();
   const enabledChains = [...SUPPORTED_CHAINS] as SupportedWalletChain[];
@@ -367,10 +369,19 @@ export default function WalletPage() {
   };
 
   const handleCreateWallet = async (overwrite: boolean) => {
+    await Promise.allSettled([
+      queryClient.cancelQueries({ queryKey: ["ai-wallet-portfolio"] }),
+      queryClient.cancelQueries({ queryKey: ["ai-wallet-transactions"] }),
+      queryClient.cancelQueries({ queryKey: ["ai-context-overview"] }),
+      queryClient.cancelQueries({ queryKey: ["ai-wallet-status"] }),
+      queryClient.cancelQueries({ queryKey: ["ai-trading-status"] }),
+    ]);
+
     try {
       const result = await createWallet.mutateAsync({ overwrite });
       setLatestBundle(result.bundle);
       setBackupPhraseInput("");
+      await refreshWalletViews();
       toast({ title: "Wallet created", description: "Store your 12-word phrase and private keys before proceeding." });
       if (returnTo) {
         setLocation(returnTo);
@@ -391,9 +402,18 @@ export default function WalletPage() {
       toast({ title: "Mnemonic required", description: "Enter your 12-word phrase to import.", variant: "destructive" });
       return;
     }
+    await Promise.allSettled([
+      queryClient.cancelQueries({ queryKey: ["ai-wallet-portfolio"] }),
+      queryClient.cancelQueries({ queryKey: ["ai-wallet-transactions"] }),
+      queryClient.cancelQueries({ queryKey: ["ai-context-overview"] }),
+      queryClient.cancelQueries({ queryKey: ["ai-wallet-status"] }),
+      queryClient.cancelQueries({ queryKey: ["ai-trading-status"] }),
+    ]);
+
     try {
       const result = await importWallet.mutateAsync({ mnemonic, overwrite });
       setLatestBundle(result.bundle);
+      await refreshWalletViews();
       toast({ title: "Wallet imported", description: "Addresses loaded successfully." });
       if (returnTo) {
         setLocation(returnTo);
@@ -409,6 +429,14 @@ export default function WalletPage() {
       toast({ title: "Private key required", description: "Enter your Solana private key to import.", variant: "destructive" });
       return;
     }
+    await Promise.allSettled([
+      queryClient.cancelQueries({ queryKey: ["ai-wallet-portfolio"] }),
+      queryClient.cancelQueries({ queryKey: ["ai-wallet-transactions"] }),
+      queryClient.cancelQueries({ queryKey: ["ai-context-overview"] }),
+      queryClient.cancelQueries({ queryKey: ["ai-wallet-status"] }),
+      queryClient.cancelQueries({ queryKey: ["ai-trading-status"] }),
+    ]);
+
     try {
       const result = await importWalletPrivateKey.mutateAsync({ private_key: privateKey, overwrite });
       setLatestBundle(result.bundle);
