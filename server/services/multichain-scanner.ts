@@ -102,17 +102,6 @@ export class MultichainLaunchpadScanner {
     }
   }
 
-  private isPumpCreateLog(logs: unknown[]) {
-    for (const raw of logs) {
-      const line = String(raw || "").toLowerCase();
-      if (!line) continue;
-      if (line.includes("initializemint") || line.includes("instruction: create")) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   private async fetchSolanaParsedTransaction(signature: string) {
     const rpcUrl = this.getSolanaRpcUrl();
     if (!rpcUrl || !signature) return null;
@@ -163,6 +152,93 @@ export class MultichainLaunchpadScanner {
     return "";
   }
 
+  private getTxAccountKeys(tx: Record<string, any> | null) {
+    const message = tx?.transaction?.message;
+    const accountKeys = Array.isArray(message?.accountKeys)
+      ? message.accountKeys as Array<string | Record<string, any>>
+      : [];
+
+    return accountKeys
+      .map((key) => {
+        if (typeof key === "string") return key.trim();
+        if (key && typeof key === "object") return String(key.pubkey || "").trim();
+        return "";
+      })
+      .filter((key) => !!key);
+  }
+
+  private getInstructionProgramId(instruction: Record<string, any>, accountKeys: string[]) {
+    const directProgramId = String(instruction?.programId || "").trim();
+    if (directProgramId) return directProgramId;
+
+    const programIdIndex = Number(instruction?.programIdIndex);
+    if (Number.isInteger(programIdIndex) && programIdIndex >= 0 && programIdIndex < accountKeys.length) {
+      return accountKeys[programIdIndex] || "";
+    }
+
+    return "";
+  }
+
+  private getInstructionAccounts(instruction: Record<string, any>, accountKeys: string[]) {
+    const rawAccounts = Array.isArray(instruction?.accounts)
+      ? instruction.accounts as Array<string | number | Record<string, any>>
+      : [];
+
+    const accounts: string[] = [];
+    for (const account of rawAccounts) {
+      if (typeof account === "string") {
+        accounts.push(account.trim());
+        continue;
+      }
+      if (typeof account === "number") {
+        const resolved = accountKeys[account] || "";
+        if (resolved) accounts.push(resolved);
+        continue;
+      }
+      if (account && typeof account === "object") {
+        const pubkey = String((account as Record<string, any>).pubkey || "").trim();
+        if (pubkey) accounts.push(pubkey);
+      }
+    }
+
+    return accounts.filter((account) => !!account);
+  }
+
+  private extractPumpLaunchFromTransaction(tx: Record<string, any> | null, signature: string, logs: string[]) {
+    const instructions = Array.isArray(tx?.transaction?.message?.instructions)
+      ? tx!.transaction.message.instructions as Array<Record<string, any>>
+      : [];
+    const accountKeys = this.getTxAccountKeys(tx);
+
+    for (const instruction of instructions) {
+      const programId = this.getInstructionProgramId(instruction, accountKeys);
+      if (programId !== PUMPFUN_PROGRAM_ID) continue;
+
+      const accounts = this.getInstructionAccounts(instruction, accountKeys);
+      const mint = String(accounts[0] || "").trim();
+      const creator = String(accounts[1] || "").trim();
+
+      if (!mint || mint === PUMPFUN_PROGRAM_ID || EXCLUDED_SOL_MINTS.has(mint)) {
+        continue;
+      }
+
+      return {
+        mint,
+        creator,
+        signature,
+      };
+    }
+
+    const fallbackMint = this.extractMintFromTransaction(tx, logs);
+    if (!fallbackMint) return null;
+
+    return {
+      mint: fallbackMint,
+      creator: this.extractCreatorFromTransaction(tx),
+      signature,
+    };
+  }
+
   private extractCreatorFromTransaction(tx: Record<string, any> | null) {
     const message = tx?.transaction?.message;
     const keys = Array.isArray(message?.accountKeys) ? message.accountKeys as Array<Record<string, any> | string> : [];
@@ -181,11 +257,12 @@ export class MultichainLaunchpadScanner {
   }
 
   private async handlePumpLogNotification(notification: Record<string, any>) {
+    console.log("[Pump.fun Raw Event]", JSON.stringify(notification));
+
     const value = (notification?.params?.result?.value || {}) as Record<string, any>;
     const signature = String(value?.signature || "").trim();
     const logs = Array.isArray(value?.logs) ? value.logs.map((row: unknown) => String(row || "")) : [];
     if (!signature || logs.length === 0) return;
-    if (!this.isPumpCreateLog(logs)) return;
 
     const nowMs = Date.now();
     this.prunePumpListenerCaches(nowMs);
@@ -193,10 +270,11 @@ export class MultichainLaunchpadScanner {
     this.seenPumpSignatures.set(signature, nowMs);
 
     const tx = await this.fetchSolanaParsedTransaction(signature);
-    const mint = this.extractMintFromTransaction(tx, logs);
+    const pumpLaunch = this.extractPumpLaunchFromTransaction(tx, signature, logs);
+    const mint = String(pumpLaunch?.mint || "").trim();
     if (!mint || this.seenPumpMints.has(mint)) return;
 
-    const creator = this.extractCreatorFromTransaction(tx);
+    const creator = String(pumpLaunch?.creator || this.extractCreatorFromTransaction(tx) || "").trim();
     this.seenPumpMints.set(mint, nowMs);
     this.pendingPumpLaunches.unshift({
       mint,
@@ -239,7 +317,7 @@ export class MultichainLaunchpadScanner {
                 method: "logsSubscribe",
                 params: [
                   { mentions: [PUMPFUN_PROGRAM_ID] },
-                  { commitment: "processed" },
+                  { commitment: "confirmed" },
                 ],
               };
               ws.send(JSON.stringify(payload));
