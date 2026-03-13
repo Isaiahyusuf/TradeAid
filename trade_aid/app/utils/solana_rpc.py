@@ -20,8 +20,7 @@ def _dedupe_keep_order(values: list[str]) -> list[str]:
 
 
 def solana_rpc_endpoints(settings: Settings) -> list[str]:
-    helius_api_key = str(getattr(settings, "HELIUS_API_KEY", "") or "").strip()
-    helius_rpc = f"https://mainnet.helius-rpc.com/?api-key={helius_api_key}" if helius_api_key else ""
+    helius_rpc = str(getattr(settings, "HELIUS_RPC_URL", "") or "").strip()
     configured = str(getattr(settings, "SOLANA_RPC_URL", "") or "").strip()
     return _dedupe_keep_order([helius_rpc, configured, DEFAULT_SOLANA_RPC_URL])
 

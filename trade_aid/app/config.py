@@ -78,6 +78,7 @@ class Settings(BaseSettings):
     ENABLE_SCANNERS: bool = True
     ENABLED_CHAINS: str = "solana,ethereum,bsc,base,arbitrum,avalanche,polygon"
 
+    HELIUS_RPC_URL: str = ""
     SOLANA_RPC_URL: str = "https://api.mainnet-beta.solana.com"
     COINGECKO_API_KEY: str = ""
     SOLSCAN_API_KEY: str = ""

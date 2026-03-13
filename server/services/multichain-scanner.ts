@@ -74,11 +74,19 @@ export class MultichainLaunchpadScanner {
     console.log("[Multichain] Starting multi-chain launchpad scan...");
 
     try {
+      const enablePumpFunHttpScan = String(process.env.ENABLE_PUMPFUN_HTTP_SCAN || "false").trim().toLowerCase() === "true";
       // Only scan Solana sources in production. Keep other scanners disabled.
-      const results = await Promise.allSettled([
-        this.scanPumpFun(),
+      const scanTasks: Array<Promise<LaunchpadToken[]>> = [
         this.scanDexScreenerLaunches("solana"),
-      ]);
+      ];
+
+      if (enablePumpFunHttpScan) {
+        scanTasks.unshift(this.scanPumpFun());
+      } else {
+        console.log("[Multichain] Pump.fun HTTP scan disabled; using on-chain/Dex discovery sources");
+      }
+
+      const results = await Promise.allSettled(scanTasks);
 
       const allTokens: LaunchpadToken[] = [];
       
