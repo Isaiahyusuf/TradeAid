@@ -83,20 +83,20 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="absolute inset-0 pointer-events-none wow-spotlight" />
         <div className="absolute inset-x-0 top-24 h-40 bg-gradient-to-b from-white/[0.04] to-transparent pointer-events-none" />
         <div className="absolute top-10 left-0 right-0 p-4 md:p-6 z-20">
-          <div className="flex items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-card/80 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.28)] px-3 py-2 md:px-4 md:py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 rounded-2xl border border-primary/20 bg-card/80 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.28)] px-3 py-2 md:px-4 md:py-3">
             <button
               type="button"
               onClick={() => setLocation("/")}
-              className="inline-flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-primary/10 transition-colors"
+              className="inline-flex min-w-0 items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-primary/10 transition-colors"
               data-testid="button-global-logo-home"
             >
               <TradeAidLogo withText className="scale-[0.92] sm:scale-100" />
               <span className="hidden md:inline text-xs text-muted-foreground">Live Trading Console</span>
             </button>
 
-            <div className="flex items-center gap-2 md:gap-3 shrink-0">
+            <div className="ml-auto flex max-w-full items-center gap-2 md:gap-3 shrink-0">
               <Select value={chain} onValueChange={(value) => setChain(value as AppChain)}>
-                <SelectTrigger className="w-[126px] sm:w-[150px] bg-card/70 border-primary/25 hover:border-primary/45" data-testid="select-global-chain">
+                <SelectTrigger className="w-[118px] sm:w-[148px] bg-card/70 border-primary/25 hover:border-primary/45" data-testid="select-global-chain">
                   <SelectValue placeholder="Select chain" />
                 </SelectTrigger>
                 <SelectContent align="end">
@@ -112,7 +112,7 @@ export function Layout({ children }: { children: ReactNode }) {
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="outline"
-                    className="h-10 gap-2 px-2.5 md:px-3 bg-card/70 border-primary/25 hover:border-primary/45"
+                    className="h-10 gap-2 px-2 sm:px-2.5 md:px-3 bg-card/70 border-primary/25 hover:border-primary/45 max-w-[44vw] sm:max-w-none"
                     data-testid="button-open-profile-menu"
                   >
                     <Avatar className="h-6 w-6">
@@ -121,7 +121,7 @@ export function Layout({ children }: { children: ReactNode }) {
                         {(user?.display_name || user?.username || "U").slice(0, 1).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="text-xs sm:text-sm font-medium max-w-[96px] truncate">
+                    <span className="text-xs sm:text-sm font-medium max-w-[72px] sm:max-w-[96px] truncate">
                       {user?.display_name || user?.username || "Profile"}
                     </span>
                   </Button>

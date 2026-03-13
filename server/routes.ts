@@ -7691,16 +7691,21 @@ export async function registerRoutes(
       return null;
     }
 
+    const rpcTimeoutMs = Math.max(1500, Number(process.env.ASSISTANT_WALLET_RPC_TIMEOUT_MS || 7000));
     try {
       if (chain !== "solana") {
         return null;
       }
 
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), rpcTimeoutMs);
       const response = await fetch(rpcUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getBalance", params: [address] }),
+        signal: controller.signal,
       });
+      clearTimeout(timer);
       const payload = (await response.json()) as { result?: { value?: number } };
       const lamports = Number(payload?.result?.value || 0);
       return Number((lamports / 1_000_000_000).toFixed(9));
@@ -7714,11 +7719,18 @@ export async function registerRoutes(
       return [] as Array<Record<string, any>>;
     }
 
+    const rpcTimeoutMs = Math.max(1500, Number(process.env.ASSISTANT_WALLET_RPC_TIMEOUT_MS || 7000));
     try {
       const ownerPk = new PublicKey(address);
       const tokenProgram = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
-      const accounts = await getSolanaConnection().getParsedTokenAccountsByOwner(ownerPk, { programId: tokenProgram }, "confirmed");
-      const activeTokens = await getDoctorActiveTokens().catch(() => [] as Array<Record<string, any>>);
+      const accounts = await Promise.race([
+        getSolanaConnection().getParsedTokenAccountsByOwner(ownerPk, { programId: tokenProgram }, "confirmed"),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("spl_portfolio_timeout")), rpcTimeoutMs)),
+      ]);
+      const activeTokens = await Promise.race([
+        getDoctorActiveTokens().catch(() => [] as Array<Record<string, any>>),
+        new Promise<Array<Record<string, any>>>((resolve) => setTimeout(() => resolve([]), rpcTimeoutMs)),
+      ]);
       const activeTokenMap = new Map(activeTokens.map((token) => [String(token.address || "").trim(), token]));
 
       const rows: Array<Record<string, any>> = [];
@@ -7765,20 +7777,33 @@ export async function registerRoutes(
       return [] as Array<Record<string, any>>;
     }
 
+    const rpcTimeoutMs = Math.max(1500, Number(process.env.ASSISTANT_WALLET_RPC_TIMEOUT_MS || 7000));
     try {
-      const prices = await fetchChainPricesUsd().catch(() => ({ solana: 0 } as Record<string, number>));
+      const prices = await Promise.race([
+        fetchChainPricesUsd().catch(() => ({ solana: 0 } as Record<string, number>)),
+        new Promise<Record<string, number>>((resolve) => setTimeout(() => resolve({ solana: 0 }), rpcTimeoutMs)),
+      ]);
       const solPriceUsd = Math.max(0, Number((prices as any)?.solana || 0));
-      const activeTokens = await getDoctorActiveTokens().catch(() => [] as Array<Record<string, any>>);
+      const activeTokens = await Promise.race([
+        getDoctorActiveTokens().catch(() => [] as Array<Record<string, any>>),
+        new Promise<Array<Record<string, any>>>((resolve) => setTimeout(() => resolve([]), rpcTimeoutMs)),
+      ]);
       const activeTokenMap = new Map(activeTokens.map((token) => [String(token.address || "").trim(), token]));
       const ownerPk = new PublicKey(walletAddress);
-      const signatures = await getSolanaConnection().getSignaturesForAddress(
-        ownerPk,
-        { limit: Math.max(1, Math.min(200, Math.trunc(limit || 50))) },
-        "confirmed",
-      );
+      const signatures = await Promise.race([
+        getSolanaConnection().getSignaturesForAddress(
+          ownerPk,
+          { limit: Math.max(1, Math.min(200, Math.trunc(limit || 50))) },
+          "confirmed",
+        ),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("signatures_timeout")), rpcTimeoutMs)),
+      ]);
       const signatureValues = signatures.map((item) => String(item.signature || "").trim()).filter(Boolean);
       const parsedTransactions = signatureValues.length > 0
-        ? await getSolanaConnection().getParsedTransactions(signatureValues, { commitment: "confirmed", maxSupportedTransactionVersion: 0 })
+        ? await Promise.race([
+            getSolanaConnection().getParsedTransactions(signatureValues, { commitment: "confirmed", maxSupportedTransactionVersion: 0 }),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("parsed_transactions_timeout")), rpcTimeoutMs)),
+          ])
         : [];
 
       return signatures.map((item, index) => {
