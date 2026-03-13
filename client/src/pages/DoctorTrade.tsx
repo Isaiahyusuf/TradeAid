@@ -4,7 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy, BookOpen, Zap } from "lucide-react";
-import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useDoctorAiAssistantChat, useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorPresetAdvisor, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -65,8 +66,19 @@ export default function DoctorTrade() {
   const runMutation = useDoctorRunOnce();
   const directBuyMutation = useDoctorDirectBuy();
   const directSellMutation = useDoctorDirectSell();
+  const advisorQuery = useDoctorPresetAdvisor();
+  const aiAssistantMutation = useDoctorAiAssistantChat();
   const [guideOpen, setGuideOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [doctorTab, setDoctorTab] = useState<"trading" | "presets" | "ai-assistant">("trading");
+  const [assistantPrompt, setAssistantPrompt] = useState("");
+  const [assistantMessages, setAssistantMessages] = useState<Array<{ id: string; role: "user" | "assistant"; text: string }>>([
+    {
+      id: "assistant-welcome",
+      role: "assistant",
+      text: "Ask about market conditions, preset selection, risk level, or momentum quality. I use live DoctorTrade metrics.",
+    },
+  ]);
   const [intervalInput, setIntervalInput] = useState("10");
   const [buyAmountInput, setBuyAmountInput] = useState("0.1");
   const [maxTradesInput, setMaxTradesInput] = useState("12");
@@ -312,6 +324,44 @@ export default function DoctorTrade() {
   const lastSyncLabel = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : "-";
   const walletSolBalance = Number(viewData?.wallet?.balance_sol || 0);
   const walletPrivateKeyConfigured = Boolean(viewData?.wallet?.private_key_configured);
+  const advisor = advisorQuery.data;
+
+  const sendAssistantPrompt = (rawPrompt: string) => {
+    const prompt = String(rawPrompt || "").trim();
+    if (!prompt || aiAssistantMutation.isPending) return;
+
+    const userMessageId = `user-${Date.now()}`;
+    setAssistantMessages((prev) => [...prev, { id: userMessageId, role: "user", text: prompt }]);
+    setAssistantPrompt("");
+
+    aiAssistantMutation.mutate(
+      { message: prompt },
+      {
+        onSuccess: (response) => {
+          const assistantText = String(response?.chat?.answer || "No response available.").trim();
+          setAssistantMessages((prev) => [
+            ...prev,
+            {
+              id: `assistant-${Date.now()}`,
+              role: "assistant",
+              text: assistantText,
+            },
+          ]);
+        },
+        onError: (error) => {
+          const fallback = error instanceof Error ? error.message : "AI assistant is temporarily unavailable.";
+          setAssistantMessages((prev) => [
+            ...prev,
+            {
+              id: `assistant-error-${Date.now()}`,
+              role: "assistant",
+              text: `Unable to answer right now: ${fallback}`,
+            },
+          ]);
+        },
+      },
+    );
+  };
 
   const handleDirectSell = (position: any) => {
     const contractAddress = String(position?.address || "").trim();
@@ -786,6 +836,101 @@ export default function DoctorTrade() {
             DoctorTrade runs on the server. Once started, it continues scanning and executing even when your browser is closed.
           </p>
         </Card>
+
+        <Card className="p-4 border-emerald-500/30 bg-emerald-500/5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <Bot className="w-4 h-4 text-emerald-400" /> AI Market Advisor
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">Auto-updates every 45 seconds using live launch and DoctorTrade metrics.</p>
+            </div>
+            <Badge variant="outline" className="border-emerald-500/40 text-emerald-300">Advisor Live</Badge>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-3 text-sm">
+            <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
+              <p className="text-xs text-muted-foreground">Market State</p>
+              <p className="font-semibold">{advisor?.market_state || "Loading..."}</p>
+            </div>
+            <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
+              <p className="text-xs text-muted-foreground">Recommended Preset</p>
+              <p className="font-semibold">{advisor?.recommended_preset || "Loading..."}</p>
+            </div>
+            <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
+              <p className="text-xs text-muted-foreground">Confidence</p>
+              <p className="font-semibold">{advisor ? `${advisor.confidence_score}%` : "Loading..."}</p>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">{advisor?.reason || "Analyzing market conditions..."}</p>
+        </Card>
+
+        <Card className="p-3 bg-card/70 backdrop-blur-sm border-border/60">
+          <Tabs value={doctorTab} onValueChange={(value) => setDoctorTab(value as "trading" | "presets" | "ai-assistant")}>
+            <TabsList className="w-full grid grid-cols-3">
+              <TabsTrigger value="trading">Trading</TabsTrigger>
+              <TabsTrigger value="presets">Presets</TabsTrigger>
+              <TabsTrigger value="ai-assistant">AI Assistant</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </Card>
+
+        {doctorTab === "ai-assistant" && (
+          <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <Bot className="w-4 h-4 text-primary" /> AI Trade Assistant
+              </h3>
+              <Badge variant="outline">Risk-aware guidance only</Badge>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mb-3">
+              {[
+                "Market Overview",
+                "Best Preset Right Now",
+                "Risk Level Today",
+                "Sniping Conditions",
+                "Volume Analysis",
+              ].map((quick) => (
+                <Button key={quick} size="sm" variant="outline" onClick={() => sendAssistantPrompt(quick)} disabled={aiAssistantMutation.isPending}>
+                  {quick}
+                </Button>
+              ))}
+            </div>
+
+            <div className="space-y-2 max-h-[320px] overflow-auto rounded-md border border-border/60 bg-background/40 p-3">
+              {assistantMessages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={msg.role === "assistant"
+                    ? "rounded-md border border-primary/20 bg-primary/5 p-2 text-sm"
+                    : "rounded-md border border-border/60 bg-background/70 p-2 text-sm"}
+                >
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">{msg.role === "assistant" ? "AI Assistant" : "You"}</p>
+                  <p className="whitespace-pre-wrap">{msg.text}</p>
+                </div>
+              ))}
+              {aiAssistantMutation.isPending && <p className="text-xs text-muted-foreground">Assistant is thinking...</p>}
+            </div>
+
+            <div className="mt-3 flex gap-2">
+              <Input
+                value={assistantPrompt}
+                onChange={(event) => setAssistantPrompt(event.target.value)}
+                placeholder="Ask about presets, momentum, risk, or market conditions..."
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    sendAssistantPrompt(assistantPrompt);
+                  }
+                }}
+              />
+              <Button onClick={() => sendAssistantPrompt(assistantPrompt)} disabled={aiAssistantMutation.isPending || !assistantPrompt.trim()}>
+                Send
+              </Button>
+            </div>
+            <p className="mt-2 text-[11px] text-muted-foreground">AI guidance is informational only. No guaranteed profits. Always use stop loss and risk limits.</p>
+          </Card>
+        )}
 
         <SettingsMenuCard
           title="DoctorTrade Operating Guide"

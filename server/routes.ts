@@ -27,6 +27,8 @@ import { scoreFreshToken } from "./services/token-scoring-engine";
 import { getAutoTradeConfig, maybeTriggerAutoTrade } from "./services/auto-trade-hook";
 import { logStructured } from "./services/structured-logger";
 import { getHeliusRpcUrl, getSolanaConnection, getTokenMintAuthorityInfo, getTokenMintDecimals } from "./services/solana-connection";
+import { buildPresetAdvisorResult } from "./services/preset_advisor_engine";
+import { askAiTradeAssistant } from "./services/ai_trade_chat_service";
 import { BONK_MINT, SOL_MINT, detectSupportedBaseMint, refreshRaydiumPools, startRaydiumPoolFetcher } from "./services/raydium-pools";
 import { fetchRaydiumQuote, fetchRaydiumSwapPayload, getDoctorTradeBaseAssetMint } from "./services/raydium-swap";
 import OpenAI from "openai";
@@ -6179,6 +6181,24 @@ export async function registerRoutes(
     };
   };
 
+  const buildDoctorAdvisor = async (preferredUserId?: string) => {
+    const userId = String(preferredUserId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
+    if (userId) {
+      await loadDoctorRuntimeForUser(userId);
+    }
+
+    const activeTokens = await getDoctorActiveTokens().catch(() => [] as Array<Record<string, any>>);
+    const sniperLogs = getDoctorSniperLogsForUser(userId).slice(0, 300);
+    const recentTrades = doctorRuntime.recentTrades.slice(0, 120);
+
+    return buildPresetAdvisorResult({
+      activeTokens,
+      recentTrades,
+      sniperLogs,
+      lookbackMinutes: 60,
+    });
+  };
+
   app.get("/api/doctor/ticker", isAuthenticated, async (req: any, res) => {
     const userId = getRequestUserId(req);
     if (!userId) {
@@ -6232,6 +6252,42 @@ export async function registerRoutes(
         direct_buy: true,
         autonomous_mode: true,
       },
+    });
+  });
+
+  app.get("/api/doctor/advisor", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const advisor = await buildDoctorAdvisor(userId);
+    return res.json({
+      ok: true,
+      ...advisor,
+    });
+  });
+
+  app.post("/api/doctor/ai-assistant-chat", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const message = String(req.body?.message || "").trim();
+    if (!message) {
+      return res.status(400).json({ message: "message_required" });
+    }
+
+    const advisor = await buildDoctorAdvisor(userId);
+    const chat = await askAiTradeAssistant({
+      message,
+      advisor,
+    });
+
+    return res.json({
+      ok: true,
+      advisor,
+      chat,
     });
   });
 

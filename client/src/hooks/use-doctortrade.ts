@@ -234,9 +234,67 @@ export function useDoctorConfig() {
       gas_priority_lamports?: number;
       live_sell_fraction_pct?: number;
       max_sell_notional_usd?: number;
-      snipe_preset?: "conservative" | "balanced" | "aggressive" | "insider" | "custom" | string;
+      snipe_preset?: "conservative" | "momentum_trader" | "balanced" | "aggressive" | "insider" | "custom" | string;
     }) => apiPost<DoctorStatus>("/api/doctor/config", payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade"] }),
+  });
+}
+
+export type DoctorAdvisorMetrics = {
+  avg_market_cap_new_tokens: number;
+  avg_liquidity: number;
+  avg_volume_5m: number;
+  avg_price_change_5m: number;
+  launch_frequency: number;
+  buy_sell_ratio: number;
+  rug_rate_last_hour: number;
+  top_gainers: Array<{
+    symbol: string;
+    address: string;
+    price_change_5m: number;
+    volume_5m: number;
+    liquidity: number;
+  }>;
+};
+
+export type DoctorAdvisor = {
+  ok: boolean;
+  market_state: "HIGH_FOMO" | "MODERATE_MOMENTUM" | "LOW_VOLUME" | "RUG_HEAVY" | "SIDEWAYS_MARKET" | string;
+  recommended_preset: string;
+  confidence_score: number;
+  reason: string;
+  metrics: DoctorAdvisorMetrics;
+  updated_at: string;
+};
+
+export type DoctorAiAssistantResponse = {
+  ok: boolean;
+  advisor: Omit<DoctorAdvisor, "ok">;
+  chat: {
+    answer: string;
+    model: string;
+    generated_at: string;
+    risk_notice: string;
+  };
+};
+
+export function useDoctorPresetAdvisor() {
+  return useQuery({
+    queryKey: ["doctortrade", "advisor"],
+    queryFn: () => apiGet<DoctorAdvisor>("/api/doctor/advisor"),
+    enabled: true,
+    staleTime: 10_000,
+    refetchInterval: 45_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    retry: 1,
+  });
+}
+
+export function useDoctorAiAssistantChat() {
+  return useMutation({
+    mutationFn: (payload: { message: string }) => apiPost<DoctorAiAssistantResponse>("/api/doctor/ai-assistant-chat", payload),
   });
 }
 
