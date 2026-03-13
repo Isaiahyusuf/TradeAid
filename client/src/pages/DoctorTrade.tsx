@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy, BookOpen, Zap } from "lucide-react";
 import { FaTelegramPlane } from "react-icons/fa";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useDoctorAiAssistantChat, useDoctorAiAssistantClearHistory, useDoctorAiAssistantHistory, useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorPresetAdvisor, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
+import { useDoctorAiAssistantChat, useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorPresetAdvisor, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -69,9 +69,7 @@ export default function DoctorTrade() {
   const directBuyMutation = useDoctorDirectBuy();
   const directSellMutation = useDoctorDirectSell();
   const advisorQuery = useDoctorPresetAdvisor();
-  const assistantHistoryQuery = useDoctorAiAssistantHistory();
   const aiAssistantMutation = useDoctorAiAssistantChat();
-  const clearAssistantHistoryMutation = useDoctorAiAssistantClearHistory();
   const [guideOpen, setGuideOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [doctorTab, setDoctorTab] = useState<"trading" | "presets" | "ai-assistant">("trading");
@@ -328,20 +326,20 @@ export default function DoctorTrade() {
   const advisor = advisorQuery.data;
 
   useEffect(() => {
-    const payload = assistantHistoryQuery.data;
-    if (!payload || !payload.ok) return;
+    setAssistantMessages([]);
+    setAssistantPrompt("");
+  }, [viewData?.user_id]);
 
-    const incomingMessages = Array.isArray(payload.messages) ? payload.messages : [];
-    setAssistantName(String(payload.assistant_name || "Savatar"));
-    setAssistantUserName(String(payload.user_name || "Trader"));
-    setAssistantMessages(
-      incomingMessages.map((msg, index) => ({
-        id: `${msg.role}-${index}-${msg.at || Date.now()}`,
-        role: (msg.role === "user" ? "user" : "assistant") as "user" | "assistant",
-        text: String(msg.text || "").trim(),
-      })).filter((msg) => msg.text.length > 0),
-    );
-  }, [assistantHistoryQuery.data]);
+  const toggleAssistantOpen = () => {
+    setAssistantOpen((prev) => {
+      const next = !prev;
+      if (!next) {
+        setAssistantMessages([]);
+        setAssistantPrompt("");
+      }
+      return next;
+    });
+  };
 
   const sendAssistantPrompt = (rawPrompt: string) => {
     const prompt = String(rawPrompt || "").trim();
@@ -915,7 +913,7 @@ export default function DoctorTrade() {
               </h3>
               <div className="flex items-center gap-2">
                 <Badge variant="outline">AI guidance</Badge>
-                <Button size="sm" variant="outline" onClick={() => setAssistantOpen((prev) => !prev)}>
+                <Button size="sm" variant="outline" onClick={toggleAssistantOpen}>
                   {assistantOpen ? "Close Chat" : "Open Chat"}
                 </Button>
               </div>
@@ -923,7 +921,7 @@ export default function DoctorTrade() {
 
             {!assistantOpen && (
               <div className="rounded-md border border-border/60 bg-background/40 px-3 py-2 text-xs text-muted-foreground">
-                Open chat to talk with {assistantName}. It responds using your profile name, {assistantUserName}.
+                Open chat to talk with {assistantName}. Chat resets when you close it.
               </div>
             )}
 
@@ -941,24 +939,8 @@ export default function DoctorTrade() {
                       {quick}
                     </Button>
                   ))}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={clearAssistantHistoryMutation.isPending}
-                    onClick={() => {
-                      clearAssistantHistoryMutation.mutate(undefined, {
-                        onSuccess: (payload) => {
-                          const rows = Array.isArray(payload?.messages) ? payload.messages : [];
-                          setAssistantMessages(rows.map((msg, index) => ({
-                            id: `${msg.role}-${index}-${msg.at || Date.now()}`,
-                            role: (msg.role === "user" ? "user" : "assistant") as "user" | "assistant",
-                            text: String(msg.text || ""),
-                          })));
-                        },
-                      });
-                    }}
-                  >
-                    Clear Memory
+                  <Button size="sm" variant="outline" onClick={() => setAssistantMessages([])}>
+                    Clear Chat
                   </Button>
                 </div>
 
@@ -974,7 +956,6 @@ export default function DoctorTrade() {
                       <p className="whitespace-pre-wrap">{msg.text}</p>
                     </div>
                   ))}
-                  {assistantHistoryQuery.isLoading && <p className="text-xs text-muted-foreground">Loading conversation memory...</p>}
                   {aiAssistantMutation.isPending && <p className="text-xs text-muted-foreground">{assistantName} is thinking...</p>}
                 </div>
 
@@ -982,7 +963,7 @@ export default function DoctorTrade() {
                   <Input
                     value={assistantPrompt}
                     onChange={(event) => setAssistantPrompt(event.target.value)}
-                    placeholder={`Ask ${assistantName} about presets, momentum, risk, or market conditions...`}
+                    placeholder={`Ask ${assistantName} about presets, momentum, risk, or paste a token CA for live token scoring...`}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
                         event.preventDefault();

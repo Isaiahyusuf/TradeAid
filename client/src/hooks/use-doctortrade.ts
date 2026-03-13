@@ -309,10 +309,8 @@ export function useDoctorPresetAdvisor() {
 }
 
 export function useDoctorAiAssistantChat() {
-  const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: { message: string }) => apiPost<DoctorAiAssistantResponse>("/api/doctor/ai-assistant-chat", payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade", "ai-assistant-history"] }),
   });
 }
 

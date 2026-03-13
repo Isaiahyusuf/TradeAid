@@ -46,19 +46,6 @@ const resolveModel = () => {
   return preferred;
 };
 
-const normalizeMemory = (rows: AiChatMemoryMessage[] | undefined, limit = 16) => {
-  if (!Array.isArray(rows)) return [] as AiChatMemoryMessage[];
-  return rows
-    .filter((row) => row && (row.role === "user" || row.role === "assistant"))
-    .map((row) => ({
-      role: row.role,
-      text: String(row.text || "").trim().slice(0, 2000),
-      at: row.at ? String(row.at) : undefined,
-    }))
-    .filter((row) => row.text.length > 0)
-    .slice(-Math.max(0, limit));
-};
-
 const buildFallbackAnswer = (message: string, advisor: AdvisorResult) => {
   const lower = String(message || "").toLowerCase();
   const presetLine = `Recommended preset now: ${advisor.recommended_preset} (confidence ${advisor.confidence_score}%).`;
@@ -87,7 +74,6 @@ export const askAiTradeAssistant = async (
   const username = String(payload.username || "").trim();
   const displayName = String(payload.displayName || "").trim();
   const userAddressingName = displayName || username || "Trader";
-  const memory = normalizeMemory(payload.memory, 16);
 
   if (!message) {
     return {
@@ -138,7 +124,6 @@ export const askAiTradeAssistant = async (
     reason: advisor.reason,
     user_name: userAddressingName,
     assistant_name: assistantName,
-    memory,
   };
 
   try {

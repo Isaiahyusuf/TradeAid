@@ -838,7 +838,6 @@ export async function registerRoutes(
   const doctorRuntimeByUserStateKey = "doctortrade.runtime.by_user.v1";
   const doctorPresetByUserStateKey = "doctortrade.preset.by_user.v1";
   const doctorWalletByUserStateKey = "doctortrade.wallets.by_user.v1";
-  const doctorAiAssistantHistoryByUserStateKey = "doctortrade.ai_assistant.history.by_user.v1";
 
   const encodeBase64 = (value: Uint8Array) => Buffer.from(value).toString("base64");
   const decodeBase64 = (value: string) => Buffer.from(value, "base64");
@@ -963,7 +962,7 @@ export async function registerRoutes(
 
   const buildSavatarGreeting = (displayName: string) => {
     const userName = String(displayName || "Trader").trim() || "Trader";
-    return `Hi ${userName}, I am Savatar. I remember our DoctorTrade conversation and can guide preset selection, entries, exits, and risk with live market context.`;
+    return `Hi ${userName}, I am Savatar. I can guide preset selection, entries, exits, and risk with live market context.`;
   };
 
   const normalizeSavatarHistoryMessage = (row: any): SavatarHistoryMessage | null => {
@@ -980,44 +979,17 @@ export async function registerRoutes(
   };
 
   const getStoredSavatarHistoryByUser = async (): Promise<Record<string, SavatarHistoryMessage[]>> => {
-    try {
-      const state = await storage.getAppState<Record<string, any>>(doctorAiAssistantHistoryByUserStateKey);
-      if (!state || typeof state !== "object" || Array.isArray(state)) {
-        return {};
-      }
-      const normalized: Record<string, SavatarHistoryMessage[]> = {};
-      for (const [userId, rawMessages] of Object.entries(state)) {
-        const normalizedUserId = String(userId || "").trim();
-        if (!normalizedUserId) continue;
-        const messages = Array.isArray(rawMessages) ? rawMessages : [];
-        normalized[normalizedUserId] = messages
-          .map((row) => normalizeSavatarHistoryMessage(row))
-          .filter((row): row is SavatarHistoryMessage => Boolean(row))
-          .slice(-40);
-      }
-      return normalized;
-    } catch {
-      return {};
-    }
+    return {};
   };
 
   const setStoredSavatarHistoryByUser = async (value: Record<string, SavatarHistoryMessage[]>) => {
-    await storage.setAppState(doctorAiAssistantHistoryByUserStateKey, value);
+    void value;
   };
 
   const getSavatarHistoryForUser = async (userId: string, displayName: string) => {
-    const byUser = await getStoredSavatarHistoryByUser();
-    const messages = Array.isArray(byUser[userId]) ? byUser[userId].slice(-40) : [];
-    if (messages.length > 0) {
-      return messages;
-    }
-    return [
-      {
-        role: "assistant" as const,
-        text: buildSavatarGreeting(displayName),
-        at: new Date().toISOString(),
-      },
-    ];
+    void userId;
+    void displayName;
+    return [] as SavatarHistoryMessage[];
   };
 
   const appendSavatarConversationForUser = async (
@@ -1026,42 +998,60 @@ export async function registerRoutes(
     userMessage: string,
     assistantMessage: string,
   ) => {
-    const userText = String(userMessage || "").trim();
-    const assistantText = String(assistantMessage || "").trim();
-    if (!userText && !assistantText) return;
-
-    const byUser = await getStoredSavatarHistoryByUser();
-    const current = Array.isArray(byUser[userId]) ? byUser[userId].slice(-40) : [
-      {
-        role: "assistant" as const,
-        text: buildSavatarGreeting(displayName),
-        at: new Date().toISOString(),
-      },
-    ];
-
-    if (userText) {
-      current.push({
-        role: "user",
-        text: userText.slice(0, 2000),
-        at: new Date().toISOString(),
-      });
-    }
-    if (assistantText) {
-      current.push({
-        role: "assistant",
-        text: assistantText.slice(0, 2000),
-        at: new Date().toISOString(),
-      });
-    }
-
-    byUser[userId] = current.slice(-40);
-    await setStoredSavatarHistoryByUser(byUser);
+    void userId;
+    void displayName;
+    void userMessage;
+    void assistantMessage;
   };
 
   const clearSavatarHistoryForUser = async (userId: string) => {
-    const byUser = await getStoredSavatarHistoryByUser();
-    delete byUser[userId];
-    await setStoredSavatarHistoryByUser(byUser);
+    void userId;
+  };
+
+  const extractSolanaContractAddress = (text: string) => {
+    const matches = String(text || "").match(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g) || [];
+    for (const candidate of matches) {
+      try {
+        const mint = new PublicKey(candidate).toBase58();
+        if (mint.length >= 32 && mint.length <= 44) {
+          return mint;
+        }
+      } catch {
+      }
+    }
+    return "";
+  };
+
+  const formatAssistantTokenSnapshot = (payload: {
+    contractAddress: string;
+    symbol: string;
+    name: string;
+    chain: string;
+    priceUsd: number;
+    liquidityUsd: number;
+    marketCapUsd: number;
+    volume24hUsd: number;
+    appSafetyScore: number;
+    appRiskLevel: string;
+    holdersCount: number;
+    mintAuthorityActive: boolean;
+    freezeAuthorityActive: boolean;
+    freshScore: number;
+    freshRiskLevel: string;
+    freshScoreReasons: string[];
+  }) => {
+    const fmt = (value: number) => Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "0";
+    return [
+      "Token Snapshot (App Data)",
+      `CA: ${payload.contractAddress}`,
+      `Token: ${payload.name} (${payload.symbol})`,
+      `Chain: ${payload.chain}`,
+      `Price: $${fmt(payload.priceUsd)} | Liquidity: $${fmt(payload.liquidityUsd)} | MCap: $${fmt(payload.marketCapUsd)}`,
+      `24h Volume: $${fmt(payload.volume24hUsd)} | App Safety: ${payload.appSafetyScore}/100 (${payload.appRiskLevel})`,
+      `Holders: ${payload.holdersCount} | Mint Authority Active: ${payload.mintAuthorityActive ? "yes" : "no"} | Freeze Authority Active: ${payload.freezeAuthorityActive ? "yes" : "no"}`,
+      `Fresh Score: ${payload.freshScore}/100 (${payload.freshRiskLevel})`,
+      `Score Reasons: ${payload.freshScoreReasons.join(", ") || "none"}`,
+    ].join("\n");
   };
 
   const maskDoctorWalletAddress = (address: string) => {
@@ -6403,12 +6393,11 @@ export async function registerRoutes(
     }
 
     const profile = await resolveSavatarDisplayName(userId);
-    const messages = await getSavatarHistoryForUser(userId, profile.displayName);
     return res.json({
       ok: true,
       assistant_name: "Savatar",
       user_name: profile.displayName,
-      messages,
+      messages: [],
     });
   });
 
@@ -6418,14 +6407,12 @@ export async function registerRoutes(
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    await clearSavatarHistoryForUser(userId);
     const profile = await resolveSavatarDisplayName(userId);
-    const messages = await getSavatarHistoryForUser(userId, profile.displayName);
     return res.json({
       ok: true,
       assistant_name: "Savatar",
       user_name: profile.displayName,
-      messages,
+      messages: [],
     });
   });
 
@@ -6441,26 +6428,74 @@ export async function registerRoutes(
     }
 
     const profile = await resolveSavatarDisplayName(userId);
-    const memory = await getSavatarHistoryForUser(userId, profile.displayName);
     const advisor = await buildDoctorAdvisor(userId);
+    const contractAddress = extractSolanaContractAddress(message);
+    let tokenSnapshot = "";
+
+    if (contractAddress) {
+      const [storedToken, projectInfo, enrichment] = await Promise.all([
+        storage.getScannedTokenByAddress(contractAddress).catch(() => undefined),
+        buildDexProjectInfoFallback(contractAddress, "solana").catch(() => ({ status: "indexing" } as any)),
+        enrichTokenWithHelius(contractAddress).catch(() => undefined),
+      ]);
+
+      const project = projectInfo && projectInfo.status === "ok"
+        ? (projectInfo as any).project_info
+        : {};
+
+      const liquidityUsd = Number((storedToken as any)?.liquidity ?? project?.liquidity_usd ?? 0);
+      const scoreResult = scoreFreshToken({
+        liquidityUsd,
+        holdersCount: Number((enrichment as any)?.holdersCount || 0),
+        mintAuthorityActive: Boolean((enrichment as any)?.authorities?.mintAuthorityActive),
+        freezeAuthorityActive: Boolean((enrichment as any)?.authorities?.freezeAuthorityActive),
+      });
+
+      tokenSnapshot = formatAssistantTokenSnapshot({
+        contractAddress,
+        symbol: String((storedToken as any)?.symbol || project?.symbol || "UNKNOWN"),
+        name: String((storedToken as any)?.name || project?.name || "Unknown Token"),
+        chain: String((storedToken as any)?.chain || project?.chain || "solana"),
+        priceUsd: Number((storedToken as any)?.priceUsd || project?.price_usd || 0),
+        liquidityUsd,
+        marketCapUsd: Number((storedToken as any)?.marketCap || project?.market_cap_usd || 0),
+        volume24hUsd: Number((storedToken as any)?.volume24h || project?.volume_24h || 0),
+        appSafetyScore: Number((storedToken as any)?.safetyScore || 0),
+        appRiskLevel: String((storedToken as any)?.riskLevel || "unknown"),
+        holdersCount: Number((enrichment as any)?.holdersCount || 0),
+        mintAuthorityActive: Boolean((enrichment as any)?.authorities?.mintAuthorityActive),
+        freezeAuthorityActive: Boolean((enrichment as any)?.authorities?.freezeAuthorityActive),
+        freshScore: scoreResult.score,
+        freshRiskLevel: scoreResult.riskLevel,
+        freshScoreReasons: scoreResult.reasons,
+      });
+    }
+
+    const aiMessage = tokenSnapshot
+      ? `${message}\n\nUse this token snapshot from TradeAid data sources in your answer:\n${tokenSnapshot}`
+      : message;
+
     const chat = await askAiTradeAssistant({
-      message,
+      message: aiMessage,
       advisor,
       username: profile.username,
       displayName: profile.displayName,
-      memory,
     });
 
-    await appendSavatarConversationForUser(userId, profile.displayName, message, String(chat.answer || ""));
-    const latestMemory = await getSavatarHistoryForUser(userId, profile.displayName);
+    const answer = tokenSnapshot
+      ? `${tokenSnapshot}\n\n${String(chat.answer || "").trim()}`
+      : String(chat.answer || "").trim();
 
     return res.json({
       ok: true,
       advisor,
       assistant_name: "Savatar",
       user_name: profile.displayName,
-      memory_count: latestMemory.length,
-      chat,
+      memory_count: 0,
+      chat: {
+        ...chat,
+        answer,
+      },
     });
   });
 
