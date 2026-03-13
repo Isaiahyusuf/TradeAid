@@ -33,6 +33,7 @@ interface PumpLaunchEvent {
   signature: string;
   detectedAt: Date;
   retries: number;
+  source?: string;
 }
 
 // Only Solana launchpads are supported in production builds for this app.
@@ -60,6 +61,7 @@ const EXCLUDED_SOL_MINTS = new Set([
 
 const EXCLUDED_SOL_SYMBOLS = new Set(["SOL", "WSOL", "USDC", "USDT", "USD1", "USDC.S"]);
 const PUMPFUN_PROGRAM_ID = String(process.env.PUMPFUN_PROGRAM_ID || "6EF8rrecthR5Dkzon8Nwu78hRjzJ3AL9rS6pNqB7pump").trim();
+const RAYDIUM_AMM_PROGRAM_ID = String(process.env.RAYDIUM_AMM_PROGRAM_ID || "675kPX9MHTjS2zt1qfr1NYHuzeFvQy2f6YvP6Vf3wGZ").trim();
 const SOLANA_RPC_FALLBACK = "https://api.mainnet-beta.solana.com";
 const BASE58_RE = /[1-9A-HJ-NP-Za-km-z]{32,44}/g;
 const FRESH_LISTENER_MAX_AGE_SECONDS = Math.max(
@@ -79,6 +81,10 @@ export class MultichainLaunchpadScanner {
   private readonly pendingPumpLaunches: PumpLaunchEvent[] = [];
   private readonly seenPumpSignatures = new Map<string, number>();
   private readonly seenPumpMints = new Map<string, number>();
+  private supplementalListenersStarted = false;
+  private readonly seenPumpFeedMints = new Map<string, number>();
+  private readonly seenDexProfileMints = new Map<string, number>();
+  private readonly seenRaydiumSignatures = new Map<string, number>();
 
   private getSolanaWsUrl() {
     return String(process.env.SOLANA_WS_URL || "").trim();
@@ -99,6 +105,196 @@ export class MultichainLaunchpadScanner {
       if (nowMs - seenAt > ttlMs) {
         this.seenPumpMints.delete(mint);
       }
+    }
+    for (const [mint, seenAt] of Array.from(this.seenPumpFeedMints.entries())) {
+      if (nowMs - seenAt > ttlMs) {
+        this.seenPumpFeedMints.delete(mint);
+      }
+    }
+    for (const [mint, seenAt] of Array.from(this.seenDexProfileMints.entries())) {
+      if (nowMs - seenAt > ttlMs) {
+        this.seenDexProfileMints.delete(mint);
+      }
+    }
+    for (const [signature, seenAt] of Array.from(this.seenRaydiumSignatures.entries())) {
+      if (nowMs - seenAt > ttlMs) {
+        this.seenRaydiumSignatures.delete(signature);
+      }
+    }
+  }
+
+  private enqueueDetectedMint(mint: string, creator: string, signature: string, source: string) {
+    const normalizedMint = String(mint || "").trim();
+    if (!normalizedMint || EXCLUDED_SOL_MINTS.has(normalizedMint)) return;
+
+    const nowMs = Date.now();
+    this.prunePumpListenerCaches(nowMs);
+    if (this.seenPumpMints.has(normalizedMint)) return;
+
+    this.seenPumpMints.set(normalizedMint, nowMs);
+    this.seenPumpSignatures.set(signature, nowMs);
+    this.pendingPumpLaunches.unshift({
+      mint: normalizedMint,
+      creator: String(creator || "").trim(),
+      signature,
+      detectedAt: new Date(),
+      retries: 0,
+      source,
+    });
+
+    console.log("[Pipeline] NEW TOKEN DETECTED");
+    console.log(`[Pipeline] Source: ${source}`);
+    console.log(`[Pipeline] Mint: ${normalizedMint}`);
+    console.log(`[Pipeline] Creator: ${String(creator || "unknown")}`);
+    console.log(`[Pipeline] Signature: ${signature}`);
+  }
+
+  private startSupplementalLaunchListeners() {
+    if (this.supplementalListenersStarted) return;
+    this.supplementalListenersStarted = true;
+
+    const pumpIntervalMs = Math.max(2_000, Number(process.env.PUMPFUN_FEED_POLL_MS || 5_000));
+    const dexIntervalMs = Math.max(4_000, Number(process.env.DEX_PROFILES_POLL_MS || 10_000));
+    const raydiumIntervalMs = Math.max(4_000, Number(process.env.RAYDIUM_POOLS_POLL_MS || 8_000));
+
+    console.log("[Pipeline] Supplemental listeners started (pumpfun feed + dex profiles + raydium pools)");
+
+    void this.pollPumpFunFeed();
+    setInterval(() => {
+      void this.pollPumpFunFeed();
+    }, pumpIntervalMs);
+
+    void this.pollDexProfiles();
+    setInterval(() => {
+      void this.pollDexProfiles();
+    }, dexIntervalMs);
+
+    void this.pollRaydiumPools();
+    setInterval(() => {
+      void this.pollRaydiumPools();
+    }, raydiumIntervalMs);
+  }
+
+  private async pollPumpFunFeed() {
+    try {
+      const response = await fetch("https://frontend-api.pump.fun/coins?offset=0&limit=100&sort=created_timestamp&order=DESC&includeNsfw=false");
+      if (!response.ok) return;
+      const payload = await response.json();
+      const rows = Array.isArray(payload) ? payload as Array<Record<string, any>> : [];
+
+      let added = 0;
+      const nowMs = Date.now();
+      for (const row of rows) {
+        const mint = String(row?.mint || row?.address || "").trim();
+        if (!mint || EXCLUDED_SOL_MINTS.has(mint) || this.seenPumpFeedMints.has(mint)) continue;
+        this.seenPumpFeedMints.set(mint, nowMs);
+        this.enqueueDetectedMint(mint, String(row?.creator || "").trim(), `pumpfeed:${mint}:${nowMs}`, "pumpfun_feed");
+        added += 1;
+      }
+      if (added > 0) {
+        console.log(`[Pipeline] Pump.fun feed added ${added} new mints`);
+      }
+    } catch {
+    }
+  }
+
+  private async pollDexProfiles() {
+    try {
+      const response = await fetch("https://api.dexscreener.com/token-profiles/latest/v1");
+      if (!response.ok) return;
+      const payload = await response.json();
+      const rows = Array.isArray(payload) ? payload as Array<Record<string, any>> : [];
+
+      let added = 0;
+      const nowMs = Date.now();
+      for (const row of rows) {
+        if (String(row?.chainId || "") !== "solana") continue;
+        const mint = String(row?.tokenAddress || "").trim();
+        if (!mint || EXCLUDED_SOL_MINTS.has(mint) || this.seenDexProfileMints.has(mint)) continue;
+        this.seenDexProfileMints.set(mint, nowMs);
+        this.enqueueDetectedMint(mint, "", `dexprofile:${mint}:${nowMs}`, "dexscreener_profiles");
+        added += 1;
+      }
+      if (added > 0) {
+        console.log(`[Pipeline] Dex profiles added ${added} new mints`);
+      }
+    } catch {
+    }
+  }
+
+  private async rpcCall(method: string, params: any[]) {
+    const rpcUrl = this.getSolanaRpcUrl();
+    if (!rpcUrl) return null;
+    const response = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method,
+        params,
+      }),
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return payload?.result ?? null;
+  }
+
+  private extractRaydiumInitializeMints(tx: Record<string, any> | null) {
+    const message = (tx?.transaction?.message || {}) as Record<string, any>;
+    const instructions = Array.isArray(message?.instructions) ? message.instructions as Array<Record<string, any>> : [];
+    const accountKeys = this.getTxAccountKeys(tx);
+    const mints: string[] = [];
+
+    for (const instruction of instructions) {
+      const programId = this.getInstructionProgramId(instruction, accountKeys);
+      if (programId !== RAYDIUM_AMM_PROGRAM_ID) continue;
+
+      const parsed = (instruction?.parsed || {}) as Record<string, any>;
+      const parsedType = String(parsed?.type || "").toLowerCase();
+      if (!parsedType.includes("initialize") || !parsedType.includes("pool")) continue;
+
+      const info = (parsed?.info || {}) as Record<string, any>;
+      for (const key of ["coinMint", "pcMint", "baseMint", "quoteMint", "tokenMint"]) {
+        const mint = String(info?.[key] || "").trim();
+        if (!mint || EXCLUDED_SOL_MINTS.has(mint)) continue;
+        mints.push(mint);
+      }
+    }
+
+    return mints;
+  }
+
+  private async pollRaydiumPools() {
+    try {
+      const signatures = await this.rpcCall("getSignaturesForAddress", [RAYDIUM_AMM_PROGRAM_ID, { limit: 40 }]);
+      const rows = Array.isArray(signatures) ? signatures as Array<Record<string, any>> : [];
+      let added = 0;
+
+      for (const row of rows) {
+        const signature = String(row?.signature || "").trim();
+        if (!signature || this.seenRaydiumSignatures.has(signature)) continue;
+        this.seenRaydiumSignatures.set(signature, Date.now());
+
+        const tx = await this.rpcCall("getTransaction", [
+          signature,
+          {
+            encoding: "jsonParsed",
+            maxSupportedTransactionVersion: 0,
+            commitment: "confirmed",
+          },
+        ]) as Record<string, any> | null;
+        const mints = this.extractRaydiumInitializeMints(tx);
+        for (const mint of mints) {
+          this.enqueueDetectedMint(mint, "", signature, "raydium_pool");
+          added += 1;
+        }
+      }
+
+      if (added > 0) {
+        console.log(`[Pipeline] Raydium pools added ${added} new mints`);
+      }
+    } catch {
     }
   }
 
@@ -406,6 +602,7 @@ export class MultichainLaunchpadScanner {
     this.isScanning = true;
     console.log("[Multichain] Starting multi-chain launchpad scan...");
     this.startPumpFunListener();
+    this.startSupplementalLaunchListeners();
 
     try {
       // Discovery is log-first from pump.fun program transactions via Helius WS.
