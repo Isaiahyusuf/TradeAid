@@ -1,6 +1,7 @@
 import { storage } from "../storage";
 import type { InsertScannedToken } from "@shared/schema";
 import { logStructured } from "./structured-logger";
+import WebSocket from "ws";
 
 interface LaunchpadToken {
   address: string;
@@ -24,6 +25,14 @@ interface HolderInfo {
   percentage: number;
   isDevWallet: boolean;
   isContract: boolean;
+}
+
+interface PumpLaunchEvent {
+  mint: string;
+  creator: string;
+  signature: string;
+  detectedAt: Date;
+  retries: number;
 }
 
 // Only Solana launchpads are supported in production builds for this app.
@@ -50,6 +59,9 @@ const EXCLUDED_SOL_MINTS = new Set([
 ]);
 
 const EXCLUDED_SOL_SYMBOLS = new Set(["SOL", "WSOL", "USDC", "USDT", "USD1", "USDC.S"]);
+const PUMPFUN_PROGRAM_ID = String(process.env.PUMPFUN_PROGRAM_ID || "6EF8rrecthR5Dkzon8Nwu78hRjzJ3AL9rS6pNqB7pump").trim();
+const SOLANA_RPC_FALLBACK = "https://api.mainnet-beta.solana.com";
+const BASE58_RE = /[1-9A-HJ-NP-Za-km-z]{32,44}/g;
 const FRESH_LISTENER_MAX_AGE_SECONDS = Math.max(
   1,
   Number(
@@ -63,6 +75,203 @@ const FRESH_LISTENER_MAX_AGE_MINUTES = FRESH_LISTENER_MAX_AGE_SECONDS / 60;
 export class MultichainLaunchpadScanner {
   private isScanning = false;
   private readonly emittedFreshMints = new Map<string, number>();
+  private pumpListenerStarted = false;
+  private readonly pendingPumpLaunches: PumpLaunchEvent[] = [];
+  private readonly seenPumpSignatures = new Map<string, number>();
+  private readonly seenPumpMints = new Map<string, number>();
+
+  private getSolanaWsUrl() {
+    return String(process.env.SOLANA_WS_URL || "").trim();
+  }
+
+  private getSolanaRpcUrl() {
+    return String(process.env.HELIUS_RPC_URL || process.env.SOLANA_RPC_URL || SOLANA_RPC_FALLBACK).trim();
+  }
+
+  private prunePumpListenerCaches(nowMs = Date.now()) {
+    const ttlMs = Math.max(60_000, Number(process.env.PUMP_LISTENER_SEEN_TTL_MS || 30 * 60 * 1000));
+    for (const [signature, seenAt] of Array.from(this.seenPumpSignatures.entries())) {
+      if (nowMs - seenAt > ttlMs) {
+        this.seenPumpSignatures.delete(signature);
+      }
+    }
+    for (const [mint, seenAt] of Array.from(this.seenPumpMints.entries())) {
+      if (nowMs - seenAt > ttlMs) {
+        this.seenPumpMints.delete(mint);
+      }
+    }
+  }
+
+  private isPumpCreateLog(logs: unknown[]) {
+    for (const raw of logs) {
+      const line = String(raw || "").toLowerCase();
+      if (!line) continue;
+      if (line.includes("initializemint") || line.includes("instruction: create")) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private async fetchSolanaParsedTransaction(signature: string) {
+    const rpcUrl = this.getSolanaRpcUrl();
+    if (!rpcUrl || !signature) return null;
+
+    try {
+      const response = await fetch(rpcUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "getTransaction",
+          params: [
+            signature,
+            {
+              encoding: "jsonParsed",
+              commitment: "processed",
+              maxSupportedTransactionVersion: 0,
+            },
+          ],
+        }),
+      });
+      if (!response.ok) return null;
+      const payload = await response.json();
+      return (payload?.result && typeof payload.result === "object") ? payload.result as Record<string, any> : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private extractMintFromTransaction(tx: Record<string, any> | null, logs: string[]) {
+    const balances = Array.isArray(tx?.meta?.postTokenBalances) ? tx!.meta.postTokenBalances as Array<Record<string, any>> : [];
+    for (const row of balances) {
+      const mint = String(row?.mint || "").trim();
+      if (!mint || mint === PUMPFUN_PROGRAM_ID || EXCLUDED_SOL_MINTS.has(mint)) continue;
+      return mint;
+    }
+
+    for (const line of logs) {
+      const matches = String(line || "").match(BASE58_RE) || [];
+      for (const candidate of matches) {
+        const mint = String(candidate || "").trim();
+        if (!mint || mint === PUMPFUN_PROGRAM_ID || EXCLUDED_SOL_MINTS.has(mint)) continue;
+        return mint;
+      }
+    }
+
+    return "";
+  }
+
+  private extractCreatorFromTransaction(tx: Record<string, any> | null) {
+    const message = tx?.transaction?.message;
+    const keys = Array.isArray(message?.accountKeys) ? message.accountKeys as Array<Record<string, any> | string> : [];
+    for (const key of keys) {
+      if (typeof key === "string") {
+        const value = String(key || "").trim();
+        if (value) return value;
+        continue;
+      }
+      if (key && typeof key === "object" && key.signer) {
+        const value = String(key.pubkey || "").trim();
+        if (value) return value;
+      }
+    }
+    return "";
+  }
+
+  private async handlePumpLogNotification(notification: Record<string, any>) {
+    const value = (notification?.params?.result?.value || {}) as Record<string, any>;
+    const signature = String(value?.signature || "").trim();
+    const logs = Array.isArray(value?.logs) ? value.logs.map((row: unknown) => String(row || "")) : [];
+    if (!signature || logs.length === 0) return;
+    if (!this.isPumpCreateLog(logs)) return;
+
+    const nowMs = Date.now();
+    this.prunePumpListenerCaches(nowMs);
+    if (this.seenPumpSignatures.has(signature)) return;
+    this.seenPumpSignatures.set(signature, nowMs);
+
+    const tx = await this.fetchSolanaParsedTransaction(signature);
+    const mint = this.extractMintFromTransaction(tx, logs);
+    if (!mint || this.seenPumpMints.has(mint)) return;
+
+    const creator = this.extractCreatorFromTransaction(tx);
+    this.seenPumpMints.set(mint, nowMs);
+    this.pendingPumpLaunches.unshift({
+      mint,
+      creator,
+      signature,
+      detectedAt: new Date(),
+      retries: 0,
+    });
+
+    console.log("[Pump.fun] NEW TOKEN DETECTED");
+    console.log(`[Pump.fun] Mint: ${mint}`);
+    console.log(`[Pump.fun] Creator: ${creator || "unknown"}`);
+    console.log(`[Pump.fun] Signature: ${signature}`);
+  }
+
+  private startPumpFunListener() {
+    if (this.pumpListenerStarted) return;
+    this.pumpListenerStarted = true;
+
+    void (async () => {
+      let retryMs = 2000;
+      while (true) {
+        const wsUrl = this.getSolanaWsUrl();
+        if (!wsUrl) {
+          console.warn("[Pump.fun] Listener disabled: SOLANA_WS_URL is empty");
+          await new Promise((resolve) => setTimeout(resolve, retryMs));
+          retryMs = Math.min(30_000, retryMs * 2);
+          continue;
+        }
+
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const ws = new WebSocket(wsUrl);
+
+            ws.on("open", () => {
+              retryMs = 2000;
+              const payload = {
+                jsonrpc: "2.0",
+                id: 1,
+                method: "logsSubscribe",
+                params: [
+                  { mentions: [PUMPFUN_PROGRAM_ID] },
+                  { commitment: "processed" },
+                ],
+              };
+              ws.send(JSON.stringify(payload));
+              console.log("[Pump.fun] Subscribed to program logs via Helius WS");
+            });
+
+            ws.on("message", (raw) => {
+              try {
+                const text = typeof raw === "string" ? raw : raw.toString("utf8");
+                const payload = JSON.parse(text) as Record<string, any>;
+                void this.handlePumpLogNotification(payload);
+              } catch {
+              }
+            });
+
+            ws.on("error", (error) => {
+              reject(error);
+            });
+
+            ws.on("close", () => {
+              resolve();
+            });
+          });
+        } catch (error) {
+          console.warn("[Pump.fun] Listener crashed", error instanceof Error ? error.message : String(error || "unknown_error"));
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, retryMs));
+        retryMs = Math.min(30_000, retryMs * 2);
+      }
+    })();
+  }
 
   async scanAllLaunchpads(): Promise<LaunchpadToken[]> {
     if (this.isScanning) {
@@ -72,21 +281,14 @@ export class MultichainLaunchpadScanner {
 
     this.isScanning = true;
     console.log("[Multichain] Starting multi-chain launchpad scan...");
+    this.startPumpFunListener();
 
     try {
-      const enablePumpFunHttpScan = String(process.env.ENABLE_PUMPFUN_HTTP_SCAN || "false").trim().toLowerCase() === "true";
-      // Only scan Solana sources in production. Keep other scanners disabled.
-      const scanTasks: Array<Promise<LaunchpadToken[]>> = [
-        this.scanDexScreenerLaunches("solana"),
-      ];
-
-      if (enablePumpFunHttpScan) {
-        scanTasks.unshift(this.scanPumpFun());
-      } else {
-        console.log("[Multichain] Pump.fun HTTP scan disabled; using on-chain/Dex discovery sources");
-      }
-
-      const results = await Promise.allSettled(scanTasks);
+      // Discovery is log-first from pump.fun program transactions via Helius WS.
+      // DexScreener is used only for market enrichment after mint detection.
+      const results = await Promise.allSettled([
+        this.scanDetectedPumpLaunches(),
+      ]);
 
       const allTokens: LaunchpadToken[] = [];
       
@@ -110,6 +312,89 @@ export class MultichainLaunchpadScanner {
     } finally {
       this.isScanning = false;
     }
+  }
+
+  private async scanDetectedPumpLaunches(): Promise<LaunchpadToken[]> {
+    const tokens: LaunchpadToken[] = [];
+    const wrappedSolMint = "So11111111111111111111111111111111111111112";
+    const maxBatch = Math.max(1, Number(process.env.PUMP_LISTENER_DETECTED_BATCH_SIZE || 30));
+
+    if (this.pendingPumpLaunches.length === 0) {
+      console.log("[Pump.fun] Waiting for mint detections from Helius WebSocket listener");
+      return tokens;
+    }
+
+    const nowMs = Date.now();
+    const staleTtlMs = Math.max(10_000, Number(process.env.PUMP_LISTENER_PENDING_TTL_MS || 5 * 60 * 1000));
+    const pending = this.pendingPumpLaunches.splice(0, maxBatch);
+
+    for (const event of pending) {
+      if (nowMs - event.detectedAt.getTime() > staleTtlMs) {
+        continue;
+      }
+
+      try {
+        const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${event.mint}`);
+        if (!response.ok) {
+          if (event.retries < 8) {
+            this.pendingPumpLaunches.push({ ...event, retries: event.retries + 1 });
+          }
+          continue;
+        }
+
+        const payload = await response.json();
+        const pairs = (Array.isArray(payload?.pairs) ? payload.pairs : []) as Array<Record<string, any>>;
+        const solanaPairs = pairs
+          .filter((pair) => String(pair?.chainId || "") === "solana")
+          .sort((left, right) => Number(right?.liquidity?.usd || 0) - Number(left?.liquidity?.usd || 0));
+        const bestPair = solanaPairs[0] || null;
+
+        if (!bestPair) {
+          if (event.retries < 8) {
+            this.pendingPumpLaunches.push({ ...event, retries: event.retries + 1 });
+          }
+          continue;
+        }
+
+        const baseToken = (bestPair.baseToken || {}) as Record<string, any>;
+        const quoteToken = (bestPair.quoteToken || {}) as Record<string, any>;
+        const baseAddress = String(baseToken.address || "").trim();
+        const quoteAddress = String(quoteToken.address || "").trim();
+        const selectedToken = (baseAddress === wrappedSolMint && quoteAddress) ? quoteToken : baseToken;
+        const selectedAddress = String(selectedToken.address || event.mint).trim();
+        if (!selectedAddress || EXCLUDED_SOL_MINTS.has(selectedAddress)) {
+          continue;
+        }
+
+        const selectedSymbol = String(selectedToken.symbol || "???").trim().toUpperCase();
+        if (!selectedSymbol || EXCLUDED_SOL_SYMBOLS.has(selectedSymbol)) {
+          continue;
+        }
+
+        const holderAnalysis = await this.analyzeHolders(selectedAddress, "solana");
+        tokens.push({
+          address: selectedAddress,
+          symbol: selectedSymbol,
+          name: String(selectedToken.name || "Unknown").slice(0, 80),
+          chain: "solana",
+          launchpad: "pump.fun",
+          priceUsd: String(bestPair.priceUsd || "0"),
+          liquidity: Number(bestPair.liquidity?.usd || 0),
+          marketCap: Number(bestPair.marketCap || bestPair.fdv || 0),
+          volume24h: Number(bestPair.volume?.h24 || 0),
+          topHoldersPercentage: holderAnalysis.topHoldersPercentage,
+          devWalletPercentage: holderAnalysis.devWalletPercentage,
+          createdAt: event.detectedAt,
+        });
+      } catch {
+        if (event.retries < 8) {
+          this.pendingPumpLaunches.push({ ...event, retries: event.retries + 1 });
+        }
+      }
+    }
+
+    console.log(`[Multichain] Found ${tokens.length} tokens from solana`);
+    return tokens;
   }
 
   private async scanPumpFun(): Promise<LaunchpadToken[]> {
@@ -209,14 +494,10 @@ export class MultichainLaunchpadScanner {
     }
   }
 
-  private async scanDexScreenerLaunches(chain: "solana" | "ethereum" | "bsc" | "base"): Promise<LaunchpadToken[]> {
+  private async scanDexScreenerLaunches(chain: "ethereum" | "bsc" | "base"): Promise<LaunchpadToken[]> {
     console.log(`[Multichain] Scanning ${chain} via DexScreener...`);
     try {
-      if (chain === "solana") {
-        return await this.scanDexScreenerProfiles(chain);
-      }
-
-      const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${chain === "solana" ? "So11111111111111111111111111111111111111112" : chain === "ethereum" ? "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" : chain === "bsc" ? "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c" : "0x4200000000000000000000000000000000000006"}`);
+      const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${chain === "ethereum" ? "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" : chain === "bsc" ? "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c" : "0x4200000000000000000000000000000000000006"}`);
       
       if (!response.ok) {
         const tokenProfilesResponse = await fetch("https://api.dexscreener.com/token-profiles/latest/v1");
@@ -259,8 +540,6 @@ export class MultichainLaunchpadScanner {
 
       const data = await response.json();
       const tokens: LaunchpadToken[] = [];
-      const wrappedSolMint = "So11111111111111111111111111111111111111112";
-
       for (const pair of (data.pairs || []).slice(0, 20)) {
         if (Number(pair?.liquidity?.usd || 0) <= 0) {
           continue;
@@ -270,21 +549,13 @@ export class MultichainLaunchpadScanner {
         const baseAddress = String(baseToken?.address || "").trim();
         const quoteAddress = String(quoteToken?.address || "").trim();
 
-        const selectedToken = (chain === "solana" && baseAddress === wrappedSolMint && quoteAddress)
-          ? quoteToken
-          : baseToken;
+        const selectedToken = baseToken;
         const selectedAddress = String(selectedToken?.address || "").trim();
-        if (!selectedAddress || (chain === "solana" && selectedAddress === wrappedSolMint)) {
-          continue;
-        }
-        if (chain === "solana" && EXCLUDED_SOL_MINTS.has(selectedAddress)) {
+        if (!selectedAddress) {
           continue;
         }
 
         const selectedSymbol = String(selectedToken?.symbol || "???").trim().toUpperCase();
-        if (chain === "solana" && EXCLUDED_SOL_SYMBOLS.has(selectedSymbol)) {
-          continue;
-        }
 
         const holderAnalysis = await this.analyzeHolders(selectedAddress, chain);
         
