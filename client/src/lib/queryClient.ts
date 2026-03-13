@@ -39,6 +39,21 @@ function getToken(): string | null {
   return localStorage.getItem("trade_aid_token");
 }
 
+const QUERY_TIMEOUT_MS = 12000;
+
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs = QUERY_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, {
+      ...(init || {}),
+      signal: init?.signal || controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -58,7 +73,7 @@ export async function apiRequest(
 
   const apiBase = resolveApiBaseUrl();
   const fullUrl = url.startsWith("http") ? url : `${apiBase}${url}`;
-  const res = await fetch(fullUrl, {
+  const res = await fetchWithTimeout(fullUrl, {
     method,
     headers,
     body: data ? JSON.stringify(data) : undefined,
@@ -81,7 +96,7 @@ export const getQueryFn: <T>(options: {
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
-    const res = await fetch(fullUrl, { headers });
+    const res = await fetchWithTimeout(fullUrl, { headers });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;
@@ -96,11 +111,12 @@ export const queryClient = new QueryClient({
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
-      refetchOnWindowFocus: true,
+      refetchOnWindowFocus: false,
       refetchOnReconnect: true,
-      refetchOnMount: "always",
-      staleTime: 0,
-      retry: false,
+      refetchOnMount: false,
+      staleTime: 15_000,
+      gcTime: 5 * 60 * 1000,
+      retry: 1,
     },
     mutations: {
       retry: false,
