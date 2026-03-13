@@ -131,7 +131,7 @@ export type DoctorStatus = {
     gas_priority_lamports?: number;
     live_sell_fraction_pct?: number;
     max_sell_notional_usd?: number;
-    snipe_preset?: "conservative" | "balanced" | "aggressive" | "insider" | "in_out_2x" | "custom" | string;
+    snipe_preset?: "conservative" | "momentum_trader" | "balanced" | "aggressive" | "insider" | "in_out_2x" | "custom" | string;
     wallet_connected: boolean;
   };
   active_tokens: DoctorToken[];

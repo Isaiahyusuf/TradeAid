@@ -35,7 +35,7 @@ function fmtSol(value: number) {
 
 const DOCTOR_SETTINGS_LOCAL_KEY_PREFIX = "doctortrade.settings.local.v2";
 const DOCTOR_SETTINGS_LOCAL_KEY_LEGACY = "doctortrade.settings.local.v1";
-type SnipePreset = "conservative" | "balanced" | "aggressive" | "insider" | "in_out_2x" | "custom";
+type SnipePreset = "conservative" | "momentum_trader" | "balanced" | "aggressive" | "insider" | "in_out_2x" | "custom";
 
 function getDoctorSettingsLocalKey(userId?: string | null) {
   const normalizedUserId = String(userId || "").trim() || "anonymous";
@@ -127,6 +127,7 @@ export default function DoctorTrade() {
   const normalizePreset = (value: unknown): SnipePreset => {
     const preset = String(value || "").trim().toLowerCase();
     if (preset === "conservative") return "conservative";
+    if (preset === "momentum_trader" || preset === "momentumtrader" || preset === "momentum_trader_3x5x") return "momentum_trader";
     if (preset === "balanced") return "balanced";
     if (preset === "aggressive" || preset === "agressive") return "aggressive";
     if (preset === "insider") return "in_out_2x";
@@ -364,7 +365,8 @@ export default function DoctorTrade() {
     const maxTradesPerDay = Math.max(1, Math.trunc(Number.parseFloat(maxTradesInput) || 12));
     const takeProfitMultiplier = Math.max(1.01, Number.parseFloat(tpMultInput) || 2.0);
     const minProfitPct = Math.max(0.1, Number.parseFloat(minProfitInput) || 12);
-    const stopLossPct = Math.max(0.1, Number.parseFloat(stopLossInput) || 6);
+    const stopLossFloor = selectedSnipePreset === "momentum_trader" ? 15 : 0.1;
+    const stopLossPct = Math.max(stopLossFloor, Number.parseFloat(stopLossInput) || 6);
     const trailingStopPct = Math.max(0.1, Number.parseFloat(trailInput) || 10);
     const minLiquidityUsd = Math.max(100, Number.parseFloat(minLiquidityInput) || 20000);
     const maxSlippagePct = Math.max(0.1, Number.parseFloat(maxSlippageInput) || 4);
@@ -381,6 +383,7 @@ export default function DoctorTrade() {
     const maxSellNotionalUsd = Math.max(1, Number.parseFloat(maxSellNotionalInput) || 300);
     const presetDefaultBuyAmount: Record<Exclude<SnipePreset, "custom">, number> = {
       conservative: 0.1,
+      momentum_trader: 0.15,
       balanced: 0.15,
       aggressive: 0.25,
       insider: 0.3,
@@ -484,6 +487,28 @@ export default function DoctorTrade() {
       setQualityMaxHolderInput("28");
       setLiveSellFractionInput("35");
       setMaxSellNotionalInput("180");
+    }
+    if (preset === "momentum_trader") {
+      setIntervalInput("8");
+      setBuyAmountInput("0.15");
+      setMaxTradesInput("14");
+      setTpMultInput("5.0");
+      setMinProfitInput("200");
+      setStopLossInput("15");
+      setTrailInput("20");
+      setMinLiquidityInput("20000");
+      setMaxSlippageInput("10");
+      setMaxSpreadInput("5");
+      setDailyLossInput("700");
+      setMaxConsecutiveLossesInput("3");
+      setStrongMoveInput("65");
+      setMaxHoldMinutesInput("240");
+      setMinMomentumInput("10");
+      setQualityMinSpikeInput("10");
+      setQualityMaxHolderInput("20");
+      setGasPriorityInput("500000");
+      setLiveSellFractionInput("100");
+      setMaxSellNotionalInput("100000");
     }
     if (preset === "balanced") {
       setBuyAmountInput("0.15");
@@ -973,6 +998,16 @@ export default function DoctorTrade() {
 
           <div className="flex flex-wrap gap-2 mb-3 overflow-x-auto">
             <Button variant="outline" size="sm" onClick={() => applyPreset("conservative")}>Safe Buy</Button>
+            <Button
+              variant={selectedSnipePreset === "momentum_trader" ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                applyPreset("momentum_trader");
+              }}
+              className={selectedSnipePreset === "momentum_trader" ? "bg-emerald-500 hover:bg-emerald-600 text-black" : "border-emerald-500/50 text-emerald-500 hover:bg-emerald-500/10"}
+            >
+              <TrendingUp className="w-4 h-4 mr-1" /> Momentum Trader 📈
+            </Button>
             <Button variant="outline" size="sm" onClick={() => applyPreset("balanced")}>Momentum Hunter</Button>
             <Button variant="outline" size="sm" onClick={() => applyPreset("aggressive")}>Whale Rider</Button>
             <Button
@@ -1017,6 +1052,14 @@ export default function DoctorTrade() {
                 <Zap className="w-4 h-4 text-orange-400" /> ⚡ Speed Mode
               </div>
               <p className="mt-1">Buy: 0.1 SOL | Target: 2x | AI: OFF</p>
+            </div>
+          )}
+          {selectedSnipePreset === "momentum_trader" && (
+            <div className="mb-3 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+              <div className="flex items-center gap-2 font-medium">
+                <TrendingUp className="w-4 h-4 text-emerald-400" /> 📈 Momentum Mode
+              </div>
+              <p className="mt-1">Target: 3x-5x | Smart Entry</p>
             </div>
           )}
           <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 items-end">

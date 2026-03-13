@@ -1246,6 +1246,7 @@ export async function registerRoutes(
   const normalizeDoctorSnipePreset = (value: unknown) => {
     const preset = String(value || "").trim().toLowerCase();
     if (preset === "conservative") return "conservative" as const;
+    if (preset === "momentum_trader" || preset === "momentumtrader" || preset === "momentum_trader_3x5x") return "momentum_trader" as const;
     if (preset === "balanced") return "balanced" as const;
     if (preset === "aggressive" || preset === "agressive") return "aggressive" as const;
     if (preset === "in_out_2x" || preset === "inout2x" || preset === "in_and_out_2x") return "in_out_2x" as const;
@@ -1257,7 +1258,7 @@ export async function registerRoutes(
     return normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
   };
 
-  const doctorPresetNumericProfiles: Record<"insider" | "conservative" | "balanced" | "aggressive" | "in_out_2x", Record<string, number>> = {
+  const doctorPresetNumericProfiles: Record<"insider" | "conservative" | "momentum_trader" | "balanced" | "aggressive" | "in_out_2x", Record<string, number>> = {
     insider: {
       max_open_positions: 3,
       take_profit_multiplier: 1.5,
@@ -1323,6 +1324,44 @@ export async function registerRoutes(
       quality_min_volume_spike_pct: 18,
       max_early_spike_pct: 140,
       strategy_window_minutes: 5,
+    },
+    momentum_trader: {
+      max_open_positions: 3,
+      max_trades_per_day: 14,
+      max_trades_per_hour: 6,
+      take_profit_multiplier: 5.0,
+      min_profit_pct: 200,
+      stop_loss_pct: 15,
+      trailing_stop_pct: 20,
+      max_hold_minutes: 240,
+      position_rotation_minutes: 3,
+      live_sell_fraction_pct: 100,
+      max_sell_notional_usd: 100000,
+      strong_move_threshold_pct: 65,
+      min_liquidity_usd: 10000,
+      max_liquidity_usd: 500000,
+      min_market_cap_usd: 20000,
+      max_market_cap_usd: 400000,
+      min_volume_24h_usd: 10000,
+      min_token_age_minutes: 0,
+      max_token_age_minutes: 15,
+      max_token_age_seconds: 900,
+      min_liquidity_sol: 25,
+      max_liquidity_sol: 400,
+      min_buys_5m: 40,
+      max_sells_5m: 200,
+      min_unique_buyers: 25,
+      min_buy_ratio_pct: 55,
+      quality_max_top_holder_pct: 20,
+      max_dev_wallet_pct: 5,
+      ai_min_signals_required: 4,
+      minimum_ai_score: 65,
+      min_lock_hours: 0,
+      quality_min_volume_spike_pct: 10,
+      max_early_spike_pct: 300,
+      strategy_window_minutes: 5,
+      max_slippage_pct: 10,
+      gas_priority_lamports: 500000,
     },
     balanced: {
       max_open_positions: 3,
@@ -1435,6 +1474,10 @@ export async function registerRoutes(
     return normalizeDoctorSnipePreset(preset || getDoctorActiveSnipePreset()) === "in_out_2x";
   };
 
+  const isDoctorMomentumTraderPreset = (preset?: string) => {
+    return normalizeDoctorSnipePreset(preset || getDoctorActiveSnipePreset()) === "momentum_trader";
+  };
+
   const isDoctorAiBypassedPreset = (preset?: string) => {
     return isDoctorSpeedModePreset(preset);
   };
@@ -1451,6 +1494,13 @@ export async function registerRoutes(
     if (buys30s > 0) return buys30s;
     const buys1m = estimateBuys1m(token);
     return buys1m > 0 ? Math.floor(buys1m / 2) : 0;
+  };
+
+  const estimateBuys2m = (token: Record<string, any>) => {
+    const buys2m = Number((token as any).buys_2m || (token as any).buys_last_2m || 0);
+    if (buys2m > 0) return buys2m;
+    const buys5m = Number((token as any).buys_5m || 0);
+    return buys5m > 0 ? Math.floor((buys5m * 2) / 5) : 0;
   };
 
   const estimateVolume1mUsd = (token: Record<string, any>) => {
@@ -1471,6 +1521,16 @@ export async function registerRoutes(
     if (Number.isFinite(price5m) && price5m !== 0) return price5m / 10;
     const price1h = Number((token as any).price_change_1h || 0);
     return Number.isFinite(price1h) ? price1h / 120 : 0;
+  };
+
+  const estimatePriceChange2mPct = (token: Record<string, any>) => {
+    const price2m = Number((token as any).price_change_2m || (token as any).price_change_2m_pct || 0);
+    if (Number.isFinite(price2m) && price2m !== 0) return price2m;
+    const price5m = Number((token as any).price_change_5m || 0);
+    if (Number.isFinite(price5m) && price5m !== 0) return (price5m * 2) / 5;
+    const price1m = Number((token as any).price_change_1m || 0);
+    if (Number.isFinite(price1m) && price1m !== 0) return price1m * 2;
+    return 0;
   };
 
   const getDoctorEffectiveControlNumber = (key: string, fallbackValue: number) => {
@@ -1494,7 +1554,7 @@ export async function registerRoutes(
   };
 
   const shouldForceDoctorCustomPreset = (
-    activePreset: "insider" | "conservative" | "balanced" | "aggressive" | "in_out_2x" | "custom",
+    activePreset: "insider" | "conservative" | "momentum_trader" | "balanced" | "aggressive" | "in_out_2x" | "custom",
     controlsPayload: Record<string, any>,
   ) => {
     if (activePreset === "custom") return false;
@@ -1717,7 +1777,7 @@ export async function registerRoutes(
     doctorRuntime.controls.min_buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
     doctorRuntime.controls.min_token_age_minutes = Math.max(0, Number(doctorRuntime.controls.min_token_age_minutes || 0));
-    doctorRuntime.controls.max_token_age_minutes = Math.min(10, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
+    doctorRuntime.controls.max_token_age_minutes = Math.min(20, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
     doctorRuntime.controls.max_token_age_seconds = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
     (doctorRuntime.controls as any).snipe_preset = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
     if (isDoctorSpeedModePreset()) {
@@ -1727,6 +1787,13 @@ export async function registerRoutes(
       (doctorRuntime.controls as any).ai_scoring_enabled = false;
       (doctorRuntime.controls as any).ai_trade_filter = false;
       (doctorRuntime.controls as any).ai_prediction_check = false;
+    }
+    if (isDoctorMomentumTraderPreset()) {
+      doctorRuntime.controls.stop_loss_pct = Math.max(15, Number(doctorRuntime.controls.stop_loss_pct || 15));
+      (doctorRuntime.controls as any).minimum_ai_score = Math.max(1, Number((doctorRuntime.controls as any).minimum_ai_score || 65));
+      (doctorRuntime.controls as any).ai_scoring_enabled = typeof (doctorRuntime.controls as any).ai_scoring_enabled === "boolean"
+        ? Boolean((doctorRuntime.controls as any).ai_scoring_enabled)
+        : true;
     }
     if (isDoctorDexTurboEnabled() && !isDoctorSpeedModePreset() && doctorRuntime.controls.max_token_age_seconds < 120) {
       doctorRuntime.controls.max_token_age_seconds = 120;
@@ -4200,6 +4267,7 @@ export async function registerRoutes(
     const maxOpenPositions = getDoctorEffectiveMaxOpenPositions();
     const activeSnipePreset = getDoctorActiveSnipePreset();
     const isSpeedMode = isDoctorSpeedModePreset(activeSnipePreset);
+    const isMomentumMode = isDoctorMomentumTraderPreset(activeSnipePreset);
     const configuredMinProfitPct = Math.max(0.1, getDoctorEffectiveControlNumber("min_profit_pct", Number(doctorRuntime.controls.min_profit_pct || 0)));
     const configuredTakeProfitMultiplier = Math.max(1.01, getDoctorEffectiveControlNumber("take_profit_multiplier", Number(doctorRuntime.controls.take_profit_multiplier || 2)));
     const configuredStopLossPct = Math.max(0.1, getDoctorEffectiveControlNumber("stop_loss_pct", Number(doctorRuntime.controls.stop_loss_pct || 0)));
@@ -4239,11 +4307,23 @@ export async function registerRoutes(
       const tpStage = Math.max(0, Math.trunc(Number((position as any).tp_stage || 0)));
       const buys30s = estimateBuys30s((market || {}) as Record<string, any>);
       const priceChange30sPct = estimatePriceChange30sPct((market || {}) as Record<string, any>);
+      const buys2m = estimateBuys2m((market || {}) as Record<string, any>);
+      const priceChange2mPct = estimatePriceChange2mPct((market || {}) as Record<string, any>);
 
       let sellReason = "";
       let sellFractionPct = 100;
       if (isSpeedMode && buys30s <= 2 && priceChange30sPct <= -12) {
         sellReason = "fast_momentum_exit";
+      } else if (isMomentumMode && buys2m < 5 && priceChange2mPct <= -10) {
+        sellReason = "momentum_hype_died_exit";
+      } else if (isMomentumMode && pnlPct >= 500 && tpStage < 3) {
+        sellReason = "take_profit_stage_3_full";
+      } else if (isMomentumMode && pnlPct >= 300 && tpStage < 2) {
+        sellReason = "take_profit_stage_2_partial";
+        sellFractionPct = 50;
+      } else if (isMomentumMode && pnlPct >= 200 && tpStage < 1) {
+        sellReason = "take_profit_stage_1_partial";
+        sellFractionPct = 40;
       } else if (pnlPct >= secondTakeProfitStagePct && tpStage < 2) {
         sellReason = "take_profit_stage_2_partial";
         sellFractionPct = 50;
@@ -4335,6 +4415,8 @@ export async function registerRoutes(
         ? Math.max(tpStage, 2)
         : sellReason === "take_profit_stage_1_partial"
           ? Math.max(tpStage, 1)
+          : sellReason === "take_profit_stage_3_full"
+            ? Math.max(tpStage, 3)
           : tpStage;
 
       doctorRuntime.recentTrades.unshift({
@@ -4390,7 +4472,7 @@ export async function registerRoutes(
     const feeBufferSol = Math.max(0, Number(doctorRuntime.controls.min_wallet_fee_buffer_sol || 0));
     const buyAmountSol = Math.max(0.1, getDoctorEffectiveControlNumber("buy_amount_sol", Number(doctorRuntime.controls.buy_amount_sol || 0.1)));
     const maxLiquidityUsd = Math.max(1, getDoctorEffectiveControlNumber("max_liquidity_usd", 500000));
-    const maxTokenAgeSeconds = Math.max(60, Math.min(10, Math.trunc(getDoctorEffectiveControlNumber("max_token_age_minutes", 10))) * 60);
+    const maxTokenAgeSeconds = Math.max(60, Math.min(20, Math.trunc(getDoctorEffectiveControlNumber("max_token_age_minutes", 10))) * 60);
     const strictMaxTokenAgeSecondsRaw = Math.max(30, getDoctorEffectiveControlNumber("max_token_age_seconds", 240));
     const strictMaxTokenAgeSeconds = isDoctorDexTurboEnabled() && !isSpeedMode
       ? Math.max(120, strictMaxTokenAgeSecondsRaw)
@@ -4448,6 +4530,44 @@ export async function registerRoutes(
         const topHolderPct = Number(token.top_holder_pct || 0);
         if (topHolderPct <= 0) return true;
         return topHolderPct <= Math.max(1, getDoctorEffectiveControlNumber("quality_max_top_holder_pct", 24));
+      })
+      .filter((token) => {
+        if (!isMomentumMode) return true;
+        const tokenAny = token as Record<string, any>;
+        const ageSeconds = Math.max(0, Number(tokenAny.age_seconds || 0));
+        const liquiditySol = Number(tokenAny.liquidity_sol || 0);
+        const marketCapUsd = Number(tokenAny.market_cap_usd || 0);
+        const volume5mUsd = Number(tokenAny.volume_5m || tokenAny.volume_5m_usd || 0);
+        const buys5m = Number(tokenAny.buys_5m || 0);
+        const uniqueBuyers = Number(tokenAny.holders_count || tokenAny.unique_buyers || 0);
+        const priceChange5mPct = Number(tokenAny.price_change_5m || 0);
+        return ageSeconds <= 15 * 60
+          && marketCapUsd >= 20000
+          && marketCapUsd <= 400000
+          && liquiditySol >= 25
+          && volume5mUsd >= 10000
+          && buys5m >= 40
+          && uniqueBuyers >= 25
+          && priceChange5mPct >= 20;
+      })
+      .filter((token) => {
+        if (!isMomentumMode) return true;
+        const tokenAny = token as Record<string, any>;
+        const isHoneypot = Boolean(tokenAny.is_honeypot ?? tokenAny.isHoneypot ?? tokenAny.honeypot);
+        const topHolderPct = Number(tokenAny.top_holder_pct || 0);
+        const creatorHoldingPct = Number(tokenAny.creator_wallet_holding || tokenAny.dev_wallet_pct || 0);
+        const mintAuthorityDisabled = Boolean(tokenAny.mint_authority_disabled ?? tokenAny.mintAuthorityDisabled ?? tokenAny.isMintAuthorityDisabled);
+        const freezeAuthorityDisabled = Boolean(tokenAny.freeze_authority_disabled ?? tokenAny.freezeAuthorityDisabled ?? tokenAny.isFreezeAuthorityDisabled);
+        const lpLockedOrBurned = Boolean(tokenAny.liquidity_locked ?? tokenAny.lp_locked_or_burned ?? tokenAny.lpLockedOrBurned);
+        const sellTaxPct = Number(tokenAny.sell_tax_pct ?? tokenAny.sell_tax ?? tokenAny.tax_sell ?? 0);
+        const buyTaxPct = Number(tokenAny.buy_tax_pct ?? tokenAny.buy_tax ?? tokenAny.tax_buy ?? 0);
+        if (isHoneypot) return false;
+        if (!mintAuthorityDisabled || !freezeAuthorityDisabled) return false;
+        if (!lpLockedOrBurned) return false;
+        if (topHolderPct > 20) return false;
+        if (creatorHoldingPct > 5) return false;
+        if (sellTaxPct > 10 || buyTaxPct > 10) return false;
+        return true;
       })
       .filter((token) => {
         if (!isSpeedMode) return true;
@@ -4725,6 +4845,49 @@ export async function registerRoutes(
 
         if (!isLaunchSourceAllowed(String(candidate.launch_source || candidate.source || "unknown"))) {
           return { allowed: false, reason: "unsupported_launch_source" };
+        }
+      }
+
+      if (isMomentumMode) {
+        const candidateAny = candidate as Record<string, any>;
+        const candidateAgeSeconds = Math.max(0, Number(candidateAny.age_seconds || 0));
+        const candidateLiquiditySol = Number(candidateAny.liquidity_sol || 0);
+        const candidateMarketCapUsd = Number(candidateAny.market_cap_usd || 0);
+        const candidateVolume5mUsd = Number(candidateAny.volume_5m || candidateAny.volume_5m_usd || 0);
+        const candidateBuys5m = Number(candidateAny.buys_5m || 0);
+        const candidateUniqueBuyers = Number(candidateAny.holders_count || candidateAny.unique_buyers || 0);
+        const candidatePriceChange5mPct = Number(candidateAny.price_change_5m || 0);
+        const isHoneypot = Boolean(candidateAny.is_honeypot ?? candidateAny.isHoneypot ?? candidateAny.honeypot);
+        const candidateTopHolderPct = Number(candidateAny.top_holder_pct || 0);
+        const candidateCreatorHoldingPct = Number(candidateAny.creator_wallet_holding || candidateAny.dev_wallet_pct || 0);
+        const mintAuthorityDisabled = Boolean(candidateAny.mint_authority_disabled ?? candidateAny.mintAuthorityDisabled ?? candidateAny.isMintAuthorityDisabled);
+        const freezeAuthorityDisabled = Boolean(candidateAny.freeze_authority_disabled ?? candidateAny.freezeAuthorityDisabled ?? candidateAny.isFreezeAuthorityDisabled);
+        const lpLockedOrBurned = Boolean(candidateAny.liquidity_locked ?? candidateAny.lp_locked_or_burned ?? candidateAny.lpLockedOrBurned);
+        const sellTaxPct = Number(candidateAny.sell_tax_pct ?? candidateAny.sell_tax ?? candidateAny.tax_sell ?? 0);
+        const buyTaxPct = Number(candidateAny.buy_tax_pct ?? candidateAny.buy_tax ?? candidateAny.tax_buy ?? 0);
+
+        if (candidateAgeSeconds > 15 * 60) return { allowed: false, reason: "momentum_age_window_failed" };
+        if (candidateMarketCapUsd < 20000 || candidateMarketCapUsd > 400000) return { allowed: false, reason: "momentum_market_cap_window_failed" };
+        if (candidateLiquiditySol < 25) return { allowed: false, reason: "momentum_min_liquidity_sol_failed" };
+        if (candidateVolume5mUsd < 10000) return { allowed: false, reason: "momentum_volume_5m_failed" };
+        if (candidateBuys5m < 40) return { allowed: false, reason: "momentum_buys_5m_failed" };
+        if (candidateUniqueBuyers < 25) return { allowed: false, reason: "momentum_unique_buyers_failed" };
+        if (candidatePriceChange5mPct < 20) return { allowed: false, reason: "momentum_price_change_5m_failed" };
+        if (isHoneypot) return { allowed: false, reason: "momentum_honeypot_detected" };
+        if (!mintAuthorityDisabled) return { allowed: false, reason: "momentum_mint_authority_enabled" };
+        if (!freezeAuthorityDisabled) return { allowed: false, reason: "momentum_freeze_authority_enabled" };
+        if (!lpLockedOrBurned) return { allowed: false, reason: "momentum_lp_not_locked_or_burned" };
+        if (candidateTopHolderPct > 20) return { allowed: false, reason: "momentum_top_holder_pct_failed" };
+        if (candidateCreatorHoldingPct > 5) return { allowed: false, reason: "momentum_creator_wallet_pct_failed" };
+        if (sellTaxPct > 10 || buyTaxPct > 10) return { allowed: false, reason: "momentum_tax_too_high" };
+
+        const momentumAiEnabled = Boolean((doctorRuntime.controls as any).ai_scoring_enabled ?? true);
+        if (momentumAiEnabled) {
+          const minimumAiScore = Math.max(1, getDoctorEffectiveControlNumber("minimum_ai_score", 65));
+          const candidateAiScore = Number(candidateAny.ai_score || candidateAny.score || 0);
+          if (candidateAiScore < minimumAiScore) {
+            return { allowed: false, reason: "momentum_minimum_ai_score_failed" };
+          }
         }
       }
 
@@ -5321,11 +5484,12 @@ export async function registerRoutes(
     let hasBlockingError = false;
 
     if (buyCandidate && canBuy) {
+      const aiScoringEnabledControl = Boolean((doctorRuntime.controls as any).ai_scoring_enabled ?? true);
       const enforceAiValidation =
         !isDoctorAiBypassedPreset(activeSnipePreset)
+        && aiScoringEnabledControl
         && (
           String(process.env.DOCTOR_ENFORCE_AI_VALIDATION || "true").trim().toLowerCase() !== "false"
-          || doctorRuntime.execution.mode === "live"
         );
       const aiValidation = enforceAiValidation
         ? await evaluateDoctorAiValidation(buyCandidate)
@@ -5418,6 +5582,7 @@ export async function registerRoutes(
       if (buyCandidate && (!enforceAiValidation || aiValidation.allowed || aiFallbackUsed)) {
       const requireOpenAiSafetyGate =
         !isDoctorAiBypassedPreset(activeSnipePreset)
+        && aiScoringEnabledControl
         &&
         doctorRuntime.execution.mode === "live"
         && String(process.env.DOCTOR_REQUIRE_OPENAI_SAFETY_GATE || "true").trim().toLowerCase() !== "false";
@@ -6310,6 +6475,7 @@ export async function registerRoutes(
       "ai_min_signals_required",
       "cooldown_minutes_per_mint",
       "cooldown_between_trades_seconds",
+      "minimum_ai_score",
       "min_wallet_fee_buffer_sol",
       "min_liquidity_sol",
       "max_liquidity_sol",
@@ -6390,9 +6556,16 @@ export async function registerRoutes(
       (doctorRuntime.controls as any).ai_trade_filter = false;
       (doctorRuntime.controls as any).ai_prediction_check = false;
     }
+    if (isDoctorMomentumTraderPreset()) {
+      doctorRuntime.controls.stop_loss_pct = Math.max(15, Number(doctorRuntime.controls.stop_loss_pct || 15));
+      (doctorRuntime.controls as any).minimum_ai_score = Math.max(1, Number((doctorRuntime.controls as any).minimum_ai_score || 65));
+      (doctorRuntime.controls as any).ai_scoring_enabled = typeof (doctorRuntime.controls as any).ai_scoring_enabled === "boolean"
+        ? Boolean((doctorRuntime.controls as any).ai_scoring_enabled)
+        : true;
+    }
     doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
     doctorRuntime.controls.min_token_age_minutes = Math.max(0, Number(doctorRuntime.controls.min_token_age_minutes || 0));
-    doctorRuntime.controls.max_token_age_minutes = Math.min(10, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
+    doctorRuntime.controls.max_token_age_minutes = Math.min(20, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
     doctorRuntime.controls.max_token_age_seconds = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
     if (isDoctorDexTurboEnabled() && !isDoctorSpeedModePreset() && doctorRuntime.controls.max_token_age_seconds < 120) {
       doctorRuntime.controls.max_token_age_seconds = 120;
