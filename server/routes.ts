@@ -7616,7 +7616,7 @@ export async function registerRoutes(
       solana: 0,
     };
 
-    const withTimeout = async (url: string, timeoutMs = 8000) => {
+    const withTimeout = async (url: string, timeoutMs = Math.max(1200, Number(process.env.ASSISTANT_PRICE_TIMEOUT_MS || 2500))) => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
@@ -7691,7 +7691,7 @@ export async function registerRoutes(
       return null;
     }
 
-    const rpcTimeoutMs = Math.max(1500, Number(process.env.ASSISTANT_WALLET_RPC_TIMEOUT_MS || 7000));
+    const rpcTimeoutMs = Math.max(1200, Number(process.env.ASSISTANT_WALLET_RPC_TIMEOUT_MS || 2500));
     try {
       if (chain !== "solana") {
         return null;
@@ -7719,7 +7719,7 @@ export async function registerRoutes(
       return [] as Array<Record<string, any>>;
     }
 
-    const rpcTimeoutMs = Math.max(1500, Number(process.env.ASSISTANT_WALLET_RPC_TIMEOUT_MS || 7000));
+    const rpcTimeoutMs = Math.max(1200, Number(process.env.ASSISTANT_WALLET_RPC_TIMEOUT_MS || 2500));
     try {
       const ownerPk = new PublicKey(address);
       const tokenProgram = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
@@ -7777,7 +7777,7 @@ export async function registerRoutes(
       return [] as Array<Record<string, any>>;
     }
 
-    const rpcTimeoutMs = Math.max(1500, Number(process.env.ASSISTANT_WALLET_RPC_TIMEOUT_MS || 7000));
+    const rpcTimeoutMs = Math.max(1200, Number(process.env.ASSISTANT_WALLET_RPC_TIMEOUT_MS || 2500));
     try {
       const prices = await Promise.race([
         fetchChainPricesUsd().catch(() => ({ solana: 0 } as Record<string, number>)),

@@ -146,8 +146,8 @@ export function useAssistantTradingStatus() {
     queryFn: () => apiGet<{ trading: AssistantTradingStatus }>("/api/ai/trading/status"),
     enabled: hasToken,
     retry: 1,
-    refetchInterval: 10_000,
-    refetchIntervalInBackground: true,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
 }
@@ -159,8 +159,8 @@ export function useAssistantWalletStatus() {
     queryFn: () => apiGet<{ wallet: AssistantWalletStatus }>("/api/ai/wallets/status"),
     enabled: hasToken,
     retry: 1,
-    refetchInterval: 10_000,
-    refetchIntervalInBackground: true,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
 }
@@ -172,21 +172,21 @@ export function useAssistantWalletPortfolio() {
     queryFn: () => apiGet<{ wallet: AssistantWalletStatus; portfolio: AssistantWalletPortfolio }>("/api/ai/wallets/portfolio"),
     enabled: hasToken,
     retry: 1,
-    refetchInterval: 30_000,
-    refetchIntervalInBackground: true,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
 }
 
-export function useAssistantWalletTransactions(limit: number = 25) {
+export function useAssistantWalletTransactions(limit: number = 25, enabled = true) {
   const { hasToken } = useAuth();
   return useQuery({
     queryKey: ["ai-wallet-transactions", limit],
     queryFn: () => apiGet<{ transactions: AssistantWalletTransaction[]; count: number }>(`/api/ai/wallets/transactions?limit=${limit}`),
-    enabled: hasToken,
+    enabled: hasToken && enabled,
     retry: 1,
-    refetchInterval: 20_000,
-    refetchIntervalInBackground: true,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
 }
@@ -399,15 +399,15 @@ export function useExecuteAssistantTrade() {
   });
 }
 
-export function useAssistantContextOverview(days: number = 30) {
+export function useAssistantContextOverview(days: number = 30, enabled = true) {
   const { hasToken } = useAuth();
   return useQuery({
     queryKey: ["ai-context-overview", days],
     queryFn: () => apiGet<{ context: AssistantContextOverview; user_id: string }>(`/api/ai/context/overview?days=${days}`),
-    enabled: hasToken,
+    enabled: hasToken && enabled,
     retry: 1,
-    refetchInterval: 20_000,
-    refetchIntervalInBackground: true,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
 }

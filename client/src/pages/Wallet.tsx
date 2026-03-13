@@ -53,14 +53,15 @@ export default function WalletPage() {
   const prefillSwapTokenMint = String(searchParams.get("contract") || "").trim();
   const prefillSwapAmountSol = String(searchParams.get("amount_sol") || searchParams.get("amount") || "").trim();
   const prefillSwapSide = String(searchParams.get("side") || "buy").trim().toLowerCase() === "sell" ? "sell" : "buy";
+  const [walletTab, setWalletTab] = useState<"assets" | "activity" | "security">("assets");
 
   const tradingStatusQuery = useAssistantTradingStatus();
   const doctorStatusQuery = useDoctorStatus();
   const doctorRunOnce = useDoctorRunOnce();
   const walletStatusQuery = useAssistantWalletStatus();
   const walletPortfolioQuery = useAssistantWalletPortfolio();
-  const walletTransactionsQuery = useAssistantWalletTransactions(50);
-  const contextOverviewQuery = useAssistantContextOverview(30);
+  const walletTransactionsQuery = useAssistantWalletTransactions(50, walletTab === "activity");
+  const contextOverviewQuery = useAssistantContextOverview(30, walletTab === "activity");
 
   const requestConsent = useRequestAssistantConsent();
   const approveConsent = useApproveAssistantConsent();
@@ -97,7 +98,6 @@ export default function WalletPage() {
   const [securitySetupOpen, setSecuritySetupOpen] = useState(false);
   const [securityBackupOpen, setSecurityBackupOpen] = useState(false);
   const [securityRecoveryOpen, setSecurityRecoveryOpen] = useState(false);
-  const [walletTab, setWalletTab] = useState<"assets" | "activity" | "security">("assets");
 
   const [sendChain, setSendChain] = useState<SupportedWalletChain>(enabledChains[0] || "solana");
   const [receiveChain, setReceiveChain] = useState<SupportedWalletChain>(enabledChains[0] || "solana");
