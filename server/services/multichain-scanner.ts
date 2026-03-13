@@ -95,6 +95,8 @@ export class MultichainLaunchpadScanner {
   private readonly seenDexProfileMints = new Map<string, number>();
   private readonly seenRaydiumSignatures = new Map<string, number>();
   private lastRaydiumPollReportAt = 0;
+  private isRaydiumPolling = false;
+  private raydiumDebugSamples = 0;
 
   private getSolanaWsUrl() {
     return String(process.env.SOLANA_WS_URL || "").trim();
@@ -252,7 +254,14 @@ export class MultichainLaunchpadScanner {
 
   private extractRaydiumInitializeMints(tx: Record<string, any> | null) {
     const message = (tx?.transaction?.message || {}) as Record<string, any>;
-    const instructions = Array.isArray(message?.instructions) ? message.instructions as Array<Record<string, any>> : [];
+    const topLevelInstructions = Array.isArray(message?.instructions) ? message.instructions as Array<Record<string, any>> : [];
+    const innerGroups = Array.isArray(tx?.meta?.innerInstructions)
+      ? tx!.meta.innerInstructions as Array<Record<string, any>>
+      : [];
+    const innerInstructions = innerGroups.flatMap((group) =>
+      Array.isArray(group?.instructions) ? group.instructions as Array<Record<string, any>> : [],
+    );
+    const instructions = [...topLevelInstructions, ...innerInstructions];
     const accountKeys = this.getTxAccountKeys(tx);
     const mints: string[] = [];
     const seen = new Set<string>();
@@ -276,11 +285,11 @@ export class MultichainLaunchpadScanner {
 
       const parsed = (instruction?.parsed || {}) as Record<string, any>;
       const parsedType = String(parsed?.type || "").toLowerCase();
-      // Some Raydium/CPMM txs are exposed as initialize2/initialize without explicit pool keyword.
-      if (!parsedType.includes("initialize")) continue;
+      const isInitLike = parsedType.includes("initialize") || parsedType.includes("create_pool") || parsedType.includes("createpool");
+      if (!isInitLike && parsedType) continue;
 
       const info = (parsed?.info || {}) as Record<string, any>;
-      for (const key of ["coinMint", "pcMint", "baseMint", "quoteMint", "tokenMint"]) {
+      for (const key of ["coinMint", "pcMint", "baseMint", "quoteMint", "tokenMint", "mintA", "mintB", "tokenMint0", "tokenMint1", "lpMint", "poolMint", "token0Mint", "token1Mint"]) {
         pushMint(info?.[key]);
       }
     }
@@ -288,16 +297,26 @@ export class MultichainLaunchpadScanner {
     // Fallback for txs where parser omits mint fields but logs indicate pool initialization.
     if (mints.length === 0) {
       const logs = Array.isArray(tx?.meta?.logMessages) ? tx!.meta.logMessages as Array<unknown> : [];
+      const hasRaydiumProgramLog = logs.some((line) => {
+        const text = String(line || "");
+        return RAYDIUM_PROGRAM_IDS.some((programId) => text.includes(programId));
+      });
       const hasInitializePoolLog = logs.some((line) => {
         const text = String(line || "").toLowerCase();
-        return text.includes("initialize") && text.includes("pool");
+        return text.includes("initialize") || text.includes("create_pool") || text.includes("create pool") || text.includes("init_pc_amount");
       });
 
-      if (hasInitializePoolLog) {
+      if (hasRaydiumProgramLog && hasInitializePoolLog) {
         const postTokenBalances = Array.isArray(tx?.meta?.postTokenBalances)
           ? tx!.meta.postTokenBalances as Array<Record<string, any>>
           : [];
+        const preTokenBalances = Array.isArray(tx?.meta?.preTokenBalances)
+          ? tx!.meta.preTokenBalances as Array<Record<string, any>>
+          : [];
         for (const row of postTokenBalances) {
+          pushMint(row?.mint);
+        }
+        for (const row of preTokenBalances) {
           pushMint(row?.mint);
         }
 
@@ -310,21 +329,60 @@ export class MultichainLaunchpadScanner {
     return mints;
   }
 
+  private isRaydiumInitializeTx(tx: Record<string, any> | null) {
+    const logs = Array.isArray(tx?.meta?.logMessages) ? tx!.meta.logMessages as Array<unknown> : [];
+    const hasRaydiumProgramLog = logs.some((line) => {
+      const text = String(line || "");
+      return RAYDIUM_PROGRAM_IDS.some((programId) => text.includes(programId));
+    });
+    const hasInitializeLikeLog = logs.some((line) => {
+      const text = String(line || "").toLowerCase();
+      return text.includes("initialize") || text.includes("create_pool") || text.includes("create pool") || text.includes("init_pc_amount");
+    });
+    return hasRaydiumProgramLog && hasInitializeLikeLog;
+  }
+
+  private getRaydiumTxDebugHints(tx: Record<string, any> | null) {
+    const logs = Array.isArray(tx?.meta?.logMessages) ? tx!.meta.logMessages as Array<unknown> : [];
+    const postTokenBalances = Array.isArray(tx?.meta?.postTokenBalances)
+      ? tx!.meta.postTokenBalances as Array<Record<string, any>>
+      : [];
+    const preTokenBalances = Array.isArray(tx?.meta?.preTokenBalances)
+      ? tx!.meta.preTokenBalances as Array<Record<string, any>>
+      : [];
+
+    return {
+      logSnippets: logs.map((line) => String(line || "")).filter((line) => {
+        const text = line.toLowerCase();
+        return text.includes("initialize") || text.includes("create_pool") || text.includes("init_pc_amount") || RAYDIUM_PROGRAM_IDS.some((programId) => line.includes(programId));
+      }).slice(0, 8),
+      postTokenBalanceMints: postTokenBalances.map((row) => String(row?.mint || "").trim()).filter((mint) => mint).slice(0, 8),
+      preTokenBalanceMints: preTokenBalances.map((row) => String(row?.mint || "").trim()).filter((mint) => mint).slice(0, 8),
+      accountKeys: this.getTxAccountKeys(tx).slice(0, 12),
+    };
+  }
+
   private async pollRaydiumPools() {
+    if (this.isRaydiumPolling) return;
+    this.isRaydiumPolling = true;
+
     try {
+      const signatureLimit = Math.max(10, Number(process.env.RAYDIUM_SIGNATURE_LIMIT || 30));
+      const txConcurrency = Math.max(5, Number(process.env.RAYDIUM_TX_PER_PROGRAM_LIMIT || 18));
+      const debugSampleLimit = Math.max(0, Number(process.env.RAYDIUM_DEBUG_SAMPLES || 8));
       let checkedSignatures = 0;
       let added = 0;
 
       for (const programId of RAYDIUM_PROGRAM_IDS) {
-        const signatures = await this.rpcCall("getSignaturesForAddress", [programId, { limit: 30 }]);
+        const signatures = await this.rpcCall("getSignaturesForAddress", [programId, { limit: signatureLimit }]);
         const rows = Array.isArray(signatures) ? signatures as Array<Record<string, any>> : [];
         checkedSignatures += rows.length;
+        const candidateSignatures = rows
+          .map((row) => String(row?.signature || "").trim())
+          .filter((signature) => !!signature && !this.seenRaydiumSignatures.has(signature))
+          .slice(0, txConcurrency);
 
-        for (const row of rows) {
-          const signature = String(row?.signature || "").trim();
-          if (!signature || this.seenRaydiumSignatures.has(signature)) continue;
-          this.seenRaydiumSignatures.set(signature, Date.now());
-
+        await Promise.all(candidateSignatures.map(async (signature) => {
           const tx = await this.rpcCall("getTransaction", [
             signature,
             {
@@ -333,12 +391,23 @@ export class MultichainLaunchpadScanner {
               commitment: "confirmed",
             },
           ]) as Record<string, any> | null;
+
           const mints = this.extractRaydiumInitializeMints(tx);
-          for (const mint of mints) {
-            this.enqueueDetectedMint(mint, "", signature, "raydium_pool");
-            added += 1;
+          if (mints.length > 0) {
+            for (const mint of mints) {
+              this.enqueueDetectedMint(mint, "", signature, "raydium_pool");
+              added += 1;
+            }
+          } else if (this.isRaydiumInitializeTx(tx) && this.raydiumDebugSamples < debugSampleLimit) {
+            this.raydiumDebugSamples += 1;
+            console.log("[Pipeline] Raydium init tx had zero extracted mints", JSON.stringify({
+              signature,
+              hints: this.getRaydiumTxDebugHints(tx),
+            }));
           }
-        }
+
+          this.seenRaydiumSignatures.set(signature, Date.now());
+        }));
       }
 
       if (added > 0) {
@@ -352,6 +421,8 @@ export class MultichainLaunchpadScanner {
       }
     } catch (error) {
       console.warn("[Pipeline] Raydium poll error", error instanceof Error ? error.message : String(error || "unknown_error"));
+    } finally {
+      this.isRaydiumPolling = false;
     }
   }
 
