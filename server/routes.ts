@@ -3387,10 +3387,13 @@ export async function registerRoutes(
   };
 
   const appendDoctorExecutionAudit = (entry: Record<string, any>) => {
+    const ownerUserId = String(doctorRuntime.ownerUserId || doctorActiveUserId || doctorCurrentCycleUserId || "").trim();
     doctorRuntime.executionAudit.unshift({
       id: `exec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       at: nowIso(),
       mode: doctorRuntime.execution.mode,
+      owner_user_id: ownerUserId || undefined,
+      user_id: ownerUserId || undefined,
       ...entry,
     });
     doctorRuntime.executionAudit = doctorRuntime.executionAudit.slice(0, 200);
@@ -4554,6 +4557,8 @@ export async function registerRoutes(
         pnl_pct: Number(pnlPct.toFixed(2)),
         pnl_usd: pnlUsd,
         execution_mode: doctorRuntime.execution.mode,
+        owner_user_id: scopedUserId,
+        user_id: scopedUserId,
         tx_hash: sellExecution.txHash,
         timestamp: nowIso(),
       });
@@ -5812,6 +5817,8 @@ export async function registerRoutes(
         size_pct: 100,
         notional_usd: Number((buyAmountSol * 160).toFixed(2)),
         execution_mode: doctorRuntime.execution.mode,
+        owner_user_id: scopedUserId,
+        user_id: scopedUserId,
         tx_hash: buyExecution.txHash,
         timestamp: nowIso(),
       });
@@ -5960,6 +5967,14 @@ export async function registerRoutes(
       statusUserId
       && String(doctorRuntime.ownerUserId || "").trim() === statusUserId,
     );
+    const isHistoryRowOwnedByStatusUser = (row: any) => {
+      const rowOwner = String((row as any)?.owner_user_id || (row as any)?.user_id || "").trim();
+      if (rowOwner) {
+        return rowOwner === statusUserId;
+      }
+      // Backward compatibility for older rows that were saved before owner tagging.
+      return runtimeBelongsToStatusUser;
+    };
     const runtimeWalletAddress = String(doctorRuntime.wallet.address || "").trim();
     const runtimeWalletBalanceSol = Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0));
     const walletSnapshot = runtimeBelongsToStatusUser
@@ -6063,6 +6078,7 @@ export async function registerRoutes(
     const nowMs = Date.now();
     const filteredDecisionJournal = doctorRuntime.decisionJournal
       .filter((row) => {
+        if (!isHistoryRowOwnedByStatusUser(row)) return false;
         const token = String((row as any)?.token || "").trim().toLowerCase();
         if (token === "xmoney" || token === "x-money") return false;
 
@@ -6075,6 +6091,14 @@ export async function registerRoutes(
         return nowMs - timestampMs <= decisionRetentionMs;
       })
       .slice(0, 60);
+
+    const filteredRecentTrades = doctorRuntime.recentTrades
+      .filter((row) => isHistoryRowOwnedByStatusUser(row))
+      .slice(0, 40);
+
+    const filteredExecutionAudit = doctorRuntime.executionAudit
+      .filter((row) => isHistoryRowOwnedByStatusUser(row))
+      .slice(0, 80);
 
     let statusPositions = doctorRuntime.positions.slice(0, 30);
     if (doctorRuntime.execution.mode === "live") {
@@ -6258,10 +6282,10 @@ export async function registerRoutes(
       positions: statusPositions,
       wallet_tokens: statusWalletTokens,
       wallet_transactions: statusWalletTransactions,
-      recent_trades: doctorRuntime.recentTrades.slice(0, 40),
+      recent_trades: filteredRecentTrades,
       decision_journal: filteredDecisionJournal,
       performance: doctorRuntime.performance.slice(0, 30),
-      execution_audit: doctorRuntime.executionAudit.slice(0, 80),
+      execution_audit: filteredExecutionAudit,
       sniper_logs: getDoctorSniperLogsForUser(statusUserId).slice(0, 80),
       discovery: {
         dexscreener_primary: true,
@@ -7128,6 +7152,8 @@ export async function registerRoutes(
       notional_usd: Number((buyAmount * expectedPriceUsd).toFixed(2)),
       tx_hash: (buyExecution as any).txHash,
       execution_mode: doctorRuntime.execution.mode,
+      owner_user_id: userId,
+      user_id: userId,
       timestamp: now,
     });
     markDoctorMintAsBought(contractAddress);
@@ -7249,6 +7275,8 @@ export async function registerRoutes(
       pnl_usd: pnlUsd,
       tx_hash: (sellExecution as any).txHash,
       execution_mode: doctorRuntime.execution.mode,
+      owner_user_id: userId,
+      user_id: userId,
       timestamp: now,
     });
 
