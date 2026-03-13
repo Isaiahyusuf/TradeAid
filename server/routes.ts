@@ -1863,12 +1863,13 @@ export async function registerRoutes(
   const appendDoctorSniperLog = (entry: Record<string, any>, userId?: string) => {
     const scopedUserId = String(userId || doctorCurrentCycleUserId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
     if (!scopedUserId) return;
+    const presetFromEntry = normalizeDoctorSnipePreset((entry as any)?.preset);
 
     const existing = doctorSniperLogsByUser.get(scopedUserId) || [];
     existing.unshift({
       id: `sniper_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       at: nowIso(),
-      preset: getDoctorActiveSnipePreset(),
+      preset: presetFromEntry,
       user_id: scopedUserId,
       ...entry,
     });
@@ -3203,6 +3204,40 @@ export async function registerRoutes(
     }
   };
 
+  const ensureDoctorScopedRuntimeForExecution = async (userId: string) => {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) {
+      return {
+        ok: false,
+        reason: "missing_user_id",
+      } as const;
+    }
+
+    const activeCycleUserId = String(doctorCurrentCycleUserId || "").trim();
+    if (activeCycleUserId && activeCycleUserId !== normalizedUserId) {
+      return {
+        ok: false,
+        reason: "another_user_cycle_active",
+      } as const;
+    }
+
+    if (String(doctorRuntime.ownerUserId || "").trim() !== normalizedUserId) {
+      await loadDoctorRuntimeForUser(normalizedUserId);
+    }
+
+    if (String(doctorRuntime.ownerUserId || "").trim() !== normalizedUserId) {
+      return {
+        ok: false,
+        reason: "runtime_owner_mismatch",
+      } as const;
+    }
+
+    return {
+      ok: true,
+      reason: "ok",
+    } as const;
+  };
+
   const executeDoctorOrder = async (params: {
     action: "buy" | "sell";
     symbol: string;
@@ -3238,6 +3273,30 @@ export async function registerRoutes(
     const liveEnabled = isDoctorLiveTradingEnabled();
     const liveOnly = isDoctorLiveOnlyMode();
     const scopedUserId = String(params.userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
+    const runtimeScope = await ensureDoctorScopedRuntimeForExecution(scopedUserId);
+    if (!runtimeScope.ok) {
+      appendDoctorExecutionAudit({
+        action: params.action,
+        symbol: params.symbol,
+        mint: params.mint,
+        amount_sol: params.amountSol,
+        expected_price_usd: params.expectedPriceUsd,
+        expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+        trigger: params.trigger,
+        reason: params.reason,
+        status: "blocked",
+        block_reason: runtimeScope.reason,
+      });
+      return {
+        executed: false,
+        status: "blocked",
+        reason: runtimeScope.reason,
+      } as const;
+    }
+    const orderControls = { ...doctorRuntime.controls };
+    const orderExecutionMode = String(doctorRuntime.execution.mode || "live").trim().toLowerCase() === "paper"
+      ? "paper"
+      : "live";
 
     if (params.trigger === "auto") {
       const autoEnabled = await isDoctorAutoTradingEnabledForUser(scopedUserId);
@@ -3265,7 +3324,7 @@ export async function registerRoutes(
     const liveCredentials = await getDoctorLiveWalletCredentials(scopedUserId || undefined);
     const hasLiveCredentials = Boolean(String(liveCredentials.walletPublicKey || "").trim())
       && Boolean(String(liveCredentials.walletPrivateKey || "").trim());
-    const mode = (liveOnly || doctorRuntime.execution.mode === "live" || hasLiveCredentials) ? "live" : "paper";
+    const mode = (liveOnly || orderExecutionMode === "live" || hasLiveCredentials) ? "live" : "paper";
 
     if (mode === "live") {
       if (!liveEnabled) {
@@ -3289,7 +3348,7 @@ export async function registerRoutes(
       }
 
       const { walletPublicKey, walletPrivateKey } = liveCredentials;
-      const slippageBps = Math.max(25, Math.trunc(Number(doctorRuntime.controls.max_slippage_pct || 1) * 100));
+      const slippageBps = Math.max(25, Math.trunc(Number(orderControls.max_slippage_pct || 1) * 100));
       const tradeBaseMint = [SOL_MINT, BONK_MINT].includes(String(params.baseMint || "").trim())
         ? String(params.baseMint || "").trim()
         : getDoctorTradeBaseAssetMint();
@@ -3408,9 +3467,9 @@ export async function registerRoutes(
 
           const configuredSellFraction = Math.max(
             1,
-            Math.min(100, Number((params.sellFractionPct ?? doctorRuntime.controls.live_sell_fraction_pct) || 100)),
+            Math.min(100, Number((params.sellFractionPct ?? orderControls.live_sell_fraction_pct) || 100)),
           );
-          const maxSellNotionalUsd = Math.max(1, Number(doctorRuntime.controls.max_sell_notional_usd || Number.POSITIVE_INFINITY));
+          const maxSellNotionalUsd = Math.max(1, Number(orderControls.max_sell_notional_usd || Number.POSITIVE_INFINITY));
           const expectedNotionalUsd = Math.max(0, Number(params.amountSol * params.expectedPriceUsd || 0));
           const notionalFractionCap = Number.isFinite(maxSellNotionalUsd) && expectedNotionalUsd > 0
             ? Math.min(1, maxSellNotionalUsd / expectedNotionalUsd)
@@ -3572,8 +3631,8 @@ export async function registerRoutes(
       }
 
       try {
-        const feeBufferSol = Math.max(0, Number(doctorRuntime.controls.min_wallet_fee_buffer_sol || 0));
-        const estimatedFeeSol = Number((Math.max(0.000005, Number(doctorRuntime.controls.gas_priority_lamports || 0) / 1_000_000_000) + 0.00002).toFixed(6));
+        const feeBufferSol = Math.max(0, Number(orderControls.min_wallet_fee_buffer_sol || 0));
+        const estimatedFeeSol = Number((Math.max(0.000005, Number(orderControls.gas_priority_lamports || 0) / 1_000_000_000) + 0.00002).toFixed(6));
         let effectiveAmountSol = Math.max(0, Number(params.amountSol || 0));
         if (tradeBaseMint === SOL_MINT) {
           const availableSol = Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0));
@@ -3894,6 +3953,11 @@ export async function registerRoutes(
   const executeDoctorCycle = async (trigger: "manual" | "auto" = "manual", userId?: string) => {
     doctorRuntime.lastRunAt = nowIso();
     const scopedUserId = String(userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
+    const runtimeScope = await ensureDoctorScopedRuntimeForExecution(scopedUserId);
+    if (!runtimeScope.ok) {
+      doctorRuntime.lastDecision = { action: "skip", reason: runtimeScope.reason, trigger, at: nowIso() };
+      return { executed: false, reason: runtimeScope.reason, trigger };
+    }
 
     await ensureDoctorOwnerAndWalletHydrated(scopedUserId);
     const liveCredentials = await getDoctorLiveWalletCredentials(scopedUserId);
@@ -6407,6 +6471,129 @@ export async function registerRoutes(
         executed: true,
         signature: (buyExecution as any).txHash,
         buy_amount_sol: buyAmount,
+      },
+    });
+  });
+
+  app.post("/api/doctor/direct-sell", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    await loadDoctorRuntimeForUser(userId);
+    await ensureDoctorLiveExecutionModeIfCapable(userId);
+
+    const contractAddress = String(req.body?.contract_address || req.body?.address || "").trim();
+    if (!contractAddress) {
+      return res.status(400).json({ result: { executed: false, reason: "contract_address_required" } });
+    }
+
+    const positionIndex = doctorRuntime.positions.findIndex((position) => String(position.address || "") === contractAddress);
+    if (positionIndex < 0) {
+      return res.json({ result: { executed: false, reason: "position_not_found" } });
+    }
+
+    const position = doctorRuntime.positions[positionIndex] as Record<string, any>;
+    const amountSol = Math.max(0, Number(position.amount_sol || 0));
+    if (amountSol <= 0) {
+      return res.json({ result: { executed: false, reason: "position_amount_zero" } });
+    }
+
+    const activeTokens = await getDoctorActiveTokens();
+    const candidate = activeTokens.find((item) => String(item.address || "") === contractAddress);
+    const expectedPriceUsd = resolveCurrentPriceUsd(candidate || position || {}, Number(req.body?.price_usd || position.current_price || position.entry_price || 0));
+    const sellFractionPct = Math.max(1, Math.min(100, Number(req.body?.sell_fraction_pct ?? doctorRuntime.controls.live_sell_fraction_pct ?? 100)));
+
+    const sellExecution = await executeDoctorOrder({
+      action: "sell",
+      symbol: String(position.symbol || "MANUAL").trim() || "MANUAL",
+      mint: contractAddress,
+      amountSol,
+      expectedPriceUsd,
+      reason: "manual_direct_sell",
+      trigger: "manual",
+      userId,
+      baseMint: String(position.base_mint || getDoctorTradeBaseAssetMint()),
+      sellFractionPct,
+    });
+
+    if (!sellExecution.executed) {
+      return res.json({
+        result: {
+          executed: false,
+          reason: String((sellExecution as any).reason || "manual_sell_failed"),
+        },
+      });
+    }
+
+    const now = nowIso();
+    const soldAmountSol = Math.max(0, Math.min(amountSol, Number((sellExecution as any).executedAmountSol || amountSol)));
+    const remainingAmountSol = Number((amountSol - soldAmountSol).toFixed(9));
+    const entryPriceUsd = Math.max(0, Number(position.entry_price || 0));
+    const pnlPct = entryPriceUsd > 0
+      ? Number((((expectedPriceUsd - entryPriceUsd) / entryPriceUsd) * 100).toFixed(2))
+      : 0;
+    const pnlUsd = Number(((soldAmountSol * expectedPriceUsd) - (soldAmountSol * entryPriceUsd)).toFixed(2));
+    const estimatedExitSol = entryPriceUsd > 0 && expectedPriceUsd > 0
+      ? soldAmountSol * (expectedPriceUsd / entryPriceUsd)
+      : soldAmountSol;
+
+    doctorRuntime.wallet.balanceSol = Number((Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0)) + Math.max(0, estimatedExitSol)).toFixed(6));
+    clampDoctorPaperBalance();
+
+    if (remainingAmountSol <= 0.000001) {
+      doctorRuntime.positions.splice(positionIndex, 1);
+    } else {
+      doctorRuntime.positions[positionIndex] = {
+        ...position,
+        amount_sol: remainingAmountSol,
+        current_price: expectedPriceUsd,
+        peak_price: Math.max(Number(position.peak_price || 0), expectedPriceUsd),
+        last_seen_at: now,
+        pnl_pct: pnlPct,
+      };
+    }
+
+    doctorRuntime.recentTrades.unshift({
+      token: String(position.symbol || "MANUAL"),
+      address: contractAddress,
+      action: "SELL",
+      status: "EXECUTED",
+      reason: "manual_direct_sell",
+      confidence: Number(position.confidence || 0),
+      liquidity: Number(position.liquidity || 0),
+      volume_5m: Number((candidate as any)?.volume_5m || 0),
+      size_pct: Number((soldAmountSol / Math.max(0.000001, amountSol) * 100).toFixed(2)),
+      notional_usd: Number((soldAmountSol * expectedPriceUsd).toFixed(2)),
+      pnl_pct: pnlPct,
+      pnl_usd: pnlUsd,
+      tx_hash: (sellExecution as any).txHash,
+      execution_mode: doctorRuntime.execution.mode,
+      timestamp: now,
+    });
+
+    doctorRuntime.decisionJournal.unshift({
+      token: String(position.symbol || "MANUAL"),
+      address: contractAddress,
+      decision: "sell",
+      reason: "manual_direct_sell",
+      confidence: Number(position.confidence || 0),
+      size_pct: Number((soldAmountSol / Math.max(0.000001, amountSol) * 100).toFixed(2)),
+      strategy_mode: "manual",
+      timestamp: now,
+    });
+
+    doctorRuntime.recentTrades = doctorRuntime.recentTrades.slice(0, 50);
+    doctorRuntime.decisionJournal = doctorRuntime.decisionJournal.slice(0, 80);
+    await saveDoctorWalletForUser(userId);
+    await persistDoctorRuntime(userId);
+
+    return res.json({
+      result: {
+        executed: true,
+        signature: (sellExecution as any).txHash,
+        sold_amount_sol: soldAmountSol,
+        remaining_amount_sol: remainingAmountSol,
       },
     });
   });

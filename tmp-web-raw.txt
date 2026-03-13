@@ -1,0 +1,139 @@
+{"message":"Starting Container","timestamp":"2026-03-12T16:19:35.207337952Z","level":"info"}
+{"level":"error","timestamp":"2026-03-12T16:19:35.635764772Z","message":"bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)"}
+{"level":"info","timestamp":"2026-03-12T16:19:35.635770027Z","message":"[TelegramBot] Webhook route registered at /api/telegram/webhook"}
+{"level":"info","timestamp":"2026-03-12T16:19:35.635775269Z","message":"Replit Auth skipped - not in Replit environment"}
+{"level":"info","timestamp":"2026-03-12T16:19:35.650276811Z","message":"[Scanner] Starting background scanner (interval: 20s)"}
+{"message":"[Scanner] Discovering hot tokens on solana...","level":"info","timestamp":"2026-03-12T16:19:35.650283178Z"}
+{"timestamp":"2026-03-12T16:19:35.651895808Z","level":"info","message":"[Multichain] Starting multi-chain launchpad scan..."}
+{"level":"info","timestamp":"2026-03-12T16:19:35.653637251Z","message":"[Multichain] Scanning Pump.fun..."}
+{"level":"info","message":"[Multichain] Scanning solana via DexScreener...","timestamp":"2026-03-12T16:19:35.655137901Z"}
+{"firstDelayMs":20000,"message":"","event":"apify.workflow.scheduler_started","intervalMs":300000,"level":"info","ts":"2026-03-12T16:19:35.656Z","timestamp":"2026-03-12T16:19:35.657080021Z"}
+{"message":"4:19:35 PM [express] serving on 0.0.0.0:8000","timestamp":"2026-03-12T16:19:35.700660489Z","level":"info"}
+{"timestamp":"2026-03-12T16:19:35.752828950Z","message":"[Multichain] Pump.fun API not accessible, using DexScreener fallback","level":"info"}
+{"message":"[TelegramBot] Webhook mode enabled: https://tradeaid.ink/api/telegram/webhook","level":"info","timestamp":"2026-03-12T16:19:35.786588868Z"}
+{"level":"info","timestamp":"2026-03-12T16:19:35.788496315Z","message":"[TelegramBot] TradeAid Telegram bot started."}
+{"message":"4:19:36 PM [express] GET /api/system/health 200 in 23ms :: {\"ok\":true,\"service\":\"tradeaid-node-backend\",\"time\":\"2026-03-12T16:19:36.228Z\",\"uptime_seconds\":1,\"token_feed\":{\"scanned_count\":20,\"fresh_apify_configured\":true},\"api_metrics\":{\"requests_total\":0,\"api_requests\":0,\"api_4xx\":0,\"api_5xx\":0,\"last_request_at\":null,\"last_error_at\":null},\"bridge\":{\"configured\":true,\"target\":\"https://api.tradeaid.ink\",\"fallback_count\":0,\"empty_response_count\":0,\"error_count\":0},\"doctortrade\":{\"local_fallback_enabled\":true},\"auto_trade\":{\"enabled\":false,\"score_threshold\":80}}","timestamp":"2026-03-12T16:19:36.238825886Z","level":"info"}
+{"level":"info","message":"[Multichain] Found 28 tokens across all chains","timestamp":"2026-03-12T16:19:38.663387034Z"}
+{"timestamp":"2026-03-12T16:19:38.663398325Z","level":"info","message":"[Multichain] 19 tokens passed safety checks"}
+{"event":"pump_listener.token_ingested","transactionSignature":null,"liquidityUsd":17632.86,"timestamp":"2026-03-12T16:19:38.663406308Z","volumeUsd":7456.07,"level":"info","message":"","marketCapUsd":51129,"symbol":"WARMOGGING","creatorWallet":null,"ts":"2026-03-12T16:19:38.629Z","mintAddress":"BcP2RqMUoukZWcNU78B2We2dXWyyuzAuB28vthJqpump","pairAgeMinutes":4.0771,"source":"multichain_pump_listener_fallback"}
+{"timestamp":"2026-03-12T16:19:38.663439855Z","level":"info","message":"[Multichain] Found 28 tokens from solana"}
+{"ts":"2026-03-12T16:19:38.662Z","mintAddress":"7d7FCRApCTUBLNHRRDKJ8yvoMdaHn7MkFMwvxohWpump","timestamp":"2026-03-12T16:19:38.664053892Z","message":"","symbol":"WEB0","liquidityUsd":11411.45,"marketCapUsd":21198,"volumeUsd":112380.69,"level":"info","pairAgeMinutes":8.6277,"transactionSignature":null,"event":"pump_listener.token_ingested","source":"multichain_pump_listener_fallback","creatorWallet":null}
+{"creatorWallet":null,"timestamp":"2026-03-12T16:19:38.715339366Z","volumeUsd":155846.38,"level":"info","symbol":"CAT","event":"pump_listener.token_ingested","ts":"2026-03-12T16:19:38.710Z","pairAgeMinutes":28.1118,"source":"multichain_pump_listener_fallback","mintAddress":"4vncMi4j819n9ndBZXwVXaVHPN8oTgebtEPWcaEipump","liquidityUsd":24417.43,"transactionSignature":null,"message":"","marketCapUsd":95406}
+{"ts":"2026-03-12T16:19:38.798Z","mintAddress":"6YhLMnm1QHjgyvfqqcXteza8d5rwR8BZHqRUPVmHpump","symbol":"TAKASHI","creatorWallet":null,"source":"multichain_pump_listener_fallback","transactionSignature":null,"liquidityUsd":11730.92,"volumeUsd":35618.56,"message":"","timestamp":"2026-03-12T16:19:38.804577246Z","marketCapUsd":22583,"level":"info","event":"pump_listener.token_ingested","pairAgeMinutes":23.6966}
+{"creatorWallet":null,"symbol":"JELLYBEAN","transactionSignature":null,"timestamp":"2026-03-12T16:19:38.830416570Z","message":"","ts":"2026-03-12T16:19:38.828Z","event":"pump_listener.token_ingested","source":"multichain_pump_listener_fallback","mintAddress":"wwzqJcBxRUDfSZQQv3R4WckkNzpSFjNHkRuzZFcJJZt","liquidityUsd":21256.08,"pairAgeMinutes":53.7305,"marketCapUsd":69024,"volumeUsd":434994.57,"level":"info"}
+{"source":"multichain_pump_listener_fallback","message":"","event":"pump_listener.token_ingested","transactionSignature":null,"timestamp":"2026-03-12T16:19:38.904064555Z","marketCapUsd":82485,"symbol":"TOKEN","pairAgeMinutes":45.3149,"volumeUsd":224562.26,"ts":"2026-03-12T16:19:38.896Z","mintAddress":"8W62qtMcWTYZjswcP2RmAa8NEfekBLTusuvTx7jhpump","level":"info","liquidityUsd":22868.09,"creatorWallet":null}
+{"level":"info","message":"[Scanner] Found 25 hot/new token candidates","timestamp":"2026-03-12T16:19:39.641929996Z"}
+{"level":"info","message":"[Scanner] Discovering hot tokens on solana...","timestamp":"2026-03-12T16:19:59.401677867Z"}
+{"message":"","event":"apify.workflow.start_failed","level":"error","timestamp":"2026-03-12T16:19:59.401684228Z","body":"{\\n  \\\"error\\\": {\\n    \\\"type\\\": \\\"platform-feature-disabled\\\",\\n    \\\"message\\\": \\\"Monthly usage hard limit exceeded\\\"\\n  }\\n}","ts":"2026-03-12T16:19:56.024Z","status":403,"actorId":"zGQhqaJtjexiRE5JA"}
+{"resumeAt":"2026-03-13T04:19:56.024Z","status":403,"cooldownMs":43200000,"timestamp":"2026-03-12T16:19:59.401689554Z","level":"warn","message":"","event":"apify.workflow.paused_quota","ts":"2026-03-12T16:19:56.024Z"}
+{"message":"[Scanner] Found 24 hot/new token candidates","level":"info","timestamp":"2026-03-12T16:19:59.401697058Z"}
+{"level":"info","message":"[Scanner] New token: ANTON (Score: 40)","timestamp":"2026-03-12T16:19:59.821082412Z"}
+{"event":"apify.fresh_tokens_fetched","message":"","actorId":"zGQhqaJtjexiRE5JA","runId":"bPfpJtgq9K48MHFmP","timestamp":"2026-03-12T16:20:02.211682311Z","totalItems":10,"freshTokenCount":10,"ts":"2026-03-12T16:20:02.210Z","datasetId":"Parm7WfcOYSK9TmHT","level":"info"}
+{"actorId":"zGQhqaJtjexiRE5JA","freshTokenCount":10,"runId":"bPfpJtgq9K48MHFmP","event":"apify.fresh_tokens_fetched","timestamp":"2026-03-12T16:20:08.420273236Z","level":"info","datasetId":"Parm7WfcOYSK9TmHT","ts":"2026-03-12T16:20:08.410Z","totalItems":10,"message":""}
+{"level":"info","timestamp":"2026-03-12T16:20:13.480807414Z","message":"","event":"apify.fresh_tokens_fetched","runId":"bPfpJtgq9K48MHFmP","totalItems":10,"actorId":"zGQhqaJtjexiRE5JA","ts":"2026-03-12T16:20:13.473Z","freshTokenCount":10,"datasetId":"Parm7WfcOYSK9TmHT"}
+{"message":"[Scanner] Discovering hot tokens on solana...","timestamp":"2026-03-12T16:20:15.841001630Z","level":"info"}
+{"level":"info","timestamp":"2026-03-12T16:20:18.942724640Z","message":"[Scanner] Found 24 hot/new token candidates"}
+{"message":"","event":"apify.fresh_tokens_fetched","runId":"bPfpJtgq9K48MHFmP","timestamp":"2026-03-12T16:20:19.842394324Z","datasetId":"Parm7WfcOYSK9TmHT","totalItems":10,"ts":"2026-03-12T16:20:19.640Z","actorId":"zGQhqaJtjexiRE5JA","level":"info","freshTokenCount":10}
+{"event":"apify.fresh_tokens_fetched","ts":"2026-03-12T16:20:26.074Z","freshTokenCount":10,"message":"","runId":"bPfpJtgq9K48MHFmP","actorId":"zGQhqaJtjexiRE5JA","datasetId":"Parm7WfcOYSK9TmHT","totalItems":10,"level":"info","timestamp":"2026-03-12T16:20:26.076403366Z"}
+{"freshTokenCount":10,"actorId":"zGQhqaJtjexiRE5JA","timestamp":"2026-03-12T16:20:31.368435107Z","runId":"bPfpJtgq9K48MHFmP","ts":"2026-03-12T16:20:31.365Z","level":"info","message":"","event":"apify.fresh_tokens_fetched","datasetId":"Parm7WfcOYSK9TmHT","totalItems":10}
+{"level":"info","message":"[Scanner] Discovering hot tokens on solana...","timestamp":"2026-03-12T16:20:35.906335807Z"}
+{"timestamp":"2026-03-12T16:20:35.906348310Z","level":"info","message":"[Multichain] Starting multi-chain launchpad scan..."}
+{"message":"[Multichain] Scanning Pump.fun...","timestamp":"2026-03-12T16:20:35.906354634Z","level":"info"}
+{"level":"info","timestamp":"2026-03-12T16:20:35.906359388Z","message":"[Multichain] Scanning solana via DexScreener..."}
+{"message":"[Multichain] Pump.fun API not accessible, using DexScreener fallback","timestamp":"2026-03-12T16:20:35.906364658Z","level":"info"}
+{"timestamp":"2026-03-12T16:20:36.386107360Z","level":"info","message":"","runId":"bPfpJtgq9K48MHFmP","totalItems":10,"freshTokenCount":10,"actorId":"zGQhqaJtjexiRE5JA","datasetId":"Parm7WfcOYSK9TmHT","ts":"2026-03-12T16:20:36.381Z","event":"apify.fresh_tokens_fetched"}
+{"timestamp":"2026-03-12T16:20:38.559532930Z","level":"info","message":"[Multichain] Found 28 tokens from solana"}
+{"level":"info","message":"[Multichain] Found 28 tokens across all chains","timestamp":"2026-03-12T16:20:38.559541472Z"}
+{"message":"[Multichain] 20 tokens passed safety checks","timestamp":"2026-03-12T16:20:38.559546950Z","level":"info"}
+{"level":"info","timestamp":"2026-03-12T16:20:38.939462430Z","message":"[Scanner] Found 24 hot/new token candidates"}
+{"timestamp":"2026-03-12T16:20:43.145283305Z","ts":"2026-03-12T16:20:43.142Z","message":"","freshTokenCount":10,"actorId":"zGQhqaJtjexiRE5JA","level":"info","runId":"bPfpJtgq9K48MHFmP","datasetId":"Parm7WfcOYSK9TmHT","totalItems":10,"event":"apify.fresh_tokens_fetched"}
+{"runId":"bPfpJtgq9K48MHFmP","freshTokenCount":10,"event":"apify.fresh_tokens_fetched","datasetId":"Parm7WfcOYSK9TmHT","message":"","actorId":"zGQhqaJtjexiRE5JA","ts":"2026-03-12T16:20:47.956Z","totalItems":10,"level":"info","timestamp":"2026-03-12T16:20:47.990441454Z"}
+{"timestamp":"2026-03-12T16:20:53.105830110Z","totalItems":10,"freshTokenCount":10,"ts":"2026-03-12T16:20:53.104Z","actorId":"zGQhqaJtjexiRE5JA","runId":"bPfpJtgq9K48MHFmP","level":"info","datasetId":"Parm7WfcOYSK9TmHT","event":"apify.fresh_tokens_fetched","message":""}
+{"message":"[Scanner] Discovering hot tokens on solana...","level":"info","timestamp":"2026-03-12T16:20:55.646025750Z"}
+{"level":"info","message":"[Scanner] Found 24 hot/new token candidates","timestamp":"2026-03-12T16:20:59.037964352Z"}
+{"actorId":"zGQhqaJtjexiRE5JA","timestamp":"2026-03-12T16:20:59.387760627Z","ts":"2026-03-12T16:20:59.377Z","event":"apify.fresh_tokens_fetched","datasetId":"Parm7WfcOYSK9TmHT","freshTokenCount":10,"totalItems":10,"message":"","level":"info","runId":"bPfpJtgq9K48MHFmP"}
+{"timestamp":"2026-03-12T16:21:06.559725772Z","freshTokenCount":10,"message":"","runId":"bPfpJtgq9K48MHFmP","ts":"2026-03-12T16:21:06.537Z","datasetId":"Parm7WfcOYSK9TmHT","event":"apify.fresh_tokens_fetched","totalItems":10,"actorId":"zGQhqaJtjexiRE5JA","level":"info"}
+{"level":"info","timestamp":"2026-03-12T16:21:13.382653997Z","totalItems":10,"freshTokenCount":10,"ts":"2026-03-12T16:21:13.376Z","message":"","actorId":"zGQhqaJtjexiRE5JA","event":"apify.fresh_tokens_fetched","datasetId":"Parm7WfcOYSK9TmHT","runId":"bPfpJtgq9K48MHFmP"}
+{"level":"info","message":"[Scanner] Discovering hot tokens on solana...","timestamp":"2026-03-12T16:21:15.646386700Z"}
+{"message":"[Scanner] Found 24 hot/new token candidates","timestamp":"2026-03-12T16:21:19.152188930Z","level":"info"}
+{"event":"apify.fresh_tokens_fetched","message":"","runId":"bPfpJtgq9K48MHFmP","datasetId":"Parm7WfcOYSK9TmHT","ts":"2026-03-12T16:21:20.237Z","freshTokenCount":10,"actorId":"zGQhqaJtjexiRE5JA","timestamp":"2026-03-12T16:21:20.241751906Z","level":"info","totalItems":10}
+{"runId":"bPfpJtgq9K48MHFmP","totalItems":10,"actorId":"zGQhqaJtjexiRE5JA","message":"","level":"info","freshTokenCount":10,"datasetId":"Parm7WfcOYSK9TmHT","timestamp":"2026-03-12T16:21:27.826239919Z","event":"apify.fresh_tokens_fetched","ts":"2026-03-12T16:21:27.790Z"}
+{"timestamp":"2026-03-12T16:21:35.647094904Z","message":"[Scanner] Discovering hot tokens on solana...","level":"info"}
+{"timestamp":"2026-03-12T16:21:35.654012534Z","message":"[Multichain] Starting multi-chain launchpad scan...","level":"info"}
+{"message":"[Multichain] Scanning Pump.fun...","timestamp":"2026-03-12T16:21:35.654020565Z","level":"info"}
+{"message":"[Multichain] Scanning solana via DexScreener...","level":"info","timestamp":"2026-03-12T16:21:35.654025298Z"}
+{"timestamp":"2026-03-12T16:21:35.713559439Z","level":"info","message":"[Multichain] Pump.fun API not accessible, using DexScreener fallback"}
+{"message":"","freshTokenCount":10,"actorId":"zGQhqaJtjexiRE5JA","timestamp":"2026-03-12T16:21:37.618567433Z","ts":"2026-03-12T16:21:37.602Z","runId":"bPfpJtgq9K48MHFmP","event":"apify.fresh_tokens_fetched","totalItems":10,"datasetId":"Parm7WfcOYSK9TmHT","level":"info"}
+{"level":"info","timestamp":"2026-03-12T16:21:38.657398873Z","message":"[Multichain] Found 28 tokens from solana"}
+{"timestamp":"2026-03-12T16:21:38.657407890Z","message":"[Multichain] Found 28 tokens across all chains","level":"info"}
+{"level":"info","message":"[Multichain] 20 tokens passed safety checks","timestamp":"2026-03-12T16:21:38.657415730Z"}
+{"message":"[Scanner] Found 24 hot/new token candidates","level":"info","timestamp":"2026-03-12T16:21:39.386106535Z"}
+{"freshTokenCount":10,"message":"","ts":"2026-03-12T16:21:42.864Z","datasetId":"Parm7WfcOYSK9TmHT","timestamp":"2026-03-12T16:21:42.870937888Z","level":"info","runId":"bPfpJtgq9K48MHFmP","totalItems":10,"event":"apify.fresh_tokens_fetched","actorId":"zGQhqaJtjexiRE5JA"}
+{"datasetId":"Parm7WfcOYSK9TmHT","actorId":"zGQhqaJtjexiRE5JA","freshTokenCount":10,"level":"info","totalItems":10,"message":"","ts":"2026-03-12T16:21:48.632Z","event":"apify.fresh_tokens_fetched","runId":"bPfpJtgq9K48MHFmP","timestamp":"2026-03-12T16:21:48.651997204Z"}
+{"ts":"2026-03-12T16:21:53.792Z","freshTokenCount":10,"runId":"bPfpJtgq9K48MHFmP","message":"","actorId":"zGQhqaJtjexiRE5JA","event":"apify.fresh_tokens_fetched","datasetId":"Parm7WfcOYSK9TmHT","timestamp":"2026-03-12T16:21:53.794238304Z","level":"info","totalItems":10}
+{"timestamp":"2026-03-12T16:21:55.646178468Z","message":"[Scanner] Discovering hot tokens on solana...","level":"info"}
+{"message":"[Scanner] Found 24 hot/new token candidates","timestamp":"2026-03-12T16:21:59.004084705Z","level":"info"}
+{"runId":"bPfpJtgq9K48MHFmP","ts":"2026-03-12T16:22:01.232Z","freshTokenCount":10,"event":"apify.fresh_tokens_fetched","timestamp":"2026-03-12T16:22:01.547589407Z","actorId":"zGQhqaJtjexiRE5JA","totalItems":10,"message":"","level":"info","datasetId":"Parm7WfcOYSK9TmHT"}
+{"timestamp":"2026-03-12T16:22:06.630978286Z","ts":"2026-03-12T16:22:06.627Z","runId":"bPfpJtgq9K48MHFmP","datasetId":"Parm7WfcOYSK9TmHT","totalItems":10,"freshTokenCount":10,"level":"info","actorId":"zGQhqaJtjexiRE5JA","event":"apify.fresh_tokens_fetched","message":""}
+{"totalItems":10,"freshTokenCount":10,"event":"apify.fresh_tokens_fetched","level":"info","datasetId":"Parm7WfcOYSK9TmHT","actorId":"zGQhqaJtjexiRE5JA","ts":"2026-03-12T16:22:12.296Z","timestamp":"2026-03-12T16:22:12.298403509Z","runId":"bPfpJtgq9K48MHFmP","message":""}
+{"level":"info","timestamp":"2026-03-12T16:22:15.655358872Z","message":"[Scanner] Discovering hot tokens on solana..."}
+{"totalItems":10,"level":"info","freshTokenCount":10,"runId":"bPfpJtgq9K48MHFmP","timestamp":"2026-03-12T16:22:18.106719571Z","message":"","datasetId":"Parm7WfcOYSK9TmHT","event":"apify.fresh_tokens_fetched","actorId":"zGQhqaJtjexiRE5JA","ts":"2026-03-12T16:22:18.089Z"}
+{"message":"[Scanner] Found 24 hot/new token candidates","timestamp":"2026-03-12T16:22:18.920000597Z","level":"info"}
+{"message":"","totalItems":10,"actorId":"zGQhqaJtjexiRE5JA","datasetId":"Parm7WfcOYSK9TmHT","timestamp":"2026-03-12T16:22:23.825494663Z","level":"info","runId":"bPfpJtgq9K48MHFmP","event":"apify.fresh_tokens_fetched","ts":"2026-03-12T16:22:23.820Z","freshTokenCount":10}
+{"ts":"2026-03-12T16:22:29.401Z","datasetId":"Parm7WfcOYSK9TmHT","runId":"bPfpJtgq9K48MHFmP","totalItems":10,"timestamp":"2026-03-12T16:22:29.426396574Z","freshTokenCount":10,"event":"apify.fresh_tokens_fetched","level":"info","actorId":"zGQhqaJtjexiRE5JA","message":""}
+{"message":"[Multichain] Scanning Pump.fun...","timestamp":"2026-03-12T16:22:35.840223388Z","level":"info"}
+{"timestamp":"2026-03-12T16:22:35.840235550Z","level":"info","message":"[Multichain] Scanning solana via DexScreener..."}
+{"timestamp":"2026-03-12T16:22:35.840243610Z","level":"info","message":"[Multichain] Pump.fun API not accessible, using DexScreener fallback"}
+{"timestamp":"2026-03-12T16:22:35.840283169Z","level":"info","message":"[Scanner] Discovering hot tokens on solana..."}
+{"timestamp":"2026-03-12T16:22:35.840290210Z","message":"[Multichain] Starting multi-chain launchpad scan...","level":"info"}
+{"level":"info","actorId":"zGQhqaJtjexiRE5JA","ts":"2026-03-12T16:22:35.852Z","message":"","timestamp":"2026-03-12T16:22:35.859678846Z","totalItems":10,"datasetId":"Parm7WfcOYSK9TmHT","event":"apify.fresh_tokens_fetched","freshTokenCount":10,"runId":"bPfpJtgq9K48MHFmP"}
+{"message":"[Multichain] Found 28 tokens from solana","timestamp":"2026-03-12T16:22:38.534314181Z","level":"info"}
+{"message":"[Multichain] Found 28 tokens across all chains","level":"info","timestamp":"2026-03-12T16:22:38.534321782Z"}
+{"timestamp":"2026-03-12T16:22:38.534326285Z","level":"info","message":"[Multichain] 20 tokens passed safety checks"}
+{"message":"[Scanner] Found 24 hot/new token candidates","timestamp":"2026-03-12T16:22:38.902282156Z","level":"info"}
+{"runId":"bPfpJtgq9K48MHFmP","message":"","freshTokenCount":10,"actorId":"zGQhqaJtjexiRE5JA","ts":"2026-03-12T16:22:43.687Z","totalItems":10,"timestamp":"2026-03-12T16:22:43.903494745Z","datasetId":"Parm7WfcOYSK9TmHT","level":"info","event":"apify.fresh_tokens_fetched"}
+{"event":"apify.fresh_tokens_fetched","datasetId":"Parm7WfcOYSK9TmHT","totalItems":10,"actorId":"zGQhqaJtjexiRE5JA","runId":"bPfpJtgq9K48MHFmP","timestamp":"2026-03-12T16:22:52.633308028Z","ts":"2026-03-12T16:22:52.624Z","freshTokenCount":10,"level":"info","message":""}
+{"timestamp":"2026-03-12T16:22:55.652643579Z","level":"info","message":"[Scanner] Discovering hot tokens on solana..."}
+{"timestamp":"2026-03-12T16:22:59.043800350Z","message":"[Scanner] Found 24 hot/new token candidates","level":"info"}
+{"ts":"2026-03-12T16:23:01.431Z","message":"","freshTokenCount":10,"level":"info","actorId":"zGQhqaJtjexiRE5JA","runId":"bPfpJtgq9K48MHFmP","event":"apify.fresh_tokens_fetched","datasetId":"Parm7WfcOYSK9TmHT","totalItems":10,"timestamp":"2026-03-12T16:23:01.433736698Z"}
+{"totalItems":10,"datasetId":"Parm7WfcOYSK9TmHT","ts":"2026-03-12T16:23:10.143Z","level":"info","timestamp":"2026-03-12T16:23:10.154707751Z","event":"apify.fresh_tokens_fetched","message":"","actorId":"zGQhqaJtjexiRE5JA","runId":"bPfpJtgq9K48MHFmP","freshTokenCount":10}
+{"timestamp":"2026-03-12T16:23:15.651635423Z","level":"info","message":"[Scanner] Discovering hot tokens on solana..."}
+{"event":"apify.fresh_tokens_fetched","datasetId":"Parm7WfcOYSK9TmHT","totalItems":10,"runId":"bPfpJtgq9K48MHFmP","level":"info","message":"","ts":"2026-03-12T16:23:18.154Z","timestamp":"2026-03-12T16:23:18.255747962Z","freshTokenCount":10,"actorId":"zGQhqaJtjexiRE5JA"}
+{"timestamp":"2026-03-12T16:23:19.293709980Z","level":"info","message":"[Scanner] Found 24 hot/new token candidates"}
+{"actorId":"zGQhqaJtjexiRE5JA","datasetId":"Parm7WfcOYSK9TmHT","level":"info","timestamp":"2026-03-12T16:23:27.332948063Z","totalItems":10,"runId":"bPfpJtgq9K48MHFmP","event":"apify.fresh_tokens_fetched","message":"","ts":"2026-03-12T16:23:27.025Z","freshTokenCount":10}
+{"freshTokenCount":10,"datasetId":"Parm7WfcOYSK9TmHT","runId":"bPfpJtgq9K48MHFmP","totalItems":10,"timestamp":"2026-03-12T16:23:35.461437610Z","ts":"2026-03-12T16:23:35.459Z","message":"","event":"apify.fresh_tokens_fetched","actorId":"zGQhqaJtjexiRE5JA","level":"info"}
+{"message":"[Scanner] Discovering hot tokens on solana...","level":"info","timestamp":"2026-03-12T16:23:35.664121329Z"}
+{"message":"[Multichain] Starting multi-chain launchpad scan...","level":"info","timestamp":"2026-03-12T16:23:35.664128041Z"}
+{"level":"info","timestamp":"2026-03-12T16:23:35.664133198Z","message":"[Multichain] Scanning Pump.fun..."}
+{"level":"info","message":"[Multichain] Scanning solana via DexScreener...","timestamp":"2026-03-12T16:23:35.664137171Z"}
+{"level":"info","timestamp":"2026-03-12T16:23:35.744607149Z","message":"[Multichain] Pump.fun API not accessible, using DexScreener fallback"}
+{"timestamp":"2026-03-12T16:23:38.693796312Z","message":"[Multichain] Found 28 tokens from solana","level":"info"}
+{"level":"info","timestamp":"2026-03-12T16:23:38.693801980Z","message":"[Multichain] Found 28 tokens across all chains"}
+{"message":"[Multichain] 20 tokens passed safety checks","level":"info","timestamp":"2026-03-12T16:23:38.693806546Z"}
+{"level":"info","timestamp":"2026-03-12T16:23:38.974228846Z","message":"[Scanner] Found 24 hot/new token candidates"}
+{"message":"","level":"info","event":"apify.fresh_tokens_fetched","runId":"bPfpJtgq9K48MHFmP","ts":"2026-03-12T16:23:43.935Z","timestamp":"2026-03-12T16:23:43.966779019Z","datasetId":"Parm7WfcOYSK9TmHT","actorId":"zGQhqaJtjexiRE5JA","totalItems":10,"freshTokenCount":10}
+{"runId":"bPfpJtgq9K48MHFmP","ts":"2026-03-12T16:23:52.036Z","message":"","event":"apify.fresh_tokens_fetched","datasetId":"Parm7WfcOYSK9TmHT","freshTokenCount":10,"totalItems":10,"actorId":"zGQhqaJtjexiRE5JA","level":"info","timestamp":"2026-03-12T16:23:52.038954799Z"}
+{"level":"info","message":"[Scanner] Discovering hot tokens on solana...","timestamp":"2026-03-12T16:23:55.659994408Z"}
+{"message":"[Scanner] Found 24 hot/new token candidates","timestamp":"2026-03-12T16:23:58.978798303Z","level":"info"}
+{"datasetId":"Parm7WfcOYSK9TmHT","ts":"2026-03-12T16:24:00.580Z","runId":"bPfpJtgq9K48MHFmP","level":"info","freshTokenCount":10,"totalItems":10,"message":"","timestamp":"2026-03-12T16:24:00.582924060Z","event":"apify.fresh_tokens_fetched","actorId":"zGQhqaJtjexiRE5JA"}
+{"runId":"bPfpJtgq9K48MHFmP","message":"","event":"apify.fresh_tokens_fetched","level":"info","totalItems":10,"datasetId":"Parm7WfcOYSK9TmHT","timestamp":"2026-03-12T16:24:20.254592300Z","ts":"2026-03-12T16:24:11.312Z","freshTokenCount":10,"actorId":"zGQhqaJtjexiRE5JA"}
+{"level":"info","message":"[Scanner] Discovering hot tokens on solana...","timestamp":"2026-03-12T16:24:20.254601220Z"}
+{"timestamp":"2026-03-12T16:24:20.254609245Z","message":"[Scanner] Found 24 hot/new token candidates","level":"info"}
+{"ts":"2026-03-12T16:24:20.024Z","runId":"bPfpJtgq9K48MHFmP","freshTokenCount":10,"event":"apify.fresh_tokens_fetched","totalItems":10,"level":"info","datasetId":"Parm7WfcOYSK9TmHT","message":"","timestamp":"2026-03-12T16:24:20.254616504Z","actorId":"zGQhqaJtjexiRE5JA"}
+{"level":"info","event":"apify.fresh_tokens_fetched","actorId":"zGQhqaJtjexiRE5JA","runId":"bPfpJtgq9K48MHFmP","message":"","totalItems":10,"timestamp":"2026-03-12T16:24:27.964432428Z","freshTokenCount":10,"datasetId":"Parm7WfcOYSK9TmHT","ts":"2026-03-12T16:24:27.961Z"}
+{"level":"info","message":"[Multichain] Starting multi-chain launchpad scan...","timestamp":"2026-03-12T16:24:35.756606786Z"}
+{"timestamp":"2026-03-12T16:24:35.756617417Z","message":"[Multichain] Scanning Pump.fun...","level":"info"}
+{"timestamp":"2026-03-12T16:24:35.756623828Z","level":"info","message":"[Multichain] Scanning solana via DexScreener..."}
+{"timestamp":"2026-03-12T16:24:35.756637582Z","message":"[Multichain] Pump.fun API not accessible, using DexScreener fallback","level":"info"}
+{"level":"info","message":"[Scanner] Discovering hot tokens on solana...","timestamp":"2026-03-12T16:24:35.756786701Z"}
+{"datasetId":"Parm7WfcOYSK9TmHT","actorId":"zGQhqaJtjexiRE5JA","runId":"bPfpJtgq9K48MHFmP","event":"apify.fresh_tokens_fetched","freshTokenCount":10,"totalItems":10,"level":"info","ts":"2026-03-12T16:24:36.213Z","message":"","timestamp":"2026-03-12T16:24:36.226488972Z"}
+{"level":"info","message":"[Multichain] Found 28 tokens from solana","timestamp":"2026-03-12T16:24:38.797263952Z"}
+{"message":"[Multichain] Found 28 tokens across all chains","timestamp":"2026-03-12T16:24:38.797273482Z","level":"info"}
+{"timestamp":"2026-03-12T16:24:38.797279322Z","level":"info","message":"[Multichain] 20 tokens passed safety checks"}
+{"level":"info","message":"[Scanner] Found 24 hot/new token candidates","timestamp":"2026-03-12T16:24:39.119095289Z"}
+{"level":"info","totalItems":10,"ts":"2026-03-12T16:24:44.478Z","datasetId":"Parm7WfcOYSK9TmHT","freshTokenCount":10,"message":"","runId":"bPfpJtgq9K48MHFmP","timestamp":"2026-03-12T16:24:44.810510601Z","actorId":"zGQhqaJtjexiRE5JA","event":"apify.fresh_tokens_fetched"}
+{"event":"apify.fresh_tokens_fetched","timestamp":"2026-03-12T16:24:52.957614578Z","datasetId":"Parm7WfcOYSK9TmHT","actorId":"zGQhqaJtjexiRE5JA","message":"","runId":"bPfpJtgq9K48MHFmP","ts":"2026-03-12T16:24:52.952Z","level":"info","freshTokenCount":10,"totalItems":10}
+{"message":"[Scanner] Discovering hot tokens on solana...","timestamp":"2026-03-12T16:24:55.958995451Z","level":"info"}
+{"message":"[Scanner] Found 24 hot/new token candidates","timestamp":"2026-03-12T16:24:59.049523631Z","level":"info"}
+{"ts":"2026-03-12T16:25:01.401Z","message":"","timestamp":"2026-03-12T16:25:01.404631849Z","actorId":"zGQhqaJtjexiRE5JA","totalItems":10,"freshTokenCount":10,"event":"apify.fresh_tokens_fetched","runId":"bPfpJtgq9K48MHFmP","level":"info","datasetId":"Parm7WfcOYSK9TmHT"}
+

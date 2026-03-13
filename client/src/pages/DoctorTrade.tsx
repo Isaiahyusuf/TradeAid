@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy, BookOpen } from "lucide-react";
-import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDisconnectWallet, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
+import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -64,6 +64,7 @@ export default function DoctorTrade() {
   const disconnectWalletMutation = useDoctorDisconnectWallet();
   const runMutation = useDoctorRunOnce();
   const directBuyMutation = useDoctorDirectBuy();
+  const directSellMutation = useDoctorDirectSell();
   const [guideOpen, setGuideOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [intervalInput, setIntervalInput] = useState("10");
@@ -308,6 +309,52 @@ export default function DoctorTrade() {
   const lastSyncLabel = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : "-";
   const walletSolBalance = Number(viewData?.wallet?.balance_sol || 0);
   const walletPrivateKeyConfigured = Boolean(viewData?.wallet?.private_key_configured);
+
+  const handleDirectSell = (position: any) => {
+    const contractAddress = String(position?.address || "").trim();
+    if (!contractAddress) {
+      toast({
+        title: "Sell failed",
+        description: "Missing token contract address.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const configuredFraction = Math.max(1, Math.min(100, Number(viewData?.trade_controls?.live_sell_fraction_pct || 100)));
+    directSellMutation.mutate(
+      {
+        contract_address: contractAddress,
+        sell_fraction_pct: configuredFraction,
+      },
+      {
+        onSuccess: (response) => {
+          if (!response?.result?.executed) {
+            toast({
+              title: "Sell blocked",
+              description: String(response?.result?.reason || "manual_sell_failed"),
+              variant: "destructive",
+            });
+            return;
+          }
+
+          const sold = Number(response?.result?.sold_amount_sol || 0);
+          const remaining = Number(response?.result?.remaining_amount_sol || 0);
+          toast({
+            title: "Quick sell submitted",
+            description: `${String(position?.symbol || "TOKEN")} sold ${sold.toFixed(4)} SOL, remaining ${remaining.toFixed(4)} SOL.`,
+          });
+        },
+        onError: (error) => {
+          toast({
+            title: "Sell failed",
+            description: error instanceof Error ? error.message : "Could not execute quick sell.",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
 
   const saveRiskRules = () => {
     const scanIntervalSeconds = Math.max(5, Math.trunc(Number.parseFloat(intervalInput) || 20));
@@ -1279,6 +1326,16 @@ export default function DoctorTrade() {
                     <p className={`text-[11px] ${Number((position as any).pnl_pct || 0) >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                       PnL {Number((position as any).pnl_pct || 0).toFixed(2)}% · Value {fmtUsd(Number((position as any).worth_usd || 0))}
                     </p>
+                    <div className="mt-2 flex justify-end">
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={directSellMutation.isPending}
+                        onClick={() => handleDirectSell(position)}
+                      >
+                        {directSellMutation.isPending ? "Selling..." : "Quick Sell"}
+                      </Button>
+                    </div>
                   </div>
                 ))}
                 {!viewData?.positions?.length && <p className="text-sm text-muted-foreground">No open positions.</p>}
