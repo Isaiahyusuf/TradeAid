@@ -16,6 +16,7 @@ import { SUPPORTED_CHAINS } from "@/hooks/use-chain";
 import { useLocation } from "wouter";
 import { useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { TokenAvatar } from "@/components/token/TokenAvatar";
+import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
 import {
   useApproveAssistantConsent,
   useAssistantWalletSwap,
@@ -91,6 +92,9 @@ export default function WalletPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [walletSettingsOpen, setWalletSettingsOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [securitySetupOpen, setSecuritySetupOpen] = useState(false);
+  const [securityBackupOpen, setSecurityBackupOpen] = useState(false);
+  const [securityRecoveryOpen, setSecurityRecoveryOpen] = useState(false);
   const [walletTab, setWalletTab] = useState<"assets" | "activity" | "security">("assets");
 
   const [sendChain, setSendChain] = useState<SupportedWalletChain>(enabledChains[0] || "solana");
@@ -408,6 +412,8 @@ export default function WalletPage() {
     try {
       const result = await importWalletPrivateKey.mutateAsync({ private_key: privateKey, overwrite });
       setLatestBundle(result.bundle);
+      setBackupPhraseInput("");
+      await refreshWalletViews();
       toast({ title: "Wallet connected", description: "Private key imported successfully." });
       if (returnTo) {
         setLocation(returnTo);
@@ -418,8 +424,22 @@ export default function WalletPage() {
   };
 
   const handleConfirmBackup = async () => {
+    if (!wallet?.has_wallet) {
+      toast({ title: "Wallet required", description: "Connect your private key or import phrase first.", variant: "destructive" });
+      return;
+    }
+    if (wallet?.backup_confirmed && !backupPhraseInput.trim()) {
+      toast({ title: "Backup already confirmed", description: "Your wallet backup is already marked as confirmed." });
+      return;
+    }
+    if (!backupPhraseInput.trim()) {
+      toast({ title: "Phrase required", description: "Paste your recovery phrase exactly to confirm backup.", variant: "destructive" });
+      return;
+    }
+
     try {
       await confirmBackup.mutateAsync({ mnemonic: backupPhraseInput.trim() });
+      await refreshWalletViews();
       toast({ title: "Backup confirmed", description: "Recovery phrase backup recorded." });
     } catch (error) {
       toast({ title: "Backup confirmation failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
@@ -427,9 +447,15 @@ export default function WalletPage() {
   };
 
   const handleRevealWallet = async () => {
+    if (!wallet?.has_wallet) {
+      toast({ title: "Wallet required", description: "Connect your private key or import phrase first.", variant: "destructive" });
+      return;
+    }
+
     try {
       const result = await revealWallet.mutateAsync({ confirmation_text: revealPhrase.trim() });
       setLatestBundle(result.bundle);
+      await refreshWalletViews();
       toast({ title: "Secrets revealed", description: "Keep these keys offline and private." });
     } catch (error) {
       toast({ title: "Reveal failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
@@ -739,11 +765,13 @@ export default function WalletPage() {
           </TabsContent>
 
           <TabsContent value="security" className="space-y-3">
-            <Card className="solana-card">
-              <CardHeader>
-                <CardTitle className="text-base">Setup & Recovery</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
+            <SettingsMenuCard
+              title="Security Setup"
+              description="Create or import wallet credentials."
+              open={securitySetupOpen}
+              onToggle={() => setSecuritySetupOpen((prev) => !prev)}
+            >
+              <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label htmlFor="wallet-import">Import 12-word phrase</Label>
@@ -771,48 +799,63 @@ export default function WalletPage() {
                         Connect + Overwrite
                       </Button>
                     </div>
-                  </div>
-
-                  <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="wallet-backup-phrase">Confirm phrase backup</Label>
-                    <Textarea id="wallet-backup-phrase" placeholder="Paste your phrase exactly to confirm backup" value={backupPhraseInput} onChange={(e) => setBackupPhraseInput(e.target.value)} className="min-h-[80px]" />
-                    <Button variant="outline" onClick={handleConfirmBackup} disabled={confirmBackup.isPending || !backupPhraseInput.trim()}>{confirmBackup.isPending ? "Confirming..." : "Confirm Backup"}</Button>
+                    <p className="text-[11px] text-muted-foreground">Private-key import marks backup as confirmed automatically.</p>
                   </div>
                 </div>
+              </div>
+            </SettingsMenuCard>
 
-                <div className="space-y-2">
-                  <Label htmlFor="wallet-reveal-phrase">Reveal phrase/private keys</Label>
-                  <Input id="wallet-reveal-phrase" value={revealPhrase} onChange={(e) => setRevealPhrase(e.target.value)} placeholder="I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS" />
-                  <Button variant="outline" onClick={handleRevealWallet} disabled={revealWallet.isPending}>{revealWallet.isPending ? "Revealing..." : "Reveal Secrets"}</Button>
-                </div>
+            <SettingsMenuCard
+              title="Backup Confirmation"
+              description="Confirm your recovery phrase backup."
+              open={securityBackupOpen}
+              onToggle={() => setSecurityBackupOpen((prev) => !prev)}
+            >
+              <div className="space-y-2">
+                <Label htmlFor="wallet-backup-phrase">Confirm phrase backup</Label>
+                <Textarea id="wallet-backup-phrase" placeholder="Paste your phrase exactly to confirm backup" value={backupPhraseInput} onChange={(e) => setBackupPhraseInput(e.target.value)} className="min-h-[80px]" />
+                <Button variant="outline" onClick={handleConfirmBackup} disabled={confirmBackup.isPending}>{confirmBackup.isPending ? "Confirming..." : "Confirm Backup"}</Button>
+              </div>
+            </SettingsMenuCard>
 
-                {latestBundle && (
-                  <div className="rounded-lg border border-border/60 p-3 space-y-3 bg-muted/20">
-                    <p className="text-xs text-amber-300">{latestBundle.warning}</p>
-                    {latestBundle.mnemonic && (
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1">12-word phrase</p>
-                        <Textarea readOnly value={latestBundle.mnemonic} className="min-h-[70px]" />
-                      </div>
-                    )}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {Object.entries(latestBundle.addresses_by_chain || {}).map(([chainName, address]) => (
-                        <div key={chainName} className="rounded-md border border-border/60 p-2">
-                          <p className="text-xs uppercase text-muted-foreground">{chainName} address</p>
-                          <p className="text-xs break-all">{address}</p>
-                          {latestBundle.private_keys_by_chain?.[chainName] && (
-                            <>
-                              <p className="text-xs uppercase text-muted-foreground mt-1">private key</p>
-                              <p className="text-xs break-all">{latestBundle.private_keys_by_chain[chainName]}</p>
-                            </>
-                          )}
-                        </div>
-                      ))}
+            <SettingsMenuCard
+              title="Recovery & Reveal"
+              description="Reveal phrase and private keys after confirmation."
+              open={securityRecoveryOpen}
+              onToggle={() => setSecurityRecoveryOpen((prev) => !prev)}
+            >
+              <div className="space-y-2">
+                <Label htmlFor="wallet-reveal-phrase">Reveal phrase/private keys</Label>
+                <Input id="wallet-reveal-phrase" value={revealPhrase} onChange={(e) => setRevealPhrase(e.target.value)} placeholder="I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS" />
+                <Button variant="outline" onClick={handleRevealWallet} disabled={revealWallet.isPending}>{revealWallet.isPending ? "Revealing..." : "Reveal Secrets"}</Button>
+              </div>
+
+              {latestBundle && (
+                <div className="rounded-lg border border-border/60 p-3 space-y-3 bg-muted/20 mt-3">
+                  <p className="text-xs text-amber-300">{latestBundle.warning}</p>
+                  {latestBundle.mnemonic && (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">12-word phrase</p>
+                      <Textarea readOnly value={latestBundle.mnemonic} className="min-h-[70px]" />
                     </div>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {Object.entries(latestBundle.addresses_by_chain || {}).map(([chainName, address]) => (
+                      <div key={chainName} className="rounded-md border border-border/60 p-2">
+                        <p className="text-xs uppercase text-muted-foreground">{chainName} address</p>
+                        <p className="text-xs break-all">{address}</p>
+                        {latestBundle.private_keys_by_chain?.[chainName] && (
+                          <>
+                            <p className="text-xs uppercase text-muted-foreground mt-1">private key</p>
+                            <p className="text-xs break-all">{latestBundle.private_keys_by_chain[chainName]}</p>
+                          </>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                </div>
+              )}
+            </SettingsMenuCard>
           </TabsContent>
         </Tabs>
 
