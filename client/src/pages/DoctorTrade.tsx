@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy, BookOpen, Zap } from "lucide-react";
+import { FaTelegramPlane } from "react-icons/fa";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDoctorAiAssistantChat, useDoctorAiAssistantClearHistory, useDoctorAiAssistantHistory, useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorPresetAdvisor, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -36,6 +37,7 @@ function fmtSol(value: number) {
 
 const DOCTOR_SETTINGS_LOCAL_KEY_PREFIX = "doctortrade.settings.local.v2";
 const DOCTOR_SETTINGS_LOCAL_KEY_LEGACY = "doctortrade.settings.local.v1";
+const TRADEAID_TELEGRAM_BOT_URL = "https://t.me/Tradeaid_bot";
 type SnipePreset = "conservative" | "momentum_trader" | "balanced" | "aggressive" | "insider" | "in_out_2x" | "custom";
 
 function getDoctorSettingsLocalKey(userId?: string | null) {
@@ -832,6 +834,16 @@ export default function DoctorTrade() {
             </Button>
             <Button variant="outline" onClick={() => setLocation("/disclaimer")}>
               Disclaimer
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  window.open(TRADEAID_TELEGRAM_BOT_URL, "_blank", "noopener,noreferrer");
+                }
+              }}
+            >
+              <FaTelegramPlane className="w-4 h-4 mr-2" /> Telegram Bot
             </Button>
             <Button
               variant="outline"

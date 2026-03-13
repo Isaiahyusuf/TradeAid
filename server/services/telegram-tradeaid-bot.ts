@@ -816,81 +816,60 @@ class TradeAidTelegramBot {
     const secondWinner = topWins[1];
     const worstLoss = topLosses[0];
 
+    const updatedDate = new Date().toISOString().slice(0, 10);
+    const topWinnerSymbol = String(topWinner?.call.symbol || "n/a");
+    const secondWinnerSymbol = String(secondWinner?.call.symbol || "n/a");
+    const worstLossSymbol = String(worstLoss?.call.symbol || "n/a");
+    const topWinnerMult = topWinner ? `${topWinner.multiplier.toFixed(2)}x` : "n/a";
+    const secondWinnerMult = secondWinner ? `${secondWinner.multiplier.toFixed(2)}x` : "n/a";
+    const worstLossPct = worstLoss ? fmtPct(worstLoss.pnlPct) : "n/a";
+
     const lines = [
-      "🏆 *TRADEAID PERFORMANCE BOARD*",
+      "🏆 *TRADEAID PERFORMANCE*",
       "",
-      `Calls Tracked: *${escapeMarkdown(String(calls.length))}*`,
-      `Win Rate: *${escapeMarkdown(`${winRate.toFixed(1)}%`)}*`,
-      `Average PnL: *${escapeMarkdown(fmtPct(avgPnl))}*`,
+      `Calls: ${escapeMarkdown(String(calls.length))} \| Open: ${escapeMarkdown(String(openSnapshots.length))} \| Closed: ${escapeMarkdown(String(closedSnapshots.length))}`,
+      `Win Rate: ${escapeMarkdown(`${winRate.toFixed(1)}%`)}`,
+      `Average PnL: ${escapeMarkdown(fmtPct(avgPnl))}`,
+      `Median Hold: ${escapeMarkdown(formatHoldTime(medianHoldMinutes))}`,
       "",
-      DIVIDER,
-    ];
-
-    if (topWinner) {
-      lines.push(
-        "",
-        "🥇 *Top Winner*",
-        `${escapeMarkdown(String(topWinner.call.symbol || "UNK"))}`,
-        `${escapeMarkdown(topWinner.multiplier.toFixed(2))}x \(${escapeMarkdown(fmtPct(topWinner.pnlPct))}\)`,
-      );
-    }
-
-    if (secondWinner) {
-      lines.push(
-        "",
-        "🥈 *Second*",
-        `${escapeMarkdown(String(secondWinner.call.symbol || "UNK"))}`,
-        `${escapeMarkdown(secondWinner.multiplier.toFixed(2))}x \(${escapeMarkdown(fmtPct(secondWinner.pnlPct))}\)`,
-      );
-    }
-
-    lines.push("", DIVIDER);
-
-    if (worstLoss) {
-      lines.push(
-        "",
-        "💀 *Worst Loss*",
-        `${escapeMarkdown(String(worstLoss.call.symbol || "UNK"))}`,
-        `${escapeMarkdown(fmtPct(worstLoss.pnlPct))}`,
-        "",
-        DIVIDER,
-      );
-    }
-
-    lines.push(
+      "📈 *Multipliers Hit*",
       "",
-      `Open Calls: *${escapeMarkdown(String(openSnapshots.length))}*`,
-      `Closed Calls: *${escapeMarkdown(String(closedSnapshots.length))}*`,
-      `Median Hold: *${escapeMarkdown(formatHoldTime(medianHoldMinutes))}*`,
-      `2x: *${escapeMarkdown(String(x2))}* \\| 3x: *${escapeMarkdown(String(x3))}* \\| 4x\+: *${escapeMarkdown(String(x4))}*`,
+      `2x → ${escapeMarkdown(String(x2))}`,
+      `3x → ${escapeMarkdown(String(x3))}`,
+      `4x\+ → ${escapeMarkdown(String(x4))}`,
       "",
-      "⏱️ *Rolling Win Rate*",
-      `24h: *${escapeMarkdown(`${window24h.winRate.toFixed(1)}%`)}* \(${escapeMarkdown(String(window24h.calls))} calls, ${escapeMarkdown(fmtPct(window24h.avgPnl))}\)`,
-      `72h: *${escapeMarkdown(`${window72h.winRate.toFixed(1)}%`)}* \(${escapeMarkdown(String(window72h.calls))} calls, ${escapeMarkdown(fmtPct(window72h.avgPnl))}\)`,
-      `7d: *${escapeMarkdown(`${window7d.winRate.toFixed(1)}%`)}* \(${escapeMarkdown(String(window7d.calls))} calls, ${escapeMarkdown(fmtPct(window7d.avgPnl))}\)`,
-      `30d: *${escapeMarkdown(`${window30d.winRate.toFixed(1)}%`)}* \(${escapeMarkdown(String(window30d.calls))} calls, ${escapeMarkdown(fmtPct(window30d.avgPnl))}\)`,
+      "🏅 *Best & Worst*",
       "",
-      DIVIDER,
+      "🥇 *Top Winner*",
+      `${escapeMarkdown(topWinnerSymbol)} — ${escapeMarkdown(topWinnerMult)} \(${escapeMarkdown(topWinner ? fmtPct(topWinner.pnlPct) : "n/a")}\)`,
+      "",
+      "🥈 *Second Best*",
+      `${escapeMarkdown(secondWinnerSymbol)} — ${escapeMarkdown(secondWinnerMult)} \(${escapeMarkdown(secondWinner ? fmtPct(secondWinner.pnlPct) : "n/a")}\)`,
+      "",
+      "💀 *Worst Loss*",
+      `${escapeMarkdown(worstLossSymbol)} — ${escapeMarkdown(worstLossPct)}`,
+      "",
+      "⏱ *Performance Windows*",
+      "",
+      `24h → ${escapeMarkdown(`${window24h.winRate.toFixed(1)}%`)} WR \| ${escapeMarkdown(fmtPct(window24h.avgPnl))} PnL \(${escapeMarkdown(`${window24h.calls} calls`)}\)`,
+      `72h → ${escapeMarkdown(`${window72h.winRate.toFixed(1)}%`)} WR \| ${escapeMarkdown(fmtPct(window72h.avgPnl))} PnL \(${escapeMarkdown(`${window72h.calls} calls`)}\)`,
+      `7d → ${escapeMarkdown(`${window7d.winRate.toFixed(1)}%`)} WR \| ${escapeMarkdown(fmtPct(window7d.avgPnl))} PnL \(${escapeMarkdown(`${window7d.calls} calls`)}\)`,
+      `30d → ${escapeMarkdown(`${window30d.winRate.toFixed(1)}%`)} WR \| ${escapeMarkdown(fmtPct(window30d.avgPnl))} PnL \(${escapeMarkdown(`${window30d.calls} calls`)}\)`,
       "",
       "📡 *Recent Calls*",
-    );
+      "",
+    ];
 
     for (const row of recent) {
       const calledAgo = formatAge(row.call.calledAt);
       const xText = `${row.multiplier.toFixed(2)}x`;
-      const direction = statusBadgeFromPnl(row.pnlPct);
-      const status = row.isClosed ? `CLOSED:${String(row.call.closeReason || "exit").toUpperCase()}` : "OPEN";
-      lines.push(
-        `${escapeMarkdown(direction)} ${escapeMarkdown(String(row.call.symbol || "UNK"))}: *${escapeMarkdown(xText)}* \(${escapeMarkdown(fmtPct(row.pnlPct))}\)`,
-        `Age ${escapeMarkdown(calledAgo)} \\| DD ${escapeMarkdown(fmtPct(-row.drawdownPct))} \\| ${escapeMarkdown(status)}`,
-      );
+      const status = row.isClosed ? "CLOSED" : "OPEN";
+      lines.push(`${escapeMarkdown(String(row.call.symbol || "UNK"))} — ${escapeMarkdown(xText)} \| ${escapeMarkdown(status)} \| ${escapeMarkdown(calledAgo)}`);
     }
 
-    const stampedAt = new Date().toISOString().replace("T", " ").replace(".000Z", " UTC");
     lines.push(
       "",
-      DIVIDER,
-      `Updated: ${escapeMarkdown(stampedAt)}`,
+      `Updated: ${escapeMarkdown(updatedDate)}`,
       "TradeAid Intelligence Engine",
       "Powered by Solana Data",
     );
