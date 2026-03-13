@@ -758,7 +758,7 @@ export async function registerRoutes(
     ownerUserId: "" as string,
     enabled: false,
     killSwitch: false,
-    scanIntervalSeconds: Math.max(2, Math.trunc(Number(process.env.DOCTORTRADE_SCAN_INTERVAL_SECONDS || 10))),
+    scanIntervalSeconds: Math.max(1, Math.trunc(Number(process.env.DOCTORTRADE_SCAN_INTERVAL_SECONDS || 1))),
     wallet: {
       address: "",
       balanceSol: 0,
@@ -1629,7 +1629,7 @@ export async function registerRoutes(
       doctorRuntime.killSwitch = loaded.killSwitch;
     }
     if (Number.isFinite(Number(loaded.scanIntervalSeconds))) {
-      doctorRuntime.scanIntervalSeconds = Math.max(2, Math.trunc(Number(loaded.scanIntervalSeconds)));
+      doctorRuntime.scanIntervalSeconds = Math.max(1, Math.trunc(Number(loaded.scanIntervalSeconds)));
     }
 
     const wallet = loaded.wallet as Record<string, any> | undefined;
@@ -2022,12 +2022,12 @@ export async function registerRoutes(
       const nowMs = Date.now();
       const nextRunAt = runNow
         ? nowMs
-        : Number(existingJob.next_run_at || (nowMs + (Math.max(2, intervalSeconds) * 1000)));
+        : Number(existingJob.next_run_at || (nowMs + (Math.max(1, intervalSeconds) * 1000)));
       jobs[normalizedUserId] = {
         ...existingJob,
         user_id: normalizedUserId,
         enabled: true,
-        interval_seconds: Math.max(2, Math.trunc(intervalSeconds || 20)),
+        interval_seconds: Math.max(1, Math.trunc(intervalSeconds || 1)),
         next_run_at: Math.max(nowMs, nextRunAt),
         updated_at: nowIso(),
       };
@@ -2084,7 +2084,7 @@ export async function registerRoutes(
         continue;
       }
 
-      const intervalSeconds = Math.max(2, Math.trunc(Number(job?.interval_seconds || 20)));
+      const intervalSeconds = Math.max(1, Math.trunc(Number(job?.interval_seconds || 1)));
       const nextRunAt = Number(job?.next_run_at || 0);
       if (nextRunAt > nowMs) {
         continue;
@@ -2127,7 +2127,7 @@ export async function registerRoutes(
       clearInterval(doctorSchedulerTimer);
       doctorSchedulerTimer = null;
     }
-    const pollMs = Math.max(1_000, Math.trunc(Number(process.env.DOCTOR_SCHEDULER_POLL_MS || 2_000)));
+    const pollMs = Math.max(250, Math.trunc(Number(process.env.DOCTOR_SCHEDULER_POLL_MS || 500)));
     doctorSchedulerTimer = setInterval(async () => {
       await runDoctorSchedulerTick();
     }, pollMs);
@@ -6130,7 +6130,7 @@ export async function registerRoutes(
       user: {
         user_id: normalizedUserId,
         scheduled: Boolean(userJob?.enabled),
-        interval_seconds: Math.max(2, Math.trunc(Number(userJob?.interval_seconds || 0))) || null,
+        interval_seconds: Math.max(1, Math.trunc(Number(userJob?.interval_seconds || 0))) || null,
         next_run_at: nextRunAtMs > 0 ? new Date(nextRunAtMs).toISOString() : null,
         lag_ms: lagMs,
         run_count: Math.max(0, Math.trunc(Number(userJob?.run_count || 0))),
@@ -6295,7 +6295,7 @@ export async function registerRoutes(
       }
     }
     if (Number.isFinite(Number(payload.scan_interval_seconds))) {
-      doctorRuntime.scanIntervalSeconds = Math.max(2, Math.trunc(Number(payload.scan_interval_seconds)));
+      doctorRuntime.scanIntervalSeconds = Math.max(1, Math.trunc(Number(payload.scan_interval_seconds)));
     }
 
     const numericKeys = [
@@ -6849,7 +6849,7 @@ export async function registerRoutes(
       for (const userId of userIds) {
         const runtime = runtimeByUser[userId] as Record<string, any> | undefined;
         if (runtime && runtime.enabled) {
-          await upsertDoctorSchedulerJob(userId, true, Math.max(2, Math.trunc(Number(runtime.scanIntervalSeconds || 10))), false);
+          await upsertDoctorSchedulerJob(userId, true, Math.max(1, Math.trunc(Number(runtime.scanIntervalSeconds || 1))), false);
         }
       }
     } catch {
