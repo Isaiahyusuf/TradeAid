@@ -1385,8 +1385,22 @@ class TradeAidTelegramBot {
 
   isWebhookAuthorized(req: Request) {
     if (!this.webhookSecret) return false;
-    const token = String(req.headers["x-telegram-bot-api-secret-token"] || "").trim();
-    return token.length > 0 && token === this.webhookSecret;
+    const headerToken = String(req.headers["x-telegram-bot-api-secret-token"] || "").trim();
+    if (headerToken.length > 0 && headerToken === this.webhookSecret) {
+      return true;
+    }
+
+    const querySecretRaw = (req.query as Record<string, unknown> | undefined)?.secret;
+    const queryTokenRaw = (req.query as Record<string, unknown> | undefined)?.token;
+    const querySecret = Array.isArray(querySecretRaw)
+      ? String(querySecretRaw[0] || "").trim()
+      : String(querySecretRaw || "").trim();
+    const queryToken = Array.isArray(queryTokenRaw)
+      ? String(queryTokenRaw[0] || "").trim()
+      : String(queryTokenRaw || "").trim();
+
+    return (querySecret.length > 0 && querySecret === this.webhookSecret)
+      || (queryToken.length > 0 && queryToken === this.webhookSecret);
   }
 
   private async handleUpdate(update: TelegramUpdate) {
