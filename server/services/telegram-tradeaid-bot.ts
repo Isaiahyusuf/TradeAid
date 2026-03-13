@@ -545,19 +545,26 @@ class TradeAidTelegramBot {
     const dexUrl = project.chart || (pairOrMint ? `https://dexscreener.com/solana/${pairOrMint}` : "https://dexscreener.com");
     const pumpUrl = mint ? `https://pump.fun/coin/${encodeURIComponent(mint)}` : "https://pump.fun";
     const solscanUrl = mint ? `https://solscan.io/token/${encodeURIComponent(mint)}` : "https://solscan.io";
+    const telegramUrl = isHttpUrl(project.telegram) ? String(project.telegram).trim() : "";
+
+    const linksRow = [
+      { text: "DexScreener", url: dexUrl },
+      { text: "Pump.fun", url: pumpUrl },
+      { text: "Solscan", url: solscanUrl },
+    ];
+
+    const actionRow = [
+      { text: "Buy", url: this.buildTradeAidBuyUrl(mint) },
+      { text: "View", url: this.buildTradeAidTokenUrl(mint) },
+    ];
+
+    const keyboard = [linksRow, actionRow];
+    if (telegramUrl) {
+      keyboard.push([{ text: "Telegram Community", url: telegramUrl }]);
+    }
 
     return {
-      inline_keyboard: [
-        [
-          { text: "DexScreener", url: dexUrl },
-          { text: "Pump.fun", url: pumpUrl },
-          { text: "Solscan", url: solscanUrl },
-        ],
-        [
-          { text: "Buy", url: this.buildTradeAidBuyUrl(mint) },
-          { text: "View", url: this.buildTradeAidTokenUrl(mint) },
-        ],
-      ],
+      inline_keyboard: keyboard,
     };
   }
 
@@ -575,6 +582,10 @@ class TradeAidTelegramBot {
     const dexUrl = project.chart || "https://dexscreener.com";
     const pumpUrl = token.address ? `https://pump.fun/coin/${encodeURIComponent(String(token.address))}` : "https://pump.fun";
     const solscanUrl = token.address ? `https://solscan.io/token/${encodeURIComponent(String(token.address))}` : "https://solscan.io";
+    const telegramUrl = isHttpUrl(project.telegram) ? String(project.telegram).trim() : "";
+    const linksLine = telegramUrl
+      ? `[DexScreener](${dexUrl}) \| [Pump\.fun](${pumpUrl}) \| [Solscan](${solscanUrl}) \| [Telegram Community](${telegramUrl})`
+      : `[DexScreener](${dexUrl}) \| [Pump\.fun](${pumpUrl}) \| [Solscan](${solscanUrl})`;
 
     return [
       "🚨 *TRADEAID CALL DETECTED*",
@@ -610,7 +621,7 @@ class TradeAidTelegramBot {
       DIVIDER,
       "",
       "🔗 *Links*",
-      `[DexScreener](${dexUrl}) \| [Pump\.fun](${pumpUrl}) \| [Solscan](${solscanUrl})`,
+      linksLine,
       "",
       DIVIDER,
       `Updated: ${escapeMarkdown(stampedAt)}`,
@@ -1753,6 +1764,20 @@ class TradeAidTelegramBot {
       chatId,
       `<b>Telegram Community Tokens</b>\nShowing ${picked.length} tokens with active Telegram links.`,
       this.buildStartButtons(this.isSubscribed(chatId)),
+    );
+
+    const communityList = picked
+      .map((item, idx) => {
+        const symbol = String(item.token.symbol || item.token.name || "UNK").trim() || "UNK";
+        return `${idx + 1}. <b>${escapeHtml(symbol)}</b> - <a href=\"${escapeHtml(item.telegram)}\">${escapeHtml(item.telegram)}</a>`;
+      })
+      .join("\n");
+
+    await this.sendMessage(
+      chatId,
+      `<b>Community Links</b>\n${communityList}`,
+      undefined,
+      { disablePreview: false, parseMode: "HTML" },
     );
 
     for (const item of picked) {
