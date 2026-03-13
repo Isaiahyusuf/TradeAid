@@ -354,6 +354,7 @@ class TradeAidTelegramBot {
       { command: "start", description: "Open TradeAid menu" },
       { command: "safe", description: "Top safer calls" },
       { command: "new", description: "Early safe calls" },
+      { command: "tg", description: "Tokens with Telegram communities" },
       { command: "pnl", description: "SpyDefi-style PnL board" },
       { command: "token", description: "Lookup token by symbol or CA" },
       { command: "projects", description: "Show project links" },
@@ -507,6 +508,7 @@ class TradeAidTelegramBot {
         [
           { text: "Safe Calls", callback_data: "safe_calls" },
           { text: "Early Safe", callback_data: "new_safe" },
+          { text: "TG Communities", callback_data: "tg_community" },
         ],
         [
           { text: "PnL Board", callback_data: "pnl_board" },
@@ -1370,6 +1372,7 @@ class TradeAidTelegramBot {
       "/safe [n] - top safer calls",
       "/new [n] - early safer tokens",
       "/early [n] - alias for /new",
+      "/tg [n] - tokens with Telegram communities",
       "/pnl - bot call performance board",
       "/token &lt;symbol|address&gt; - full token card",
       "/projects &lt;symbol|address&gt; - project links",
@@ -1477,6 +1480,13 @@ class TradeAidTelegramBot {
       return;
     }
 
+    if (lower.startsWith("/tg") || lower.startsWith("/telegram")) {
+      const limitArg = text.split(/\s+/)[1];
+      const limit = takeLimit(limitArg, 5, 8);
+      await this.handleTelegramCommunityCalls(chatId, limit);
+      return;
+    }
+
     if (lower.startsWith("/pnl")) {
       await this.sendPnlBoard(chatId, 10);
       return;
@@ -1534,6 +1544,12 @@ class TradeAidTelegramBot {
     if (dataLower === "new_safe") {
       await this.handleNewSafe(chatId, 5);
       await this.answerCallbackQuery(callbackQuery.id, "Loaded new safe tokens").catch(() => undefined);
+      return;
+    }
+
+    if (dataLower === "tg_community") {
+      await this.handleTelegramCommunityCalls(chatId, 5);
+      await this.answerCallbackQuery(callbackQuery.id, "Loaded Telegram community tokens").catch(() => undefined);
       return;
     }
 
@@ -1693,6 +1709,54 @@ class TradeAidTelegramBot {
 
     for (const token of rows) {
       await this.sendTokenCard(chatId, token, "compact", "EARLY SAFE", { trackCall: true, origin: "early_safe" });
+    }
+  }
+
+  private async handleTelegramCommunityCalls(chatId: string, limit: number) {
+    const candidateLimit = Math.max(limit * 4, 20);
+    const rows = await db
+      .select()
+      .from(scannedTokens)
+      .where(
+        and(
+          eq(scannedTokens.chain, "solana"),
+          gte(scannedTokens.safetyScore, 72),
+          gte(scannedTokens.liquidity, 25_000),
+          gte(scannedTokens.volume24h, 15_000),
+          eq(scannedTokens.isHoneypot, false),
+        ),
+      )
+      .orderBy(desc(scannedTokens.safetyScore), desc(scannedTokens.volume24h), desc(scannedTokens.liquidity))
+      .limit(candidateLimit);
+
+    const picked: Array<{ token: TokenRow; telegram: string }> = [];
+    for (const token of rows) {
+      if (picked.length >= limit) break;
+      const project = await this.fetchProjectMeta(token).catch(() => ({
+        logoUrl: "",
+        website: "",
+        twitter: "",
+        telegram: "",
+        chart: "",
+      } satisfies TokenProjectMeta));
+      const telegram = String(project.telegram || "").trim();
+      if (!isHttpUrl(telegram)) continue;
+      picked.push({ token, telegram });
+    }
+
+    if (!picked.length) {
+      await this.sendMessage(chatId, "No Telegram-community tokens found right now. Try again soon.", this.buildStartButtons(this.isSubscribed(chatId)));
+      return;
+    }
+
+    await this.sendMessage(
+      chatId,
+      `<b>Telegram Community Tokens</b>\nShowing ${picked.length} tokens with active Telegram links.`,
+      this.buildStartButtons(this.isSubscribed(chatId)),
+    );
+
+    for (const item of picked) {
+      await this.sendTokenCard(chatId, item.token, "compact", "TG COMMUNITY", { trackCall: true, origin: "tg_community" });
     }
   }
 
