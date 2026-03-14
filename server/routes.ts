@@ -1457,6 +1457,30 @@ export async function registerRoutes(
         autoHydrateBlocked,
       };
     }
+
+    if (ownerUserId && !autoHydrateBlocked) {
+      await syncDoctorWalletFromAssistantRuntime(ownerUserId);
+      const refreshedWallets = await getStoredDoctorWalletsByUser();
+      const refreshedWallet = ownerUserId ? (refreshedWallets[ownerUserId] as Record<string, any> | undefined) : undefined;
+      const refreshedEncryptedPrivateKey = getDoctorWalletStoredPrivateKey(refreshedWallet);
+      const refreshedPrivateKey = decryptDoctorPrivateKey(refreshedEncryptedPrivateKey);
+      const refreshedConfiguredPublicKey = String(refreshedWallet?.address || "").trim();
+      const refreshedDerivedPublicKey = refreshedPrivateKey
+        ? deriveWalletPublicKeyFromPrivateKey(refreshedPrivateKey)
+        : "";
+      const refreshedPublicKey = refreshedConfiguredPublicKey || refreshedDerivedPublicKey;
+      if (refreshedPublicKey && refreshedPrivateKey) {
+        return {
+          walletPublicKey: refreshedPublicKey,
+          walletPrivateKey: refreshedPrivateKey,
+          resolvedUserId: ownerUserId,
+          privateKeyPresent: true,
+          walletRowFound: Boolean(refreshedWallet),
+          autoHydrateBlocked: Boolean(refreshedWallet?.autoHydrateBlocked),
+        };
+      }
+    }
+
     return {
       walletPublicKey: "",
       walletPrivateKey: "",
