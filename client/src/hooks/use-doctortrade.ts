@@ -48,6 +48,8 @@ export type DoctorDecisionJournalRow = {
   confidence?: number;
   size_pct?: number;
   strategy_mode?: string;
+  ml_learned_bonus?: number;
+  ml_size_multiplier?: number;
   timestamp?: string;
 };
 
@@ -168,6 +170,26 @@ export type DoctorStatus = {
   self_evolution?: {
     cycles: number;
     last_updated_at?: string | null;
+    learning?: {
+      enabled?: boolean;
+      closed_trades?: number;
+      trained?: boolean;
+      win_rate?: number;
+      avg_pnl_pct?: number;
+      adaptive_confidence_delta?: number;
+      size_multiplier?: number;
+      win_profile?: {
+        confidence?: number;
+        volume_5m?: number;
+        liquidity?: number;
+      };
+      loss_profile?: {
+        confidence?: number;
+        volume_5m?: number;
+        liquidity?: number;
+      };
+      last_trained_at?: string | null;
+    };
   };
   fresh_feed?: {
     last_cycle_at?: string | null;

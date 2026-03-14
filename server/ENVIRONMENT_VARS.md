@@ -2,10 +2,18 @@ This file lists environment variables required or recommended for running the ba
 
 Required core vars
 - DATABASE_URL: (required) Postgres connection string (e.g. `postgres://user:pass@host:5432/dbname`). Used by `drizzle` / storage.
+- RAILWAY_WALLET_DATABASE_URL: (recommended) dedicated Postgres URL for wallet state (`doctortrade.wallets.by_user.v1` and `assistant.runtime.v1:*`). Falls back to `DATABASE_URL`.
+- RAILWAY_TRADE_DATABASE_URL: (recommended) dedicated Postgres URL for trade execution logs (`doctortrade.executions.v1`). Falls back to `DATABASE_URL`.
 - PORT: (required) HTTP port for Node server (Railway sets this automatically).
 - NODE_ENV: (required) `production` or `development`.
 - SESSION_SECRET or JWT_SECRET: (required) Secret for session or JWT signing. Keep secure.
+- APP_STATE_ENCRYPTION_KEY: (strongly recommended) Master key used to encrypt sensitive app_state payloads at rest (assistant runtime, per-user wallets, per-user execution logs).
 - REDIS_URL: (required if using Redis/Celery) Redis connection string for caching and Celery broker.
+
+Secrets posture
+- Keep all sensitive values in Railway backend service variables.
+- Local dotenv loading is disabled by default.
+- To explicitly allow local dotenv for development only, set `ALLOW_LOCAL_DOTENV=true`.
 
 Scanner & blockchain analysis
 - HELIUS_API_KEY: (recommended for Solana) Helius key used for holder analysis and RPC calls.
@@ -21,6 +29,14 @@ Payments & webhooks
 - STRIPE_SECRET_KEY: (optional) Stripe secret for payments (if using Stripe).
 - STRIPE_WEBHOOK_SECRET: (optional) For webhook verification.
 
+DoctorTrade adaptive learning
+- DOCTORTRADE_ML_LEARNING_ENABLED: (optional) Enable/disable online learning for DoctorTrade candidate ranking and sizing. Default `true`.
+- DOCTORTRADE_ML_MIN_CLOSED_TRADES: (optional) Minimum executed SELL trades required before learned adaptation is applied. Default `8`.
+- DOCTORTRADE_ML_LOOKBACK_TRADES: (optional) Number of recent SELL trades used for model fitting. Default `40`.
+- DOCTORTRADE_ML_BONUS_CAP_SCORE: (optional) Maximum positive/negative learning bonus applied to candidate score ranking. Default `18`.
+- DOCTORTRADE_ML_SIZE_MIN_MULTIPLIER: (optional) Minimum learned position-size multiplier when performance degrades. Default `0.7`.
+- DOCTORTRADE_ML_SIZE_MAX_MULTIPLIER: (optional) Maximum learned position-size multiplier when performance improves. Default `1.2`.
+
 Telegram bot (safe Solana calls)
 - TELEGRAM_BOT_TOKEN: (required for bot) Bot token from BotFather.
 - TELEGRAM_CHAT_ID: (optional but recommended) Default Telegram chat id allowed to interact with the bot.
@@ -31,6 +47,8 @@ Telegram bot (safe Solana calls)
 - TELEGRAM_BOT_PUSH_MIN_SAFETY_SCORE: (optional) Minimum safety score for push alerts. Default `78`.
 - TELEGRAM_BOT_PUSH_MIN_LIQUIDITY_USD: (optional) Minimum liquidity for push alerts. Default `35000`.
 - TELEGRAM_BOT_PUSH_MIN_VOLUME24H_USD: (optional) Minimum 24h volume for push alerts. Default `20000`.
+- TELEGRAM_BOT_LEARNING_MIN_CLOSED_CALLS: (optional) Minimum closed calls before learning bonus is applied. Default `20`.
+- TELEGRAM_BOT_LEARNING_BONUS_CAP: (optional) Max positive/negative learned ranking bonus. Default `16`.
 - TRADEAID_APP_URL: (optional) Base URL used for direct buy/view buttons in Telegram replies. Defaults to `FRONTEND_URL` or `https://tradeaid.ink`.
 
 Bot commands

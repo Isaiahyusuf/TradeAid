@@ -1,7 +1,6 @@
 import type { Express } from "express";
 import type { Server } from "http";
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "crypto";
-import { mkdir, readFile, writeFile } from "fs/promises";
 import { resolve } from "path";
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
@@ -818,6 +817,12 @@ export async function registerRoutes(
       min_unique_buyers: 8,
       min_buy_ratio_pct: 62,
       max_early_spike_pct: 200,
+      ml_learning_enabled: true,
+      ml_min_closed_trades: 8,
+      ml_lookback_trades: 40,
+      ml_bonus_cap_score: 18,
+      ml_size_min_multiplier: 0.7,
+      ml_size_max_multiplier: 1.2,
     },
     execution: {
       mode: "live" as "paper" | "live",
@@ -828,13 +833,31 @@ export async function registerRoutes(
     recentTrades: [] as Array<Record<string, any>>,
     decisionJournal: [] as Array<Record<string, any>>,
     performance: [] as Array<Record<string, any>>,
+    learning: {
+      enabled: true,
+      closed_trades: 0,
+      trained: false,
+      win_rate: 0,
+      avg_pnl_pct: 0,
+      adaptive_confidence_delta: 0,
+      size_multiplier: 1,
+      win_profile: {
+        confidence: 0,
+        volume_5m: 0,
+        liquidity: 0,
+      },
+      loss_profile: {
+        confidence: 0,
+        volume_5m: 0,
+        liquidity: 0,
+      },
+      last_trained_at: null as string | null,
+    },
     lastDecision: null as Record<string, any> | null,
     lastRunAt: null as string | null,
     lastError: null as string | null,
   };
 
-  const doctorStateDir = resolve(process.cwd(), "server", "state");
-  const doctorStateFile = resolve(doctorStateDir, "doctortrade.runtime.json");
   const doctorRuntimeByUserStateKey = "doctortrade.runtime.by_user.v1";
   const doctorPresetByUserStateKey = "doctortrade.preset.by_user.v1";
   const doctorWalletByUserStateKey = "doctortrade.wallets.by_user.v1";
@@ -1920,7 +1943,6 @@ export async function registerRoutes(
     const snapshot = JSON.parse(JSON.stringify(doctorRuntime));
     const targetUserId = String(userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
     try {
-      await mkdir(doctorStateDir, { recursive: true });
       if (targetUserId) {
         const runtimeByUser = await getStoredDoctorRuntimesByUser();
         const presetByUser = await getStoredDoctorPresetsByUser();
@@ -1929,11 +1951,6 @@ export async function registerRoutes(
         await Promise.allSettled([
           storage.setAppState(doctorRuntimeByUserStateKey, runtimeByUser),
           storage.setAppState(doctorPresetByUserStateKey, presetByUser),
-          writeFile(doctorStateFile, JSON.stringify(snapshot, null, 2), "utf8"),
-        ]);
-      } else {
-        await Promise.allSettled([
-          writeFile(doctorStateFile, JSON.stringify(snapshot, null, 2), "utf8"),
         ]);
       }
     } catch {
@@ -2016,6 +2033,33 @@ export async function registerRoutes(
     }
     if (Array.isArray(loaded.performance)) {
       doctorRuntime.performance = loaded.performance.slice(0, 40);
+    }
+    const learning = (loaded as any).learning as Record<string, any> | undefined;
+    if (learning && typeof learning === "object") {
+      doctorRuntime.learning.enabled = typeof learning.enabled === "boolean"
+        ? learning.enabled
+        : doctorRuntime.learning.enabled;
+      doctorRuntime.learning.closed_trades = Math.max(0, Number(learning.closed_trades || 0));
+      doctorRuntime.learning.trained = Boolean(learning.trained);
+      doctorRuntime.learning.win_rate = Math.max(0, Math.min(1, Number(learning.win_rate || 0)));
+      doctorRuntime.learning.avg_pnl_pct = Number(learning.avg_pnl_pct || 0);
+      doctorRuntime.learning.adaptive_confidence_delta = Math.max(-12, Math.min(12, Number(learning.adaptive_confidence_delta || 0)));
+      doctorRuntime.learning.size_multiplier = Math.max(0.5, Math.min(1.5, Number(learning.size_multiplier || 1)));
+      const winProfile = (learning.win_profile || {}) as Record<string, any>;
+      const lossProfile = (learning.loss_profile || {}) as Record<string, any>;
+      doctorRuntime.learning.win_profile = {
+        confidence: Math.max(0, Number(winProfile.confidence || 0)),
+        volume_5m: Math.max(0, Number(winProfile.volume_5m || 0)),
+        liquidity: Math.max(0, Number(winProfile.liquidity || 0)),
+      };
+      doctorRuntime.learning.loss_profile = {
+        confidence: Math.max(0, Number(lossProfile.confidence || 0)),
+        volume_5m: Math.max(0, Number(lossProfile.volume_5m || 0)),
+        liquidity: Math.max(0, Number(lossProfile.liquidity || 0)),
+      };
+      doctorRuntime.learning.last_trained_at = typeof learning.last_trained_at === "string"
+        ? learning.last_trained_at
+        : null;
     }
     if (loaded.execution && typeof loaded.execution === "object") {
       const loadedMode = String((loaded.execution as Record<string, any>).mode || "").trim().toLowerCase();
@@ -2147,7 +2191,13 @@ export async function registerRoutes(
   const doctorSchedulerInstanceId = `${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
   let doctorSchedulerTimer: NodeJS.Timeout | null = null;
   let doctorEarlyScoredCache: { at: number; tokens: Array<Record<string, any>> } | null = null;
-  const doctorTradeLogStateKey = "doctortrade.executions.v1";
+  const doctorTradeLogStateKeyPrefix = "doctortrade.executions.v1";
+  const getDoctorTradeLogStateKeyForUser = (userId: string) => {
+    const normalized = String(userId || "").trim();
+    return normalized
+      ? `${doctorTradeLogStateKeyPrefix}:${normalized}`
+      : doctorTradeLogStateKeyPrefix;
+  };
   const doctorDexWorkerStateKey = "doctortrade.dex.worker.v1";
   let doctorDexWorkerTimer: NodeJS.Timeout | null = null;
   let doctorDexWorkerRunning = false;
@@ -3018,14 +3068,23 @@ export async function registerRoutes(
 
   const appendDoctorTradeLog = async (entry: Record<string, any>) => {
     try {
-      const current = await storage.getAppState<Array<Record<string, any>>>(doctorTradeLogStateKey);
+      const ownerUserId = String(
+        entry?.owner_user_id
+        || entry?.user_id
+        || doctorRuntime.ownerUserId
+        || doctorActiveUserId
+        || "",
+      ).trim();
+      const logKey = getDoctorTradeLogStateKeyForUser(ownerUserId);
+      const current = await storage.getAppState<Array<Record<string, any>>>(logKey);
       const rows = Array.isArray(current) ? current.slice(0, 499) : [];
       rows.unshift({
         id: `trade_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         created_at: nowIso(),
+        owner_user_id: ownerUserId || null,
         ...entry,
       });
-      await storage.setAppState(doctorTradeLogStateKey, rows);
+      await storage.setAppState(logKey, rows);
     } catch {
     }
   };
@@ -3463,6 +3522,151 @@ export async function registerRoutes(
     return {
       dailyRealizedPnlUsd,
       consecutiveLosses,
+    };
+  };
+
+  const buildDoctorLearningSnapshot = (nowMs = Date.now()) => {
+    const learningEnabledByControl = Boolean((doctorRuntime.controls as any).ml_learning_enabled ?? true);
+    const learningEnabledByEnv = String(process.env.DOCTORTRADE_ML_LEARNING_ENABLED || "true").trim().toLowerCase() !== "false";
+    const enabled = learningEnabledByControl && learningEnabledByEnv;
+    const minClosedTrades = Math.max(
+      3,
+      Math.trunc(Number((doctorRuntime.controls as any).ml_min_closed_trades || process.env.DOCTORTRADE_ML_MIN_CLOSED_TRADES || 8)),
+    );
+    const lookbackTrades = Math.max(
+      minClosedTrades,
+      Math.trunc(Number((doctorRuntime.controls as any).ml_lookback_trades || process.env.DOCTORTRADE_ML_LOOKBACK_TRADES || 40)),
+    );
+
+    const closedSells = doctorRuntime.recentTrades
+      .filter((trade) => String((trade as any).action || "").toUpperCase() === "SELL")
+      .filter((trade) => String((trade as any).status || "EXECUTED").toUpperCase() === "EXECUTED")
+      .slice(0, lookbackTrades);
+
+    const computeCentroid = (rows: Array<Record<string, any>>) => {
+      if (!rows.length) {
+        return { confidence: 0, volume_5m: 0, liquidity: 0 };
+      }
+      const weighted = rows.reduce((acc, row, index) => {
+        const recencyWeight = Math.max(0.4, 1 - (index / Math.max(1, rows.length)) * 0.6);
+        acc.weight += recencyWeight;
+        acc.confidence += Number(row.confidence || 0) * recencyWeight;
+        acc.volume_5m += Number(row.volume_5m || 0) * recencyWeight;
+        acc.liquidity += Number(row.liquidity || 0) * recencyWeight;
+        return acc;
+      }, { weight: 0, confidence: 0, volume_5m: 0, liquidity: 0 });
+
+      const divisor = Math.max(0.000001, weighted.weight);
+      return {
+        confidence: Number((weighted.confidence / divisor).toFixed(2)),
+        volume_5m: Number((weighted.volume_5m / divisor).toFixed(2)),
+        liquidity: Number((weighted.liquidity / divisor).toFixed(2)),
+      };
+    };
+
+    const pnlValues = closedSells.map((trade) => Number((trade as any).pnl_pct || 0));
+    const wins = closedSells.filter((trade) => Number((trade as any).pnl_pct || 0) > 0);
+    const losses = closedSells.filter((trade) => Number((trade as any).pnl_pct || 0) <= 0);
+    const closedCount = closedSells.length;
+    const trained = enabled && closedCount >= minClosedTrades;
+    const winRate = closedCount > 0
+      ? Number((wins.length / closedCount).toFixed(4))
+      : 0;
+    const avgPnlPct = closedCount > 0
+      ? Number((pnlValues.reduce((sum, value) => sum + value, 0) / closedCount).toFixed(2))
+      : 0;
+
+    const adaptiveConfidenceDelta = !trained
+      ? 0
+      : Math.max(
+        -8,
+        Math.min(
+          8,
+          Number((((0.52 - winRate) * 14) + (avgPnlPct < 0 ? Math.min(4, Math.abs(avgPnlPct) / 3) : -Math.min(3, avgPnlPct / 4))).toFixed(2)),
+        ),
+      );
+
+    const minSizeMultiplier = Math.max(
+      0.5,
+      Math.min(1, Number((doctorRuntime.controls as any).ml_size_min_multiplier || process.env.DOCTORTRADE_ML_SIZE_MIN_MULTIPLIER || 0.7)),
+    );
+    const maxSizeMultiplier = Math.max(
+      1,
+      Number((doctorRuntime.controls as any).ml_size_max_multiplier || process.env.DOCTORTRADE_ML_SIZE_MAX_MULTIPLIER || 1.2),
+    );
+    const adaptiveSizeMultiplier = !trained
+      ? 1
+      : Math.max(
+        minSizeMultiplier,
+        Math.min(
+          maxSizeMultiplier,
+          Number((0.92 + ((winRate - 0.5) * 0.9) + (Math.max(-15, Math.min(20, avgPnlPct)) / 100)).toFixed(4)),
+        ),
+      );
+
+    return {
+      enabled,
+      closed_trades: closedCount,
+      trained,
+      win_rate: winRate,
+      avg_pnl_pct: avgPnlPct,
+      adaptive_confidence_delta: adaptiveConfidenceDelta,
+      size_multiplier: adaptiveSizeMultiplier,
+      win_profile: computeCentroid(wins),
+      loss_profile: computeCentroid(losses),
+      min_closed_trades: minClosedTrades,
+      lookback_trades: lookbackTrades,
+      at: new Date(nowMs).toISOString(),
+    };
+  };
+
+  const getDoctorCandidateLearningScore = (
+    token: Record<string, any>,
+    learningSnapshot: Record<string, any>,
+  ) => {
+    const baseScore = Number(token.score || 0);
+    const trained = Boolean(learningSnapshot?.trained);
+    const enabled = Boolean(learningSnapshot?.enabled);
+    if (!enabled || !trained) {
+      return {
+        base_score: baseScore,
+        learned_bonus: 0,
+        final_score: baseScore,
+      };
+    }
+
+    const volumeScale = Math.max(2_500, Number((learningSnapshot?.win_profile as any)?.volume_5m || 2_500));
+    const liquidityScale = Math.max(3_000, Number((learningSnapshot?.win_profile as any)?.liquidity || 3_000));
+    const normalize = (value: number, scale: number) => Math.max(0, Math.min(1.2, value / Math.max(1, scale)));
+
+    const candidate = {
+      confidence: Math.max(0, Math.min(100, Number(token.score || 0))),
+      volume_5m: Math.max(0, Number((token as any).volume_5m || 0)),
+      liquidity: Math.max(0, Number((token as any).liquidity || 0)),
+    };
+    const winProfile = (learningSnapshot?.win_profile || {}) as Record<string, any>;
+    const lossProfile = (learningSnapshot?.loss_profile || {}) as Record<string, any>;
+
+    const distanceTo = (profile: Record<string, any>) => {
+      const confidenceDist = Math.abs(normalize(candidate.confidence, 100) - normalize(Number(profile.confidence || 0), 100));
+      const volumeDist = Math.abs(normalize(candidate.volume_5m, volumeScale) - normalize(Number(profile.volume_5m || 0), volumeScale));
+      const liquidityDist = Math.abs(normalize(candidate.liquidity, liquidityScale) - normalize(Number(profile.liquidity || 0), liquidityScale));
+      return (confidenceDist * 0.45) + (volumeDist * 0.35) + (liquidityDist * 0.2);
+    };
+
+    const winDistance = distanceTo(winProfile);
+    const lossDistance = distanceTo(lossProfile);
+    const profileBonus = Number(((lossDistance - winDistance) * 20).toFixed(2));
+    const performanceBias = Number((((Number(learningSnapshot.win_rate || 0) - 0.5) * 10) + (Math.max(-12, Math.min(12, Number(learningSnapshot.avg_pnl_pct || 0))) / 3)).toFixed(2));
+    const rawBonus = profileBonus + performanceBias;
+    const bonusCap = Math.max(4, Number((doctorRuntime.controls as any).ml_bonus_cap_score || process.env.DOCTORTRADE_ML_BONUS_CAP_SCORE || 18));
+    const learnedBonus = Math.max(-bonusCap, Math.min(bonusCap, rawBonus));
+    const finalScore = Number((baseScore + learnedBonus).toFixed(2));
+
+    return {
+      base_score: baseScore,
+      learned_bonus: Number(learnedBonus.toFixed(2)),
+      final_score: finalScore,
     };
   };
 
@@ -4739,7 +4943,7 @@ export async function registerRoutes(
     const cooldownBetweenTradesSeconds = Math.max(0, Math.trunc(getDoctorEffectiveControlNumber("cooldown_between_trades_seconds", Number((doctorRuntime.controls as any).cooldown_between_trades_seconds || 0))));
     const routeRejectRetryMs = Math.max(10_000, Number(process.env.DOCTOR_ROUTE_REJECTED_RETRY_MS || 120_000));
     const feeBufferSol = Math.max(0, Number(doctorRuntime.controls.min_wallet_fee_buffer_sol || 0));
-    const buyAmountSol = Math.max(0.1, getDoctorEffectiveControlNumber("buy_amount_sol", Number(doctorRuntime.controls.buy_amount_sol || 0.1)));
+    let buyAmountSol = Math.max(0.1, getDoctorEffectiveControlNumber("buy_amount_sol", Number(doctorRuntime.controls.buy_amount_sol || 0.1)));
     const maxLiquidityUsd = Math.max(1, getDoctorEffectiveControlNumber("max_liquidity_usd", 500000));
     const maxTokenAgeSeconds = Math.max(60, Math.min(20, Math.trunc(getDoctorEffectiveControlNumber("max_token_age_minutes", 10))) * 60);
     const strictMaxTokenAgeSecondsRaw = Math.max(30, getDoctorEffectiveControlNumber("max_token_age_seconds", 240));
@@ -4757,6 +4961,27 @@ export async function registerRoutes(
     const effectiveMaxMarketCapUsd = Math.min(maxMarketCapUsd, hardMaxMarketCapUsd);
     const hardMinVolume24hUsd = Math.max(1_000, Number(process.env.DOCTOR_HARD_MIN_VOLUME_24H_USD || 12_000));
     const hardMinSafetyScore = Math.max(1, Number(process.env.DOCTOR_HARD_MIN_SAFETY_SCORE || 60));
+    const doctorLearningSnapshot = buildDoctorLearningSnapshot(nowMs) as Record<string, any>;
+    doctorRuntime.learning = {
+      enabled: Boolean(doctorLearningSnapshot.enabled),
+      closed_trades: Number(doctorLearningSnapshot.closed_trades || 0),
+      trained: Boolean(doctorLearningSnapshot.trained),
+      win_rate: Number(doctorLearningSnapshot.win_rate || 0),
+      avg_pnl_pct: Number(doctorLearningSnapshot.avg_pnl_pct || 0),
+      adaptive_confidence_delta: Number(doctorLearningSnapshot.adaptive_confidence_delta || 0),
+      size_multiplier: Number(doctorLearningSnapshot.size_multiplier || 1),
+      win_profile: {
+        confidence: Number((doctorLearningSnapshot.win_profile as any)?.confidence || 0),
+        volume_5m: Number((doctorLearningSnapshot.win_profile as any)?.volume_5m || 0),
+        liquidity: Number((doctorLearningSnapshot.win_profile as any)?.liquidity || 0),
+      },
+      loss_profile: {
+        confidence: Number((doctorLearningSnapshot.loss_profile as any)?.confidence || 0),
+        volume_5m: Number((doctorLearningSnapshot.loss_profile as any)?.volume_5m || 0),
+        liquidity: Number((doctorLearningSnapshot.loss_profile as any)?.liquidity || 0),
+      },
+      last_trained_at: String(doctorLearningSnapshot.at || nowIso()),
+    };
     const minLiquiditySol = Math.max(0.1, getDoctorEffectiveControlNumber("min_liquidity_sol", 2));
     const maxLiquiditySol = Math.max(minLiquiditySol, getDoctorEffectiveControlNumber("max_liquidity_sol", 50));
     const requireLiquidityLock = Math.max(0, getDoctorEffectiveControlNumber("min_lock_hours", 24)) > 0;
@@ -4863,7 +5088,8 @@ export async function registerRoutes(
         return mintAuthorityDisabled && freezeAuthorityDisabled && topHolderPct <= 25 && creatorHoldingPct <= 8;
       })
       .sort((a, b) => {
-        const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+        const scoreDiff = getDoctorCandidateLearningScore(b as Record<string, any>, doctorLearningSnapshot).final_score
+          - getDoctorCandidateLearningScore(a as Record<string, any>, doctorLearningSnapshot).final_score;
         if (scoreDiff !== 0) return scoreDiff;
         return Number(b.volume_5m || 0) - Number(a.volume_5m || 0);
       });
@@ -4953,7 +5179,13 @@ export async function registerRoutes(
         .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
         .filter((token) => !openAddresses.has(String(token.address || "")))
         .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
-      buyCandidate = softPaperPool[0];
+      const sortedSoftPaperPool = softPaperPool.sort((a, b) => {
+        const scoreDiff = getDoctorCandidateLearningScore(b as Record<string, any>, doctorLearningSnapshot).final_score
+          - getDoctorCandidateLearningScore(a as Record<string, any>, doctorLearningSnapshot).final_score;
+        if (scoreDiff !== 0) return scoreDiff;
+        return Number(b.volume_5m || 0) - Number(a.volume_5m || 0);
+      });
+      buyCandidate = sortedSoftPaperPool[0];
       if (buyCandidate) {
         appendDoctorSniperLog({
           event: "candidate_selected",
@@ -4976,7 +5208,8 @@ export async function registerRoutes(
         })
         .filter((token) => isLaunchSourceAllowed(String(token.launch_source || token.source || "unknown")))
         .sort((a, b) => {
-          const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+          const scoreDiff = getDoctorCandidateLearningScore(b as Record<string, any>, doctorLearningSnapshot).final_score
+            - getDoctorCandidateLearningScore(a as Record<string, any>, doctorLearningSnapshot).final_score;
           if (scoreDiff !== 0) return scoreDiff;
           return Number(b.volume_5m || 0) - Number(a.volume_5m || 0);
         });
@@ -5018,7 +5251,8 @@ export async function registerRoutes(
         .filter((token) => !openAddresses.has(String(token.address || "")))
         .filter((token) => !hasDoctorBoughtMintBefore(String(token.address || "")))
         .sort((a, b) => {
-          const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+          const scoreDiff = getDoctorCandidateLearningScore(b as Record<string, any>, doctorLearningSnapshot).final_score
+            - getDoctorCandidateLearningScore(a as Record<string, any>, doctorLearningSnapshot).final_score;
           if (scoreDiff !== 0) return scoreDiff;
           return Number(b.volume_5m || 0) - Number(a.volume_5m || 0);
         })
@@ -5108,7 +5342,8 @@ export async function registerRoutes(
         }
 
         const candidateSafetyScore = Number(candidate.score || 0);
-        if (candidateSafetyScore < hardMinSafetyScore) {
+        const adaptiveSafetyFloor = Math.max(1, hardMinSafetyScore + Number(doctorLearningSnapshot.adaptive_confidence_delta || 0));
+        if (candidateSafetyScore < adaptiveSafetyFloor) {
           return { allowed: false, reason: "low_safety_score" };
         }
 
@@ -5849,6 +6084,12 @@ export async function registerRoutes(
       }
 
       if (buyCandidate && (!enforceAiValidation || aiValidation.allowed || aiFallbackUsed)) {
+      const learningScore = getDoctorCandidateLearningScore(buyCandidate as Record<string, any>, doctorLearningSnapshot);
+      const sizeMultiplier = Number(doctorLearningSnapshot.size_multiplier || 1);
+      const confidenceSizer = learningScore.learned_bonus >= 0
+        ? 1 + Math.min(0.2, learningScore.learned_bonus / 80)
+        : 1 + Math.max(-0.2, learningScore.learned_bonus / 80);
+      buyAmountSol = Number((Math.max(0.1, buyAmountSol * sizeMultiplier * confidenceSizer)).toFixed(4));
       const requireOpenAiSafetyGate =
         !isDoctorAiBypassedPreset(activeSnipePreset)
         && aiScoringEnabledControl
@@ -5986,6 +6227,8 @@ export async function registerRoutes(
         confidence: position.confidence,
         size_pct: 100,
         strategy_mode: "autonomous",
+        ml_learned_bonus: Number(learningScore.learned_bonus || 0),
+        ml_size_multiplier: Number((Number(doctorLearningSnapshot.size_multiplier || 1) * confidenceSizer).toFixed(4)),
         ai_fallback: aiFallbackUsed ? aiFallbackDecision : undefined,
         timestamp: nowIso(),
       });
@@ -5998,6 +6241,8 @@ export async function registerRoutes(
         token: position.symbol,
         mint: position.address,
         confidence: Number(position.confidence || 0),
+        ml_learned_bonus: Number(learningScore.learned_bonus || 0),
+        ml_size_multiplier: Number((Number(doctorLearningSnapshot.size_multiplier || 1) * confidenceSizer).toFixed(4)),
         ai_validation: aiValidation,
         ai_fallback: aiFallbackUsed ? aiFallbackDecision : undefined,
       };
@@ -6448,6 +6693,7 @@ export async function registerRoutes(
       self_evolution: {
         cycles: doctorRuntime.performance.length,
         last_updated_at: doctorRuntime.lastRunAt,
+        learning: doctorRuntime.learning,
       },
       fresh_feed: {
         last_cycle_at: doctorRuntime.lastRunAt,
@@ -8058,6 +8304,12 @@ export async function registerRoutes(
 
   const ensureWalletExists = () => assistantRuntime.wallet.has_wallet && Object.values(assistantRuntime.wallet.addresses_by_chain).some(Boolean);
 
+  const ensureAssistantRuntimeOwnership = (req: any) => {
+    const requestUserId = String(getRequestUserId(req) || "").trim();
+    const runtimeUserId = String(assistantCurrentUserId || "").trim();
+    return Boolean(requestUserId) && requestUserId === runtimeUserId;
+  };
+
   const assistantWalletStatus = () => ({
     has_wallet: assistantRuntime.wallet.has_wallet,
     backup_confirmed: assistantRuntime.wallet.backup_confirmed,
@@ -8388,6 +8640,10 @@ export async function registerRoutes(
   });
 
   app.post("/api/ai/wallets/transfer", async (req, res) => {
+    if (!ensureAssistantRuntimeOwnership(req)) {
+      return res.status(403).json({ message: "wallet access denied for current user" });
+    }
+
     const chain = String(req.body?.chain || "solana").toLowerCase();
     const recipient = String(req.body?.recipient_address || "").trim();
     const amount = Number(req.body?.amount || 0);
@@ -8512,6 +8768,10 @@ export async function registerRoutes(
   });
 
   app.post("/api/ai/wallets/swap", async (req, res) => {
+    if (!ensureAssistantRuntimeOwnership(req)) {
+      return res.status(403).json({ message: "wallet access denied for current user" });
+    }
+
     const side = String(req.body?.side || "buy").toLowerCase() === "sell" ? "sell" : "buy";
     const tokenMint = String(req.body?.token_mint || req.body?.contract_address || "").trim();
     const notionalUsd = Number(req.body?.notional_usd || 0);

@@ -92,6 +92,10 @@ type BotCallRecord = {
   closedPriceUsd?: number;
   closeReason?: string;
   milestonesHit?: number[];
+  topHoldersPctAtCall?: number;
+  devWalletPctAtCall?: number;
+  priceChange1hAtCall?: number;
+  pairAgeMinutesAtCall?: number;
 };
 
 type BotCallState = {
@@ -113,6 +117,13 @@ type PnlBoardResult = {
   text: string;
   chartUrl?: string;
   chartCaption?: string;
+};
+
+type LearnedRankedToken = {
+  token: TokenRow;
+  baseScore: number;
+  learnedBonus: number;
+  finalScore: number;
 };
 
 type TokenProjectMeta = {
@@ -261,6 +272,8 @@ class TradeAidTelegramBot {
   private pushState: PushState = { chats: {}, sentMintAt: {} };
   private callState: BotCallState = { calls: [] };
   private pushInFlight = false;
+  private readonly learningMinClosedCalls: number;
+  private readonly learningBonusCap: number;
 
   private pruneCallHistory() {
     const maxAgeMs = 45 * 24 * 60 * 60 * 1000;
@@ -300,6 +313,8 @@ class TradeAidTelegramBot {
     this.earlyMinLiquidityUsd = Math.max(5_000, Number(process.env.TELEGRAM_BOT_EARLY_MIN_LIQUIDITY_USD || 30_000));
     this.earlyMinVolume24hUsd = Math.max(2_000, Number(process.env.TELEGRAM_BOT_EARLY_MIN_VOLUME24H_USD || 15_000));
     this.boardIntervalSeconds = Math.max(300, Math.trunc(Number(process.env.TELEGRAM_BOT_BOARD_INTERVAL_SECONDS || 1800)));
+    this.learningMinClosedCalls = Math.max(8, Math.trunc(Number(process.env.TELEGRAM_BOT_LEARNING_MIN_CLOSED_CALLS || 20)));
+    this.learningBonusCap = Math.max(4, Number(process.env.TELEGRAM_BOT_LEARNING_BONUS_CAP || 16));
     const webhookPath = String(process.env.TELEGRAM_BOT_WEBHOOK_PATH || "/api/telegram/webhook").trim() || "/api/telegram/webhook";
     this.webhookUrl = String(process.env.TELEGRAM_BOT_WEBHOOK_URL || `${this.appBaseUrl}${webhookPath}`).trim();
     this.webhookSecret = String(process.env.TELEGRAM_BOT_WEBHOOK_SECRET || "").trim();
@@ -653,6 +668,10 @@ class TradeAidTelegramBot {
             closedAt: row.closedAt ? String(row.closedAt) : undefined,
             closedPriceUsd: Number(row.closedPriceUsd || 0) || undefined,
             closeReason: row.closeReason ? String(row.closeReason) : undefined,
+            topHoldersPctAtCall: Number((row as any).topHoldersPctAtCall || 0) || undefined,
+            devWalletPctAtCall: Number((row as any).devWalletPctAtCall || 0) || undefined,
+            priceChange1hAtCall: Number((row as any).priceChange1hAtCall || 0) || undefined,
+            pairAgeMinutesAtCall: Number((row as any).pairAgeMinutesAtCall || 0) || undefined,
             milestonesHit: Array.isArray((row as any).milestonesHit)
               ? (row as any).milestonesHit.map((value: unknown) => Math.trunc(Number(value || 0))).filter((value: number) => value > 0)
               : [],
@@ -700,12 +719,111 @@ class TradeAidTelegramBot {
       peakPriceUsd: Number.isFinite(price) && price > 0 ? price : undefined,
       peakAt: Number.isFinite(price) && price > 0 ? now : undefined,
       milestonesHit: [],
+      topHoldersPctAtCall: Number(token.topHoldersPercentage || 0),
+      devWalletPctAtCall: Number(token.devWalletPercentage || 0),
+      priceChange1hAtCall: Number(token.priceChange1h || 0),
+      pairAgeMinutesAtCall: (() => {
+        const ts = new Date(String(token.pairCreatedAt || "")).getTime();
+        if (!Number.isFinite(ts) || ts <= 0) return undefined;
+        const minutes = Math.max(0, (Date.now() - ts) / 60_000);
+        return Number(minutes.toFixed(2));
+      })(),
     };
 
     this.callState.calls.push(created);
     this.pruneCallHistory();
     await this.persistCallState();
     return created;
+  }
+
+  private getClosedCallRows() {
+    return this.callState.calls.filter((row) => {
+      if (!row.closedAt) return false;
+      const entry = Number(row.calledPriceUsd || 0);
+      const exit = Number(row.closedPriceUsd || 0);
+      return Number.isFinite(entry) && entry > 0 && Number.isFinite(exit) && exit > 0;
+    });
+  }
+
+  private getCallPnlPct(row: BotCallRecord) {
+    const entry = Number(row.calledPriceUsd || 0);
+    const exit = Number(row.closedPriceUsd || 0);
+    if (!Number.isFinite(entry) || entry <= 0 || !Number.isFinite(exit) || exit <= 0) return 0;
+    return ((exit / entry) - 1) * 100;
+  }
+
+  private computeBaseCandidateScore(token: TokenRow) {
+    const safety = Number(token.safetyScore || 0);
+    const liquidity = Math.max(0, Number(token.liquidity || 0));
+    const volume = Math.max(0, Number(token.volume24h || 0));
+    const topHolder = Math.max(0, Number(token.topHoldersPercentage || 0));
+    const devWallet = Math.max(0, Number(token.devWalletPercentage || 0));
+    const momentum1h = Number(token.priceChange1h || 0);
+    const liqScore = Math.log10(liquidity + 1) * 7.5;
+    const volScore = Math.log10(volume + 1) * 7.5;
+    const riskPenalty = (topHolder * 0.5) + (devWallet * 0.8);
+    const momentumScore = Math.max(-40, Math.min(80, momentum1h)) * 0.08;
+    return (safety * 0.75) + liqScore + volScore + momentumScore - riskPenalty;
+  }
+
+  private computeLearnedBonus(token: TokenRow) {
+    const closed = this.getClosedCallRows();
+    if (closed.length < this.learningMinClosedCalls) return 0;
+
+    const globalAvg = closed.reduce((sum, row) => sum + this.getCallPnlPct(row), 0) / Math.max(1, closed.length);
+    const safety = Number(token.safetyScore || 0);
+    const liquidity = Math.max(0, Number(token.liquidity || 0));
+    const volume = Math.max(0, Number(token.volume24h || 0));
+    const topHolder = Math.max(0, Number(token.topHoldersPercentage || 0));
+    const devWallet = Math.max(0, Number(token.devWalletPercentage || 0));
+
+    const localRows = closed.filter((row) => {
+      const rowSafety = Number(row.safetyScore || 0);
+      const rowLiq = Math.max(0, Number(row.liquidityUsd || 0));
+      const rowVol = Math.max(0, Number(row.volume24hUsd || 0));
+      const rowTop = Math.max(0, Number(row.topHoldersPctAtCall || 0));
+      const rowDev = Math.max(0, Number(row.devWalletPctAtCall || 0));
+
+      const safetyOk = Math.abs(rowSafety - safety) <= 10;
+      const liqRatio = rowLiq > 0 && liquidity > 0 ? Math.max(rowLiq, liquidity) / Math.max(1, Math.min(rowLiq, liquidity)) : 99;
+      const volRatio = rowVol > 0 && volume > 0 ? Math.max(rowVol, volume) / Math.max(1, Math.min(rowVol, volume)) : 99;
+      const topOk = Math.abs(rowTop - topHolder) <= 10;
+      const devOk = Math.abs(rowDev - devWallet) <= 8;
+
+      return safetyOk && liqRatio <= 2.5 && volRatio <= 2.5 && topOk && devOk;
+    });
+
+    if (!localRows.length) {
+      const bonus = globalAvg * 0.12;
+      return Math.max(-this.learningBonusCap, Math.min(this.learningBonusCap, bonus));
+    }
+
+    const localAvg = localRows.reduce((sum, row) => sum + this.getCallPnlPct(row), 0) / localRows.length;
+    const confidence = Math.max(0.1, Math.min(1, localRows.length / 25));
+    const blended = (localAvg * confidence) + (globalAvg * (1 - confidence));
+    const bonus = blended * 0.18;
+    return Math.max(-this.learningBonusCap, Math.min(this.learningBonusCap, bonus));
+  }
+
+  private rankCandidatesWithLearning(tokens: TokenRow[]): LearnedRankedToken[] {
+    const ranked = tokens.map((token) => {
+      const baseScore = this.computeBaseCandidateScore(token);
+      const learnedBonus = this.computeLearnedBonus(token);
+      return {
+        token,
+        baseScore,
+        learnedBonus,
+        finalScore: baseScore + learnedBonus,
+      } satisfies LearnedRankedToken;
+    });
+
+    return ranked.sort((a, b) => {
+      const byFinal = b.finalScore - a.finalScore;
+      if (Math.abs(byFinal) > 0.00001) return byFinal;
+      const bySafety = Number(b.token.safetyScore || 0) - Number(a.token.safetyScore || 0);
+      if (Math.abs(bySafety) > 0.00001) return bySafety;
+      return Number(b.token.volume24h || 0) - Number(a.token.volume24h || 0);
+    });
   }
 
   private async buildPnlBoard(limit = 10): Promise<PnlBoardResult> {
@@ -1676,13 +1794,16 @@ class TradeAidTelegramBot {
       return;
     }
 
+    const ranked = this.rankCandidatesWithLearning(rows).slice(0, limit);
+    const picked = ranked.map((item) => item.token);
+
     await this.sendMessage(
       chatId,
-      `<b>Top Safe Solana Calls</b>\nShowing ${rows.length} opportunities ranked by safety + liquidity.`,
+      `<b>Top Safe Solana Calls</b>\nShowing ${picked.length} opportunities ranked by safety + learned call performance.`,
       this.buildStartButtons(this.isSubscribed(chatId)),
     );
 
-    for (const token of rows) {
+    for (const token of picked) {
       await this.sendTokenCard(chatId, token, "compact", "SAFE CALL", { trackCall: true, origin: "safe_calls" });
     }
   }
@@ -1712,13 +1833,16 @@ class TradeAidTelegramBot {
       return;
     }
 
+    const ranked = this.rankCandidatesWithLearning(rows).slice(0, limit);
+    const picked = ranked.map((item) => item.token);
+
     await this.sendMessage(
       chatId,
-      `<b>Early Safe Solana Calls</b>\nShowing ${rows.length} fresh picks from scanned app tokens.`,
+      `<b>Early Safe Solana Calls</b>\nShowing ${picked.length} fresh picks ranked by learned outcomes + safety.`,
       this.buildStartButtons(this.isSubscribed(chatId)),
     );
 
-    for (const token of rows) {
+    for (const token of picked) {
       await this.sendTokenCard(chatId, token, "compact", "EARLY SAFE", { trackCall: true, origin: "early_safe" });
     }
   }
@@ -1856,7 +1980,7 @@ class TradeAidTelegramBot {
           ),
         )
         .orderBy(desc(scannedTokens.pairCreatedAt), desc(scannedTokens.safetyScore), desc(scannedTokens.volume24h))
-        .limit(5);
+        .limit(12);
 
       if (!candidates.length) {
         this.pushState.lastPushAt = nowIso();
@@ -1865,8 +1989,10 @@ class TradeAidTelegramBot {
       }
 
       this.pruneSentPushCache();
+      const ranked = this.rankCandidatesWithLearning(candidates);
       let changed = false;
-      for (const token of candidates) {
+      for (const item of ranked) {
+        const token = item.token;
         const mint = String(token.address || "").trim();
         if (!mint) continue;
         if (this.pushState.sentMintAt[mint]) continue;

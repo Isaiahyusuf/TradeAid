@@ -257,6 +257,65 @@ export default function DoctorTrade() {
       .slice(0, 16);
   }, [viewData?.decision_journal]);
 
+  const learningState = useMemo(() => {
+    return (viewData?.self_evolution as any)?.learning as
+      | {
+          enabled?: boolean;
+          closed_trades?: number;
+          trained?: boolean;
+          win_rate?: number;
+          avg_pnl_pct?: number;
+          adaptive_confidence_delta?: number;
+          size_multiplier?: number;
+          win_profile?: { confidence?: number; volume_5m?: number; liquidity?: number };
+          loss_profile?: { confidence?: number; volume_5m?: number; liquidity?: number };
+          last_trained_at?: string | null;
+        }
+      | undefined;
+  }, [viewData?.self_evolution]);
+
+  const learningSummary = useMemo(() => {
+    const enabled = Boolean(learningState?.enabled);
+    const trained = Boolean(learningState?.trained);
+    const closedTrades = Math.max(0, Number(learningState?.closed_trades || 0));
+    const winRatePct = Math.max(0, Math.min(100, Number((Number(learningState?.win_rate || 0) * 100).toFixed(2))));
+    const avgPnlPct = Number(learningState?.avg_pnl_pct || 0);
+    const adaptiveConfidenceDelta = Number(learningState?.adaptive_confidence_delta || 0);
+    const sizeMultiplier = Number(learningState?.size_multiplier || 1);
+    const posture = adaptiveConfidenceDelta > 0
+      ? "tightened"
+      : adaptiveConfidenceDelta < 0
+        ? "relaxed"
+        : "neutral";
+
+    const latestMlDecision = decisionJournalRows.find((row: any) => {
+      return Number.isFinite(Number((row as any)?.ml_learned_bonus)) || Number.isFinite(Number((row as any)?.ml_size_multiplier));
+    }) as (Record<string, any> | undefined);
+
+    const latestBonus = Number(latestMlDecision?.ml_learned_bonus || 0);
+    const latestSizeMult = Number(latestMlDecision?.ml_size_multiplier || 0);
+    const latestBiasLabel = latestBonus > 0
+      ? "positive_bias"
+      : latestBonus < 0
+        ? "negative_bias"
+        : "neutral_bias";
+
+    return {
+      enabled,
+      trained,
+      closedTrades,
+      winRatePct,
+      avgPnlPct,
+      adaptiveConfidenceDelta,
+      sizeMultiplier,
+      posture,
+      latestMlDecision,
+      latestBonus,
+      latestSizeMult,
+      latestBiasLabel,
+    };
+  }, [decisionJournalRows, learningState]);
+
   const walletConnected = isDoctorWalletConnected(
     (viewData?.wallet as Record<string, any> | undefined) || null,
     (viewData?.trade_controls as Record<string, any> | undefined) || null,
@@ -1430,6 +1489,47 @@ export default function DoctorTrade() {
                 <div className="flex justify-between"><span className="text-muted-foreground">Max Slippage</span><span>{(viewData?.trade_controls?.max_slippage_pct || 0).toFixed(1)}%</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Daily Loss Limit</span><span>${(viewData?.trade_controls?.daily_loss_limit_usd || 0).toFixed(0)}</span></div>
               </div>
+            </Card>
+
+            <Card className="p-4 border-cyan-500/30 bg-cyan-500/5">
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <h2 className="text-sm font-semibold">Adaptive Learning</h2>
+                <Badge
+                  variant="outline"
+                  className={learningSummary.trained ? "border-cyan-500/40 text-cyan-300" : "border-yellow-500/40 text-yellow-300"}
+                >
+                  {learningSummary.trained ? "Trained" : "Collecting Data"}
+                </Badge>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between"><span className="text-muted-foreground">ML Enabled</span><span>{learningSummary.enabled ? "Yes" : "No"}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Closed Trades</span><span>{learningSummary.closedTrades}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Win Rate</span><span>{learningSummary.winRatePct.toFixed(2)}%</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Avg PnL</span><span>{learningSummary.avgPnlPct.toFixed(2)}%</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Risk Posture</span><span className="capitalize">{learningSummary.posture}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Confidence Shift</span><span>{learningSummary.adaptiveConfidenceDelta >= 0 ? "+" : ""}{learningSummary.adaptiveConfidenceDelta.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Size Multiplier</span><span>{learningSummary.sizeMultiplier.toFixed(3)}x</span></div>
+              </div>
+
+              <div className="mt-3 rounded-md border border-border/60 bg-background/50 p-2">
+                <p className="text-xs font-medium mb-1">Latest ML Bias</p>
+                {learningSummary.latestMlDecision ? (
+                  <>
+                    <p className="text-[11px] text-muted-foreground">
+                      Token {String(learningSummary.latestMlDecision.token || "UNKNOWN")} was tagged with {learningSummary.latestBiasLabel.replace("_", " ")}.
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Learned bonus {learningSummary.latestBonus >= 0 ? "+" : ""}{learningSummary.latestBonus.toFixed(2)} and effective size {learningSummary.latestSizeMult > 0 ? `${learningSummary.latestSizeMult.toFixed(3)}x` : "n/a"}.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">No learned decision rows yet. Execute more cycles to populate ML explanation.</p>
+                )}
+              </div>
+
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Risk gate is automatically {learningSummary.posture} by shifting minimum confidence by {learningSummary.adaptiveConfidenceDelta >= 0 ? "+" : ""}{learningSummary.adaptiveConfidenceDelta.toFixed(2)} points.
+              </p>
             </Card>
 
             <Card className="p-4">

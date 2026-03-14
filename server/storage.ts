@@ -1,4 +1,5 @@
-import { db } from "./db";
+import { db, tradeDb, walletDb } from "./db";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
 import { 
   scannedTokens, trackedWallets, walletAlerts, trendingCoins, subscriptions, userUsage, paymentRecords,
   type InsertScannedToken, type InsertTrackedWallet, type InsertWalletAlert, type InsertTrendingCoin, type InsertSubscription, type InsertPaymentRecord,
@@ -44,12 +45,111 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  private appStateTableReady: Promise<void> | null = null;
+  private appStateTableReady: Record<"primary" | "wallet" | "trade", Promise<void> | null> = {
+    primary: null,
+    wallet: null,
+    trade: null,
+  };
   private whaleWatchTenantColumnsReady: Promise<void> | null = null;
 
-  private async ensureAppStateTable(): Promise<void> {
-    if (!this.appStateTableReady) {
-      this.appStateTableReady = db.execute(sql`
+  private getAppStateTargetForKey(key: string): "primary" | "wallet" | "trade" {
+    const normalized = String(key || "").trim();
+    if (
+      normalized === "doctortrade.wallets.by_user.v1"
+      || normalized === "doctortrade.runtime.by_user.v1"
+      || normalized === "assistant.runtime.v1"
+      || normalized.startsWith("assistant.runtime.v1:")
+    ) {
+      return "wallet";
+    }
+
+    if (normalized === "doctortrade.executions.v1" || normalized.startsWith("doctortrade.executions.v1:")) {
+      return "trade";
+    }
+
+    return "primary";
+  }
+
+  private getStateDb(target: "primary" | "wallet" | "trade") {
+    if (target === "wallet") return walletDb;
+    if (target === "trade") return tradeDb;
+    return db;
+  }
+
+  private shouldEncryptAppStateKey(key: string): boolean {
+    const normalized = String(key || "").trim();
+    return (
+      normalized === "assistant.runtime.v1"
+      || normalized.startsWith("assistant.runtime.v1:")
+      || normalized === "doctortrade.wallets.by_user.v1"
+      || normalized === "doctortrade.runtime.by_user.v1"
+      || normalized === "doctortrade.preset.by_user.v1"
+      || normalized === "tradeaid.user.settings.by_user.v1"
+      || normalized === "doctortrade.executions.v1"
+      || normalized.startsWith("doctortrade.executions.v1:")
+    );
+  }
+
+  private resolveAppStateEncryptionSecret(): string {
+    return String(
+      process.env.APP_STATE_ENCRYPTION_KEY
+      || process.env.DOCTORTRADE_WALLET_ENCRYPTION_KEY
+      || process.env.DOCTORTRADE_ENCRYPTION_KEY
+      || process.env.SESSION_SECRET
+      || process.env.JWT_SECRET
+      || "",
+    ).trim();
+  }
+
+  private getAppStateEncryptionKey(): Buffer {
+    const secret = this.resolveAppStateEncryptionSecret();
+    if (!secret) {
+      throw new Error("APP_STATE_ENCRYPTION_KEY is required for encrypted app_state keys");
+    }
+    return createHash("sha256").update(secret, "utf8").digest();
+  }
+
+  private encryptAppStateValue(value: unknown): Record<string, unknown> {
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", this.getAppStateEncryptionKey(), iv);
+    const plaintext = Buffer.from(JSON.stringify(value ?? null), "utf8");
+    const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+    return {
+      __enc_v1: true,
+      alg: "aes-256-gcm",
+      iv: iv.toString("base64"),
+      tag: authTag.toString("base64"),
+      data: encrypted.toString("base64"),
+    };
+  }
+
+  private decryptAppStateValue<T = unknown>(value: unknown): T {
+    const envelope = value as Record<string, unknown>;
+    const ivRaw = String(envelope?.iv || "").trim();
+    const tagRaw = String(envelope?.tag || "").trim();
+    const dataRaw = String(envelope?.data || "").trim();
+    if (!ivRaw || !tagRaw || !dataRaw) {
+      throw new Error("invalid encrypted app_state envelope");
+    }
+
+    const decipher = createDecipheriv(
+      "aes-256-gcm",
+      this.getAppStateEncryptionKey(),
+      Buffer.from(ivRaw, "base64"),
+    );
+    decipher.setAuthTag(Buffer.from(tagRaw, "base64"));
+    const decrypted = Buffer.concat([
+      decipher.update(Buffer.from(dataRaw, "base64")),
+      decipher.final(),
+    ]);
+    return JSON.parse(decrypted.toString("utf8")) as T;
+  }
+
+  private async ensureAppStateTable(target: "primary" | "wallet" | "trade"): Promise<void> {
+    if (!this.appStateTableReady[target]) {
+      const stateDb = this.getStateDb(target);
+      this.appStateTableReady[target] = stateDb.execute(sql`
         CREATE TABLE IF NOT EXISTS app_state (
           key TEXT PRIMARY KEY,
           value JSONB NOT NULL,
@@ -57,7 +157,7 @@ export class DatabaseStorage implements IStorage {
         )
       `).then(() => undefined);
     }
-    await this.appStateTableReady;
+    await this.appStateTableReady[target];
   }
 
   private async ensureWhaleWatchTenantColumns(): Promise<void> {
@@ -226,17 +326,30 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAppState<T = unknown>(key: string): Promise<T | undefined> {
-    await this.ensureAppStateTable();
-    const result = await db.execute(sql`SELECT value FROM app_state WHERE key = ${key} LIMIT 1`);
+    const target = this.getAppStateTargetForKey(key);
+    const stateDb = this.getStateDb(target);
+    await this.ensureAppStateTable(target);
+    const result = await stateDb.execute(sql`SELECT value FROM app_state WHERE key = ${key} LIMIT 1`);
     const rows = (result as any)?.rows as Array<{ value?: T }> | undefined;
-    const value = rows?.[0]?.value;
+    let value = rows?.[0]?.value;
+    if (value !== undefined && this.shouldEncryptAppStateKey(key)) {
+      const maybeEnvelope = value as unknown as Record<string, unknown>;
+      if (maybeEnvelope && typeof maybeEnvelope === "object" && maybeEnvelope.__enc_v1 === true) {
+        value = this.decryptAppStateValue<T>(maybeEnvelope) as T;
+      }
+    }
     return value === undefined ? undefined : value;
   }
 
   async setAppState<T = unknown>(key: string, value: T): Promise<void> {
-    await this.ensureAppStateTable();
-    const serialized = JSON.stringify(value ?? null);
-    await db.execute(sql`
+    const target = this.getAppStateTargetForKey(key);
+    const stateDb = this.getStateDb(target);
+    await this.ensureAppStateTable(target);
+    const payload = this.shouldEncryptAppStateKey(key)
+      ? this.encryptAppStateValue(value)
+      : (value ?? null);
+    const serialized = JSON.stringify(payload);
+    await stateDb.execute(sql`
       INSERT INTO app_state (key, value, updated_at)
       VALUES (${key}, ${serialized}::jsonb, NOW())
       ON CONFLICT (key)
