@@ -10668,7 +10668,7 @@ export async function registerRoutes(
 
     try {
       const pairs = await getNewPairs("solana", maxAgeHours);
-      const rows = pairs
+      const rowsFromPairs = pairs
         .filter((pair) => {
           const pairMarketCap = Number(pair.marketCap || pair.fdv || 0);
           if (maxMarketCapUsd > 0 && pairMarketCap > maxMarketCapUsd) return false;
@@ -10716,6 +10716,70 @@ export async function registerRoutes(
             dexscreenerPaid: false,
           };
         });
+
+      let rows = rowsFromPairs;
+
+      if (rows.length === 0) {
+        const nowMs = Date.now();
+        const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
+        const scanned = await storage.getScannedTokens();
+
+        rows = scanned
+          .filter((token: any) => String(token.chain || "").toLowerCase() === "solana")
+          .filter((token: any) => {
+            const createdAtMs = token.createdAt ? new Date(token.createdAt).getTime() : 0;
+            if (!createdAtMs || !Number.isFinite(createdAtMs)) return false;
+            if (nowMs - createdAtMs > maxAgeMs) return false;
+            const dexId = String(token.dexId || "").toLowerCase();
+            if (pumpOnly && !dexId.includes("pump")) return false;
+            const marketCapUsd = Number(token.marketCap || 0);
+            if (maxMarketCapUsd > 0 && marketCapUsd > maxMarketCapUsd) return false;
+            return true;
+          })
+          .sort((a: any, b: any) => {
+            const aPump = String(a.dexId || "").toLowerCase().includes("pump") ? 1 : 0;
+            const bPump = String(b.dexId || "").toLowerCase().includes("pump") ? 1 : 0;
+            if (aPump !== bPump) return bPump - aPump;
+            const aCreated = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const bCreated = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return bCreated - aCreated;
+          })
+          .slice(0, limit)
+          .map((token: any) => {
+            const symbolRaw = String(token.symbol || "UNKNOWN").trim();
+            const dexRaw = String(token.dexId || "scanner").trim();
+            const dexLower = dexRaw.toLowerCase();
+            const dex = dexLower.includes("pump")
+              ? "Pump.fun"
+              : (dexRaw.charAt(0).toUpperCase() + dexRaw.slice(1));
+            const createdAtMs = token.createdAt ? new Date(token.createdAt).getTime() : Date.now();
+            const liquidityUsd = Number(token.liquidity || 0);
+            const volume24h = Number(token.volume24h || 0);
+            const marketCapUsd = Number(token.marketCap || 0);
+            const hype = Math.max(1, Math.min(
+              99,
+              Math.trunc(
+                35
+                + Math.min(30, volume24h / 20_000)
+                + Math.min(25, liquidityUsd / 10_000)
+                + (dexLower.includes("pump") ? 10 : 0),
+              ),
+            ));
+
+            return {
+              symbol: symbolRaw.startsWith("$") ? symbolRaw : `$${symbolRaw}`,
+              name: String(token.name || "Unknown"),
+              chain: "solana",
+              dex,
+              price: String(token.priceUsd || "0"),
+              volume: formatUsdCompact(volume24h),
+              age: formatAge(createdAtMs),
+              hype,
+              marketCapUsd,
+              dexscreenerPaid: false,
+            };
+          });
+      }
 
       return res.json(rows);
     } catch (error) {
