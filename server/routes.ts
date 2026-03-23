@@ -7213,6 +7213,11 @@ export async function registerRoutes(
       "min_unique_buyers",
       "min_buy_ratio_pct",
       "max_early_spike_pct",
+      "ml_min_closed_trades",
+      "ml_lookback_trades",
+      "ml_bonus_cap_score",
+      "ml_size_min_multiplier",
+      "ml_size_max_multiplier",
     ] as const;
 
     for (const key of numericKeys) {
@@ -7234,6 +7239,9 @@ export async function registerRoutes(
     }
     if (typeof payload.ai_prediction_check === "boolean") {
       (doctorRuntime.controls as any).ai_prediction_check = payload.ai_prediction_check;
+    }
+    if (typeof payload.ml_learning_enabled === "boolean") {
+      (doctorRuntime.controls as any).ml_learning_enabled = payload.ml_learning_enabled;
     }
 
     const presetAfterPayload = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
@@ -7271,6 +7279,18 @@ export async function registerRoutes(
     doctorRuntime.controls.min_token_age_minutes = Math.max(0, Number(doctorRuntime.controls.min_token_age_minutes || 0));
     doctorRuntime.controls.max_token_age_minutes = Math.min(20, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
     doctorRuntime.controls.max_token_age_seconds = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
+    (doctorRuntime.controls as any).ml_learning_enabled = Boolean((doctorRuntime.controls as any).ml_learning_enabled ?? true);
+    (doctorRuntime.controls as any).ml_min_closed_trades = Math.max(3, Math.trunc(Number((doctorRuntime.controls as any).ml_min_closed_trades || 8)));
+    (doctorRuntime.controls as any).ml_lookback_trades = Math.max(
+      Number((doctorRuntime.controls as any).ml_min_closed_trades || 8),
+      Math.trunc(Number((doctorRuntime.controls as any).ml_lookback_trades || 40)),
+    );
+    (doctorRuntime.controls as any).ml_bonus_cap_score = Math.max(4, Number((doctorRuntime.controls as any).ml_bonus_cap_score || 18));
+    (doctorRuntime.controls as any).ml_size_min_multiplier = Math.max(0.5, Math.min(1, Number((doctorRuntime.controls as any).ml_size_min_multiplier || 0.7)));
+    (doctorRuntime.controls as any).ml_size_max_multiplier = Math.max(
+      Number((doctorRuntime.controls as any).ml_size_min_multiplier || 0.7),
+      Number((doctorRuntime.controls as any).ml_size_max_multiplier || 1.2),
+    );
     if (isDoctorDexTurboEnabled() && !isDoctorSpeedModePreset() && doctorRuntime.controls.max_token_age_seconds < 120) {
       doctorRuntime.controls.max_token_age_seconds = 120;
     }
@@ -7283,6 +7303,38 @@ export async function registerRoutes(
     }
 
     await saveDoctorWalletForUser(userId);
+    return res.json(await buildDoctorStatus(userId));
+  });
+
+  app.post("/api/doctor/learning/reset", isAuthenticated, async (req: any, res) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    await loadDoctorRuntimeForUser(userId);
+    doctorRuntime.learning = {
+      enabled: Boolean((doctorRuntime.controls as any).ml_learning_enabled ?? true),
+      closed_trades: 0,
+      trained: false,
+      win_rate: 0,
+      avg_pnl_pct: 0,
+      adaptive_confidence_delta: 0,
+      size_multiplier: 1,
+      win_profile: {
+        confidence: 0,
+        volume_5m: 0,
+        liquidity: 0,
+      },
+      loss_profile: {
+        confidence: 0,
+        volume_5m: 0,
+        liquidity: 0,
+      },
+      last_trained_at: nowIso(),
+    };
+
+    await persistDoctorRuntime(userId);
     return res.json(await buildDoctorStatus(userId));
   });
 
@@ -9909,13 +9961,30 @@ export async function registerRoutes(
   app.get("/api/tokens/solana/fresh", async (req, res) => {
     const maxAgeHoursRaw = Number(req.query.max_age_hours || 24);
     const limitRaw = Number(req.query.limit || 50);
+    const maxMarketCapRaw = Number(req.query.max_market_cap_usd || req.query.max_market_cap || 0);
+    const pumpOnly = String(req.query.pump_only || "false").trim().toLowerCase() === "true";
     const maxAgeHours = Number.isFinite(maxAgeHoursRaw) ? Math.max(1, Math.min(168, Math.trunc(maxAgeHoursRaw))) : 24;
     const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.trunc(limitRaw))) : 50;
+    const defaultFreshMaxMarketCapUsd = Math.max(10_000, Number(process.env.FRESH_MAX_MARKET_CAP_USD || 300_000));
+    const maxMarketCapUsd = Number.isFinite(maxMarketCapRaw) && maxMarketCapRaw > 0
+      ? Math.max(1, Math.trunc(maxMarketCapRaw))
+      : defaultFreshMaxMarketCapUsd;
 
     try {
       const pairs = await getNewPairs("solana", maxAgeHours);
       const ranked = [...pairs]
-        .sort((a, b) => Number(b.pairCreatedAt || 0) - Number(a.pairCreatedAt || 0))
+        .filter((pair) => {
+          const pairMarketCap = Number(pair.marketCap || pair.fdv || 0);
+          if (maxMarketCapUsd > 0 && pairMarketCap > maxMarketCapUsd) return false;
+          if (pumpOnly && !String(pair.dexId || "").toLowerCase().includes("pump")) return false;
+          return true;
+        })
+        .sort((a, b) => {
+          const aPump = String(a.dexId || "").toLowerCase().includes("pump") ? 1 : 0;
+          const bPump = String(b.dexId || "").toLowerCase().includes("pump") ? 1 : 0;
+          if (aPump !== bPump) return bPump - aPump;
+          return Number(b.pairCreatedAt || 0) - Number(a.pairCreatedAt || 0);
+        })
         .slice(0, limit);
 
       const tokens = ranked.map((pair) => {
@@ -9942,6 +10011,8 @@ export async function registerRoutes(
         chain: "solana",
         source: "dexscreener",
         max_age_hours: maxAgeHours,
+        max_market_cap_usd: maxMarketCapUsd,
+        pump_only: pumpOnly,
         count: tokens.length,
         snapshot_at: nowIso(),
         tokens,
@@ -9976,12 +10047,18 @@ export async function registerRoutes(
 
       const chainParam = "solana";
       const newOnly = String(req.query.new_only || "false").toLowerCase() === "true";
+      const prioritizePumpFun = String(req.query.prioritize_pump_fun || "false").toLowerCase() === "true";
       const maxAgeHours = Number(req.query.max_age_hours || 0);
       const minAgeMinutes = Number(req.query.min_age_minutes || 0);
       const maxAgeMinutes = Number(req.query.max_age_minutes || 0);
+      const maxMarketCapUsdRaw = Number(req.query.max_market_cap_usd || req.query.max_market_cap || 0);
       const limitRaw = Number(req.query.limit || 50);
       const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.trunc(limitRaw))) : 50;
       const effectiveMaxAgeHours = Number.isFinite(maxAgeHours) && maxAgeHours > 0 ? maxAgeHours : 24;
+      const defaultFreshMaxMarketCapUsd = Math.max(10_000, Number(process.env.FRESH_MAX_MARKET_CAP_USD || 300_000));
+      const effectiveMaxMarketCapUsd = Number.isFinite(maxMarketCapUsdRaw) && maxMarketCapUsdRaw > 0
+        ? Math.max(1, Math.trunc(maxMarketCapUsdRaw))
+        : (newOnly ? defaultFreshMaxMarketCapUsd : 0);
 
       const freshRows: Array<Record<string, any>> = [];
 
@@ -10081,12 +10158,20 @@ export async function registerRoutes(
         if (Number.isFinite(minAgeMinutes) && minAgeMinutes > 0 && ageMinutes < minAgeMinutes) return false;
         if (Number.isFinite(maxAgeMinutes) && maxAgeMinutes > 0 && ageMinutes > maxAgeMinutes) return false;
 
+        const marketCapUsd = Number((token as any).marketCap || 0);
+        if (effectiveMaxMarketCapUsd > 0 && marketCapUsd > effectiveMaxMarketCapUsd) return false;
+
         return true;
       });
 
       const tokens: TokenFeedItem[] = filtered
         .sort((a, b) => {
           if (newOnly) {
+            if (prioritizePumpFun) {
+              const aPump = String(a.dexId || "").toLowerCase().includes("pump") ? 1 : 0;
+              const bPump = String(b.dexId || "").toLowerCase().includes("pump") ? 1 : 0;
+              if (aPump !== bPump) return bPump - aPump;
+            }
             const bCreated = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
             const aCreated = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
             if (bCreated !== aCreated) return bCreated - aCreated;
@@ -10552,16 +10637,92 @@ export async function registerRoutes(
 
   // === DEX Scanner (New Feature) ===
   app.get("/api/dex/new-tokens", async (req, res) => {
-    // Mock new tokens from multiple DEXes
-    const mockTokens = [
-      { symbol: "$MOODENG", name: "Moo Deng", chain: "solana", dex: "Raydium", price: "0.00012", volume: "$2.3M", age: "2h", hype: 92, dexscreenerPaid: true },
-      { symbol: "$GOAT", name: "Goatseus Maximus", chain: "solana", dex: "Jupiter", price: "0.45", volume: "$15M", age: "4h", hype: 88, dexscreenerPaid: true },
-      { symbol: "$BRETT", name: "Brett", chain: "base", dex: "Uniswap", price: "0.12", volume: "$8M", age: "1d", hype: 75, dexscreenerPaid: false },
-      { symbol: "$SIGMA", name: "Sigma", chain: "ethereum", dex: "Uniswap", price: "0.0023", volume: "$1.2M", age: "3h", hype: 82, dexscreenerPaid: true },
-      { symbol: "$NEIRO", name: "Neiro", chain: "ethereum", dex: "Uniswap", price: "0.0015", volume: "$5M", age: "12h", hype: 70, dexscreenerPaid: false },
-      { symbol: "$CAT", name: "Cat in Dogs World", chain: "solana", dex: "Pump.fun", price: "0.00008", volume: "$890K", age: "30m", hype: 95, dexscreenerPaid: true },
-    ];
-    res.json(mockTokens);
+    const maxAgeHoursRaw = Number(req.query.max_age_hours || 24);
+    const limitRaw = Number(req.query.limit || 40);
+    const maxMarketCapRaw = Number(req.query.max_market_cap_usd || req.query.max_market_cap || 0);
+    const pumpOnly = String(req.query.pump_only || "false").trim().toLowerCase() === "true";
+    const maxAgeHours = Number.isFinite(maxAgeHoursRaw) ? Math.max(1, Math.min(168, Math.trunc(maxAgeHoursRaw))) : 24;
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.trunc(limitRaw))) : 40;
+    const defaultFreshMaxMarketCapUsd = Math.max(10_000, Number(process.env.FRESH_MAX_MARKET_CAP_USD || 300_000));
+    const maxMarketCapUsd = Number.isFinite(maxMarketCapRaw) && maxMarketCapRaw > 0
+      ? Math.max(1, Math.trunc(maxMarketCapRaw))
+      : defaultFreshMaxMarketCapUsd;
+
+    const formatUsdCompact = (value: number) => {
+      const abs = Math.abs(Number(value || 0));
+      if (abs >= 1_000_000_000) return `$${(abs / 1_000_000_000).toFixed(1)}B`;
+      if (abs >= 1_000_000) return `$${(abs / 1_000_000).toFixed(1)}M`;
+      if (abs >= 1_000) return `$${(abs / 1_000).toFixed(1)}K`;
+      return `$${abs.toFixed(0)}`;
+    };
+
+    const formatAge = (pairCreatedAt?: number) => {
+      const createdAt = Number(pairCreatedAt || 0);
+      if (!createdAt || !Number.isFinite(createdAt)) return "now";
+      const ageMinutes = Math.max(0, Math.trunc((Date.now() - createdAt) / 60000));
+      if (ageMinutes < 1) return "now";
+      if (ageMinutes < 60) return `${ageMinutes}m`;
+      if (ageMinutes < 1440) return `${Math.trunc(ageMinutes / 60)}h`;
+      return `${Math.trunc(ageMinutes / 1440)}d`;
+    };
+
+    try {
+      const pairs = await getNewPairs("solana", maxAgeHours);
+      const rows = pairs
+        .filter((pair) => {
+          const pairMarketCap = Number(pair.marketCap || pair.fdv || 0);
+          if (maxMarketCapUsd > 0 && pairMarketCap > maxMarketCapUsd) return false;
+          if (pumpOnly && !String(pair.dexId || "").toLowerCase().includes("pump")) return false;
+          return true;
+        })
+        .sort((a, b) => {
+          const aPump = String(a.dexId || "").toLowerCase().includes("pump") ? 1 : 0;
+          const bPump = String(b.dexId || "").toLowerCase().includes("pump") ? 1 : 0;
+          if (aPump !== bPump) return bPump - aPump;
+          return Number(b.pairCreatedAt || 0) - Number(a.pairCreatedAt || 0);
+        })
+        .slice(0, limit)
+        .map((pair) => {
+          const token = pairToTokenData(pair);
+          const symbolRaw = String(token.symbol || pair.baseToken?.symbol || "UNKNOWN").trim();
+          const dexRaw = String(token.dexId || pair.dexId || "dexscreener").trim();
+          const dexLower = dexRaw.toLowerCase();
+          const dex = dexLower.includes("pump")
+            ? "Pump.fun"
+            : (dexRaw.charAt(0).toUpperCase() + dexRaw.slice(1));
+          const volume24h = Number(token.volume24h || pair.volume?.h24 || 0);
+          const liquidityUsd = Number(token.liquidity || pair.liquidity?.usd || 0);
+          const marketCapUsd = Number(token.marketCap || pair.marketCap || pair.fdv || 0);
+          const hype = Math.max(1, Math.min(
+            99,
+            Math.trunc(
+              35
+              + Math.min(30, volume24h / 20_000)
+              + Math.min(25, liquidityUsd / 10_000)
+              + (dexLower.includes("pump") ? 10 : 0),
+            ),
+          ));
+
+          return {
+            symbol: symbolRaw.startsWith("$") ? symbolRaw : `$${symbolRaw}`,
+            name: String(token.name || pair.baseToken?.name || "Unknown"),
+            chain: "solana",
+            dex,
+            price: String(token.priceUsd || pair.priceUsd || "0"),
+            volume: formatUsdCompact(volume24h),
+            age: formatAge(pair.pairCreatedAt),
+            hype,
+            marketCapUsd,
+            dexscreenerPaid: false,
+          };
+        });
+
+      return res.json(rows);
+    } catch (error) {
+      return res.status(500).json({
+        message: error instanceof Error ? error.message : "Failed to fetch fresh tokens",
+      });
+    }
   });
 
   // === Twitter Trends ===

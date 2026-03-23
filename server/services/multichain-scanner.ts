@@ -99,7 +99,35 @@ export class MultichainLaunchpadScanner {
   private raydiumDebugSamples = 0;
 
   private getSolanaWsUrl() {
-    return String(process.env.SOLANA_WS_URL || "").trim();
+    const explicitWsUrl = String(process.env.SOLANA_WS_URL || "").trim();
+    if (explicitWsUrl) {
+      return explicitWsUrl;
+    }
+
+    const heliusApiKey = String(process.env.HELIUS_API_KEY || "").trim();
+    if (heliusApiKey) {
+      return `wss://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(heliusApiKey)}`;
+    }
+
+    const rpcUrl = String(process.env.HELIUS_RPC_URL || process.env.SOLANA_RPC_URL || "").trim();
+    if (!rpcUrl) {
+      return "";
+    }
+
+    try {
+      const parsed = new URL(rpcUrl);
+      if (parsed.protocol === "https:") {
+        parsed.protocol = "wss:";
+        return parsed.toString();
+      }
+      if (parsed.protocol === "http:") {
+        parsed.protocol = "ws:";
+        return parsed.toString();
+      }
+    } catch {
+    }
+
+    return "";
   }
 
   private getSolanaRpcUrl() {

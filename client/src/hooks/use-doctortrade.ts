@@ -87,6 +87,10 @@ export type DoctorStatus = {
     jupiter_quote_enabled?: boolean;
     base_asset_mint?: string;
   };
+  auto_trade?: {
+    blocked?: boolean;
+    block_reason?: string | null;
+  };
   discovery?: {
     dexscreener_primary?: boolean;
     poll_interval_seconds?: number;
@@ -133,6 +137,12 @@ export type DoctorStatus = {
     gas_priority_lamports?: number;
     live_sell_fraction_pct?: number;
     max_sell_notional_usd?: number;
+    ml_learning_enabled?: boolean;
+    ml_min_closed_trades?: number;
+    ml_lookback_trades?: number;
+    ml_bonus_cap_score?: number;
+    ml_size_min_multiplier?: number;
+    ml_size_max_multiplier?: number;
     snipe_preset?: "conservative" | "momentum_trader" | "balanced" | "aggressive" | "insider" | "in_out_2x" | "custom" | string;
     wallet_connected: boolean;
   };
@@ -256,8 +266,22 @@ export function useDoctorConfig() {
       gas_priority_lamports?: number;
       live_sell_fraction_pct?: number;
       max_sell_notional_usd?: number;
+      ml_learning_enabled?: boolean;
+      ml_min_closed_trades?: number;
+      ml_lookback_trades?: number;
+      ml_bonus_cap_score?: number;
+      ml_size_min_multiplier?: number;
+      ml_size_max_multiplier?: number;
       snipe_preset?: "conservative" | "momentum_trader" | "balanced" | "aggressive" | "insider" | "custom" | string;
     }) => apiPost<DoctorStatus>("/api/doctor/config", payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade"] }),
+  });
+}
+
+export function useDoctorResetLearning() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost<DoctorStatus>("/api/doctor/learning/reset", {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade"] }),
   });
 }

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy, BookOpen, Zap } from "lucide-react";
 import { FaTelegramPlane } from "react-icons/fa";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useDoctorAiAssistantChat, useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorPresetAdvisor, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
+import { useDoctorAiAssistantChat, useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorPresetAdvisor, useDoctorResetLearning, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -59,6 +59,7 @@ export default function DoctorTrade() {
   const connectWalletMutation = useDoctorConnectWallet();
   const disconnectWalletMutation = useDoctorDisconnectWallet();
   const runMutation = useDoctorRunOnce();
+  const resetLearningMutation = useDoctorResetLearning();
   const directBuyMutation = useDoctorDirectBuy();
   const directSellMutation = useDoctorDirectSell();
   const advisorQuery = useDoctorPresetAdvisor();
@@ -91,6 +92,12 @@ export default function DoctorTrade() {
   const [gasPriorityInput, setGasPriorityInput] = useState("0");
   const [liveSellFractionInput, setLiveSellFractionInput] = useState("50");
   const [maxSellNotionalInput, setMaxSellNotionalInput] = useState("300");
+  const [mlLearningEnabledInput, setMlLearningEnabledInput] = useState(true);
+  const [mlMinClosedTradesInput, setMlMinClosedTradesInput] = useState("8");
+  const [mlLookbackTradesInput, setMlLookbackTradesInput] = useState("40");
+  const [mlBonusCapInput, setMlBonusCapInput] = useState("18");
+  const [mlSizeMinInput, setMlSizeMinInput] = useState("0.7");
+  const [mlSizeMaxInput, setMlSizeMaxInput] = useState("1.2");
   const [presetMode, setPresetMode] = useState<"default" | "custom">("default");
   const [selectedSnipePreset, setSelectedSnipePreset] = useState<SnipePreset>("in_out_2x");
   const [privateKeyInput, setPrivateKeyInput] = useState("");
@@ -160,6 +167,12 @@ export default function DoctorTrade() {
     setGasPriorityInput(String(controls.gas_priority_lamports ?? 0));
     setLiveSellFractionInput(String(controls.live_sell_fraction_pct ?? 50));
     setMaxSellNotionalInput(String(controls.max_sell_notional_usd ?? 300));
+    setMlLearningEnabledInput(Boolean(controls.ml_learning_enabled ?? true));
+    setMlMinClosedTradesInput(String(controls.ml_min_closed_trades ?? 8));
+    setMlLookbackTradesInput(String(controls.ml_lookback_trades ?? 40));
+    setMlBonusCapInput(String(controls.ml_bonus_cap_score ?? 18));
+    setMlSizeMinInput(String(controls.ml_size_min_multiplier ?? 0.7));
+    setMlSizeMaxInput(String(controls.ml_size_max_multiplier ?? 1.2));
     const preset = normalizePreset(controls.snipe_preset);
     setSelectedSnipePreset(preset);
     setPresetMode(preset === "custom" ? "custom" : "default");
@@ -337,7 +350,34 @@ export default function DoctorTrade() {
           : (viewData?.active_tokens?.length || 0) <= 0
             ? "Scanning market (no current targets)"
             : "Auto-snipe running";
+  const autoTradeBlockLabel = useMemo(() => {
+    const reason = String(viewData?.auto_trade?.block_reason || "").trim().toLowerCase();
+    if (!reason) return null;
+    if (reason === "doctortrade_disabled") return "DoctorTrade is disabled. Start the engine to resume autonomous entries.";
+    if (reason === "kill_switch_enabled") return "Kill switch is enabled. Release it from settings to resume trading.";
+    if (reason === "wallet_key_not_connected") return "Wallet private key is not connected. Reconnect wallet in settings.";
+    if (reason === "max_open_positions_reached") return "Maximum open positions reached. DoctorTrade is waiting for exits.";
+    if (reason === "max_trades_reached") return "Daily trade cap reached. Increase limit or wait for reset window.";
+    if (reason === "daily_loss_limit_reached") return "Daily loss limit reached. Review risk controls before resuming.";
+    if (reason === "max_consecutive_losses_reached") return "Consecutive loss limit reached. Strategy pause is active.";
+    return `Auto-trade blocked: ${reason.replace(/_/g, " ")}.`;
+  }, [viewData?.auto_trade?.block_reason]);
   const lastSyncLabel = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : "-";
+  const doctorHeartbeat = useMemo(() => {
+    const lastRunTs = new Date(String(viewData?.last_run_at || "")).getTime();
+    if (!Number.isFinite(lastRunTs) || lastRunTs <= 0) {
+      return {
+        stale: false,
+        secondsAgo: null as number | null,
+      };
+    }
+    const secondsAgo = Math.max(0, Math.round((Date.now() - lastRunTs) / 1000));
+    const scanInterval = Math.max(5, Number(viewData?.scan_interval_seconds || 10));
+    return {
+      stale: secondsAgo > Math.max(90, scanInterval * 3),
+      secondsAgo,
+    };
+  }, [viewData?.last_run_at, viewData?.scan_interval_seconds]);
   const walletSolBalance = Number(viewData?.wallet?.balance_sol || 0);
   const walletPrivateKeyConfigured = Boolean(viewData?.wallet?.private_key_configured);
   const advisor = advisorQuery.data;
@@ -469,6 +509,11 @@ export default function DoctorTrade() {
     const gasPriorityLamports = Math.max(0, Math.trunc(Number.parseFloat(gasPriorityInput) || 0));
     const liveSellFractionPct = Math.max(1, Math.min(100, Number.parseFloat(liveSellFractionInput) || 50));
     const maxSellNotionalUsd = Math.max(1, Number.parseFloat(maxSellNotionalInput) || 300);
+    const mlMinClosedTrades = Math.max(3, Math.trunc(Number.parseFloat(mlMinClosedTradesInput) || 8));
+    const mlLookbackTrades = Math.max(mlMinClosedTrades, Math.trunc(Number.parseFloat(mlLookbackTradesInput) || 40));
+    const mlBonusCapScore = Math.max(4, Number.parseFloat(mlBonusCapInput) || 18);
+    const mlSizeMinMultiplier = Math.max(0.5, Math.min(1, Number.parseFloat(mlSizeMinInput) || 0.7));
+    const mlSizeMaxMultiplier = Math.max(mlSizeMinMultiplier, Number.parseFloat(mlSizeMaxInput) || 1.2);
     const presetDefaultBuyAmount: Record<Exclude<SnipePreset, "custom">, number> = {
       conservative: 0.1,
       momentum_trader: 0.15,
@@ -510,6 +555,12 @@ export default function DoctorTrade() {
         gas_priority_lamports: gasPriorityLamports,
         live_sell_fraction_pct: liveSellFractionPct,
         max_sell_notional_usd: maxSellNotionalUsd,
+        ml_learning_enabled: mlLearningEnabledInput,
+        ml_min_closed_trades: mlMinClosedTrades,
+        ml_lookback_trades: mlLookbackTrades,
+        ml_bonus_cap_score: mlBonusCapScore,
+        ml_size_min_multiplier: mlSizeMinMultiplier,
+        ml_size_max_multiplier: mlSizeMaxMultiplier,
         snipe_preset: presetForSave,
       },
       {
@@ -843,12 +894,24 @@ export default function DoctorTrade() {
           <div className="mt-3 text-xs text-muted-foreground flex items-center gap-3">
             <span>{isLoading ? "Loading DoctorTrade..." : isFetching ? "Updating live data..." : "Live sync active"}</span>
             <span>Last sync: {lastSyncLabel}</span>
+            <span>Last cycle: {doctorHeartbeat.secondsAgo !== null ? `${doctorHeartbeat.secondsAgo}s ago` : "-"}</span>
             <span>Wallet SOL: {fmtSol(walletSolBalance)}</span>
+            {doctorHeartbeat.stale && <Badge variant="outline" className="border-yellow-500/40 text-yellow-400">Cycle Delay</Badge>}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
             DoctorTrade runs on the server. Once started, it continues scanning and executing even when your browser is closed.
           </p>
         </Card>
+
+        {Boolean(viewData?.auto_trade?.blocked) && autoTradeBlockLabel && (
+          <Card className="p-3 border-yellow-500/30 bg-yellow-500/5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-yellow-300">Auto-Trade Guardrail Active</p>
+              <Badge variant="outline" className="border-yellow-500/40 text-yellow-400">Blocked</Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">{autoTradeBlockLabel}</p>
+          </Card>
+        )}
 
         <Card className="p-4 border-emerald-500/30 bg-emerald-500/5">
           <div className="flex items-start justify-between gap-3">
@@ -1324,6 +1387,67 @@ export default function DoctorTrade() {
               <Input value={maxSellNotionalInput} onChange={(e) => setMaxSellNotionalInput(e.target.value)} placeholder="300" />
             </div>
           </div>
+          <div className="mt-3 rounded-md border border-cyan-500/30 bg-cyan-500/5 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold">Adaptive Learning Controls</p>
+              <Button
+                size="sm"
+                variant={mlLearningEnabledInput ? "default" : "outline"}
+                onClick={() => setMlLearningEnabledInput((prev) => !prev)}
+              >
+                {mlLearningEnabledInput ? "Learning On" : "Learning Off"}
+              </Button>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 items-end">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Min Closed Trades</p>
+                <Input value={mlMinClosedTradesInput} onChange={(e) => setMlMinClosedTradesInput(e.target.value)} placeholder="8" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Lookback Trades</p>
+                <Input value={mlLookbackTradesInput} onChange={(e) => setMlLookbackTradesInput(e.target.value)} placeholder="40" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Bonus Cap Score</p>
+                <Input value={mlBonusCapInput} onChange={(e) => setMlBonusCapInput(e.target.value)} placeholder="18" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Min Size Mult</p>
+                <Input value={mlSizeMinInput} onChange={(e) => setMlSizeMinInput(e.target.value)} placeholder="0.7" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Max Size Mult</p>
+                <Input value={mlSizeMaxInput} onChange={(e) => setMlSizeMaxInput(e.target.value)} placeholder="1.2" />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={resetLearningMutation.isPending}
+                onClick={() => {
+                  const confirmed = window.confirm("Reset DoctorTrade learning profile? This clears adaptive statistics and profile memory.");
+                  if (!confirmed) {
+                    return;
+                  }
+                  resetLearningMutation.mutate(undefined, {
+                    onSuccess: () => {
+                      toast({ title: "Learning reset", description: "Adaptive learning profile was reset." });
+                    },
+                    onError: (error) => {
+                      toast({
+                        title: "Reset failed",
+                        description: error instanceof Error ? error.message : "Unable to reset learning profile.",
+                        variant: "destructive",
+                      });
+                    },
+                  });
+                }}
+              >
+                {resetLearningMutation.isPending ? "Resetting..." : "Reset Learning Model"}
+              </Button>
+            </div>
+          </div>
           <div className="mt-3 flex justify-end sticky bottom-0 bg-card/95 backdrop-blur py-2 border-t border-border/40">
             <Button
               variant="outline"
@@ -1463,6 +1587,13 @@ export default function DoctorTrade() {
                       <Badge variant="outline" className="text-[10px]">{row.decision || "-"}</Badge>
                     </div>
                     <p className="text-[11px] text-muted-foreground">{row.reason || "-"} · conf {row.confidence ?? 0}</p>
+                    {(Number.isFinite(Number(row.ml_learned_bonus)) || Number.isFinite(Number(row.ml_size_multiplier))) && (
+                      <p className="text-[11px] text-muted-foreground">
+                        ML bonus {Number(row.ml_learned_bonus || 0) >= 0 ? "+" : ""}{Number(row.ml_learned_bonus || 0).toFixed(2)}
+                        {" · "}
+                        size mult {Number(row.ml_size_multiplier || 0) > 0 ? `${Number(row.ml_size_multiplier || 0).toFixed(3)}x` : "n/a"}
+                      </p>
+                    )}
                     <p className="text-[11px] text-muted-foreground">{fmtTs(row.timestamp)} · size {(row.size_pct ?? 0).toFixed(2)}%</p>
                   </div>
                 ))}
@@ -1494,12 +1625,40 @@ export default function DoctorTrade() {
             <Card className="p-4 border-cyan-500/30 bg-cyan-500/5">
               <div className="flex items-center justify-between gap-2 mb-3">
                 <h2 className="text-sm font-semibold">Adaptive Learning</h2>
-                <Badge
-                  variant="outline"
-                  className={learningSummary.trained ? "border-cyan-500/40 text-cyan-300" : "border-yellow-500/40 text-yellow-300"}
-                >
-                  {learningSummary.trained ? "Trained" : "Collecting Data"}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={learningSummary.trained ? "border-cyan-500/40 text-cyan-300" : "border-yellow-500/40 text-yellow-300"}
+                  >
+                    {learningSummary.trained ? "Trained" : "Collecting Data"}
+                  </Badge>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-[11px]"
+                    disabled={resetLearningMutation.isPending}
+                    onClick={() => {
+                      const confirmed = window.confirm("Reset DoctorTrade learning profile? This clears adaptive statistics and profile memory.");
+                      if (!confirmed) {
+                        return;
+                      }
+                      resetLearningMutation.mutate(undefined, {
+                        onSuccess: () => {
+                          toast({ title: "Learning reset", description: "Adaptive learning profile was reset." });
+                        },
+                        onError: (error) => {
+                          toast({
+                            title: "Reset failed",
+                            description: error instanceof Error ? error.message : "Unable to reset learning profile.",
+                            variant: "destructive",
+                          });
+                        },
+                      });
+                    }}
+                  >
+                    Reset
+                  </Button>
+                </div>
               </div>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">ML Enabled</span><span>{learningSummary.enabled ? "Yes" : "No"}</span></div>
