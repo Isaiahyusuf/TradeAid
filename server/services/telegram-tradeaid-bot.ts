@@ -261,6 +261,13 @@ class TradeAidTelegramBot {
   private readonly callMaxTopHoldersPct: number;
   private readonly callMaxDevWalletPct: number;
   private readonly callMax1hPumpPct: number;
+  private readonly callMinSafetyScore: number;
+  private readonly callMinLiquidityUsd: number;
+  private readonly callMinVolume24hUsd: number;
+  private readonly callTakeProfitMultiplier: number;
+  private readonly badCallDropMultiplier: number;
+  private readonly badCallMinHoldMinutes: number;
+  private readonly badCallMinSafetyScore: number;
   private readonly earlyLookbackMinutes: number;
   private readonly earlyMinSafetyScore: number;
   private readonly earlyMinLiquidityUsd: number;
@@ -311,9 +318,16 @@ class TradeAidTelegramBot {
     this.pushMinSafetyScore = Math.max(50, Math.trunc(Number(process.env.TELEGRAM_BOT_PUSH_MIN_SAFETY_SCORE || 78)));
     this.pushMinLiquidityUsd = Math.max(5_000, Number(process.env.TELEGRAM_BOT_PUSH_MIN_LIQUIDITY_USD || 35_000));
     this.pushMinVolume24hUsd = Math.max(2_000, Number(process.env.TELEGRAM_BOT_PUSH_MIN_VOLUME24H_USD || 20_000));
-    this.callMaxTopHoldersPct = Math.max(10, Number(process.env.TELEGRAM_BOT_CALL_MAX_TOP_HOLDERS_PCT || 28));
-    this.callMaxDevWalletPct = Math.max(2, Number(process.env.TELEGRAM_BOT_CALL_MAX_DEV_WALLET_PCT || 10));
-    this.callMax1hPumpPct = Math.max(20, Number(process.env.TELEGRAM_BOT_CALL_MAX_1H_PUMP_PCT || 120));
+    this.callMaxTopHoldersPct = Math.max(8, Number(process.env.TELEGRAM_BOT_CALL_MAX_TOP_HOLDERS_PCT || 22));
+    this.callMaxDevWalletPct = Math.max(1, Number(process.env.TELEGRAM_BOT_CALL_MAX_DEV_WALLET_PCT || 7));
+    this.callMax1hPumpPct = Math.max(15, Number(process.env.TELEGRAM_BOT_CALL_MAX_1H_PUMP_PCT || 70));
+    this.callMinSafetyScore = Math.max(60, Math.trunc(Number(process.env.TELEGRAM_BOT_CALL_MIN_SAFETY_SCORE || 82)));
+    this.callMinLiquidityUsd = Math.max(10_000, Number(process.env.TELEGRAM_BOT_CALL_MIN_LIQUIDITY_USD || 50_000));
+    this.callMinVolume24hUsd = Math.max(8_000, Number(process.env.TELEGRAM_BOT_CALL_MIN_VOLUME24H_USD || 30_000));
+    this.callTakeProfitMultiplier = Math.max(4, Math.min(50, Number(process.env.TELEGRAM_BOT_TAKE_PROFIT_MULTIPLIER || 20)));
+    this.badCallDropMultiplier = Math.max(0.1, Math.min(0.95, Number(process.env.TELEGRAM_BOT_BAD_CALL_DROP_MULTIPLIER || 0.65)));
+    this.badCallMinHoldMinutes = Math.max(5, Math.min(180, Math.trunc(Number(process.env.TELEGRAM_BOT_BAD_CALL_MIN_HOLD_MINUTES || 15))));
+    this.badCallMinSafetyScore = Math.max(20, Math.min(95, Math.trunc(Number(process.env.TELEGRAM_BOT_BAD_CALL_MIN_SAFETY_SCORE || 70))));
     this.earlyLookbackMinutes = Math.max(10, Math.trunc(Number(process.env.TELEGRAM_BOT_EARLY_LOOKBACK_MINUTES || 240)));
     this.earlyMinSafetyScore = Math.max(55, Math.trunc(Number(process.env.TELEGRAM_BOT_EARLY_MIN_SAFETY_SCORE || 76)));
     this.earlyMinLiquidityUsd = Math.max(5_000, Number(process.env.TELEGRAM_BOT_EARLY_MIN_LIQUIDITY_USD || 30_000));
@@ -376,6 +390,7 @@ class TradeAidTelegramBot {
       { command: "safe", description: "Top safer calls" },
       { command: "new", description: "Early safe calls" },
       { command: "tg", description: "Tokens with Telegram communities" },
+      { command: "x", description: "Tokens with X communities" },
       { command: "pnl", description: "SpyDefi-style PnL board" },
       { command: "token", description: "Lookup token by symbol or CA" },
       { command: "projects", description: "Show project links" },
@@ -532,6 +547,9 @@ class TradeAidTelegramBot {
           { text: "TG Communities", callback_data: "tg_community" },
         ],
         [
+          { text: "X Communities", callback_data: "x_community" },
+        ],
+        [
           { text: "PnL Board", callback_data: "pnl_board" },
           { text: subscribed ? "Push: ON" : "Push: OFF", callback_data: subscribed ? "push_off" : "push_on" },
           { text: "Push Status", callback_data: "push_status" },
@@ -567,6 +585,7 @@ class TradeAidTelegramBot {
     const pumpUrl = mint ? `https://pump.fun/coin/${encodeURIComponent(mint)}` : "https://pump.fun";
     const solscanUrl = mint ? `https://solscan.io/token/${encodeURIComponent(mint)}` : "https://solscan.io";
     const telegramUrl = isHttpUrl(project.telegram) ? String(project.telegram).trim() : "";
+    const twitterUrl = isHttpUrl(project.twitter) ? String(project.twitter).trim() : "";
 
     const linksRow = [
       { text: "DexScreener", url: dexUrl },
@@ -580,8 +599,11 @@ class TradeAidTelegramBot {
     ];
 
     const keyboard = [linksRow, actionRow];
-    if (telegramUrl) {
-      keyboard.push([{ text: "Telegram Community", url: telegramUrl }]);
+    if (telegramUrl || twitterUrl) {
+      const communityRow: Array<{ text: string; url: string }> = [];
+      if (telegramUrl) communityRow.push({ text: "Telegram Community", url: telegramUrl });
+      if (twitterUrl) communityRow.push({ text: "X Community", url: twitterUrl });
+      keyboard.push(communityRow);
     }
 
     return {
@@ -777,15 +799,41 @@ class TradeAidTelegramBot {
     if (String(token.chain || "").toLowerCase() !== "solana") return false;
     if (Boolean(token.isHoneypot)) return false;
 
+    const safetyScore = Number(token.safetyScore || 0);
+    const liquidityUsd = Math.max(0, Number(token.liquidity || 0));
+    const volume24hUsd = Math.max(0, Number(token.volume24h || 0));
     const topHolderPct = Math.max(0, Number(token.topHoldersPercentage || 0));
     const devWalletPct = Math.max(0, Number(token.devWalletPercentage || 0));
     const priceChange1h = Number(token.priceChange1h || 0);
 
+    if (safetyScore < this.callMinSafetyScore) return false;
+    if (liquidityUsd < this.callMinLiquidityUsd) return false;
+    if (volume24hUsd < this.callMinVolume24hUsd) return false;
     if (topHolderPct > this.callMaxTopHoldersPct) return false;
     if (devWalletPct > this.callMaxDevWalletPct) return false;
     if (Math.abs(priceChange1h) > this.callMax1hPumpPct) return false;
 
     return true;
+  }
+
+  private shouldDropBadCall(token: TokenRow | undefined, holdMinutes: number, liveMultiplier: number, drawdownPct: number) {
+    if (!token) return false;
+    if (holdMinutes < this.badCallMinHoldMinutes) return false;
+
+    const safetyScore = Number(token.safetyScore || 0);
+    const topHolderPct = Math.max(0, Number(token.topHoldersPercentage || 0));
+    const devWalletPct = Math.max(0, Number(token.devWalletPercentage || 0));
+    const momentum1h = Number(token.priceChange1h || 0);
+
+    if (Boolean(token.isHoneypot)) return true;
+    if (liveMultiplier <= this.badCallDropMultiplier) return true;
+    if (safetyScore < this.badCallMinSafetyScore) return true;
+    if (topHolderPct > (this.callMaxTopHoldersPct + 8)) return true;
+    if (devWalletPct > (this.callMaxDevWalletPct + 4)) return true;
+    if (momentum1h <= -35 && holdMinutes >= 10) return true;
+    if (drawdownPct >= 38 && liveMultiplier < 1.1) return true;
+
+    return false;
   }
 
   private computeLearnedBonus(token: TokenRow) {
@@ -869,6 +917,7 @@ class TradeAidTelegramBot {
 
     const tokenMap = new Map(rows.map((row) => [String(row.address || "").trim(), row]));
     let stateChanged = false;
+    const droppedCallIds = new Set<string>();
     const snapshots = calls
       .map((call) => {
         const token = tokenMap.get(call.mint);
@@ -895,9 +944,14 @@ class TradeAidTelegramBot {
         if (!call.closedAt) {
           const liveMultiplier = currentPriceUsd / calledPriceUsd;
           const livePnlPct = (liveMultiplier - 1) * 100;
+          if (this.shouldDropBadCall(token, holdMinutes, liveMultiplier, drawdownPct)) {
+            droppedCallIds.add(call.id);
+            stateChanged = true;
+            return null;
+          }
           let closeReason = "";
-          if (liveMultiplier >= 4) {
-            closeReason = "tp_4x";
+          if (liveMultiplier >= this.callTakeProfitMultiplier) {
+            closeReason = `tp_${this.callTakeProfitMultiplier}x`;
           } else if (holdMinutes >= 24 * 60) {
             closeReason = "time_exit";
           } else if (liveMultiplier <= 0.45 && holdMinutes >= 30) {
@@ -932,6 +986,10 @@ class TradeAidTelegramBot {
       })
       .filter((row): row is PnlSnapshot => Boolean(row));
 
+    if (droppedCallIds.size > 0) {
+      this.callState.calls = this.callState.calls.filter((row) => !droppedCallIds.has(row.id));
+    }
+
     if (stateChanged) {
       await this.persistCallState();
     }
@@ -955,8 +1013,9 @@ class TradeAidTelegramBot {
     const medianHoldMinutes = median(snapshots.map((row) => row.holdMinutes));
 
     const x2 = snapshots.filter((row) => row.multiplier >= 2).length;
-    const x3 = snapshots.filter((row) => row.multiplier >= 3).length;
-    const x4 = snapshots.filter((row) => row.multiplier >= 4).length;
+    const x5 = snapshots.filter((row) => row.multiplier >= 5).length;
+    const x10 = snapshots.filter((row) => row.multiplier >= 10).length;
+    const x20 = snapshots.filter((row) => row.multiplier >= this.callTakeProfitMultiplier).length;
     const window24h = summarizeWindow(snapshots, 24);
     const window72h = summarizeWindow(snapshots, 72);
     const window7d = summarizeWindow(snapshots, 24 * 7);
@@ -993,8 +1052,9 @@ class TradeAidTelegramBot {
       "🚀 *Profit Multipliers Hit*",
       "",
       `💎 2x Winners: ${escapeMarkdown(String(x2))} trades`,
-      `🔥 3x Winners: ${escapeMarkdown(String(x3))} trades`,
-      `🚀 4x\+ Moonshots: ${escapeMarkdown(String(x4))} trade${x4 === 1 ? "" : "s"}`,
+      `🔥 5x Winners: ${escapeMarkdown(String(x5))} trades`,
+      `⚡ 10x Winners: ${escapeMarkdown(String(x10))} trades`,
+      `🚀 ${escapeMarkdown(String(this.callTakeProfitMultiplier))}x\+ Moonshots: ${escapeMarkdown(String(x20))} trade${x20 === 1 ? "" : "s"}`,
       "",
       "🏅 *Best & Worst Trades*",
       "",
@@ -1063,7 +1123,7 @@ class TradeAidTelegramBot {
     const chartUrl = this.buildPnlMultiplierChartUrl(chartSnapshots);
     const chartCaption = [
       "📊 *TRADEAID MULTIPLIER SNAPSHOT*",
-      `2x: *${escapeMarkdown(String(x2))}* \\| 3x: *${escapeMarkdown(String(x3))}* \\| 4x\+: *${escapeMarkdown(String(x4))}*`,
+      `2x: *${escapeMarkdown(String(x2))}* \\| 5x: *${escapeMarkdown(String(x5))}* \\| 10x: *${escapeMarkdown(String(x10))}* \\| ${escapeMarkdown(String(this.callTakeProfitMultiplier))}x\+: *${escapeMarkdown(String(x20))}*`,
       "Green bars indicate stronger winners\.",
     ].join("\n");
 
@@ -1164,6 +1224,7 @@ class TradeAidTelegramBot {
 
     const tokenMap = new Map(rows.map((row) => [String(row.address || "").trim(), row]));
     let stateChanged = false;
+    const droppedCallIds = new Set<string>();
     const snapshots = calls
       .map((call) => {
         const token = tokenMap.get(call.mint);
@@ -1190,9 +1251,14 @@ class TradeAidTelegramBot {
         if (!call.closedAt) {
           const liveMultiplier = currentPriceUsd / calledPriceUsd;
           const livePnlPct = (liveMultiplier - 1) * 100;
+          if (this.shouldDropBadCall(token, holdMinutes, liveMultiplier, drawdownPct)) {
+            droppedCallIds.add(call.id);
+            stateChanged = true;
+            return null;
+          }
           let closeReason = "";
-          if (liveMultiplier >= 4) {
-            closeReason = "tp_4x";
+          if (liveMultiplier >= this.callTakeProfitMultiplier) {
+            closeReason = `tp_${this.callTakeProfitMultiplier}x`;
           } else if (holdMinutes >= 24 * 60) {
             closeReason = "time_exit";
           } else if (liveMultiplier <= 0.45 && holdMinutes >= 30) {
@@ -1226,6 +1292,10 @@ class TradeAidTelegramBot {
         } satisfies PnlSnapshot;
       })
       .filter((row): row is PnlSnapshot => Boolean(row));
+
+    if (droppedCallIds.size > 0) {
+      this.callState.calls = this.callState.calls.filter((row) => !droppedCallIds.has(row.id));
+    }
 
     if (stateChanged) {
       await this.persistCallState();
@@ -1524,6 +1594,7 @@ class TradeAidTelegramBot {
       "/new [n] - early safer tokens",
       "/early [n] - alias for /new",
       "/tg [n] - tokens with Telegram communities",
+      "/x [n] - tokens with X communities",
       "/pnl - bot call performance board",
       "/token &lt;symbol|address&gt; - full token card",
       "/projects &lt;symbol|address&gt; - project links",
@@ -1638,6 +1709,13 @@ class TradeAidTelegramBot {
       return;
     }
 
+    if (lower.startsWith("/x") || lower.startsWith("/twitter")) {
+      const limitArg = text.split(/\s+/)[1];
+      const limit = takeLimit(limitArg, 5, 8);
+      await this.handleXCommunityCalls(chatId, limit);
+      return;
+    }
+
     if (lower.startsWith("/pnl")) {
       await this.sendPnlBoard(chatId, 10);
       return;
@@ -1701,6 +1779,12 @@ class TradeAidTelegramBot {
     if (dataLower === "tg_community") {
       await this.handleTelegramCommunityCalls(chatId, 5);
       await this.answerCallbackQuery(callbackQuery.id, "Loaded Telegram community tokens").catch(() => undefined);
+      return;
+    }
+
+    if (dataLower === "x_community") {
+      await this.handleXCommunityCalls(chatId, 5);
+      await this.answerCallbackQuery(callbackQuery.id, "Loaded X community tokens").catch(() => undefined);
       return;
     }
 
@@ -1926,13 +2010,76 @@ class TradeAidTelegramBot {
 
     await this.sendMessage(
       chatId,
-      `<b>Community Links</b>\n${communityList}`,
+      `<b>Telegram Community Links</b>\n${communityList}`,
       undefined,
       { disablePreview: false, parseMode: "HTML" },
     );
 
     for (const item of picked) {
       await this.sendTokenCard(chatId, item.token, "compact", "TG COMMUNITY", { trackCall: true, origin: "tg_community" });
+    }
+  }
+
+  private async handleXCommunityCalls(chatId: string, limit: number) {
+    const candidateLimit = Math.max(limit * 4, 20);
+    const rows = await db
+      .select()
+      .from(scannedTokens)
+      .where(
+        and(
+          eq(scannedTokens.chain, "solana"),
+          gte(scannedTokens.safetyScore, 72),
+          gte(scannedTokens.liquidity, 25_000),
+          gte(scannedTokens.volume24h, 15_000),
+          eq(scannedTokens.isHoneypot, false),
+        ),
+      )
+      .orderBy(desc(scannedTokens.safetyScore), desc(scannedTokens.volume24h), desc(scannedTokens.liquidity))
+      .limit(candidateLimit);
+
+    const picked: Array<{ token: TokenRow; twitter: string }> = [];
+    for (const token of rows) {
+      if (picked.length >= limit) break;
+      if (!this.isQualityCallCandidate(token)) continue;
+      const project = await this.fetchProjectMeta(token).catch(() => ({
+        logoUrl: "",
+        website: "",
+        twitter: "",
+        telegram: "",
+        chart: "",
+      } satisfies TokenProjectMeta));
+      const twitter = String(project.twitter || "").trim();
+      if (!isHttpUrl(twitter)) continue;
+      picked.push({ token, twitter });
+    }
+
+    if (!picked.length) {
+      await this.sendMessage(chatId, "No X-community tokens found right now. Try again soon.", this.buildStartButtons(this.isSubscribed(chatId)));
+      return;
+    }
+
+    await this.sendMessage(
+      chatId,
+      `<b>X Community Tokens</b>\nShowing ${picked.length} tokens with active X links.`,
+      this.buildStartButtons(this.isSubscribed(chatId)),
+    );
+
+    const communityList = picked
+      .map((item, idx) => {
+        const symbol = String(item.token.symbol || item.token.name || "UNK").trim() || "UNK";
+        return `${idx + 1}. <b>${escapeHtml(symbol)}</b> - <a href=\"${escapeHtml(item.twitter)}\">${escapeHtml(item.twitter)}</a>`;
+      })
+      .join("\n");
+
+    await this.sendMessage(
+      chatId,
+      `<b>X Community Links</b>\n${communityList}`,
+      undefined,
+      { disablePreview: false, parseMode: "HTML" },
+    );
+
+    for (const item of picked) {
+      await this.sendTokenCard(chatId, item.token, "compact", "X COMMUNITY", { trackCall: true, origin: "x_community" });
     }
   }
 
