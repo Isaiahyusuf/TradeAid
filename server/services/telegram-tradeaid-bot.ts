@@ -258,6 +258,9 @@ class TradeAidTelegramBot {
   private readonly pushMinSafetyScore: number;
   private readonly pushMinLiquidityUsd: number;
   private readonly pushMinVolume24hUsd: number;
+  private readonly callMaxTopHoldersPct: number;
+  private readonly callMaxDevWalletPct: number;
+  private readonly callMax1hPumpPct: number;
   private readonly earlyLookbackMinutes: number;
   private readonly earlyMinSafetyScore: number;
   private readonly earlyMinLiquidityUsd: number;
@@ -308,6 +311,9 @@ class TradeAidTelegramBot {
     this.pushMinSafetyScore = Math.max(50, Math.trunc(Number(process.env.TELEGRAM_BOT_PUSH_MIN_SAFETY_SCORE || 78)));
     this.pushMinLiquidityUsd = Math.max(5_000, Number(process.env.TELEGRAM_BOT_PUSH_MIN_LIQUIDITY_USD || 35_000));
     this.pushMinVolume24hUsd = Math.max(2_000, Number(process.env.TELEGRAM_BOT_PUSH_MIN_VOLUME24H_USD || 20_000));
+    this.callMaxTopHoldersPct = Math.max(10, Number(process.env.TELEGRAM_BOT_CALL_MAX_TOP_HOLDERS_PCT || 28));
+    this.callMaxDevWalletPct = Math.max(2, Number(process.env.TELEGRAM_BOT_CALL_MAX_DEV_WALLET_PCT || 10));
+    this.callMax1hPumpPct = Math.max(20, Number(process.env.TELEGRAM_BOT_CALL_MAX_1H_PUMP_PCT || 120));
     this.earlyLookbackMinutes = Math.max(10, Math.trunc(Number(process.env.TELEGRAM_BOT_EARLY_LOOKBACK_MINUTES || 240)));
     this.earlyMinSafetyScore = Math.max(55, Math.trunc(Number(process.env.TELEGRAM_BOT_EARLY_MIN_SAFETY_SCORE || 76)));
     this.earlyMinLiquidityUsd = Math.max(5_000, Number(process.env.TELEGRAM_BOT_EARLY_MIN_LIQUIDITY_USD || 30_000));
@@ -763,7 +769,23 @@ class TradeAidTelegramBot {
     const volScore = Math.log10(volume + 1) * 7.5;
     const riskPenalty = (topHolder * 0.5) + (devWallet * 0.8);
     const momentumScore = Math.max(-40, Math.min(80, momentum1h)) * 0.08;
-    return (safety * 0.75) + liqScore + volScore + momentumScore - riskPenalty;
+    const overextendedPenalty = Math.max(0, Math.abs(momentum1h) - this.callMax1hPumpPct) * 0.22;
+    return (safety * 0.75) + liqScore + volScore + momentumScore - riskPenalty - overextendedPenalty;
+  }
+
+  private isQualityCallCandidate(token: TokenRow) {
+    if (String(token.chain || "").toLowerCase() !== "solana") return false;
+    if (Boolean(token.isHoneypot)) return false;
+
+    const topHolderPct = Math.max(0, Number(token.topHoldersPercentage || 0));
+    const devWalletPct = Math.max(0, Number(token.devWalletPercentage || 0));
+    const priceChange1h = Number(token.priceChange1h || 0);
+
+    if (topHolderPct > this.callMaxTopHoldersPct) return false;
+    if (devWalletPct > this.callMaxDevWalletPct) return false;
+    if (Math.abs(priceChange1h) > this.callMax1hPumpPct) return false;
+
+    return true;
   }
 
   private computeLearnedBonus(token: TokenRow) {
@@ -1789,12 +1811,14 @@ class TradeAidTelegramBot {
       .orderBy(desc(scannedTokens.safetyScore), desc(scannedTokens.volume24h), desc(scannedTokens.liquidity))
       .limit(limit);
 
-    if (!rows.length) {
+    const qualityRows = rows.filter((token) => this.isQualityCallCandidate(token));
+
+    if (!qualityRows.length) {
       await this.sendMessage(chatId, "No safe calls found right now. Try again in a few minutes.");
       return;
     }
 
-    const ranked = this.rankCandidatesWithLearning(rows).slice(0, limit);
+    const ranked = this.rankCandidatesWithLearning(qualityRows).slice(0, limit);
     const picked = ranked.map((item) => item.token);
 
     await this.sendMessage(
@@ -1828,12 +1852,14 @@ class TradeAidTelegramBot {
       .orderBy(desc(scannedTokens.pairCreatedAt), desc(scannedTokens.safetyScore), desc(scannedTokens.volume24h))
       .limit(limit);
 
-    if (!rows.length) {
+    const qualityRows = rows.filter((token) => this.isQualityCallCandidate(token));
+
+    if (!qualityRows.length) {
       await this.sendMessage(chatId, "No early safer tokens found in the current window yet.");
       return;
     }
 
-    const ranked = this.rankCandidatesWithLearning(rows).slice(0, limit);
+    const ranked = this.rankCandidatesWithLearning(qualityRows).slice(0, limit);
     const picked = ranked.map((item) => item.token);
 
     await this.sendMessage(
@@ -1867,6 +1893,7 @@ class TradeAidTelegramBot {
     const picked: Array<{ token: TokenRow; telegram: string }> = [];
     for (const token of rows) {
       if (picked.length >= limit) break;
+      if (!this.isQualityCallCandidate(token)) continue;
       const project = await this.fetchProjectMeta(token).catch(() => ({
         logoUrl: "",
         website: "",
@@ -1989,7 +2016,8 @@ class TradeAidTelegramBot {
       }
 
       this.pruneSentPushCache();
-      const ranked = this.rankCandidatesWithLearning(candidates);
+      const qualityCandidates = candidates.filter((token) => this.isQualityCallCandidate(token));
+      const ranked = this.rankCandidatesWithLearning(qualityCandidates);
       let changed = false;
       for (const item of ranked) {
         const token = item.token;

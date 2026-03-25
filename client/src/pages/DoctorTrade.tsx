@@ -67,7 +67,6 @@ export default function DoctorTrade() {
   const [guideOpen, setGuideOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [doctorTab, setDoctorTab] = useState<"trading" | "presets" | "ai-assistant">("trading");
-  const [uiMode, setUiMode] = useState<"simple" | "advanced">("simple");
   const [assistantPrompt, setAssistantPrompt] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantName, setAssistantName] = useState("Savatar");
@@ -104,7 +103,6 @@ export default function DoctorTrade() {
   const [privateKeyInput, setPrivateKeyInput] = useState("");
   const hydratedFromServerRef = useRef(false);
   const viewData = data;
-  const isSimpleMode = uiMode === "simple";
   const hasData = Boolean(viewData);
   // Only show new launches on Solana (created within 24h and chain is solana)
   const now = Date.now();
@@ -179,25 +177,6 @@ export default function DoctorTrade() {
     setSelectedSnipePreset(preset);
     setPresetMode(preset === "custom" ? "custom" : "default");
   };
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const storedMode = String(window.localStorage.getItem("doctortrade_ui_mode") || "").trim().toLowerCase();
-    if (storedMode === "advanced") {
-      setUiMode("advanced");
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem("doctortrade_ui_mode", uiMode);
-  }, [uiMode]);
-
-  useEffect(() => {
-    if (isSimpleMode && doctorTab === "presets") {
-      setDoctorTab("trading");
-    }
-  }, [doctorTab, isSimpleMode]);
 
   useEffect(() => {
     const controls = viewData?.trade_controls as Record<string, any> | undefined;
@@ -862,9 +841,6 @@ export default function DoctorTrade() {
             <Badge variant="outline">Solana Only</Badge>
             <Badge variant="outline">Independent Engine</Badge>
             <Badge variant="outline">Runs Server-Side</Badge>
-            <Badge variant="outline" className={isSimpleMode ? "border-cyan-500/40 text-cyan-400" : "border-violet-500/40 text-violet-400"}>
-              {isSimpleMode ? "Simple Mode" : "Advanced Mode"}
-            </Badge>
             <Badge variant="outline" className="border-green-500/40 text-green-400">Trade Mode LIVE ONLY</Badge>
             <Badge variant="outline" className="border-accent/30 text-accent">Risk Locked</Badge>
             {!hasData && <Badge variant="outline">Syncing</Badge>}
@@ -906,12 +882,6 @@ export default function DoctorTrade() {
               disabled={connectWalletMutation.isPending || walletConnected}
             >
               <Wallet className="w-4 h-4 mr-2" /> {walletConnected ? "Wallet Connected" : "Use Private Key Below"}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setUiMode((prev) => (prev === "simple" ? "advanced" : "simple"))}
-            >
-              {isSimpleMode ? "Switch to Advanced" : "Switch to Simple"}
             </Button>
             <Button
               variant="outline"
@@ -972,22 +942,13 @@ export default function DoctorTrade() {
 
         <Card className="p-3 bg-card/70 backdrop-blur-sm border-border/60">
           <Tabs value={doctorTab} onValueChange={(value) => setDoctorTab(value as "trading" | "presets" | "ai-assistant")}>
-            <TabsList className={`w-full grid ${isSimpleMode ? "grid-cols-2" : "grid-cols-3"}`}>
+            <TabsList className="w-full grid grid-cols-3">
               <TabsTrigger value="trading">Trading</TabsTrigger>
-              {!isSimpleMode && <TabsTrigger value="presets">Presets</TabsTrigger>}
+              <TabsTrigger value="presets">Presets</TabsTrigger>
               <TabsTrigger value="ai-assistant">AI Assistant</TabsTrigger>
             </TabsList>
           </Tabs>
         </Card>
-
-        {isSimpleMode && (
-          <Card className="p-3 border-cyan-500/30 bg-cyan-500/5">
-            <p className="text-xs font-semibold text-cyan-300">Simple Mode Active</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Showing only core controls and key trading panels. Switch to Advanced mode for full risk tuning, ML controls, and detailed logs.
-            </p>
-          </Card>
-        )}
 
         {doctorTab === "ai-assistant" && (
           <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60">
@@ -1065,7 +1026,6 @@ export default function DoctorTrade() {
           </Card>
         )}
 
-        {!isSimpleMode && (
         <SettingsMenuCard
           title="DoctorTrade Operating Guide"
           description="Professional quick-reference for setup, controls, and safe execution."
@@ -1134,9 +1094,7 @@ export default function DoctorTrade() {
             </AccordionItem>
           </Accordion>
         </SettingsMenuCard>
-        )}
 
-        {!isSimpleMode && (
         <SettingsMenuCard
           title="DoctorTrade Settings"
           description="Configure live-only trading, wallet session, and risk controls."
@@ -1500,7 +1458,6 @@ export default function DoctorTrade() {
             </Button>
           </div>
         </SettingsMenuCard>
-        )}
 
         <Card className="p-3 bg-card/70 backdrop-blur-sm border-border/60">
           <div className="flex items-center justify-between gap-2 mb-2">
@@ -1565,7 +1522,6 @@ export default function DoctorTrade() {
           </Card>
 
           <div className="xl:col-span-6 space-y-4">
-            {!isSimpleMode && (
             <Card className="p-4">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-sm font-semibold flex items-center gap-2"><TrendingUp className="w-4 h-4" />Performance</h2>
@@ -1584,9 +1540,7 @@ export default function DoctorTrade() {
                 </ResponsiveContainer>
               </div>
             </Card>
-            )}
 
-            {!isSimpleMode && (
             <Card className="p-4">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-sm font-semibold flex items-center gap-2"><BarChart3 className="w-4 h-4" />Execution Pulse</h2>
@@ -1605,7 +1559,6 @@ export default function DoctorTrade() {
                 </ResponsiveContainer>
               </div>
             </Card>
-            )}
 
             <Card className="p-4">
               <h2 className="text-sm font-semibold mb-3 flex items-center gap-2"><Radio className="w-4 h-4" />Recent Executions</h2>
@@ -1624,7 +1577,6 @@ export default function DoctorTrade() {
               </div>
             </Card>
 
-            {!isSimpleMode && (
             <Card className="p-4">
               <h2 className="text-sm font-semibold mb-3">Decision Journal</h2>
               <div className="space-y-2 max-h-56 overflow-auto">
@@ -1648,7 +1600,6 @@ export default function DoctorTrade() {
                 {!decisionJournalRows.length && <p className="text-sm text-muted-foreground">No decisions logged yet.</p>}
               </div>
             </Card>
-            )}
           </div>
 
           <div className="xl:col-span-3 space-y-4">
@@ -1671,7 +1622,6 @@ export default function DoctorTrade() {
               </div>
             </Card>
 
-            {!isSimpleMode && (
             <Card className="p-4 border-cyan-500/30 bg-cyan-500/5">
               <div className="flex items-center justify-between gap-2 mb-3">
                 <h2 className="text-sm font-semibold">Adaptive Learning</h2>
@@ -1740,9 +1690,7 @@ export default function DoctorTrade() {
                 Risk gate is automatically {learningSummary.posture} by shifting minimum confidence by {learningSummary.adaptiveConfidenceDelta >= 0 ? "+" : ""}{learningSummary.adaptiveConfidenceDelta.toFixed(2)} points.
               </p>
             </Card>
-            )}
 
-            {!isSimpleMode && (
             <Card className="p-4">
               <h2 className="text-sm font-semibold mb-3">Sniper Logs</h2>
               <div className="space-y-2 max-h-[220px] overflow-auto">
@@ -1765,7 +1713,6 @@ export default function DoctorTrade() {
                 {!viewData?.sniper_logs?.length && <p className="text-sm text-muted-foreground">No sniper logs yet.</p>}
               </div>
             </Card>
-            )}
 
             <Card className="p-4">
               <h2 className="text-sm font-semibold mb-3">Order Ticket</h2>
@@ -1848,7 +1795,6 @@ export default function DoctorTrade() {
               </div>
             </Card>
 
-            {!isSimpleMode && (
             <Card className="p-4">
               <h2 className="text-sm font-semibold mb-3">Wallet Tokens</h2>
               <div className="space-y-2 max-h-[240px] overflow-auto">
@@ -1874,9 +1820,7 @@ export default function DoctorTrade() {
                 {!viewData?.wallet_tokens?.length && <p className="text-sm text-muted-foreground">No SPL tokens detected for this wallet yet.</p>}
               </div>
             </Card>
-            )}
 
-            {!isSimpleMode && (
             <Card className="p-4">
               <h2 className="text-sm font-semibold mb-3">Wallet Transactions</h2>
               <div className="space-y-2 max-h-[240px] overflow-auto">
@@ -1900,9 +1844,8 @@ export default function DoctorTrade() {
                 {!viewData?.wallet_transactions?.length && <p className="text-sm text-muted-foreground">No recent on-chain transactions found.</p>}
               </div>
             </Card>
-            )}
 
-            {!isSimpleMode && viewData?.tuning_suggestion && (
+            {viewData?.tuning_suggestion && (
               <Card className="p-4 border-accent/30 bg-accent/5">
                 <p className="text-xs text-muted-foreground">Tuning Suggestion</p>
                 <p className="text-sm mt-1">{viewData.tuning_suggestion}</p>
