@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -53,6 +54,7 @@ class DoctorTradeController:
         self.positions: list[dict[str, Any]] = []
         self.trade_log: list[dict[str, Any]] = []
         self.performance_log: list[dict[str, Any]] = []
+        self.sniper_logs: list[dict[str, Any]] = []
         self.last_tuning_suggestion: str | None = None
         self.decision_journal: list[dict[str, Any]] = []
         self.high_watermark_usd: float = float(self.risk_state.equity_usd)
@@ -84,6 +86,10 @@ class DoctorTradeController:
             mode=str(getattr(self.settings, "DOCTOR_EXECUTION_MODE", "paper") or "paper"),
             jupiter_api_key=str(getattr(self.settings, "JUPITER_API_KEY", "") or ""),
         )
+        self.live_test_require_ack = bool(getattr(self.settings, "DOCTOR_LIVE_TEST_REQUIRE_ACK", True))
+        self.live_test_confirmed = bool(getattr(self.settings, "DOCTOR_LIVE_TEST_CONFIRMED", False))
+        self.live_test_max_buy_amount_sol = float(getattr(self.settings, "DOCTOR_LIVE_TEST_MAX_BUY_AMOUNT_SOL", 0.15) or 0.15)
+        self.live_test_warn_balance_sol = float(getattr(self.settings, "DOCTOR_LIVE_TEST_WARN_BALANCE_SOL", 3.0) or 3.0)
         self.mate = MATEngine(symbol="SOL/USDT")
         self.mate_last_decision: dict[str, Any] = {}
         self.mate_enabled = True
@@ -204,6 +210,68 @@ class DoctorTradeController:
         self.wallet.private_key = str(private_key or "").strip()
         self.wallet.public_address = str(public_address or "").strip()
 
+    def disconnect_wallet(self) -> None:
+        self.wallet.private_key = ""
+        self.wallet.public_address = ""
+
+    def _build_live_readiness(self, *, balance_sol: float, balance_stale: bool) -> dict[str, Any]:
+        mode = str(self.execution.mode or "paper").strip().lower()
+        wallet_connected = bool(str(self.wallet.public_address or "").strip() and str(self.wallet.private_key or "").strip())
+        jupiter_ready = bool(str(getattr(self.settings, "JUPITER_API_KEY", "") or "").strip())
+
+        blockers: list[str] = []
+        warnings: list[str] = []
+
+        if mode == "live":
+            if self.live_test_require_ack and not self.live_test_confirmed:
+                blockers.append("live_test_not_acknowledged")
+            if not wallet_connected:
+                blockers.append("wallet_not_connected")
+            if not jupiter_ready:
+                blockers.append("jupiter_api_key_missing")
+            if float(self.buy_amount_sol or 0.0) > float(self.live_test_max_buy_amount_sol or 0.0):
+                blockers.append(f"buy_amount_above_live_test_cap_{float(self.live_test_max_buy_amount_sol):.3f}")
+            if bool(balance_stale):
+                blockers.append("wallet_balance_unavailable")
+
+        if balance_sol >= float(self.live_test_warn_balance_sol or 0.0):
+            warnings.append(f"wallet_balance_above_hot_wallet_recommendation_{float(self.live_test_warn_balance_sol):.3f}")
+
+        if bool(self.early_entry_exit_mode):
+            warnings.append("early_entry_exit_mode_enabled")
+
+        return {
+            "mode": mode,
+            "live_only": mode == "live",
+            "live_capable": mode != "live" or len(blockers) == 0,
+            "wallet_connected": wallet_connected,
+            "jupiter_quote_enabled": jupiter_ready,
+            "requires_explicit_live_ack": bool(self.live_test_require_ack),
+            "live_test_confirmed": bool(self.live_test_confirmed),
+            "buy_amount_sol": float(self.buy_amount_sol),
+            "buy_amount_cap_sol": float(self.live_test_max_buy_amount_sol),
+            "hot_wallet_warn_balance_sol": float(self.live_test_warn_balance_sol),
+            "blockers": blockers,
+            "warnings": warnings,
+        }
+
+    def live_readiness_snapshot(self, *, balance_sol: float, balance_stale: bool) -> dict[str, Any]:
+        readiness = self._build_live_readiness(balance_sol=balance_sol, balance_stale=balance_stale)
+        return {
+            "ok": len(list(readiness.get("blockers") or [])) == 0,
+            "execution": readiness,
+            "wallet": {
+                "address": self.wallet.public_address,
+                "balance_sol": float(balance_sol),
+                "balance_stale": bool(balance_stale),
+            },
+            "risk": {
+                "kill_switch": bool(self.kill_switch),
+                "paused": bool(self.risk_state.paused),
+                "pause_reason": self.risk_state.pause_reason,
+            },
+        }
+
     def set_owner_user_id(self, user_id: str | None) -> None:
         self.owner_user_id = str(user_id or "").strip() or None
 
@@ -251,6 +319,45 @@ class DoctorTradeController:
         enriched.setdefault("timestamp", datetime.utcnow().isoformat())
         self.decision_journal.insert(0, enriched)
         self.decision_journal = self.decision_journal[:250]
+
+    def _register_sniper_log(
+        self,
+        *,
+        event: str,
+        source: str,
+        token: dict[str, Any] | None = None,
+        reason: str | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        token = token or {}
+        row: dict[str, Any] = {
+            "at": datetime.utcnow().isoformat(),
+            "event": str(event or "").strip() or "unknown",
+            "source": str(source or "").strip() or "doctortrade",
+            "symbol": str(token.get("symbol") or token.get("token") or "").strip() or None,
+            "name": str(token.get("name") or "").strip() or None,
+            "mint": str(token.get("mint") or token.get("address") or "").strip() or None,
+            "address": str(token.get("address") or token.get("mint") or "").strip() or None,
+            "price_usd": float(token.get("price_usd") or token.get("current_price") or 0.0),
+            "entry_price": float(token.get("entry_price") or 0.0),
+            "liquidity": float(token.get("liquidity") or 0.0),
+            "volume_5m": float(token.get("volume_5m") or 0.0),
+            "volume_24h": float(token.get("volume_24h") or 0.0),
+            "market_cap": float(token.get("market_cap") or 0.0),
+            "score": int(token.get("score") or 0),
+            "decision": str(token.get("decision") or "").strip() or None,
+            "strategy_mode": str(token.get("strategy_mode") or self.strategy_mode or "").strip() or None,
+            "mate_agent": str(self.mate_last_decision.get("best_agent") or "").strip() or None,
+            "mate_regime": str(self.mate_last_decision.get("regime") or "").strip() or None,
+            "confidence": int(token.get("confidence") or 0),
+            "reason": str(reason or token.get("reason") or "").strip() or None,
+        }
+        if extra:
+            for key, value in extra.items():
+                if value is not None:
+                    row[key] = value
+        self.sniper_logs.insert(0, row)
+        self.sniper_logs = self.sniper_logs[:250]
 
     def _quality_gate(self, token: dict[str, Any]) -> tuple[bool, str | None]:
         liquidity = float(token.get("liquidity") or 0.0)
@@ -611,6 +718,21 @@ class DoctorTradeController:
         configured_buy_sol = max(float(self.min_buy_amount_sol or 0.1), float(self.buy_amount_sol or 0.1))
         self.buy_amount_sol = configured_buy_sol
 
+        balance_sol = 0.0
+        balance_stale = True
+        try:
+            balance_sol = await self.wallet.get_balance_sol()
+            balance_stale = False
+        except Exception:
+            balance_sol = float(self._last_balance_sol or 0.0)
+            balance_stale = True
+
+        if str(self.execution.mode or "").strip().lower() == "live":
+            readiness = self._build_live_readiness(balance_sol=balance_sol, balance_stale=balance_stale)
+            live_blockers = list(readiness.get("blockers") or [])
+            if live_blockers:
+                return {"executed": False, "reason": f"live_readiness_{live_blockers[0]}"}
+
         memes = await self.scanner.scan_all_sources(limit=40)
         self.current_tokens = memes
         token = next((row for row in memes if str(row.get("address") or "").strip().lower() == target_address.lower()), None)
@@ -646,10 +768,6 @@ class DoctorTradeController:
         if not self._can_open_trade():
             return {"executed": False, "reason": "max_trades_24h_reached"}
 
-        try:
-            balance_sol = await self.wallet.get_balance_sol()
-        except Exception:
-            balance_sol = 0.0
         if balance_sol < configured_buy_sol:
             return {"executed": False, "reason": f"insufficient_sol_balance_min_{configured_buy_sol:.3f}"}
 
@@ -726,6 +844,67 @@ class DoctorTradeController:
             "buy_amount_sol": configured_buy_sol,
         }
 
+    async def execute_direct_sell(self, contract_address: str, *, sell_fraction_pct: float = 100.0) -> dict[str, Any]:
+        target_address = str(contract_address or "").strip()
+        if not target_address:
+            return {"executed": False, "reason": "contract_address_required"}
+
+        fraction = max(1.0, min(100.0, float(sell_fraction_pct or 100.0)))
+        position_index = next((idx for idx, row in enumerate(self.positions) if str(row.get("address") or "").strip().lower() == target_address.lower()), None)
+        if position_index is None:
+            return {"executed": False, "reason": "position_not_found"}
+
+        position = dict(self.positions[position_index])
+        entry_price = float(position.get("entry_price") or 0.0)
+        current_price = float(position.get("current_price") or entry_price or 0.0)
+        base_size_pct = float(position.get("size_pct") or 0.0)
+        released_size_pct = base_size_pct * (fraction / 100.0)
+        notional_usd = float(position.get("notional_usd") or ((self.risk_state.equity_usd * base_size_pct) / 100.0))
+        released_notional = notional_usd * (fraction / 100.0)
+        pnl_pct = ((current_price - entry_price) / entry_price) if entry_price > 0 else 0.0
+        pnl_usd = released_notional * pnl_pct
+        is_full_exit = fraction >= 99.99
+
+        if is_full_exit:
+            self.positions.pop(position_index)
+        else:
+            remaining_size_pct = max(0.05, base_size_pct - released_size_pct)
+            remaining_notional = max(0.0, notional_usd - released_notional)
+            position["size_pct"] = round(remaining_size_pct, 6)
+            position["notional_usd"] = round(remaining_notional, 6)
+            self.positions[position_index] = position
+
+        self.risk.register_close(self.risk_state, pnl_usd=float(pnl_usd), released_exposure_pct=float(released_size_pct))
+        self._register_trade_count()
+
+        row = {
+            "token": position.get("symbol"),
+            "address": target_address,
+            "action": "SELL" if is_full_exit else "SELL_PARTIAL",
+            "status": "executed",
+            "reason": "direct_sell_manual",
+            "confidence": int(position.get("confidence") or 0),
+            "entry_price": entry_price,
+            "current_price": current_price,
+            "size_pct": round(float(released_size_pct), 6),
+            "strategy_mode": str(position.get("strategy_mode") or self.strategy_mode),
+            "timestamp": datetime.utcnow().isoformat(),
+            "pnl_usd": round(float(pnl_usd), 6),
+            "signature": f"manual-sell-{secrets.token_hex(6)}",
+        }
+        self.trade_log.insert(0, row)
+        self.trade_log = self.trade_log[:200]
+        await self._log_trade(row)
+
+        return {
+            "executed": True,
+            "reason": "direct_sell_executed",
+            "signature": row["signature"],
+            "sold_amount_sol": 0.0,
+            "remaining_amount_sol": 0.0,
+            "sell_fraction_pct": round(float(fraction), 4),
+        }
+
     async def run_once(self) -> dict[str, Any]:
         if not self.enabled or self.kill_switch:
             return {"executed": False, "reason": "disabled"}
@@ -742,6 +921,22 @@ class DoctorTradeController:
 
         configured_buy_sol = max(float(self.min_buy_amount_sol or 0.1), float(self.buy_amount_sol or 0.1))
         self.buy_amount_sol = configured_buy_sol
+
+        balance_sol = float(self._last_balance_sol or 0.0)
+        balance_stale = True
+        try:
+            balance_sol = await self.wallet.get_balance_sol()
+            self._last_balance_sol = float(balance_sol)
+            self._last_balance_checked_ts = datetime.utcnow().timestamp()
+            balance_stale = False
+        except Exception:
+            balance_stale = True
+
+        if str(self.execution.mode or "").strip().lower() == "live":
+            readiness = self._build_live_readiness(balance_sol=balance_sol, balance_stale=balance_stale)
+            live_blockers = list(readiness.get("blockers") or [])
+            if live_blockers:
+                return {"executed": False, "reason": f"live_readiness_{live_blockers[0]}"}
 
         memes = await self.scanner.scan_all_sources(limit=18)
         try:
@@ -799,6 +994,12 @@ class DoctorTradeController:
             signal = self._mate_signal_for_token(token)
             active_agent = str(self.mate_last_decision.get("best_agent") or "").strip()
             if bool(self.sniper_mode_only) and active_agent and active_agent != "flow_agent":
+                self._register_sniper_log(
+                    event="fresh_token_intelligence",
+                    source="fresh_feed",
+                    token=token,
+                    reason="sniper_mode_requires_flow_agent",
+                )
                 self._register_journal({
                     "token": token.get("symbol"),
                     "address": token.get("address"),
@@ -1035,6 +1236,21 @@ class DoctorTradeController:
             else:
                 balance_stale = False
 
+        execution = self._build_live_readiness(balance_sol=balance_sol, balance_stale=balance_stale)
+        auto_trade_blockers = [
+            reason
+            for reason in [
+                None if self.enabled else "doctortrade_disabled",
+                "kill_switch_enabled" if self.kill_switch else None,
+                str(self.risk_state.pause_reason or "risk_paused") if bool(self.risk_state.paused) else None,
+                None if execution.get("wallet_connected") else "wallet_key_not_connected",
+            ]
+            if reason
+        ]
+        if str(execution.get("mode") or "") == "live":
+            for blocker in list(execution.get("blockers") or []):
+                auto_trade_blockers.append(str(blocker))
+
         return {
             "owner_user_id": self.owner_user_id,
             "enabled": self.enabled,
@@ -1059,8 +1275,16 @@ class DoctorTradeController:
                 "address": self.wallet.public_address,
                 "balance_sol": balance_sol,
                 "separate_wallet_enforced": True,
+                "private_key_configured": bool(str(self.wallet.private_key or "").strip()),
+                "connection_status": "connected" if bool(str(self.wallet.public_address or "").strip() and str(self.wallet.private_key or "").strip()) else "disconnected",
                 "balance_stale": bool(balance_stale),
                 "last_balance_checked_ts": float(self._last_balance_checked_ts or 0.0),
+            },
+            "execution": execution,
+            "auto_trade": {
+                "blocked": len(auto_trade_blockers) > 0,
+                "block_reason": auto_trade_blockers[0] if auto_trade_blockers else None,
+                "blockers": auto_trade_blockers,
             },
             "sniping_readiness": {
                 "can_snipe_now": bool(
@@ -1069,6 +1293,7 @@ class DoctorTradeController:
                     and not self.kill_switch
                     and not bool(self.risk_state.paused)
                     and bool(self.enabled)
+                    and (str(execution.get("mode") or "") != "live" or bool(execution.get("live_capable")))
                 ),
                 "blockers": [
                     reason
@@ -1077,6 +1302,7 @@ class DoctorTradeController:
                         "kill_switch_enabled" if self.kill_switch else None,
                         str(self.risk_state.pause_reason or "risk_paused") if bool(self.risk_state.paused) else None,
                         None if self.enabled else "doctortrade_not_enabled",
+                        *([str(value) for value in list(execution.get("blockers") or [])] if str(execution.get("mode") or "") == "live" else []),
                     ]
                     if reason
                 ],

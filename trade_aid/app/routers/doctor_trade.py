@@ -82,8 +82,20 @@ async def doctor_health(user: User = Depends(get_current_user)) -> dict[str, Any
             "advanced_exits": True,
             "decision_journal": True,
             "mate_strategy_brain": True,
+            "live_readiness_gate": True,
         },
     }
+
+
+@router.get("/live-readiness")
+async def doctor_live_readiness(user: User = Depends(get_current_user)) -> dict[str, Any]:
+    controller = await _get_user_doctor_controller(user)
+    status = await controller.status()
+    wallet = dict(status.get("wallet") or {})
+    return controller.live_readiness_snapshot(
+        balance_sol=float(wallet.get("balance_sol") or 0.0),
+        balance_stale=bool(wallet.get("balance_stale")),
+    )
 
 
 class DoctorWalletConnectRequest(BaseModel):
@@ -95,6 +107,11 @@ class DoctorWalletConnectRequest(BaseModel):
 class DoctorDirectBuyRequest(BaseModel):
     contract_address: str
     chain: str = "solana"
+
+
+class DoctorDirectSellRequest(BaseModel):
+    contract_address: str
+    sell_fraction_pct: float = 100.0
 
 
 @router.get("/status")
@@ -192,6 +209,13 @@ async def doctor_connect_wallet(req: DoctorWalletConnectRequest, user: User = De
     return await controller.status()
 
 
+@router.post("/disconnect-wallet")
+async def doctor_disconnect_wallet(user: User = Depends(get_current_user)) -> dict[str, Any]:
+    controller = await _get_user_doctor_controller(user)
+    controller.disconnect_wallet()
+    return await controller.status()
+
+
 @router.post("/run-once")
 async def doctor_run_once(user: User = Depends(get_current_user)) -> dict[str, Any]:
     controller = await _get_user_doctor_controller(user)
@@ -211,5 +235,18 @@ async def doctor_direct_buy(req: DoctorDirectBuyRequest, user: User = Depends(ge
     )
     if not result.get("executed"):
         raise HTTPException(status_code=400, detail=str(result.get("reason") or "direct_buy_failed"))
+    status = await controller.status()
+    return {"result": result, "status": status}
+
+
+@router.post("/direct-sell")
+async def doctor_direct_sell(req: DoctorDirectSellRequest, user: User = Depends(get_current_user)) -> dict[str, Any]:
+    controller = await _get_user_doctor_controller(user)
+    result = await controller.execute_direct_sell(
+        contract_address=req.contract_address,
+        sell_fraction_pct=req.sell_fraction_pct,
+    )
+    if not result.get("executed"):
+        raise HTTPException(status_code=400, detail=str(result.get("reason") or "direct_sell_failed"))
     status = await controller.status()
     return {"result": result, "status": status}

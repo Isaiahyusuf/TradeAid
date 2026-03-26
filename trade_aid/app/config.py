@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     DOCTOR_MAX_SLIPPAGE_PCT: float = 2.0
     DOCTOR_VOLATILITY_SPIKE_THRESHOLD: float = 6.0
     DOCTOR_EXECUTION_MODE: str = "paper"
+    DOCTOR_LIVE_TEST_REQUIRE_ACK: bool = True
+    DOCTOR_LIVE_TEST_CONFIRMED: bool = False
+    DOCTOR_LIVE_TEST_MAX_BUY_AMOUNT_SOL: float = 0.15
+    DOCTOR_LIVE_TEST_WARN_BALANCE_SOL: float = 3.0
     DOCTOR_API_ERROR_PAUSE_THRESHOLD: int = 3
     ETHEREUM_RPC_URL: str = "https://rpc.ankr.com/eth"
     BSC_RPC_URL: str = "https://bsc-dataseed.binance.org/"
