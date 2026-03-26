@@ -511,7 +511,7 @@ export default function DoctorTrade() {
     }
 
     connectWalletMutation.mutate(
-      { private_key: trimmedPrivateKey },
+      { private_key: trimmedPrivateKey, use_existing_wallet: false },
       {
         onSuccess: (status) => {
           const persistedConnected = isDoctorWalletConnected(

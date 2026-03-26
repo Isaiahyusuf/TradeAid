@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,6 +17,61 @@ router = APIRouter(prefix="/api/doctor", tags=["DoctorTrade"])
 
 _user_doctor_controllers: dict[str, DoctorTradeController] = {}
 _user_doctor_lock = asyncio.Lock()
+
+
+def _decode_private_key_bytes(raw_private_key: str) -> bytes:
+    raw = str(raw_private_key or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="private_key_required")
+
+    if raw.startswith("[") and raw.endswith("]"):
+        try:
+            values = json.loads(raw)
+            if not isinstance(values, list):
+                raise ValueError("invalid_json")
+            return bytes(int(v) for v in values)
+        except Exception:
+            raise HTTPException(status_code=400, detail="invalid_private_key_format")
+
+    compact = "".join(raw.split())
+    hex_value = compact[2:] if compact.lower().startswith("0x") else compact
+    if all(ch in "0123456789abcdefABCDEF" for ch in hex_value) and len(hex_value) in {64, 128}:
+        try:
+            return bytes.fromhex(hex_value)
+        except Exception:
+            pass
+
+    try:
+        decoded = base64.b64decode(compact, validate=True)
+        if len(decoded) in {32, 64}:
+            return decoded
+    except Exception:
+        pass
+
+    try:
+        from solders.keypair import Keypair
+
+        keypair = Keypair.from_base58_string(compact)
+        return bytes(keypair)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid_private_key_format")
+
+
+def _derive_solana_address_from_private_key(raw_private_key: str) -> str:
+    key_bytes = _decode_private_key_bytes(raw_private_key)
+    if len(key_bytes) not in {32, 64}:
+        raise HTTPException(status_code=400, detail="invalid_private_key_length")
+
+    try:
+        from solders.keypair import Keypair
+
+        if len(key_bytes) == 64:
+            keypair = Keypair.from_bytes(key_bytes)
+        else:
+            keypair = Keypair.from_seed(key_bytes)
+        return str(keypair.pubkey())
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid_private_key")
 
 
 async def _get_user_doctor_controller(user: User) -> DoctorTradeController:
@@ -189,6 +246,9 @@ async def doctor_connect_wallet(req: DoctorWalletConnectRequest, user: User = De
     controller = await _get_user_doctor_controller(user)
     private_key = str(req.private_key or "").strip()
     public_address = str(req.public_address or "").strip()
+
+    if private_key and not public_address:
+        public_address = _derive_solana_address_from_private_key(private_key)
 
     if not private_key or not public_address:
         if not req.use_existing_wallet:
