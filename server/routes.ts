@@ -1893,8 +1893,19 @@ export async function registerRoutes(
   ) => {
     const scopedUserId = String(preferredUserId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
     const shouldPersist = options?.persistRuntime !== false;
-    const { walletPublicKey, walletPrivateKey } = await getDoctorLiveWalletCredentials(preferredUserId);
-    const liveCapable = isDoctorLiveTradingEnabled() && Boolean(walletPublicKey) && Boolean(walletPrivateKey);
+    let { walletPublicKey, walletPrivateKey } = await getDoctorLiveWalletCredentials(preferredUserId);
+    let liveCapable = isDoctorLiveTradingEnabled() && Boolean(walletPublicKey) && Boolean(walletPrivateKey);
+
+    // If Doctor credentials are missing, try one sync pass from Wallet tab runtime
+    // before deciding execution mode.
+    if (!liveCapable && scopedUserId) {
+      const syncResult = await syncDoctorWalletFromAssistantRuntime(scopedUserId);
+      if (syncResult?.synced) {
+        ({ walletPublicKey, walletPrivateKey } = await getDoctorLiveWalletCredentials(preferredUserId));
+        liveCapable = isDoctorLiveTradingEnabled() && Boolean(walletPublicKey) && Boolean(walletPrivateKey);
+      }
+    }
+
     const liveOnly = isDoctorLiveOnlyMode();
     if (liveOnly) {
       if (doctorRuntime.execution.mode !== "live") {
@@ -7040,11 +7051,10 @@ export async function registerRoutes(
     await loadDoctorRuntimeForUser(userId);
     const enabledBeforeStatus = Boolean(doctorRuntime.enabled);
     const presetBeforeStatus = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
-    const executionModeBeforeStatus = String(doctorRuntime.execution.mode || "live").trim().toLowerCase() === "paper" ? "paper" : "live";
     await syncDoctorWalletFromAssistantRuntime(userId);
     doctorRuntime.enabled = enabledBeforeStatus;
     (doctorRuntime.controls as any).snipe_preset = presetBeforeStatus;
-    doctorRuntime.execution.mode = executionModeBeforeStatus;
+    await ensureDoctorLiveExecutionModeIfCapable(userId, { persistRuntime: true });
 
     // If scheduler is active but enabled drifted false, repair the runtime flag so
     // status and execution behavior stay consistent across refreshes.
