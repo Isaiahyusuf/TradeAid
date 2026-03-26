@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowDownLeft, ArrowUpRight, Bot, CheckCircle2, Copy, History, KeyRound, Settings2, Shield, Trash2, Wallet as WalletIcon } from "lucide-react";
 
 import { Layout } from "@/components/Layout";
@@ -113,17 +113,8 @@ export default function WalletPage() {
   const swapMode = "live" as const;
 
   const [exportedKey, setExportedKey] = useState<{ chain: string; address: string; private_key: string; warning: string } | null>(null);
-  const walletSettingsScrollRef = useRef<HTMLDivElement | null>(null);
 
   const [latestBundle, setLatestBundle] = useState<{ mnemonic?: string; addresses_by_chain: Record<string, string>; private_keys_by_chain?: Record<string, string>; warning: string; } | null>(null);
-
-  const scrollWalletSettingsTo = (sectionId: string) => {
-    const container = walletSettingsScrollRef.current;
-    if (!container) return;
-    const target = container.querySelector<HTMLElement>(`[data-settings-section="${sectionId}"]`);
-    if (!target) return;
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
 
   useEffect(() => {
     if (walletAction === "connect") {
@@ -1067,15 +1058,14 @@ export default function WalletPage() {
           <SheetContent side="right" className="sm:max-w-md overflow-hidden">
             <SheetHeader>
               <SheetTitle>Wallet Settings</SheetTitle>
-              <SheetDescription>Manage wallet actions and DoctorTrade controls in one panel.</SheetDescription>
+              <SheetDescription>Manage wallet actions in one panel.</SheetDescription>
             </SheetHeader>
             <div className="mt-4 space-y-3 h-[calc(100vh-10rem)] flex flex-col">
               <div className="flex gap-2 overflow-x-auto pb-1">
-                <Button size="sm" variant="outline" onClick={() => scrollWalletSettingsTo("wallet-actions")}>Wallet Actions</Button>
-                <Button size="sm" variant="outline" onClick={() => scrollWalletSettingsTo("doctortrade")}>DoctorTrade</Button>
+                <Button size="sm" variant="outline">Wallet Actions</Button>
               </div>
 
-              <div ref={walletSettingsScrollRef} className="space-y-4 overflow-y-auto pr-1 flex-1">
+              <div className="space-y-4 overflow-y-auto pr-1 flex-1">
                 <div data-settings-section="wallet-actions" className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-3">
                   <p className="text-sm font-semibold">Wallet Actions</p>
                   <div>
@@ -1096,11 +1086,6 @@ export default function WalletPage() {
                   <Button variant="destructive" onClick={handleDeleteWholeWallet} disabled={deleteWallet.isPending || !wallet?.has_wallet}>
                     <Trash2 className="w-4 h-4 mr-2" /> {deleteWallet.isPending ? "Deleting..." : "Delete Entire Wallet"}
                   </Button>
-                </div>
-
-                <div data-settings-section="doctortrade" className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-3">
-                  <p className="text-sm font-semibold text-primary">DoctorTrade Settings</p>
-                  <p className="text-xs text-muted-foreground">DoctorTrade settings are managed directly inside the DoctorTrade page.</p>
                 </div>
               </div>
             </div>
