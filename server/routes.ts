@@ -887,6 +887,13 @@ export async function registerRoutes(
   const encryptDoctorPrivateKey = (privateKey: string) => {
     const trimmed = String(privateKey || "").trim();
     if (!trimmed) return "";
+    const secret = resolveDoctorWalletEncryptionSecret();
+    if (!secret) {
+      // Backward-compatible fallback: keep key usable even if encryption env is missing.
+      // Decrypt path already supports non-encrypted values.
+      logStructured("warn", "doctor.wallet.encryption_secret_missing_fallback_plaintext");
+      return trimmed;
+    }
     const iv = randomBytes(12);
     const cipher = createCipheriv("aes-256-gcm", getDoctorWalletEncryptionKey(), iv);
     const encrypted = Buffer.concat([cipher.update(trimmed, "utf8"), cipher.final()]);
@@ -917,6 +924,7 @@ export async function registerRoutes(
   const deriveWalletPublicKeyFromPrivateKey = (value: string) => {
     const trimmed = String(value || "").trim();
     if (!trimmed) return "";
+    const compact = trimmed.replace(/\s+/g, "");
 
     const toAddress = (secret: Uint8Array) => {
       try {
@@ -932,8 +940,8 @@ export async function registerRoutes(
     };
 
     try {
-      if (trimmed.startsWith("[")) {
-        const parsed = JSON.parse(trimmed) as number[];
+      if (compact.startsWith("[")) {
+        const parsed = JSON.parse(compact) as number[];
         if (Array.isArray(parsed) && parsed.length >= 32) {
           const fromJson = toAddress(Uint8Array.from(parsed.map((item) => Number(item) & 0xff)));
           if (fromJson) return fromJson;
@@ -943,14 +951,23 @@ export async function registerRoutes(
     }
 
     try {
-      const decoded = bs58Codec.decode(trimmed);
+      const hexValue = compact.startsWith("0x") || compact.startsWith("0X") ? compact.slice(2) : compact;
+      if (/^[0-9a-fA-F]+$/.test(hexValue) && (hexValue.length === 64 || hexValue.length === 128)) {
+        const fromHex = toAddress(new Uint8Array(Buffer.from(hexValue, "hex")));
+        if (fromHex) return fromHex;
+      }
+    } catch {
+    }
+
+    try {
+      const decoded = bs58Codec.decode(compact);
       const fromBs58 = toAddress(decoded);
       if (fromBs58) return fromBs58;
     } catch {
     }
 
     try {
-      const decoded = Buffer.from(trimmed, "base64");
+      const decoded = Buffer.from(compact, "base64");
       if (decoded.length >= 32) {
         const fromBase64 = toAddress(new Uint8Array(decoded));
         if (fromBase64) return fromBase64;
@@ -3809,10 +3826,11 @@ export async function registerRoutes(
   const parseSolanaSecretKey = (value: string): Uint8Array | null => {
     const trimmed = String(value || "").trim();
     if (!trimmed) return null;
+    const compact = trimmed.replace(/\s+/g, "");
 
     try {
-      if (trimmed.startsWith("[")) {
-        const parsed = JSON.parse(trimmed) as number[];
+      if (compact.startsWith("[")) {
+        const parsed = JSON.parse(compact) as number[];
         if (Array.isArray(parsed) && parsed.length >= 32) {
           return Uint8Array.from(parsed.map((item) => Number(item) & 0xff));
         }
@@ -3821,13 +3839,21 @@ export async function registerRoutes(
     }
 
     try {
-      const decoded = bs58Codec.decode(trimmed);
+      const hexValue = compact.startsWith("0x") || compact.startsWith("0X") ? compact.slice(2) : compact;
+      if (/^[0-9a-fA-F]+$/.test(hexValue) && (hexValue.length === 64 || hexValue.length === 128)) {
+        return new Uint8Array(Buffer.from(hexValue, "hex"));
+      }
+    } catch {
+    }
+
+    try {
+      const decoded = bs58Codec.decode(compact);
       if (decoded.length >= 32) return decoded;
     } catch {
     }
 
     try {
-      const decoded = Buffer.from(trimmed, "base64");
+      const decoded = Buffer.from(compact, "base64");
       if (decoded.length >= 32) return new Uint8Array(decoded);
     } catch {
     }
