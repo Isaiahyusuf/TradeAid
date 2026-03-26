@@ -27,13 +27,11 @@ export function SafeBuyCard({ item }: { item: SafeBuyItem }) {
   const handleDirectBuy = () => {
     const requestedChain = String(item.chain || "solana").trim().toLowerCase();
     const params = new URLSearchParams();
-    params.set("action", "swap");
-    params.set("side", "buy");
+    params.set("action", "buy");
     params.set("chain", requestedChain || "solana");
     params.set("contract", item.contract_address);
-    params.set("amount_sol", String(amountSol || "0.1"));
-    setLocation(`/wallet?${params.toString()}`);
-    toast({ title: "Direct Buy Ready", description: "Opened Wallet swap with token contract prefilled." });
+    setLocation(`/doctortrade?${params.toString()}`);
+    toast({ title: "Direct Buy Ready", description: "Opened DoctorTrade with token contract prefilled." });
   };
 
   return (

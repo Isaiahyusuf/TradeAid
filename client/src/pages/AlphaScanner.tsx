@@ -221,14 +221,11 @@ export default function AlphaScanner() {
 
   const handleDirectBuy = (token: TokenItem) => {
     const params = new URLSearchParams();
-    params.set("action", "swap");
-    params.set("side", "buy");
+    params.set("action", "buy");
     params.set("chain", String(token.chain || routingChain).toLowerCase());
     params.set("contract", token.contract_address);
-    params.set("amount_sol", "0.1");
-    params.set("returnTo", "/alphascanner");
-    setLocation(`/wallet?${params.toString()}`);
-    toast({ title: "Direct Buy Ready", description: "Opened Wallet swap with token contract prefilled." });
+    setLocation(`/doctortrade?${params.toString()}`);
+    toast({ title: "Direct Buy Ready", description: "Opened DoctorTrade with token contract prefilled." });
   };
 
   return (

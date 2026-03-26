@@ -17,7 +17,6 @@ const MemeTrend = lazy(() => import("@/pages/MemeTrend"));
 const SafeBuy = lazy(() => import("@/pages/SafeBuy"));
 const AssistantPage = lazy(() => import("@/pages/Assistant"));
 const DoctorTradePage = lazy(() => import("@/pages/DoctorTrade"));
-const WalletPage = lazy(() => import("@/pages/Wallet"));
 const Account = lazy(() => import("@/pages/Account"));
 const Subscription = lazy(() => import("@/pages/Subscription"));
 const Disclaimer = lazy(() => import("@/pages/Disclaimer"));
@@ -47,7 +46,7 @@ function AuthenticatedRouter() {
         <Route path="/memetrend" component={MemeTrend} />
         <Route path="/safebuy" component={SafeBuy} />
         <Route path="/assistant" component={AssistantPage} />
-        <Route path="/wallet" component={WalletPage} />
+        <Route path="/wallet" component={DoctorTradePage} />
         <Route path="/doctorstrange" component={AssistantPage} />
         <Route path="/doctortrade" component={DoctorTradePage} />
         <Route path="/account" component={Account} />

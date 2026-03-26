@@ -3,16 +3,15 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy, BookOpen } from "lucide-react";
+import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy } from "lucide-react";
 import { FaTelegramPlane } from "react-icons/fa";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useDoctorAiAssistantChat, useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorResetLearning, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
+import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorResetLearning, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
 import { TokenAvatar } from "@/components/token/TokenAvatar";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useLocation } from "wouter";
 
 function fmtUsd(value: number) {
@@ -33,6 +32,13 @@ function fmtSol(value: number) {
   if (numeric >= 1) return `${numeric.toFixed(4)} SOL`;
   if (numeric >= 0.001) return `${numeric.toFixed(6)} SOL`;
   return `${numeric.toFixed(8)} SOL`;
+}
+
+function fmtMint(value?: string) {
+  const mint = String(value || "").trim();
+  if (!mint) return "-";
+  if (mint.length <= 14) return mint;
+  return `${mint.slice(0, 6)}...${mint.slice(-6)}`;
 }
 
 const TRADEAID_TELEGRAM_BOT_URL = "https://t.me/Tradeaid_bot";
@@ -61,15 +67,8 @@ export default function DoctorTrade() {
   const resetLearningMutation = useDoctorResetLearning();
   const directBuyMutation = useDoctorDirectBuy();
   const directSellMutation = useDoctorDirectSell();
-  const aiAssistantMutation = useDoctorAiAssistantChat();
-  const [guideOpen, setGuideOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [doctorTab, setDoctorTab] = useState<"trading" | "engine" | "ai-assistant">("trading");
-  const [assistantPrompt, setAssistantPrompt] = useState("");
-  const [assistantOpen, setAssistantOpen] = useState(false);
-  const [assistantName, setAssistantName] = useState("Savatar");
-  const [assistantUserName, setAssistantUserName] = useState("Trader");
-  const [assistantMessages, setAssistantMessages] = useState<Array<{ id: string; role: "user" | "assistant"; text: string }>>([]);
+  const [doctorTab, setDoctorTab] = useState<"trading" | "engine">("trading");
   const [intervalInput, setIntervalInput] = useState("10");
   const [buyAmountInput, setBuyAmountInput] = useState("0.1");
   const [maxTradesInput, setMaxTradesInput] = useState("12");
@@ -354,65 +353,27 @@ export default function DoctorTrade() {
   const walletSolBalance = Number(viewData?.wallet?.balance_sol || 0);
   const walletPrivateKeyConfigured = Boolean(viewData?.wallet?.private_key_configured);
   const mateState = viewData?.mate;
+  const activeMateAgent = useMemo(() => {
+    const explicit = String(mateState?.best_agent || "").trim();
+    if (explicit) return explicit;
 
-  useEffect(() => {
-    setAssistantMessages([]);
-    setAssistantPrompt("");
-  }, [viewData?.user_id]);
+    const fromStrategyMode = String(viewData?.strategy_mode || "").trim();
+    if (fromStrategyMode && fromStrategyMode !== "autonomous") return fromStrategyMode;
 
-  const toggleAssistantOpen = () => {
-    setAssistantOpen((prev) => {
-      const next = !prev;
-      if (!next) {
-        setAssistantMessages([]);
-        setAssistantPrompt("");
-      }
-      return next;
-    });
-  };
+    const scores = Object.entries(mateState?.scores || {})
+      .filter(([name]) => String(name || "").trim().length > 0)
+      .map(([name, score]) => ({ name: String(name), score: Number(score || 0) }))
+      .sort((a, b) => b.score - a.score);
 
-  const sendAssistantPrompt = (rawPrompt: string) => {
-    const prompt = String(rawPrompt || "").trim();
-    if (!prompt || aiAssistantMutation.isPending) return;
-
-    const userMessageId = `user-${Date.now()}`;
-    setAssistantMessages((prev) => [...prev, { id: userMessageId, role: "user", text: prompt }]);
-    setAssistantPrompt("");
-
-    aiAssistantMutation.mutate(
-      { message: prompt },
-      {
-        onSuccess: (response) => {
-          const assistantText = String(response?.chat?.answer || "No response available.").trim();
-          if (response?.assistant_name) {
-            setAssistantName(String(response.assistant_name));
-          }
-          if (response?.user_name) {
-            setAssistantUserName(String(response.user_name));
-          }
-          setAssistantMessages((prev) => [
-            ...prev,
-            {
-              id: `assistant-${Date.now()}`,
-              role: "assistant",
-              text: assistantText,
-            },
-          ]);
-        },
-        onError: (error) => {
-          const fallback = error instanceof Error ? error.message : "AI assistant is temporarily unavailable.";
-          setAssistantMessages((prev) => [
-            ...prev,
-            {
-              id: `assistant-error-${Date.now()}`,
-              role: "assistant",
-              text: `Unable to answer right now, ${assistantUserName}: ${fallback}`,
-            },
-          ]);
-        },
-      },
-    );
-  };
+    if (scores.length > 0) return scores[0].name;
+    return "waiting_signal";
+  }, [mateState?.best_agent, mateState?.scores, viewData?.strategy_mode]);
+  const activeMateAgentLabel = useMemo(() => {
+    return activeMateAgent
+      .replace(/_agent$/i, "")
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  }, [activeMateAgent]);
 
   const handleDirectSell = (position: any) => {
     const contractAddress = String(position?.address || "").trim();
@@ -737,7 +698,7 @@ export default function DoctorTrade() {
             </div>
             <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
               <p className="text-xs text-muted-foreground">Active Agent</p>
-              <p className="font-semibold">{String(mateState?.best_agent || "Selecting")}</p>
+              <p className="font-semibold">{activeMateAgentLabel}</p>
             </div>
             <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
               <p className="text-xs text-muted-foreground">Confidence</p>
@@ -748,11 +709,10 @@ export default function DoctorTrade() {
         </Card>
 
         <Card className="p-3 bg-card/70 backdrop-blur-sm border-border/60">
-          <Tabs value={doctorTab} onValueChange={(value) => setDoctorTab(value as "trading" | "engine" | "ai-assistant")}>
-            <TabsList className="w-full grid grid-cols-3">
+          <Tabs value={doctorTab} onValueChange={(value) => setDoctorTab(value as "trading" | "engine")}>
+            <TabsList className="w-full grid grid-cols-2">
               <TabsTrigger value="trading">Trading</TabsTrigger>
               <TabsTrigger value="engine">Strategy Brain</TabsTrigger>
-              <TabsTrigger value="ai-assistant">AI Assistant</TabsTrigger>
             </TabsList>
           </Tabs>
         </Card>
@@ -763,7 +723,7 @@ export default function DoctorTrade() {
             <div className="space-y-2 text-sm">
               {Object.entries(mateState?.scores || {}).length ? Object.entries(mateState?.scores || {}).map(([agent, score]) => (
                 <div key={agent} className="flex items-center justify-between rounded-md border border-border/60 bg-background/50 px-3 py-2">
-                  <span>{agent}</span>
+                  <span>{agent === activeMateAgent ? `${agent} (active)` : agent}</span>
                   <span>{Number(score || 0).toFixed(3)}</span>
                 </div>
               )) : (
@@ -772,151 +732,6 @@ export default function DoctorTrade() {
             </div>
           </Card>
         )}
-
-        {doctorTab === "ai-assistant" && (
-          <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60">
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <h3 className="text-sm font-semibold flex items-center gap-2">
-                <Bot className="w-4 h-4 text-primary" /> {assistantName}
-              </h3>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline">AI guidance</Badge>
-                <Button size="sm" variant="outline" onClick={toggleAssistantOpen}>
-                  {assistantOpen ? "Close Chat" : "Open Chat"}
-                </Button>
-              </div>
-            </div>
-
-            {!assistantOpen && (
-              <div className="rounded-md border border-border/60 bg-background/40 px-3 py-2 text-xs text-muted-foreground">
-                Open chat to talk with {assistantName}. Chat resets when you close it.
-              </div>
-            )}
-
-            {assistantOpen && (
-              <>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {[
-                    "Market Overview",
-                    "Best Strategy Right Now",
-                    "Risk Level Today",
-                    "Sniping Conditions",
-                    "Volume Analysis",
-                  ].map((quick) => (
-                    <Button key={quick} size="sm" variant="outline" onClick={() => sendAssistantPrompt(quick)} disabled={aiAssistantMutation.isPending}>
-                      {quick}
-                    </Button>
-                  ))}
-                  <Button size="sm" variant="outline" onClick={() => setAssistantMessages([])}>
-                    Clear Chat
-                  </Button>
-                </div>
-
-                <div className="space-y-2 max-h-[320px] overflow-auto rounded-md border border-border/60 bg-background/40 p-3">
-                  {assistantMessages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={msg.role === "assistant"
-                        ? "rounded-md border border-primary/20 bg-primary/5 p-2 text-sm"
-                        : "rounded-md border border-border/60 bg-background/70 p-2 text-sm"}
-                    >
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">{msg.role === "assistant" ? assistantName : assistantUserName}</p>
-                      <p className="whitespace-pre-wrap">{msg.text}</p>
-                    </div>
-                  ))}
-                  {aiAssistantMutation.isPending && <p className="text-xs text-muted-foreground">{assistantName} is thinking...</p>}
-                </div>
-
-                <div className="mt-3 flex gap-2">
-                  <Input
-                    value={assistantPrompt}
-                    onChange={(event) => setAssistantPrompt(event.target.value)}
-                    placeholder={`Ask ${assistantName} about strategy selection, momentum, risk, or paste a token CA for live token scoring...`}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        sendAssistantPrompt(assistantPrompt);
-                      }
-                    }}
-                  />
-                  <Button onClick={() => sendAssistantPrompt(assistantPrompt)} disabled={aiAssistantMutation.isPending || !assistantPrompt.trim()}>
-                    Send
-                  </Button>
-                </div>
-                <p className="mt-2 text-[11px] text-muted-foreground">{assistantName} guidance is informational only. No guaranteed profits. Always use stop loss and risk limits.</p>
-              </>
-            )}
-          </Card>
-        )}
-
-        <SettingsMenuCard
-          title="DoctorTrade Operating Guide"
-          description="Professional quick-reference for setup, controls, and safe execution."
-          open={guideOpen}
-          onToggle={() => setGuideOpen((prev) => !prev)}
-        >
-          <div className="flex items-center gap-2 mb-3">
-            <BookOpen className="w-4 h-4 text-primary animate-pulse" />
-            <Badge variant="outline" className="border-primary/40 text-primary">Updated 2026</Badge>
-          </div>
-
-          <Accordion type="single" collapsible className="rounded-md border border-primary/25 bg-background/60 px-3">
-            <AccordionItem value="setup" className="border-border/60">
-              <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">1) First-time setup</AccordionTrigger>
-              <AccordionContent className="text-xs text-muted-foreground">
-                <ul className="space-y-1 list-disc pl-5">
-                  <li>Connect using <span className="font-medium text-foreground">Connect Existing Wallet</span> or Manual Private Key Import.</li>
-                  <li>Confirm the wallet shows <span className="font-medium text-foreground">Connected</span> before trading.</li>
-                  <li>Review buy size, slippage, and risk guardrails before enabling automation.</li>
-                </ul>
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value="controls" className="border-border/60">
-              <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">2) Risk controls and strategy brain</AccordionTrigger>
-              <AccordionContent className="text-xs text-muted-foreground">
-                <ul className="space-y-1 list-disc pl-5">
-                  <li>Use the Strategy Brain tab to verify regime and active agent selected by MATE.</li>
-                  <li>Set daily loss cap, max trades, stop loss, take profit, and max hold time.</li>
-                  <li>Press <span className="font-medium text-foreground">Save Settings</span> after every config change.</li>
-                </ul>
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value="operations" className="border-border/60">
-              <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">3) Daily operating flow</AccordionTrigger>
-              <AccordionContent className="text-xs text-muted-foreground">
-                <ul className="space-y-1 list-disc pl-5">
-                  <li>Use <span className="font-medium text-foreground">Start DoctorTrade</span> to begin autonomous cycles.</li>
-                  <li>Use <span className="font-medium text-foreground">Run Cycle</span> for immediate one-pass execution.</li>
-                  <li>Use <span className="font-medium text-foreground">Refresh Data</span> to inspect live status, decisions, and positions.</li>
-                </ul>
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value="troubleshooting" className="border-border/60">
-              <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">4) Troubleshooting and rejection reasons</AccordionTrigger>
-              <AccordionContent className="text-xs text-muted-foreground">
-                <ul className="space-y-1 list-disc pl-5">
-                  <li>If entries are skipped, inspect sniper logs for <span className="font-medium text-foreground">failed_checks</span>.</li>
-                  <li>Common blockers: liquidity floor, spread cap, volume filter, or buy/sell pressure checks.</li>
-                  <li>Adjust thresholds incrementally and avoid disabling multiple safeguards at once.</li>
-                </ul>
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value="security" className="border-b-0">
-              <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">5) Security and emergency controls</AccordionTrigger>
-              <AccordionContent className="text-xs text-muted-foreground">
-                <ul className="space-y-1 list-disc pl-5">
-                  <li>Use the <span className="font-medium text-foreground">Kill Switch</span> for immediate forced stop.</li>
-                  <li>Disconnect wallet when rotating keys or ending a trading session.</li>
-                  <li>DoctorTrade is an assistive tool, not a profit guarantee. Review the Disclaimer page before trading.</li>
-                </ul>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
-        </SettingsMenuCard>
 
         <SettingsMenuCard
           title="DoctorTrade Settings"
@@ -1455,13 +1270,24 @@ export default function DoctorTrade() {
               <h2 className="text-sm font-semibold mb-3">Sniper Logs</h2>
               <div className="space-y-2 max-h-[220px] overflow-auto">
                 {(viewData?.sniper_logs || []).slice(0, 12).map((row, index) => (
-                  <div key={`${row?.mint || "sniper"}-${index}`} className="border rounded-md p-2">
+                  <div key={`${row?.mint || row?.address || "sniper"}-${index}`} className="border rounded-md p-2">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-semibold truncate">{row?.symbol || "UNKNOWN"}</p>
+                      <p className="text-xs font-semibold truncate">{row?.symbol || row?.token || "UNKNOWN"}</p>
                       <Badge variant="outline" className="text-[10px]">{String(row?.event || "-")}</Badge>
                     </div>
+                    <p className="text-[11px] text-muted-foreground truncate">Mint: {fmtMint(String(row?.mint || row?.address || ""))}</p>
                     <p className="text-[11px] text-muted-foreground truncate">{row?.reason || "-"}</p>
-                    <p className="text-[11px] text-muted-foreground">Strategy: {String(viewData?.mate?.best_agent || viewData?.strategy_mode || "mate")}</p>
+                    <p className="text-[11px] text-muted-foreground">Strategy: {activeMateAgentLabel}</p>
+                    {(Number(row?.age_seconds || 0) > 0 || Number(row?.liquidity_sol || 0) > 0 || Number(row?.volume_5m_sol || 0) > 0) && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Age {Math.max(0, Number(row?.age_seconds || 0)).toFixed(0)}s · LQ {Number(row?.liquidity_sol || 0).toFixed(2)} SOL · Vol5m {Number(row?.volume_5m_sol || 0).toFixed(2)} SOL
+                      </p>
+                    )}
+                    {(Number(row?.buys_5m || 0) > 0 || Number(row?.sells_5m || 0) > 0 || Number(row?.ai_confidence || 0) > 0) && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Buys/Sells 5m: {Number(row?.buys_5m || 0)} / {Number(row?.sells_5m || 0)} · AI {Number(row?.ai_confidence || 0).toFixed(1)}
+                      </p>
+                    )}
                     {(Number(row?.required_sol || 0) > 0 || Number(row?.available_sol || 0) > 0) && (
                       <p className="text-[11px] text-muted-foreground">
                         Need {Number(row?.required_sol || 0).toFixed(4)} SOL · Have {Number(row?.available_sol || 0).toFixed(4)} SOL

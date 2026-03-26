@@ -103,9 +103,18 @@ export type DoctorStatus = {
     event?: string;
     source?: string;
     symbol?: string;
+    token?: string;
     mint?: string;
+    address?: string;
+    pair_address?: string;
     reason?: string;
     preset?: string;
+    age_seconds?: number;
+    liquidity_sol?: number;
+    volume_5m_sol?: number;
+    buys_5m?: number;
+    sells_5m?: number;
+    ai_confidence?: number;
     available_sol?: number;
     required_sol?: number;
     estimated_fee_sol?: number;

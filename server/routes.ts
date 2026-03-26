@@ -866,17 +866,22 @@ export async function registerRoutes(
 
   const encodeBase64 = (value: Uint8Array) => Buffer.from(value).toString("base64");
   const decodeBase64 = (value: string) => Buffer.from(value, "base64");
+  const isDoctorWalletExclusiveMode = () => {
+    return String(process.env.DOCTOR_WALLET_DOCTOR_ONLY || "true").trim().toLowerCase() !== "false";
+  };
   const resolveDoctorWalletEncryptionSecret = () => {
     return String(
       process.env.DOCTORTRADE_WALLET_ENCRYPTION_KEY
         || process.env.DOCTORTRADE_ENCRYPTION_KEY
-        || process.env.JWT_SECRET
-        || process.env.SESSION_SECRET
-        || "tradeaid-doctor-wallet-fallback-key",
+        || process.env.APP_STATE_ENCRYPTION_KEY
+        || "",
     ).trim();
   };
   const getDoctorWalletEncryptionKey = () => {
     const secret = resolveDoctorWalletEncryptionSecret();
+    if (!secret) {
+      throw new Error("DOCTORTRADE_WALLET_ENCRYPTION_KEY is required");
+    }
     return createHash("sha256").update(secret, "utf8").digest();
   };
   const encryptDoctorPrivateKey = (privateKey: string) => {
@@ -1324,6 +1329,14 @@ export async function registerRoutes(
   };
 
   const syncDoctorWalletFromAssistantRuntime = async (userId: string) => {
+    if (isDoctorWalletExclusiveMode()) {
+      return {
+        synced: false,
+        reason: "doctor_wallet_exclusive_mode",
+        userId: String(userId || "").trim(),
+      } as const;
+    }
+
     const normalizedUserId = String(userId || "").trim();
     if (!normalizedUserId) {
       return { synced: false, reason: "missing_user_id" } as const;
@@ -1479,29 +1492,6 @@ export async function registerRoutes(
         walletRowFound: Boolean(resolvedWallet),
         autoHydrateBlocked,
       };
-    }
-
-    if (ownerUserId && !autoHydrateBlocked) {
-      await syncDoctorWalletFromAssistantRuntime(ownerUserId);
-      const refreshedWallets = await getStoredDoctorWalletsByUser();
-      const refreshedWallet = ownerUserId ? (refreshedWallets[ownerUserId] as Record<string, any> | undefined) : undefined;
-      const refreshedEncryptedPrivateKey = getDoctorWalletStoredPrivateKey(refreshedWallet);
-      const refreshedPrivateKey = decryptDoctorPrivateKey(refreshedEncryptedPrivateKey);
-      const refreshedConfiguredPublicKey = String(refreshedWallet?.address || "").trim();
-      const refreshedDerivedPublicKey = refreshedPrivateKey
-        ? deriveWalletPublicKeyFromPrivateKey(refreshedPrivateKey)
-        : "";
-      const refreshedPublicKey = refreshedConfiguredPublicKey || refreshedDerivedPublicKey;
-      if (refreshedPublicKey && refreshedPrivateKey) {
-        return {
-          walletPublicKey: refreshedPublicKey,
-          walletPrivateKey: refreshedPrivateKey,
-          resolvedUserId: ownerUserId,
-          privateKeyPresent: true,
-          walletRowFound: Boolean(refreshedWallet),
-          autoHydrateBlocked: Boolean(refreshedWallet?.autoHydrateBlocked),
-        };
-      }
     }
 
     return {
@@ -2360,6 +2350,8 @@ export async function registerRoutes(
     const scopedUserId = String(userId || doctorCurrentCycleUserId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
     if (!scopedUserId) return;
     const presetFromEntry = normalizeDoctorSnipePreset((entry as any)?.preset);
+    const normalizedSymbol = String((entry as any)?.symbol || (entry as any)?.token || (entry as any)?.name || "UNKNOWN");
+    const normalizedMint = String((entry as any)?.mint || (entry as any)?.address || (entry as any)?.token_address || "");
 
     const existing = doctorSniperLogsByUser.get(scopedUserId) || [];
     existing.unshift({
@@ -2368,6 +2360,8 @@ export async function registerRoutes(
       preset: presetFromEntry,
       user_id: scopedUserId,
       ...entry,
+      symbol: normalizedSymbol,
+      mint: normalizedMint,
     });
     doctorSniperLogsByUser.set(scopedUserId, existing.slice(0, 200));
   };
@@ -7457,6 +7451,7 @@ export async function registerRoutes(
         await ensureDoctorLiveExecutionModeIfCapable(userId);
         doctorRuntime.execution.mode = "live";
         doctorRuntime.enabled = true;
+        doctorRuntime.killSwitch = false;
         await persistDoctorRuntime(userId);
         console.info("[doctor.connect-wallet] runtime_persisted", {
           userId,
@@ -8355,6 +8350,38 @@ export async function registerRoutes(
   };
 
   const ensureWalletExists = () => assistantRuntime.wallet.has_wallet && Object.values(assistantRuntime.wallet.addresses_by_chain).some(Boolean);
+
+  const denyAssistantWalletAccessInDoctorOnlyMode = (res: any) => {
+    return res.status(403).json({
+      message: "doctortrade_wallet_only",
+      detail: "Wallet connection and live trading are available only in DoctorTrade.",
+      route: "/doctortrade",
+    });
+  };
+
+  app.use("/api/ai/wallets", isAuthenticated, async (req: any, res: any, next: any) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    await loadAssistantRuntime(userId);
+    if (isDoctorWalletExclusiveMode()) {
+      return denyAssistantWalletAccessInDoctorOnlyMode(res);
+    }
+    return next();
+  });
+
+  app.use("/api/ai/trading/status", isAuthenticated, async (req: any, res: any, next: any) => {
+    const userId = getRequestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    await loadAssistantRuntime(userId);
+    if (isDoctorWalletExclusiveMode()) {
+      return denyAssistantWalletAccessInDoctorOnlyMode(res);
+    }
+    return next();
+  });
 
   const ensureAssistantRuntimeOwnership = (req: any) => {
     const requestUserId = String(getRequestUserId(req) || "").trim();
