@@ -2521,6 +2521,78 @@ export async function registerRoutes(
     doctorSniperLogsByUser.set(scopedUserId, filtered.slice(0, 200));
   };
 
+  const resolveDoctorNotificationTelegramBotToken = () => {
+    return String(
+      process.env.DOCTORTRADE_TELEGRAM_BOT_TOKEN
+      || process.env.DOCTOR_NOTIFY_TELEGRAM_BOT_TOKEN
+      || process.env.TELEGRAM_BOT_TOKEN
+      || "",
+    ).trim();
+  };
+
+  const resolveDoctorNotificationTelegramChatId = () => {
+    return String(
+      process.env.DOCTORTRADE_TELEGRAM_CHAT_ID
+      || process.env.DOCTOR_NOTIFY_TELEGRAM_CHAT_ID
+      || process.env.TELEGRAM_CHAT_ID
+      || "",
+    ).trim();
+  };
+
+  const sendDoctorBuyNotification = async (payload: {
+    userId: string;
+    symbol: string;
+    mint: string;
+    amountSol: number;
+    priceUsd: number;
+    notionalUsd: number;
+    txHash?: string;
+    source?: string;
+  }) => {
+    const enabled = String(process.env.DOCTOR_NOTIFY_ON_BUY_ENABLED || "true").trim().toLowerCase() !== "false";
+    if (!enabled) {
+      return { sent: false, reason: "buy_notification_disabled" } as const;
+    }
+
+    const botToken = resolveDoctorNotificationTelegramBotToken();
+    const chatId = resolveDoctorNotificationTelegramChatId();
+    if (!botToken || !chatId) {
+      return { sent: false, reason: "telegram_not_configured" } as const;
+    }
+
+    const lines = [
+      "DoctorTrade BUY Executed",
+      `User: ${String(payload.userId || "").trim() || "unknown"}`,
+      `Token: ${String(payload.symbol || "UNKNOWN")} (${String(payload.mint || "").trim() || "-"})`,
+      `Amount: ${Number(payload.amountSol || 0).toFixed(4)} SOL`,
+      `Price: $${Number(payload.priceUsd || 0).toFixed(8)}`,
+      `Notional: $${Number(payload.notionalUsd || 0).toFixed(2)}`,
+      `Source: ${String(payload.source || "doctor_runtime")}`,
+      `Time: ${nowIso()}`,
+    ];
+    if (String(payload.txHash || "").trim()) {
+      lines.push(`Tx: ${String(payload.txHash || "").trim()}`);
+    }
+
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: lines.join("\n"),
+          disable_web_page_preview: true,
+        }),
+      });
+      if (!response.ok) {
+        return { sent: false, reason: `telegram_http_${response.status}` } as const;
+      }
+      return { sent: true } as const;
+    } catch (error: any) {
+      return { sent: false, reason: String(error?.message || "telegram_send_failed") } as const;
+    }
+  };
+
   const getDoctorSchedulerState = async (): Promise<Record<string, any>> => {
     try {
       const value = await storage.getAppState<Record<string, any>>(doctorSchedulerStateKey);
@@ -6385,6 +6457,28 @@ export async function registerRoutes(
         tx_hash: buyExecution.txHash,
         timestamp: nowIso(),
       });
+
+      const buyNotionalUsd = Number((buyAmountSol * Math.max(0, Number(tokenPriceUsd || 0))).toFixed(2));
+      const buyNotification = await sendDoctorBuyNotification({
+        userId: scopedUserId,
+        symbol: String(position.symbol || "UNKNOWN"),
+        mint: String(position.address || ""),
+        amountSol: Number(buyAmountSol || 0),
+        priceUsd: Number(tokenPriceUsd || 0),
+        notionalUsd: buyNotionalUsd,
+        txHash: String((buyExecution as any)?.txHash || ""),
+        source: String(position.source || "doctor_runtime"),
+      });
+      appendDoctorSniperLog({
+        event: "notify",
+        source: String(position.source || "doctor_runtime"),
+        symbol: String(position.symbol || "UNKNOWN"),
+        mint: String(position.address || ""),
+        reason: buyNotification.sent ? "buy_notification_sent" : "buy_notification_not_sent",
+        notify_channel: "telegram",
+        notify_status: buyNotification.sent ? "sent" : "skipped",
+        notify_detail: String((buyNotification as any)?.reason || "ok"),
+      }, scopedUserId);
       markDoctorMintAsBought(position.address);
 
       appendDoctorSniperLog({
