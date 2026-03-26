@@ -1,10 +1,11 @@
 import type { Express } from "express";
-import { randomUUID } from "crypto";
+import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "crypto";
 import { authStorage } from "./storage";
 import { isAuthenticated } from "./replitAuth";
-import { issueSessionTokens, readBearerToken, getSessionUserId, rotateRefreshToken } from "./tokenSession";
+import { issueSessionTokens, readBearerToken, getSessionUserId, rotateRefreshToken, revokeAllSessionTokens } from "./tokenSession";
 import { db } from "../../db";
 import { sql } from "drizzle-orm";
+import { storage } from "../../storage";
 
 const USERNAME_PATTERN = /^[a-z][a-z0-9._]{1,22}[a-z0-9]$/;
 const RESERVED_USERNAMES = new Set([
@@ -26,6 +27,89 @@ const RESERVED_USERNAMES = new Set([
   "user",
   "users",
 ]);
+
+const AUTH_PASSWORDS_STATE_KEY = "auth.password_hashes.v1";
+const AUTH_FRESH_RESET_STATE_KEY = "auth.fresh_reset.v1";
+const PASSWORD_SALT_BYTES = 16;
+const PASSWORD_KEYLEN_BYTES = 64;
+
+function isStrongPassword(value: string): boolean {
+  const password = String(value || "");
+  return (
+    password.length >= 8
+    && /[A-Z]/.test(password)
+    && /[0-9]/.test(password)
+    && /[^A-Za-z0-9]/.test(password)
+  );
+}
+
+function hashPassword(plainText: string): string {
+  const salt = randomBytes(PASSWORD_SALT_BYTES);
+  const derived = scryptSync(String(plainText || ""), salt, PASSWORD_KEYLEN_BYTES);
+  return `scrypt:v1:${salt.toString("base64")}:${derived.toString("base64")}`;
+}
+
+function verifyPassword(plainText: string, stored: string): boolean {
+  const value = String(stored || "").trim();
+  const parts = value.split(":");
+  if (parts.length !== 4 || parts[0] !== "scrypt" || parts[1] !== "v1") {
+    return false;
+  }
+
+  try {
+    const salt = Buffer.from(parts[2], "base64");
+    const expected = Buffer.from(parts[3], "base64");
+    const actual = scryptSync(String(plainText || ""), salt, expected.length);
+    return actual.length === expected.length && timingSafeEqual(actual, expected);
+  } catch {
+    return false;
+  }
+}
+
+async function getPasswordHashesByUserId(): Promise<Record<string, string>> {
+  const state = await storage.getAppState<Record<string, any>>(AUTH_PASSWORDS_STATE_KEY);
+  if (!state || typeof state !== "object" || Array.isArray(state)) {
+    return {};
+  }
+  const out: Record<string, string> = {};
+  for (const [userId, hash] of Object.entries(state)) {
+    const normalizedUserId = String(userId || "").trim();
+    const normalizedHash = String(hash || "").trim();
+    if (!normalizedUserId || !normalizedHash) continue;
+    out[normalizedUserId] = normalizedHash;
+  }
+  return out;
+}
+
+async function setPasswordHashesByUserId(value: Record<string, string>): Promise<void> {
+  await storage.setAppState(AUTH_PASSWORDS_STATE_KEY, value);
+}
+
+function requiredAccessCodeForRoute(routeType: "login" | "register"): string {
+  if (routeType === "register") {
+    return String(process.env.AUTH_REGISTER_ACCESS_CODE || process.env.AUTH_ACCESS_CODE || "").trim();
+  }
+  return String(process.env.AUTH_LOGIN_ACCESS_CODE || process.env.AUTH_ACCESS_CODE || "").trim();
+}
+
+async function runFreshUserResetIfConfigured(): Promise<void> {
+  const forceReset = String(process.env.AUTH_FORCE_FRESH_USERS || "false").trim().toLowerCase() === "true";
+  if (!forceReset) return;
+
+  const marker = await storage.getAppState<Record<string, any>>(AUTH_FRESH_RESET_STATE_KEY);
+  if (String(marker?.done || "").trim() === "true") {
+    return;
+  }
+
+  await db.execute(sql`TRUNCATE TABLE sessions, users RESTART IDENTITY CASCADE`);
+  await setPasswordHashesByUserId({});
+  revokeAllSessionTokens();
+  await storage.setAppState(AUTH_FRESH_RESET_STATE_KEY, {
+    done: "true",
+    at: new Date().toISOString(),
+    reason: "forced_fresh_users",
+  });
+}
 
 function normalizeUsername(value: unknown) {
   return String(value || "").trim().toLowerCase();
@@ -92,12 +176,26 @@ async function resolveUserFromRequest(req: any) {
 
 // Register auth-specific routes
 export function registerAuthRoutes(app: Express): void {
+  runFreshUserResetIfConfigured().catch((error) => {
+    console.error("[auth] failed to perform forced fresh-user reset", error);
+  });
+
   // Login endpoint
   app.post("/api/auth/login", async (req: any, res) => {
     try {
       const usernameOrEmail = String(req.body?.username || "").trim();
+      const password = String(req.body?.password || "");
+      const accessCode = String(req.body?.access_code || "").trim();
       if (!usernameOrEmail) {
         return res.status(400).json({ message: "username is required" });
+      }
+      if (!password) {
+        return res.status(400).json({ message: "password is required" });
+      }
+
+      const requiredAccessCode = requiredAccessCodeForRoute("login");
+      if (requiredAccessCode && accessCode !== requiredAccessCode) {
+        return res.status(401).json({ message: "Invalid access code" });
       }
 
       const user = usernameOrEmail.includes("@")
@@ -105,6 +203,24 @@ export function registerAuthRoutes(app: Express): void {
         : await authStorage.getUserByUsername(normalizeUsername(usernameOrEmail));
 
       if (!user) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      const hashesByUserId = await getPasswordHashesByUserId();
+      const storedHash = String(hashesByUserId[user.id] || "").trim();
+      if (!storedHash) {
+        try {
+          await db.execute(sql`DELETE FROM users WHERE id = ${user.id}`);
+        } catch {
+        }
+        return res.status(401).json({
+          message: "Account reset required. Please create a new account.",
+          code: "fresh_signup_required",
+        });
+      }
+
+      const passwordOk = verifyPassword(password, storedHash);
+      if (!passwordOk) {
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
@@ -125,7 +241,21 @@ export function registerAuthRoutes(app: Express): void {
     try {
       const username = normalizeUsername(req.body?.username);
       const emailRaw = String(req.body?.email || "").trim();
+      const password = String(req.body?.password || "");
+      const accessCode = String(req.body?.access_code || "").trim();
       const email = emailRaw || `${username}@tradeaid.local`;
+
+      const requiredAccessCode = requiredAccessCodeForRoute("register");
+      if (requiredAccessCode && accessCode !== requiredAccessCode) {
+        return res.status(401).json({ message: "Invalid access code" });
+      }
+
+      if (!password) {
+        return res.status(400).json({ message: "password is required" });
+      }
+      if (!isStrongPassword(password)) {
+        return res.status(400).json({ message: "Password must be at least 8 chars and include uppercase, number, and special character." });
+      }
 
       const usernameError = getUsernameValidationMessage(username);
       if (usernameError) {
@@ -166,6 +296,10 @@ export function registerAuthRoutes(app: Express): void {
         }
         return fallbackUser;
       });
+
+      const hashesByUserId = await getPasswordHashesByUserId();
+      hashesByUserId[newUser.id] = hashPassword(password);
+      await setPasswordHashesByUserId(hashesByUserId);
 
       res.json({
         user_id: newUser.id,

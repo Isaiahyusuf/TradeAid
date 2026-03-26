@@ -81,6 +81,7 @@ export class DatabaseStorage implements IStorage {
     return (
       normalized === "assistant.runtime.v1"
       || normalized.startsWith("assistant.runtime.v1:")
+      || normalized === "auth.password_hashes.v1"
       || normalized === "doctortrade.wallets.by_user.v1"
       || normalized === "doctortrade.runtime.by_user.v1"
       || normalized === "doctortrade.preset.by_user.v1"

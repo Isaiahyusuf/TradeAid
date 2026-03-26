@@ -47,3 +47,8 @@ export function rotateRefreshToken(refreshToken: string) {
   refreshTokenStore.delete(refreshToken);
   return issueSessionTokens(userId);
 }
+
+export function revokeAllSessionTokens() {
+  accessTokenStore.clear();
+  refreshTokenStore.clear();
+}
