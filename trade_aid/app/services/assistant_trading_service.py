@@ -4,6 +4,7 @@ from collections import deque
 from typing import Any
 import base64
 import json
+import re
 
 import httpx
 from bip_utils import Bip39MnemonicGenerator, Bip39MnemonicValidator, Bip39SeedGenerator, Bip39WordsNum, Bip44, Bip44Changes, Bip44Coins
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_enabled_chains, get_settings
 from app.models.models import AssistantTrade, ScoringHistory, Token, User
+from app.utils.logging_config import logger
 from app.utils.solana_rpc import solana_rpc_endpoints
 from app.utils.security import decrypt_api_key, encrypt_api_key
 
@@ -333,7 +335,7 @@ def wallet_status(user: User) -> dict[str, Any]:
                 addresses[str(chain_name).lower()] = address
 
     return {
-        "has_wallet": bool(cfg.get("mnemonic_encrypted")),
+        "has_wallet": bool(cfg.get("mnemonic_encrypted")) or bool(addresses),
         "backup_confirmed": bool(cfg.get("backup_confirmed", False)),
         "backup_confirmed_at": cfg.get("backup_confirmed_at"),
         "created_at": cfg.get("created_at"),
@@ -427,6 +429,13 @@ def import_user_wallet_bundle(user: User, *, mnemonic: str, overwrite: bool = Fa
     if word_count not in {12, 15, 18, 21, 24}:
         raise HTTPException(status_code=400, detail="Mnemonic must contain 12, 15, 18, 21, or 24 words")
 
+    logger.info(
+        "[Wallet Import] Mnemonic import requested user_id=%s overwrite=%s words=%s",
+        str(getattr(user, "id", "")),
+        bool(overwrite),
+        int(word_count),
+    )
+
     try:
         Bip39MnemonicValidator(mnemonic_text).Validate()
     except Exception:
@@ -460,6 +469,12 @@ def import_user_wallet_bundle(user: User, *, mnemonic: str, overwrite: bool = Fa
         trading_cfg["wallet_address"] = next(iter(public_addresses.values()))
     _set_trading_config(user, trading_cfg)
 
+    logger.info(
+        "[Wallet Import] Mnemonic import successful user_id=%s chains=%s",
+        str(getattr(user, "id", "")),
+        ",".join(sorted(public_addresses.keys())),
+    )
+
     return {
         "addresses_by_chain": public_addresses,
         "warning": "Wallet imported. Confirm backup phrase before enabling live usage.",
@@ -481,17 +496,19 @@ def _decode_private_key_bytes(private_key: str) -> bytes:
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid private key JSON array")
 
+    compact = "".join(raw.split())
+
     # Hex format
-    compact = raw[2:] if raw.lower().startswith("0x") else raw
-    if all(ch in "0123456789abcdefABCDEF" for ch in compact) and len(compact) in {64, 128}:
+    hex_value = compact[2:] if compact.lower().startswith("0x") else compact
+    if all(ch in "0123456789abcdefABCDEF" for ch in hex_value) and len(hex_value) in {64, 128}:
         try:
-            return bytes.fromhex(compact)
+            return bytes.fromhex(hex_value)
         except Exception:
             pass
 
     # Base64 format
     try:
-        decoded = base64.b64decode(raw, validate=True)
+        decoded = base64.b64decode(compact, validate=True)
         if len(decoded) in {32, 64}:
             return decoded
     except Exception:
@@ -501,7 +518,7 @@ def _decode_private_key_bytes(private_key: str) -> bytes:
     try:
         from solders.keypair import Keypair
 
-        keypair = Keypair.from_base58_string(raw)
+        keypair = Keypair.from_base58_string(compact)
         return bytes(keypair)
     except Exception:
         raise HTTPException(status_code=400, detail="Unsupported private key format")
@@ -515,6 +532,13 @@ def import_user_wallet_private_key(user: User, *, private_key: str, overwrite: b
     key_bytes = _decode_private_key_bytes(private_key)
     if len(key_bytes) not in {32, 64}:
         raise HTTPException(status_code=400, detail="Private key must decode to 32 or 64 bytes")
+
+    logger.info(
+        "[Wallet Import] Private-key import requested user_id=%s overwrite=%s decoded_len=%s",
+        str(getattr(user, "id", "")),
+        bool(overwrite),
+        len(key_bytes),
+    )
 
     try:
         from solders.keypair import Keypair
@@ -550,6 +574,11 @@ def import_user_wallet_private_key(user: User, *, private_key: str, overwrite: b
     trading_cfg["wallets_by_chain"] = {"solana": solana_address}
     trading_cfg["wallet_address"] = solana_address
     _set_trading_config(user, trading_cfg)
+
+    logger.info(
+        "[Wallet Import] Private-key import successful user_id=%s chain=solana",
+        str(getattr(user, "id", "")),
+    )
 
     return {
         "addresses_by_chain": {"solana": solana_address},
