@@ -322,6 +322,11 @@ export default function DoctorTrade() {
           : (viewData?.active_tokens?.length || 0) <= 0
             ? "Scanning market (no current targets)"
             : "Auto-snipe running";
+    const breathingStateClass = !viewData?.enabled
+      ? "is-stopped"
+      : autoSnipeReady
+        ? ""
+        : "is-waiting";
   const autoTradeBlockLabel = useMemo(() => {
     const reason = String(viewData?.auto_trade?.block_reason || "").trim().toLowerCase();
     if (!reason) return null;
@@ -689,7 +694,13 @@ export default function DoctorTrade() {
               </h3>
               <p className="text-xs text-muted-foreground mt-1">Live orchestrator output from the multi-agent trading engine.</p>
             </div>
-            <Badge variant="outline" className="border-emerald-500/40 text-emerald-300">MATE Live</Badge>
+            <div className="flex items-center gap-3">
+              <div className={`doctor-live-breath ${breathingStateClass}`} aria-hidden="true" />
+              <div className="text-right">
+                <Badge variant="outline" className="border-emerald-500/40 text-emerald-300">MATE Live</Badge>
+                <p className="mt-1 text-[11px] text-muted-foreground">{autoSnipeStatusLabel}</p>
+              </div>
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-3 text-sm">
             <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
