@@ -6573,6 +6573,36 @@ export async function registerRoutes(
       .filter((row) => isHistoryRowOwnedByStatusUser(row))
       .slice(0, 80);
 
+    const latestDecisionJournalConfidence = filteredDecisionJournal
+      .map((row) => Number((row as any)?.confidence || 0))
+      .find((value) => Number.isFinite(value) && value > 0) || 0;
+    const latestTradeConfidence = filteredRecentTrades
+      .map((row) => Number((row as any)?.confidence || 0))
+      .find((value) => Number.isFinite(value) && value > 0) || 0;
+    const latestDecisionConfidence = Number((doctorRuntime.lastDecision as any)?.confidence || 0);
+    const topTokenConfidence = activeTokens
+      .slice(0, 5)
+      .map((row) => Number((row as any)?.score || 0))
+      .find((value) => Number.isFinite(value) && value > 0) || 0;
+    const mateConfidence = Math.max(0, Math.min(100,
+      latestDecisionConfidence
+      || latestDecisionJournalConfidence
+      || latestTradeConfidence
+      || topTokenConfidence,
+    ));
+    const mateRegime = (() => {
+      const explicit = String((doctorRuntime.lastDecision as any)?.regime || "").trim();
+      if (explicit) return explicit;
+      if (!activeTokens.length) return "low_signal";
+      const avgMomentum = activeTokens
+        .slice(0, 20)
+        .reduce((sum, row) => sum + Number((row as any)?.price_change_5m || 0), 0) / Math.max(1, Math.min(20, activeTokens.length));
+      if (avgMomentum >= 8) return "risk_on";
+      if (avgMomentum <= -4) return "risk_off";
+      return "range";
+    })();
+    const strategyMode = getDoctorActiveSnipePreset();
+
     let statusPositions = doctorRuntime.positions.slice(0, 30);
     if (doctorRuntime.execution.mode === "live") {
       const walletForLivePositions = String(walletAddress || "").trim();
@@ -6759,6 +6789,15 @@ export async function registerRoutes(
       decision_journal: filteredDecisionJournal,
       performance: doctorRuntime.performance.slice(0, 30),
       execution_audit: filteredExecutionAudit,
+      mate: {
+        enabled: true,
+        best_agent: strategyMode,
+        regime: mateRegime,
+        confidence: Number(mateConfidence.toFixed(2)),
+        scores: {
+          [strategyMode]: Number(mateConfidence.toFixed(2)),
+        },
+      },
       sniper_logs: getDoctorSniperLogsForUser(statusUserId)
         .filter((row) => {
           if (String((row as any)?.reason || "") !== "wallet_key_not_connected") {
@@ -6784,7 +6823,7 @@ export async function registerRoutes(
       },
       last_decision: doctorRuntime.lastDecision,
       tuning_suggestion: activeTokens.length < 5 ? "Lower minimum liquidity or widen scanner scope to increase candidates." : null,
-      strategy_mode: getDoctorActiveSnipePreset(),
+      strategy_mode: strategyMode,
       safety: {
         api_error_count: doctorRuntime.lastError ? 1 : 0,
         paused: safetyPaused,
