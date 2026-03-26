@@ -1011,13 +1011,15 @@ export async function registerRoutes(
     const selected_chain = (selectedChainRaw === "all" || selectedChainRaw === "solana")
       ? selectedChainRaw
       : "solana";
+    const telegram_chat_id = String(row?.telegram_chat_id || "").trim();
     return {
       selected_chain,
+      telegram_chat_id,
       updated_at: String(row?.updated_at || "") || null,
     };
   };
 
-  const updateUserSettings = async (userId: string, patch: { selected_chain?: string }) => {
+  const updateUserSettings = async (userId: string, patch: { selected_chain?: string; telegram_chat_id?: string | null }) => {
     const byUser = await getStoredUserSettingsByUser();
     const current = byUser[userId] && typeof byUser[userId] === "object"
       ? byUser[userId] as Record<string, any>
@@ -1028,10 +1030,14 @@ export async function registerRoutes(
     const nextSelectedChain = (nextSelectedChainRaw === "all" || nextSelectedChainRaw === "solana")
       ? nextSelectedChainRaw
       : "solana";
+    const nextTelegramChatId = patch.telegram_chat_id !== undefined
+      ? String(patch.telegram_chat_id || "").trim()
+      : String(current.telegram_chat_id || "").trim();
 
     byUser[userId] = {
       ...current,
       selected_chain: nextSelectedChain,
+      telegram_chat_id: nextTelegramChatId,
       updated_at: nowIso(),
     };
     await setStoredUserSettingsByUser(byUser);
@@ -2554,8 +2560,12 @@ export async function registerRoutes(
       return { sent: false, reason: "buy_notification_disabled" } as const;
     }
 
+    const userSettings = payload.userId
+      ? await getUserSettings(payload.userId)
+      : { telegram_chat_id: "" };
+    const userChatId = String((userSettings as any)?.telegram_chat_id || "").trim();
     const botToken = resolveDoctorNotificationTelegramBotToken();
-    const chatId = resolveDoctorNotificationTelegramChatId();
+    const chatId = userChatId || resolveDoctorNotificationTelegramChatId();
     if (!botToken || !chatId) {
       return { sent: false, reason: "telegram_not_configured" } as const;
     }
@@ -7133,6 +7143,7 @@ export async function registerRoutes(
     }
 
     const selected_chain = req.body?.selected_chain;
+    const telegram_chat_id = req.body?.telegram_chat_id;
     if (selected_chain !== undefined) {
       const normalized = String(selected_chain || "").trim().toLowerCase();
       if (normalized !== "solana" && normalized !== "all") {
@@ -7140,7 +7151,14 @@ export async function registerRoutes(
       }
     }
 
-    const settings = await updateUserSettings(userId, { selected_chain });
+    if (telegram_chat_id !== undefined) {
+      const normalizedChatId = String(telegram_chat_id || "").trim();
+      if (normalizedChatId.length > 80) {
+        return res.status(400).json({ message: "invalid_telegram_chat_id" });
+      }
+    }
+
+    const settings = await updateUserSettings(userId, { selected_chain, telegram_chat_id });
     return res.json({ ok: true, settings });
   });
 
