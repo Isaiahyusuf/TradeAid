@@ -802,6 +802,20 @@ export default function WalletPage() {
                     <p className="text-[11px] text-muted-foreground">Private-key import marks backup as confirmed automatically.</p>
                   </div>
                 </div>
+
+                <div className="rounded-lg border border-border/60 p-3 bg-muted/20 space-y-2">
+                  <p className="text-sm font-medium">Delete Existing App Wallet</p>
+                  <p className="text-xs text-muted-foreground">
+                    This removes all wallet data stored in the app for your account. This action cannot be undone.
+                  </p>
+                  <Button
+                    variant="destructive"
+                    onClick={handleDeleteWholeWallet}
+                    disabled={deleteWallet.isPending || !wallet?.has_wallet}
+                  >
+                    {deleteWallet.isPending ? "Deleting..." : "Delete Wallet"}
+                  </Button>
+                </div>
               </div>
             </SettingsMenuCard>
 
