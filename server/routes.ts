@@ -1279,6 +1279,8 @@ export async function registerRoutes(
       : "";
     const resolvedAddress = configuredAddress || derivedAddress;
     const autoHydrateBlocked = Boolean(userWallet?.autoHydrateBlocked);
+    const connectedAtRaw = String(userWallet?.connectedAt || userWallet?.updatedAt || "").trim();
+    const connectedAt = hasPrivateKey && resolvedAddress && connectedAtRaw ? connectedAtRaw : "";
 
     if (userWallet && resolvedAddress && resolvedAddress !== configuredAddress) {
       wallets[userId] = {
@@ -1295,6 +1297,7 @@ export async function registerRoutes(
       separateWalletEnforced: userWallet?.separateWalletEnforced !== false,
       privateKeyConfigured: hasPrivateKey,
       autoHydrateBlocked,
+      connectedAt,
       connected: Boolean(resolvedAddress) && hasPrivateKey,
     };
   };
@@ -1424,6 +1427,7 @@ export async function registerRoutes(
   };
 
   const setDoctorLivePrivateKeyForUser = async (userId: string, privateKey: string) => {
+    const timestamp = nowIso();
     const encryptedPrivateKey = encryptDoctorPrivateKey(privateKey);
     const wallets = await getStoredDoctorWalletsByUser();
     const current = wallets[userId] as Record<string, any> | undefined;
@@ -1434,7 +1438,8 @@ export async function registerRoutes(
       separateWalletEnforced: (doctorRuntime.wallet.separateWalletEnforced ?? current?.separateWalletEnforced) !== false,
       livePrivateKey: encryptedPrivateKey,
       autoHydrateBlocked: false,
-      updatedAt: nowIso(),
+      connectedAt: timestamp,
+      updatedAt: timestamp,
     };
     await setStoredDoctorWalletsByUser(wallets);
   };
@@ -1499,6 +1504,7 @@ export async function registerRoutes(
 
     const privateKeyPresent = Boolean(String(userPrivateKey || "").trim());
     const autoHydrateBlocked = Boolean(resolvedWallet?.autoHydrateBlocked);
+    const connectedAt = String(resolvedWallet?.connectedAt || resolvedWallet?.updatedAt || "").trim();
 
     if (userPublicKey && userPrivateKey) {
       return {
@@ -1508,6 +1514,7 @@ export async function registerRoutes(
         privateKeyPresent,
         walletRowFound: Boolean(resolvedWallet),
         autoHydrateBlocked,
+        connectedAt,
       };
     }
 
@@ -1518,6 +1525,7 @@ export async function registerRoutes(
       privateKeyPresent,
       walletRowFound: Boolean(resolvedWallet),
       autoHydrateBlocked,
+      connectedAt: "",
     };
   };
 
@@ -1925,6 +1933,7 @@ export async function registerRoutes(
       balanceSol: 0,
       livePrivateKey: "",
       autoHydrateBlocked: true,
+      connectedAt: "",
       updatedAt: nowIso(),
     };
     await setStoredDoctorWalletsByUser(wallets);
@@ -2381,6 +2390,31 @@ export async function registerRoutes(
       mint: normalizedMint,
     });
     doctorSniperLogsByUser.set(scopedUserId, existing.slice(0, 200));
+  };
+
+  const pruneDoctorWalletDisconnectedSniperLogs = (userId: string, connectedAtIso?: string) => {
+    const scopedUserId = String(userId || "").trim();
+    if (!scopedUserId) return;
+    const existing = doctorSniperLogsByUser.get(scopedUserId) || [];
+    if (!existing.length) return;
+
+    const connectedAtMs = new Date(String(connectedAtIso || "")).getTime();
+    const hasConnectedAt = Number.isFinite(connectedAtMs) && connectedAtMs > 0;
+    const filtered = existing.filter((row) => {
+      if (String((row as any)?.reason || "") !== "wallet_key_not_connected") {
+        return true;
+      }
+      if (!hasConnectedAt) {
+        return false;
+      }
+      const rowMs = new Date(String((row as any)?.at || "")).getTime();
+      if (!Number.isFinite(rowMs) || rowMs <= 0) {
+        return false;
+      }
+      return rowMs >= connectedAtMs;
+    });
+
+    doctorSniperLogsByUser.set(scopedUserId, filtered.slice(0, 200));
   };
 
   const getDoctorSchedulerState = async (): Promise<Record<string, any>> => {
@@ -5159,6 +5193,14 @@ export async function registerRoutes(
         const ageSeconds = Number.isFinite(createdAtMs) && createdAtMs > 0
           ? Math.max(0, Math.trunc((nowMs - createdAtMs) / 1000))
           : 0;
+        if (ageSeconds > strictMaxTokenAgeSeconds) {
+          continue;
+        }
+
+        const launchSource = normalizeLaunchSource(String((scanned as any).dexId || log?.source || "dexscreener"));
+        if (!isLaunchSourceAllowed(launchSource)) {
+          continue;
+        }
 
         return {
           symbol: String(scanned.symbol || log?.symbol || "UNKNOWN"),
@@ -5180,7 +5222,7 @@ export async function registerRoutes(
           holders_count: Number((scanned as any).holdersCount || 0),
           top_holder_pct: Number((scanned as any).topHoldersPercentage || 0),
           dev_wallet_pct: Number((scanned as any).devWalletPercentage || 0),
-          launch_source: String((scanned as any).dexId || log?.source || "dexscreener"),
+          launch_source: launchSource,
           liquidity_locked: Boolean((scanned as any).isLiquidityLocked),
           base_mint: String((scanned as any).baseMint || getDoctorTradeBaseAssetMint()),
           risk_level: "MEDIUM",
@@ -5340,6 +5382,17 @@ export async function registerRoutes(
 
       if (String(candidate.chain || "solana").toLowerCase() !== "solana") {
         return { allowed: false, reason: "chain_not_solana" };
+      }
+
+      if (requiresLiveWallet) {
+        const candidateAgeSeconds = Math.max(0, Number(candidate.age_seconds || 0));
+        if (candidateAgeSeconds > strictMaxTokenAgeSeconds) {
+          return { allowed: false, reason: "token_too_old_for_sniping" };
+        }
+
+        if (!isLaunchSourceAllowed(String(candidate.launch_source || candidate.source || "unknown"))) {
+          return { allowed: false, reason: "unsupported_launch_source" };
+        }
       }
 
       if (mode === "strict") {
@@ -6396,6 +6449,7 @@ export async function registerRoutes(
           connected: Boolean(runtimeWalletAddress || String(walletSnapshotBase.address || "").trim())
             && (Boolean(walletSnapshotBase.privateKeyConfigured)
               || Boolean(String(liveCredentials.walletPrivateKey || "").trim())),
+          connectedAt: String(walletSnapshotBase.connectedAt || (liveCredentials as any)?.connectedAt || "").trim(),
         }
       : walletSnapshotBase;
 
@@ -6694,7 +6748,22 @@ export async function registerRoutes(
       decision_journal: filteredDecisionJournal,
       performance: doctorRuntime.performance.slice(0, 30),
       execution_audit: filteredExecutionAudit,
-      sniper_logs: getDoctorSniperLogsForUser(statusUserId).slice(0, 80),
+      sniper_logs: getDoctorSniperLogsForUser(statusUserId)
+        .filter((row) => {
+          if (String((row as any)?.reason || "") !== "wallet_key_not_connected") {
+            return true;
+          }
+          if (!walletConnected) {
+            return true;
+          }
+          const connectedAtMs = new Date(String((walletSnapshot as any)?.connectedAt || "")).getTime();
+          if (!Number.isFinite(connectedAtMs) || connectedAtMs <= 0) {
+            return false;
+          }
+          const rowMs = new Date(String((row as any)?.at || "")).getTime();
+          return Number.isFinite(rowMs) && rowMs >= connectedAtMs;
+        })
+        .slice(0, 80),
       discovery: {
         dexscreener_primary: true,
         poll_interval_seconds: Math.max(5, Math.trunc(Number(process.env.DOCTOR_DEX_POLL_SECONDS || 7))),
@@ -7465,6 +7534,7 @@ export async function registerRoutes(
             updatedAt: nowIso(),
           };
           await setStoredDoctorWalletsByUser(wallets);
+          pruneDoctorWalletDisconnectedSniperLogs(userId, String(wallets[userId]?.connectedAt || wallets[userId]?.updatedAt || ""));
           console.info("[doctor.connect-wallet] wallet_map_persisted", {
             userId,
             walletAddress: String(wallets[userId]?.address || "").trim() || null,
