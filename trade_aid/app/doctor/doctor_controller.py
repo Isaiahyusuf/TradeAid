@@ -9,6 +9,7 @@ from app.doctor.doctor_ai_meme_engine import DoctorAIMemeEngine
 from app.doctor.doctor_execution_engine import DoctorExecutionEngine
 from app.doctor.doctor_multi_source_scanner import DoctorMultiSourceScanner
 from app.doctor.doctor_meme_risk import DoctorMemeRiskGovernor, DoctorRiskState
+from app.doctor.mate import MATEngine
 from app.doctor.safety_systems import DoctorSafetySystems
 from app.doctor.doctor_solana_wallet import DoctorSolanaWallet
 from app.doctor.storage import doctor_db_session
@@ -30,20 +31,22 @@ class DoctorTradeController:
         self.max_trades_per_day = 12
         self.min_buy_amount_sol = 0.1
         self.buy_amount_sol = 0.1
-        self.take_profit_multiplier = 2.0
-        self.min_profit_pct = 12.0
+        self.take_profit_multiplier = 1.18
+        self.min_profit_pct = 3.5
         self.stop_loss_pct = 6.0
-        self.trailing_stop_pct = 10.0
-        self.min_liquidity_usd = 20000.0
-        self.max_slippage_pct = 4.0
-        self.max_spread_pct = 3.0
+        self.trailing_stop_pct = 4.0
+        self.min_liquidity_usd = 5000.0
+        self.max_slippage_pct = 8.0
+        self.max_spread_pct = 7.0
         self.daily_loss_limit_usd = 600.0
         self.max_consecutive_losses = 3
-        self.strong_move_threshold_pct = 40.0
-        self.max_hold_minutes = 180
-        self.min_momentum_profit_pct = 4.0
-        self.quality_min_volume_spike_pct = 12.0
-        self.quality_max_top_holder_pct = 35.0
+        self.strong_move_threshold_pct = 15.0
+        self.max_hold_minutes = 25
+        self.min_momentum_profit_pct = 1.0
+        self.quality_min_volume_spike_pct = 0.0
+        self.quality_max_top_holder_pct = 65.0
+        self.early_entry_exit_mode = True
+        self.fast_take_profit_pct = 5.5
         self._trade_day: str = ""
         self._trades_today: int = 0
         self.current_tokens: list[dict[str, Any]] = []
@@ -81,6 +84,121 @@ class DoctorTradeController:
             mode=str(getattr(self.settings, "DOCTOR_EXECUTION_MODE", "paper") or "paper"),
             jupiter_api_key=str(getattr(self.settings, "JUPITER_API_KEY", "") or ""),
         )
+        self.mate = MATEngine(symbol="SOL/USDT")
+        self.mate_last_decision: dict[str, Any] = {}
+        self.mate_enabled = True
+
+    @staticmethod
+    def _token_to_mate_feed(token: dict[str, Any]) -> dict[str, float]:
+        price = float(token.get("price_usd") or 0.0)
+        volume = float(token.get("volume_5m") or token.get("volume_15m") or 0.0)
+        buys_5m = max(0.0, float(token.get("buys_5m") or 0.0))
+        sells_5m = max(0.0, float(token.get("sells_5m") or 0.0))
+        buysell_total = buys_5m + sells_5m
+        bid_ratio = (buys_5m / buysell_total) if buysell_total > 0 else 0.5
+        bid_volume = volume * bid_ratio
+        ask_volume = max(0.0, volume - bid_volume)
+        spread_bps = max(1.0, float(token.get("estimated_slippage_pct") or token.get("spread_pct") or 0.5) * 100.0)
+        return {
+            "price": price,
+            "high": max(price, price * 1.002),
+            "low": min(price, price * 0.998),
+            "volume": volume,
+            "bid_volume": bid_volume,
+            "ask_volume": ask_volume,
+            "liquidity": float(token.get("liquidity") or 0.0),
+            "spread_bps": spread_bps,
+        }
+
+    def _mate_signal_for_token(self, token: dict[str, Any]) -> dict[str, Any]:
+        if not self.mate_enabled:
+            return self.ai.generate(token, current_drawdown_pct=float(self.risk_state.total_loss_pct or 0.0))
+
+        feed = self._token_to_mate_feed(token)
+        if float(feed.get("price") or 0.0) <= 0:
+            return {
+                "action": "HOLD",
+                "entry_price": 0.0,
+                "stop_loss": 0.0,
+                "take_profit": 0.0,
+                "position_size_pct": 0.0,
+                "confidence": 0,
+                "signals": {"mate_reason": "missing_price"},
+                "strategy_mode": str(self.mate_last_decision.get("best_agent") or ""),
+            }
+
+        snapshot = self.mate.stream.next_snapshot(self.mate.symbol, external=feed)
+        self.mate.agg.add(snapshot)
+        features = self.mate._build_features()
+        context = self.mate._agent_context()
+        regime = self.mate.orchestrator.detect_regime(features, context)
+
+        signals = {name: agent.generate(features, context) for name, agent in self.mate.agents.items()}
+        edge_score = {name: self.mate.performance.meta_learning_scores.get(name, 0.5) for name in self.mate.agents}
+        recent_perf = {name: self.mate.performance.per_agent_stats(name).get("win_rate", 0.0) for name in self.mate.agents}
+        risk_eff = {
+            name: max(0.0, min(1.0, self.mate.performance.per_agent_stats(name).get("profit_factor", 0.0) / 2.0))
+            for name in self.mate.agents
+        }
+
+        now = datetime.utcnow()
+        decision = self.mate.orchestrator.select(
+            regime=regime,
+            now=now,
+            current_agent=self.mate.state.state.active_agent,
+            cooldown_until=self.mate.state.state.cooldown_until,
+            edge_score=edge_score,
+            recent_performance=recent_perf,
+            risk_efficiency=risk_eff,
+        )
+
+        if decision.best_agent and decision.best_agent != self.mate.state.state.active_agent:
+            self.mate.state.state.active_agent = decision.best_agent
+            self.mate.state.state.last_switch_at = now
+            self.mate.state.state.cooldown_until = self.mate.orchestrator.next_cooldown_until(now)
+
+        self.mate.state.state.last_decision = {
+            "best_agent": decision.best_agent,
+            "confidence": decision.confidence,
+            "regime": decision.regime.value,
+            "scores": decision.scores,
+        }
+        self.mate_last_decision = dict(self.mate.state.state.last_decision)
+        if decision.best_agent:
+            self.strategy_mode = decision.best_agent
+
+        selected = dict(signals.get(decision.best_agent) or {})
+        side = str(selected.get("signal") or "HOLD").upper()
+        confidence_01 = max(0.0, min(1.0, float(selected.get("confidence") or 0.0)))
+        confidence = int(round(confidence_01 * 100.0))
+        rr = max(0.0, float(selected.get("expected_rr") or 0.0))
+        size_pct = max(0.1, min(4.0, (confidence_01 * 2.4) * max(0.5, min(rr, 2.0))))
+
+        return {
+            "action": side,
+            "entry_price": float(selected.get("entry") or feed.get("price") or 0.0),
+            "stop_loss": float(selected.get("stop_loss") or 0.0),
+            "take_profit": float(selected.get("take_profit") or 0.0),
+            "position_size_pct": round(size_pct, 4),
+            "confidence": confidence,
+            "signals": {
+                "mate_agent": decision.best_agent,
+                "mate_regime": decision.regime.value,
+                "mate_reason": str(selected.get("reason") or ""),
+                "mate_expected_rr": rr,
+            },
+            "strategy_mode": decision.best_agent,
+        }
+
+    async def _update_mate_state(self, tokens: list[dict[str, Any]]) -> None:
+        if not self.mate_enabled or not tokens:
+            return
+
+        selected = max(
+            tokens,
+            key=lambda row: float(row.get("volume_5m") or 0.0) * max(1.0, float(row.get("liquidity") or 0.0)),
+        )
+        _ = self._mate_signal_for_token(selected)
 
     def configure_wallet(self, *, private_key: str, public_address: str) -> None:
         self.wallet.private_key = str(private_key or "").strip()
@@ -146,6 +264,9 @@ class DoctorTradeController:
         spread_pct = self._compute_spread_pct(token)
         if spread_pct > float(self.max_spread_pct or 100.0):
             return False, "spread_above_limit"
+
+        if bool(self.early_entry_exit_mode):
+            return True, None
 
         volume_spike_pct = float(token.get("volume_spike_pct") or 0.0)
         if volume_spike_pct < float(self.quality_min_volume_spike_pct or 0.0):
@@ -226,15 +347,21 @@ class DoctorTradeController:
 
             take_profit_hit = current_price >= (entry_price * max(1.1, float(self.take_profit_multiplier or 2.0)))
             min_profit_hit = pnl_pct >= float(self.min_profit_pct or 0.0)
+            quick_profit_hit = bool(self.early_entry_exit_mode) and pnl_pct >= float(self.fast_take_profit_pct or 0.0)
             stop_loss_hit = current_price <= (entry_price * (1.0 - (float(self.stop_loss_pct or 0.0) / 100.0)))
             dynamic_trailing_pct = float(self.trailing_stop_pct or 0.0)
             if pnl_pct >= float(self.strong_move_threshold_pct or 40.0):
                 dynamic_trailing_pct = max(2.0, dynamic_trailing_pct * 0.5)
             trailing_stop_hit = current_price <= (peak_price * (1.0 - (dynamic_trailing_pct / 100.0))) and pnl_pct > 0
-            time_stop_hit = held_minutes >= float(self.max_hold_minutes or 0.0) and pnl_pct < float(self.min_momentum_profit_pct or 0.0)
+            if bool(self.early_entry_exit_mode):
+                time_stop_hit = held_minutes >= float(self.max_hold_minutes or 0.0)
+            else:
+                time_stop_hit = held_minutes >= float(self.max_hold_minutes or 0.0) and pnl_pct < float(self.min_momentum_profit_pct or 0.0)
 
             exit_reason = None
-            if take_profit_hit:
+            if quick_profit_hit:
+                exit_reason = "quick_profit_exit"
+            elif take_profit_hit:
                 exit_reason = "take_profit_2x"
             elif min_profit_hit:
                 exit_reason = "profit_secured"
@@ -490,7 +617,7 @@ class DoctorTradeController:
         if not token:
             return {"executed": False, "reason": "token_not_in_fresh_feed"}
 
-        self.strategy_mode = str(token.get("strategy_mode") or "trending")
+        self.strategy_mode = str(self.mate_last_decision.get("best_agent") or token.get("strategy_mode") or "trending")
 
         safety = self._safety_checks(token)
         if safety.get("triggered"):
@@ -500,7 +627,7 @@ class DoctorTradeController:
         if not quality_ok:
             return {"executed": False, "reason": str(quality_reason or "quality_gate_blocked")}
 
-        signal = self.ai.generate(token, current_drawdown_pct=float(self.risk_state.total_loss_pct or 0.0))
+        signal = self._mate_signal_for_token(token)
         signal["action"] = "BUY"
         signal["entry_price"] = float(signal.get("entry_price") or token.get("price_usd") or 0.0)
         signal["confidence"] = max(int(signal.get("confidence") or 0), 70)
@@ -617,6 +744,10 @@ class DoctorTradeController:
         self.buy_amount_sol = configured_buy_sol
 
         memes = await self.scanner.scan_all_sources(limit=18)
+        try:
+            await self._update_mate_state(memes)
+        except Exception:
+            pass
         intelligence_rows = self.scanner.drain_recent_intelligence() if hasattr(self.scanner, "drain_recent_intelligence") else []
         for row in intelligence_rows[:60]:
             await self._log_event(
@@ -635,7 +766,8 @@ class DoctorTradeController:
         self.self_evolution["last_updated_at"] = datetime.utcnow().isoformat()
 
         for token in memes:
-            self.strategy_mode = str(token.get("strategy_mode") or "trending")
+            if not str(self.mate_last_decision.get("best_agent") or "").strip():
+                self.strategy_mode = str(token.get("strategy_mode") or "trending")
             safety = self._safety_checks(token)
             safety_system = self.safety_systems.monitor_token(token)
             if safety_system.get("triggered"):
@@ -664,14 +796,15 @@ class DoctorTradeController:
                 await self._log_event("safety_pause", "high", "DoctorTrade paused by anti-rug safety", extra={"reason": safety.get("reason")})
                 break
 
-            signal = self.ai.generate(token, current_drawdown_pct=float(self.risk_state.total_loss_pct or 0.0))
-            if bool(self.sniper_mode_only) and str(token.get("strategy_mode") or "") != "pump_sniper":
+            signal = self._mate_signal_for_token(token)
+            active_agent = str(self.mate_last_decision.get("best_agent") or "").strip()
+            if bool(self.sniper_mode_only) and active_agent and active_agent != "flow_agent":
                 self._register_journal({
                     "token": token.get("symbol"),
                     "address": token.get("address"),
                     "decision": "SKIP",
-                    "reason": "sniper_mode_only",
-                    "strategy_mode": str(token.get("strategy_mode") or "trending"),
+                    "reason": "sniper_mode_requires_flow_agent",
+                    "strategy_mode": active_agent,
                 })
                 continue
 
@@ -966,6 +1099,8 @@ class DoctorTradeController:
                 "strong_move_threshold_pct": float(self.strong_move_threshold_pct),
                 "max_hold_minutes": int(self.max_hold_minutes),
                 "min_momentum_profit_pct": float(self.min_momentum_profit_pct),
+                "early_entry_exit_mode": bool(self.early_entry_exit_mode),
+                "fast_take_profit_pct": float(self.fast_take_profit_pct),
                 "quality_min_volume_spike_pct": float(self.quality_min_volume_spike_pct),
                 "quality_max_top_holder_pct": float(self.quality_max_top_holder_pct),
                 "wallet_connected": bool(str(self.wallet.public_address or "").strip() and str(self.wallet.private_key or "").strip()),
@@ -977,6 +1112,13 @@ class DoctorTradeController:
             "performance": self.performance_log[:10],
             "tuning_suggestion": self.last_tuning_suggestion,
             "strategy_mode": self.strategy_mode,
+            "mate": {
+                "enabled": bool(self.mate_enabled),
+                "best_agent": str(self.mate_last_decision.get("best_agent") or ""),
+                "regime": str(self.mate_last_decision.get("regime") or ""),
+                "confidence": float(self.mate_last_decision.get("confidence") or 0.0),
+                "scores": dict(self.mate_last_decision.get("scores") or {}),
+            },
             "safety": self.safety_systems.monitor(),
             "self_evolution": self.self_evolution,
         }

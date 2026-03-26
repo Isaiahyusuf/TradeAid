@@ -61,6 +61,8 @@ class DoctorConfigRequest(BaseModel):
     strong_move_threshold_pct: float | None = None
     max_hold_minutes: int | None = None
     min_momentum_profit_pct: float | None = None
+    early_entry_exit_mode: bool | None = None
+    fast_take_profit_pct: float | None = None
     quality_min_volume_spike_pct: float | None = None
     quality_max_top_holder_pct: float | None = None
 
@@ -79,7 +81,7 @@ async def doctor_health(user: User = Depends(get_current_user)) -> dict[str, Any
             "signal_quality_filter": True,
             "advanced_exits": True,
             "decision_journal": True,
-            "presets": True,
+            "mate_strategy_brain": True,
         },
     }
 
@@ -154,6 +156,10 @@ async def doctor_config(req: DoctorConfigRequest, user: User = Depends(get_curre
         controller.max_hold_minutes = max(5, min(10080, int(req.max_hold_minutes)))
     if req.min_momentum_profit_pct is not None:
         controller.min_momentum_profit_pct = max(0.0, min(100.0, float(req.min_momentum_profit_pct)))
+    if req.early_entry_exit_mode is not None:
+        controller.early_entry_exit_mode = bool(req.early_entry_exit_mode)
+    if req.fast_take_profit_pct is not None:
+        controller.fast_take_profit_pct = max(0.5, min(60.0, float(req.fast_take_profit_pct)))
     if req.quality_min_volume_spike_pct is not None:
         controller.quality_min_volume_spike_pct = max(0.0, min(500.0, float(req.quality_min_volume_spike_pct)))
     if req.quality_max_top_holder_pct is not None:

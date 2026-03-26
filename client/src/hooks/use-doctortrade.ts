@@ -143,8 +143,14 @@ export type DoctorStatus = {
     ml_bonus_cap_score?: number;
     ml_size_min_multiplier?: number;
     ml_size_max_multiplier?: number;
-    snipe_preset?: "conservative" | "momentum_trader" | "balanced" | "aggressive" | "insider" | "in_out_2x" | "custom" | string;
     wallet_connected: boolean;
+  };
+  mate?: {
+    enabled?: boolean;
+    best_agent?: string;
+    regime?: string;
+    confidence?: number;
+    scores?: Record<string, number>;
   };
   active_tokens: DoctorToken[];
   positions: DoctorPosition[];
@@ -272,7 +278,6 @@ export function useDoctorConfig() {
       ml_bonus_cap_score?: number;
       ml_size_min_multiplier?: number;
       ml_size_max_multiplier?: number;
-      snipe_preset?: "conservative" | "momentum_trader" | "balanced" | "aggressive" | "insider" | "custom" | string;
     }) => apiPost<DoctorStatus>("/api/doctor/config", payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade"] }),
   });
@@ -286,36 +291,13 @@ export function useDoctorResetLearning() {
   });
 }
 
-export type DoctorAdvisorMetrics = {
-  avg_market_cap_new_tokens: number;
-  avg_liquidity: number;
-  avg_volume_5m: number;
-  avg_price_change_5m: number;
-  launch_frequency: number;
-  buy_sell_ratio: number;
-  rug_rate_last_hour: number;
-  top_gainers: Array<{
-    symbol: string;
-    address: string;
-    price_change_5m: number;
-    volume_5m: number;
-    liquidity: number;
-  }>;
-};
-
-export type DoctorAdvisor = {
-  ok: boolean;
-  market_state: "HIGH_FOMO" | "MODERATE_MOMENTUM" | "LOW_VOLUME" | "RUG_HEAVY" | "SIDEWAYS_MARKET" | string;
-  recommended_preset: string;
-  confidence_score: number;
-  reason: string;
-  metrics: DoctorAdvisorMetrics;
-  updated_at: string;
-};
-
 export type DoctorAiAssistantResponse = {
   ok: boolean;
-  advisor: Omit<DoctorAdvisor, "ok">;
+  advisor: {
+    market_state?: string;
+    confidence_score?: number;
+    reason?: string;
+  };
   assistant_name?: string;
   user_name?: string;
   memory_count?: number;
@@ -339,20 +321,6 @@ export type DoctorAiAssistantHistoryResponse = {
   user_name: string;
   messages: DoctorAiAssistantHistoryMessage[];
 };
-
-export function useDoctorPresetAdvisor() {
-  return useQuery({
-    queryKey: ["doctortrade", "advisor"],
-    queryFn: () => apiGet<DoctorAdvisor>("/api/doctor/advisor"),
-    enabled: true,
-    staleTime: 10_000,
-    refetchInterval: 45_000,
-    refetchIntervalInBackground: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: true,
-    retry: 1,
-  });
-}
 
 export function useDoctorAiAssistantChat() {
   return useMutation({

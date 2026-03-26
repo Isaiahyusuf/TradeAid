@@ -3,10 +3,10 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy, BookOpen, Zap } from "lucide-react";
+import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy, BookOpen } from "lucide-react";
 import { FaTelegramPlane } from "react-icons/fa";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useDoctorAiAssistantChat, useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorPresetAdvisor, useDoctorResetLearning, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
+import { useDoctorAiAssistantChat, useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorResetLearning, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -36,7 +36,6 @@ function fmtSol(value: number) {
 }
 
 const TRADEAID_TELEGRAM_BOT_URL = "https://t.me/Tradeaid_bot";
-type SnipePreset = "conservative" | "momentum_trader" | "balanced" | "aggressive" | "insider" | "in_out_2x" | "custom";
 
 function isDoctorWalletConnected(wallet?: Record<string, any> | null, tradeControls?: Record<string, any> | null) {
   const address = String(wallet?.address || "").trim();
@@ -62,11 +61,10 @@ export default function DoctorTrade() {
   const resetLearningMutation = useDoctorResetLearning();
   const directBuyMutation = useDoctorDirectBuy();
   const directSellMutation = useDoctorDirectSell();
-  const advisorQuery = useDoctorPresetAdvisor();
   const aiAssistantMutation = useDoctorAiAssistantChat();
   const [guideOpen, setGuideOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [doctorTab, setDoctorTab] = useState<"trading" | "presets" | "ai-assistant">("trading");
+  const [doctorTab, setDoctorTab] = useState<"trading" | "engine" | "ai-assistant">("trading");
   const [assistantPrompt, setAssistantPrompt] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantName, setAssistantName] = useState("Savatar");
@@ -98,8 +96,6 @@ export default function DoctorTrade() {
   const [mlBonusCapInput, setMlBonusCapInput] = useState("18");
   const [mlSizeMinInput, setMlSizeMinInput] = useState("0.7");
   const [mlSizeMaxInput, setMlSizeMaxInput] = useState("1.2");
-  const [presetMode, setPresetMode] = useState<"default" | "custom">("default");
-  const [selectedSnipePreset, setSelectedSnipePreset] = useState<SnipePreset>("in_out_2x");
   const [privateKeyInput, setPrivateKeyInput] = useState("");
   const hydratedFromServerRef = useRef(false);
   const viewData = data;
@@ -134,18 +130,6 @@ export default function DoctorTrade() {
   const autoBuyChain = String(searchParams.get("chain") || "solana").trim().toLowerCase();
   const [autoBuyHandled, setAutoBuyHandled] = useState(false);
 
-  const normalizePreset = (value: unknown): SnipePreset => {
-    const preset = String(value || "").trim().toLowerCase();
-    if (preset === "conservative") return "conservative";
-    if (preset === "momentum_trader" || preset === "momentumtrader" || preset === "momentum_trader_3x5x") return "momentum_trader";
-    if (preset === "balanced") return "balanced";
-    if (preset === "aggressive" || preset === "agressive") return "aggressive";
-    if (preset === "insider") return "in_out_2x";
-    if (preset === "in_out_2x" || preset === "inout2x" || preset === "in_and_out_2x") return "in_out_2x";
-    if (preset === "custom") return "custom";
-    return "in_out_2x";
-  };
-
   const hydrateSettingsInputs = (controls: Record<string, any>) => {
     setIntervalInput(String(controls.scan_interval_seconds ?? 10));
     setBuyAmountInput(String(controls.buy_amount_sol ?? 0.1));
@@ -173,9 +157,6 @@ export default function DoctorTrade() {
     setMlBonusCapInput(String(controls.ml_bonus_cap_score ?? 18));
     setMlSizeMinInput(String(controls.ml_size_min_multiplier ?? 0.7));
     setMlSizeMaxInput(String(controls.ml_size_max_multiplier ?? 1.2));
-    const preset = normalizePreset(controls.snipe_preset);
-    setSelectedSnipePreset(preset);
-    setPresetMode(preset === "custom" ? "custom" : "default");
   };
 
   useEffect(() => {
@@ -185,14 +166,6 @@ export default function DoctorTrade() {
       hydratedFromServerRef.current = true;
     }
   }, [viewData?.trade_controls, viewData?.user_id]);
-
-  useEffect(() => {
-    const controls = viewData?.trade_controls as Record<string, any> | undefined;
-    if (!controls) return;
-    const presetFromServer = normalizePreset(controls.snipe_preset);
-    setSelectedSnipePreset((prev) => (prev === presetFromServer ? prev : presetFromServer));
-    setPresetMode(presetFromServer === "custom" ? "custom" : "default");
-  }, [viewData?.trade_controls?.snipe_preset]);
 
   useEffect(() => {
     if (autoAction !== "buy" || autoBuyHandled || !autoBuyContract) {
@@ -380,7 +353,7 @@ export default function DoctorTrade() {
   }, [viewData?.last_run_at, viewData?.scan_interval_seconds]);
   const walletSolBalance = Number(viewData?.wallet?.balance_sol || 0);
   const walletPrivateKeyConfigured = Boolean(viewData?.wallet?.private_key_configured);
-  const advisor = advisorQuery.data;
+  const mateState = viewData?.mate;
 
   useEffect(() => {
     setAssistantMessages([]);
@@ -493,8 +466,7 @@ export default function DoctorTrade() {
     const maxTradesPerDay = Math.max(1, Math.trunc(Number.parseFloat(maxTradesInput) || 12));
     const takeProfitMultiplier = Math.max(1.01, Number.parseFloat(tpMultInput) || 2.0);
     const minProfitPct = Math.max(0.1, Number.parseFloat(minProfitInput) || 12);
-    const stopLossFloor = selectedSnipePreset === "momentum_trader" ? 15 : 0.1;
-    const stopLossPct = Math.max(stopLossFloor, Number.parseFloat(stopLossInput) || 6);
+      const stopLossPct = Math.max(0.1, Number.parseFloat(stopLossInput) || 6);
     const trailingStopPct = Math.max(0.1, Number.parseFloat(trailInput) || 10);
     const minLiquidityUsd = Math.max(100, Number.parseFloat(minLiquidityInput) || 20000);
     const maxSlippagePct = Math.max(0.1, Number.parseFloat(maxSlippageInput) || 4);
@@ -514,25 +486,6 @@ export default function DoctorTrade() {
     const mlBonusCapScore = Math.max(4, Number.parseFloat(mlBonusCapInput) || 18);
     const mlSizeMinMultiplier = Math.max(0.5, Math.min(1, Number.parseFloat(mlSizeMinInput) || 0.7));
     const mlSizeMaxMultiplier = Math.max(mlSizeMinMultiplier, Number.parseFloat(mlSizeMaxInput) || 1.2);
-    const presetDefaultBuyAmount: Record<Exclude<SnipePreset, "custom">, number> = {
-      conservative: 0.1,
-      momentum_trader: 0.15,
-      balanced: 0.15,
-      aggressive: 0.25,
-      insider: 0.3,
-      in_out_2x: 0.1,
-    };
-    const selectedPresetBeforeSave = selectedSnipePreset;
-    const manualBuyOverrideDetected = selectedPresetBeforeSave !== "custom"
-      && Math.abs(
-        buyAmountSol - presetDefaultBuyAmount[selectedPresetBeforeSave as Exclude<SnipePreset, "custom">]
-      ) > 0.000001;
-    const presetForSave: SnipePreset = manualBuyOverrideDetected ? "custom" : selectedPresetBeforeSave;
-    if (manualBuyOverrideDetected) {
-      setPresetMode("custom");
-      setSelectedSnipePreset("custom");
-    }
-
     configMutation.mutate(
       {
         scan_interval_seconds: scanIntervalSeconds,
@@ -561,7 +514,6 @@ export default function DoctorTrade() {
         ml_bonus_cap_score: mlBonusCapScore,
         ml_size_min_multiplier: mlSizeMinMultiplier,
         ml_size_max_multiplier: mlSizeMaxMultiplier,
-        snipe_preset: presetForSave,
       },
       {
         onSuccess: () => {
@@ -572,151 +524,6 @@ export default function DoctorTrade() {
           toast({
             title: "Save failed",
             description: error instanceof Error ? error.message : "Unable to save settings",
-            variant: "destructive",
-          });
-        },
-      },
-    );
-  };
-
-  const applyPreset = (preset: Exclude<SnipePreset, "custom">) => {
-    setSelectedSnipePreset(preset);
-    setPresetMode("default");
-    if (preset === "conservative") {
-      setBuyAmountInput("0.1");
-      setMaxTradesInput("6");
-      setTpMultInput("1.8");
-      setMinProfitInput("9");
-      setStopLossInput("4");
-      setTrailInput("7");
-      setMinLiquidityInput("45000");
-      setMaxSlippageInput("2.2");
-      setMaxSpreadInput("1.8");
-      setDailyLossInput("300");
-      setMaxConsecutiveLossesInput("2");
-      setStrongMoveInput("32");
-      setMaxHoldMinutesInput("120");
-      setMinMomentumInput("3");
-      setQualityMinSpikeInput("18");
-      setQualityMaxHolderInput("28");
-      setLiveSellFractionInput("35");
-      setMaxSellNotionalInput("180");
-    }
-    if (preset === "momentum_trader") {
-      setIntervalInput("8");
-      setBuyAmountInput("0.15");
-      setMaxTradesInput("14");
-      setTpMultInput("5.0");
-      setMinProfitInput("200");
-      setStopLossInput("15");
-      setTrailInput("20");
-      setMinLiquidityInput("20000");
-      setMaxSlippageInput("10");
-      setMaxSpreadInput("5");
-      setDailyLossInput("700");
-      setMaxConsecutiveLossesInput("3");
-      setStrongMoveInput("65");
-      setMaxHoldMinutesInput("240");
-      setMinMomentumInput("10");
-      setQualityMinSpikeInput("10");
-      setQualityMaxHolderInput("20");
-      setGasPriorityInput("500000");
-      setLiveSellFractionInput("100");
-      setMaxSellNotionalInput("100000");
-    }
-    if (preset === "balanced") {
-      setBuyAmountInput("0.15");
-      setMaxTradesInput("12");
-      setTpMultInput("2.0");
-      setMinProfitInput("12");
-      setStopLossInput("6");
-      setTrailInput("10");
-      setMinLiquidityInput("20000");
-      setMaxSlippageInput("4");
-      setMaxSpreadInput("3");
-      setDailyLossInput("600");
-      setMaxConsecutiveLossesInput("3");
-      setStrongMoveInput("40");
-      setMaxHoldMinutesInput("180");
-      setMinMomentumInput("4");
-      setQualityMinSpikeInput("12");
-      setQualityMaxHolderInput("35");
-      setLiveSellFractionInput("50");
-      setMaxSellNotionalInput("300");
-    }
-    if (preset === "aggressive") {
-      setBuyAmountInput("0.25");
-      setMaxTradesInput("20");
-      setTpMultInput("2.4");
-      setMinProfitInput("15");
-      setStopLossInput("8");
-      setTrailInput("14");
-      setMinLiquidityInput("12000");
-      setMaxSlippageInput("6");
-      setMaxSpreadInput("5");
-      setDailyLossInput("1000");
-      setMaxConsecutiveLossesInput("4");
-      setStrongMoveInput("50");
-      setMaxHoldMinutesInput("240");
-      setMinMomentumInput("5");
-      setQualityMinSpikeInput("8");
-      setQualityMaxHolderInput("40");
-      setLiveSellFractionInput("75");
-      setMaxSellNotionalInput("650");
-    }
-    if (preset === "insider") {
-      setBuyAmountInput("0.3");
-      setMaxTradesInput("20");
-      setTpMultInput("2.0");
-      setMinProfitInput("100");
-      setStopLossInput("35");
-      setTrailInput("10");
-      setMinLiquidityInput("300");
-      setMaxSlippageInput("20");
-      setMaxSpreadInput("10");
-      setDailyLossInput("1000");
-      setMaxConsecutiveLossesInput("5");
-      setStrongMoveInput("45");
-      setMaxHoldMinutesInput("120");
-      setMinMomentumInput("8");
-      setQualityMinSpikeInput("12");
-      setQualityMaxHolderInput("15");
-      setGasPriorityInput("500000");
-      setLiveSellFractionInput("50");
-      setMaxSellNotionalInput("10000");
-    }
-    if (preset === "in_out_2x") {
-      setIntervalInput("5");
-      setBuyAmountInput("0.1");
-      setMaxTradesInput("12");
-      setTpMultInput("2.0");
-      setMinProfitInput("100");
-      setStopLossInput("30");
-      setTrailInput("18");
-      setMinLiquidityInput("2500");
-      setMaxSlippageInput("15");
-      setMaxSpreadInput("10");
-      setDailyLossInput("1000");
-      setMaxConsecutiveLossesInput("5");
-      setStrongMoveInput("1");
-      setMaxHoldMinutesInput("4");
-      setMinMomentumInput("0");
-      setQualityMinSpikeInput("0");
-      setQualityMaxHolderInput("25");
-      setGasPriorityInput("1500000");
-      setLiveSellFractionInput("100");
-      setMaxSellNotionalInput("100000");
-    }
-    configMutation.mutate(
-      { snipe_preset: preset },
-      {
-        onSuccess: () => {
-          toast({ title: "Preset applied", description: `${preset} preset is now active.` });
-        },
-        onError: (error) => {
-          toast({
-            title: "Preset save failed",
-            description: error instanceof Error ? error.message : "Could not persist preset.",
             variant: "destructive",
           });
         },
@@ -917,38 +724,54 @@ export default function DoctorTrade() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <h3 className="text-sm font-semibold flex items-center gap-2">
-                <Bot className="w-4 h-4 text-emerald-400" /> AI Market Advisor
+                <Bot className="w-4 h-4 text-emerald-400" /> MATE Strategy Brain
               </h3>
-              <p className="text-xs text-muted-foreground mt-1">Auto-updates every 45 seconds using live launch and DoctorTrade metrics.</p>
+              <p className="text-xs text-muted-foreground mt-1">Live orchestrator output from the multi-agent trading engine.</p>
             </div>
-            <Badge variant="outline" className="border-emerald-500/40 text-emerald-300">Advisor Live</Badge>
+            <Badge variant="outline" className="border-emerald-500/40 text-emerald-300">MATE Live</Badge>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-3 text-sm">
             <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
-              <p className="text-xs text-muted-foreground">Market State</p>
-              <p className="font-semibold">{advisor?.market_state || "Loading..."}</p>
+              <p className="text-xs text-muted-foreground">Market Regime</p>
+              <p className="font-semibold">{String(mateState?.regime || "Analyzing")}</p>
             </div>
             <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
-              <p className="text-xs text-muted-foreground">Recommended Preset</p>
-              <p className="font-semibold">{advisor?.recommended_preset || "Loading..."}</p>
+              <p className="text-xs text-muted-foreground">Active Agent</p>
+              <p className="font-semibold">{String(mateState?.best_agent || "Selecting")}</p>
             </div>
             <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
               <p className="text-xs text-muted-foreground">Confidence</p>
-              <p className="font-semibold">{advisor ? `${advisor.confidence_score}%` : "Loading..."}</p>
+              <p className="font-semibold">{Number(mateState?.confidence || 0).toFixed(2)}</p>
             </div>
           </div>
-          <p className="mt-3 text-xs text-muted-foreground">{advisor?.reason || "Analyzing market conditions..."}</p>
+          <p className="mt-3 text-xs text-muted-foreground">Strategy control now comes from MATE orchestrator scoring, not preset profiles.</p>
         </Card>
 
         <Card className="p-3 bg-card/70 backdrop-blur-sm border-border/60">
-          <Tabs value={doctorTab} onValueChange={(value) => setDoctorTab(value as "trading" | "presets" | "ai-assistant")}>
+          <Tabs value={doctorTab} onValueChange={(value) => setDoctorTab(value as "trading" | "engine" | "ai-assistant")}>
             <TabsList className="w-full grid grid-cols-3">
               <TabsTrigger value="trading">Trading</TabsTrigger>
-              <TabsTrigger value="presets">Presets</TabsTrigger>
+              <TabsTrigger value="engine">Strategy Brain</TabsTrigger>
               <TabsTrigger value="ai-assistant">AI Assistant</TabsTrigger>
             </TabsList>
           </Tabs>
         </Card>
+
+        {doctorTab === "engine" && (
+          <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60">
+            <h3 className="text-sm font-semibold mb-2">MATE Scoring Snapshot</h3>
+            <div className="space-y-2 text-sm">
+              {Object.entries(mateState?.scores || {}).length ? Object.entries(mateState?.scores || {}).map(([agent, score]) => (
+                <div key={agent} className="flex items-center justify-between rounded-md border border-border/60 bg-background/50 px-3 py-2">
+                  <span>{agent}</span>
+                  <span>{Number(score || 0).toFixed(3)}</span>
+                </div>
+              )) : (
+                <p className="text-xs text-muted-foreground">Waiting for enough market samples to publish score table.</p>
+              )}
+            </div>
+          </Card>
+        )}
 
         {doctorTab === "ai-assistant" && (
           <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60">
@@ -975,7 +798,7 @@ export default function DoctorTrade() {
                 <div className="flex flex-wrap gap-2 mb-3">
                   {[
                     "Market Overview",
-                    "Best Preset Right Now",
+                    "Best Strategy Right Now",
                     "Risk Level Today",
                     "Sniping Conditions",
                     "Volume Analysis",
@@ -1008,7 +831,7 @@ export default function DoctorTrade() {
                   <Input
                     value={assistantPrompt}
                     onChange={(event) => setAssistantPrompt(event.target.value)}
-                    placeholder={`Ask ${assistantName} about presets, momentum, risk, or paste a token CA for live token scoring...`}
+                    placeholder={`Ask ${assistantName} about strategy selection, momentum, risk, or paste a token CA for live token scoring...`}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
                         event.preventDefault();
@@ -1050,10 +873,10 @@ export default function DoctorTrade() {
             </AccordionItem>
 
             <AccordionItem value="controls" className="border-border/60">
-              <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">2) Risk controls and presets</AccordionTrigger>
+              <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">2) Risk controls and strategy brain</AccordionTrigger>
               <AccordionContent className="text-xs text-muted-foreground">
                 <ul className="space-y-1 list-disc pl-5">
-                  <li>Start with a preset: Conservative, Balanced, Aggressive, or Insider Default.</li>
+                  <li>Use the Strategy Brain tab to verify regime and active agent selected by MATE.</li>
                   <li>Set daily loss cap, max trades, stop loss, take profit, and max hold time.</li>
                   <li>Press <span className="font-medium text-foreground">Save Settings</span> after every config change.</li>
                 </ul>
@@ -1235,72 +1058,9 @@ export default function DoctorTrade() {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2 mb-3 overflow-x-auto">
-            <Button variant="outline" size="sm" onClick={() => applyPreset("conservative")}>Safe Buy</Button>
-            <Button
-              variant={selectedSnipePreset === "momentum_trader" ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                applyPreset("momentum_trader");
-              }}
-              className={selectedSnipePreset === "momentum_trader" ? "bg-emerald-500 hover:bg-emerald-600 text-black" : "border-emerald-500/50 text-emerald-500 hover:bg-emerald-500/10"}
-            >
-              <TrendingUp className="w-4 h-4 mr-1" /> Momentum Trader 📈
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => applyPreset("balanced")}>Momentum Hunter</Button>
-            <Button variant="outline" size="sm" onClick={() => applyPreset("aggressive")}>Whale Rider</Button>
-            <Button
-              variant={selectedSnipePreset === "in_out_2x" ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                applyPreset("in_out_2x");
-              }}
-              className={selectedSnipePreset === "in_out_2x" ? "bg-orange-500 hover:bg-orange-600 text-black" : "border-orange-500/50 text-orange-500 hover:bg-orange-500/10"}
-            >
-              <Zap className="w-4 h-4 mr-1" /> In & Out 2x ⚡
-            </Button>
-            <Button
-              variant={presetMode === "custom" ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                setPresetMode("custom");
-                setSelectedSnipePreset("custom");
-                configMutation.mutate(
-                  { snipe_preset: "custom" },
-                  {
-                    onSuccess: () => {
-                      toast({ title: "Preset applied", description: "custom preset is now active." });
-                    },
-                    onError: (error) => {
-                      toast({
-                        title: "Preset save failed",
-                        description: error instanceof Error ? error.message : "Could not persist preset.",
-                        variant: "destructive",
-                      });
-                    },
-                  },
-                );
-              }}
-            >
-              Custom
-            </Button>
+          <div className="mb-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+            Preset profiles are disabled. Strategy selection is now controlled by the live MATE orchestrator.
           </div>
-          {selectedSnipePreset === "in_out_2x" && (
-            <div className="mb-3 rounded-md border border-orange-500/40 bg-orange-500/10 px-3 py-2 text-xs text-orange-200">
-              <div className="flex items-center gap-2 font-medium">
-                <Zap className="w-4 h-4 text-orange-400" /> ⚡ Speed Mode
-              </div>
-              <p className="mt-1">Buy: 0.1 SOL | Target: 2x | AI: OFF</p>
-            </div>
-          )}
-          {selectedSnipePreset === "momentum_trader" && (
-            <div className="mb-3 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
-              <div className="flex items-center gap-2 font-medium">
-                <TrendingUp className="w-4 h-4 text-emerald-400" /> 📈 Momentum Mode
-              </div>
-              <p className="mt-1">Target: 3x-5x | Smart Entry</p>
-            </div>
-          )}
           <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 items-end">
             <div>
               <p className="text-xs text-muted-foreground mb-1">Scan Interval (sec)</p>
@@ -1701,7 +1461,7 @@ export default function DoctorTrade() {
                       <Badge variant="outline" className="text-[10px]">{String(row?.event || "-")}</Badge>
                     </div>
                     <p className="text-[11px] text-muted-foreground truncate">{row?.reason || "-"}</p>
-                    <p className="text-[11px] text-muted-foreground">Preset: {String(row?.preset || viewData?.trade_controls?.snipe_preset || "insider")}</p>
+                    <p className="text-[11px] text-muted-foreground">Strategy: {String(viewData?.mate?.best_agent || viewData?.strategy_mode || "mate")}</p>
                     {(Number(row?.required_sol || 0) > 0 || Number(row?.available_sol || 0) > 0) && (
                       <p className="text-[11px] text-muted-foreground">
                         Need {Number(row?.required_sol || 0).toFixed(4)} SOL · Have {Number(row?.available_sol || 0).toFixed(4)} SOL
