@@ -8351,23 +8351,12 @@ export async function registerRoutes(
 
   const ensureWalletExists = () => assistantRuntime.wallet.has_wallet && Object.values(assistantRuntime.wallet.addresses_by_chain).some(Boolean);
 
-  const denyAssistantWalletAccessInDoctorOnlyMode = (res: any) => {
-    return res.status(403).json({
-      message: "doctortrade_wallet_only",
-      detail: "Wallet connection and live trading are available only in DoctorTrade.",
-      route: "/doctortrade",
-    });
-  };
-
   app.use("/api/ai/wallets", isAuthenticated, async (req: any, res: any, next: any) => {
     const userId = getRequestUserId(req);
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
     await loadAssistantRuntime(userId);
-    if (isDoctorWalletExclusiveMode()) {
-      return denyAssistantWalletAccessInDoctorOnlyMode(res);
-    }
     return next();
   });
 
@@ -8377,9 +8366,6 @@ export async function registerRoutes(
       return res.status(401).json({ message: "Unauthorized" });
     }
     await loadAssistantRuntime(userId);
-    if (isDoctorWalletExclusiveMode()) {
-      return denyAssistantWalletAccessInDoctorOnlyMode(res);
-    }
     return next();
   });
 
@@ -8549,8 +8535,10 @@ export async function registerRoutes(
   });
 
   app.post("/api/ai/wallets/create", async (req, res) => {
+    const userId = String(getRequestUserId(req) || "").trim();
     const overwrite = Boolean(req.body?.overwrite);
     if (assistantRuntime.wallet.has_wallet && !overwrite) {
+      logStructured("warn", "wallet.create.blocked_existing", { userId, overwrite });
       return res.status(400).json({ message: "wallet already exists" });
     }
 
@@ -8570,19 +8558,30 @@ export async function registerRoutes(
     await persistAssistantRuntime();
     await syncDoctorWalletFromAssistantRuntime(getRequestUserId(req));
 
+    logStructured("info", "wallet.create.success", {
+      userId,
+      overwrite,
+      chains: Object.keys(walletBundle.addresses_by_chain || {}),
+    });
+
     return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
   });
 
   app.post("/api/ai/wallets/import", async (req, res) => {
+    const userId = String(getRequestUserId(req) || "").trim();
     const mnemonic = normalizeMnemonic(String(req.body?.mnemonic || ""));
     const overwrite = Boolean(req.body?.overwrite);
+    const wordsCount = mnemonic ? mnemonic.split(" ").filter(Boolean).length : 0;
     if (!mnemonic) {
+      logStructured("warn", "wallet.import.mnemonic_missing", { userId, overwrite });
       return res.status(400).json({ message: "mnemonic required" });
     }
     if (!bip39.validateMnemonic(mnemonic)) {
+      logStructured("warn", "wallet.import.mnemonic_invalid", { userId, overwrite, wordsCount });
       return res.status(400).json({ message: "invalid mnemonic" });
     }
     if (assistantRuntime.wallet.has_wallet && !overwrite) {
+      logStructured("warn", "wallet.import.blocked_existing", { userId, overwrite, wordsCount });
       return res.status(400).json({ message: "wallet already exists" });
     }
 
@@ -8590,6 +8589,7 @@ export async function registerRoutes(
     try {
       walletBundle = buildAssistantWalletFromMnemonic(mnemonic);
     } catch {
+      logStructured("warn", "wallet.import.mnemonic_derive_failed", { userId, overwrite, wordsCount });
       return res.status(400).json({ message: "invalid mnemonic" });
     }
 
@@ -8606,16 +8606,26 @@ export async function registerRoutes(
     await persistAssistantRuntime();
     await syncDoctorWalletFromAssistantRuntime(getRequestUserId(req));
 
+    logStructured("info", "wallet.import.mnemonic_success", {
+      userId,
+      overwrite,
+      wordsCount,
+      chains: Object.keys(walletBundle.addresses_by_chain || {}),
+    });
+
     return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
   });
 
   app.post("/api/ai/wallets/import-private-key", async (req, res) => {
+    const userId = String(getRequestUserId(req) || "").trim();
     const privateKey = String(req.body?.private_key || "").trim();
     const overwrite = Boolean(req.body?.overwrite);
     if (!privateKey) {
+      logStructured("warn", "wallet.import.private_key_missing", { userId, overwrite });
       return res.status(400).json({ message: "private key required" });
     }
     if (assistantRuntime.wallet.has_wallet && !overwrite) {
+      logStructured("warn", "wallet.import.private_key_blocked_existing", { userId, overwrite });
       return res.status(400).json({ message: "wallet already exists" });
     }
 
@@ -8623,6 +8633,7 @@ export async function registerRoutes(
     try {
       walletBundle = buildAssistantWalletFromPrivateKey(privateKey);
     } catch {
+      logStructured("warn", "wallet.import.private_key_invalid", { userId, overwrite });
       return res.status(400).json({ message: "invalid private key" });
     }
 
@@ -8638,6 +8649,12 @@ export async function registerRoutes(
 
     await persistAssistantRuntime();
     await syncDoctorWalletFromAssistantRuntime(getRequestUserId(req));
+
+    logStructured("info", "wallet.import.private_key_success", {
+      userId,
+      overwrite,
+      chains: Object.keys(walletBundle.addresses_by_chain || {}),
+    });
 
     return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
   });
