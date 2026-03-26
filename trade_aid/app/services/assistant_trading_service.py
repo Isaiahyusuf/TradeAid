@@ -2,6 +2,8 @@ import secrets
 from datetime import datetime, timedelta
 from collections import deque
 from typing import Any
+import base64
+import json
 
 import httpx
 from bip_utils import Bip39MnemonicGenerator, Bip39MnemonicValidator, Bip39SeedGenerator, Bip39WordsNum, Bip44, Bip44Changes, Bip44Coins
@@ -448,6 +450,97 @@ def import_user_wallet_bundle(user: User, *, mnemonic: str, overwrite: bool = Fa
     return {
         "addresses_by_chain": public_addresses,
         "warning": "Wallet imported. Confirm backup phrase before enabling live usage.",
+    }
+
+
+def _decode_private_key_bytes(private_key: str) -> bytes:
+    raw = str(private_key or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="private_key is required")
+
+    # JSON array format: [1,2,3,...]
+    if raw.startswith("[") and raw.endswith("]"):
+        try:
+            values = json.loads(raw)
+            if not isinstance(values, list):
+                raise ValueError("invalid json array")
+            return bytes(int(v) for v in values)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid private key JSON array")
+
+    # Hex format
+    compact = raw[2:] if raw.lower().startswith("0x") else raw
+    if all(ch in "0123456789abcdefABCDEF" for ch in compact) and len(compact) in {64, 128}:
+        try:
+            return bytes.fromhex(compact)
+        except Exception:
+            pass
+
+    # Base64 format
+    try:
+        decoded = base64.b64decode(raw, validate=True)
+        if len(decoded) in {32, 64}:
+            return decoded
+    except Exception:
+        pass
+
+    # Base58 format via solders
+    try:
+        from solders.keypair import Keypair
+
+        keypair = Keypair.from_base58_string(raw)
+        return bytes(keypair)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Unsupported private key format")
+
+
+def import_user_wallet_private_key(user: User, *, private_key: str, overwrite: bool = False) -> dict[str, Any]:
+    existing = _get_wallet_config(user)
+    if existing.get("mnemonic_encrypted") and not overwrite:
+        raise HTTPException(status_code=400, detail="Wallet already exists. Use overwrite explicitly.")
+
+    key_bytes = _decode_private_key_bytes(private_key)
+    if len(key_bytes) not in {32, 64}:
+        raise HTTPException(status_code=400, detail="Private key must decode to 32 or 64 bytes")
+
+    try:
+        from solders.keypair import Keypair
+
+        if len(key_bytes) == 64:
+            keypair = Keypair.from_bytes(key_bytes)
+            seed_bytes = key_bytes[:32]
+        else:
+            seed_bytes = key_bytes
+            keypair = Keypair.from_seed(seed_bytes)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid Solana private key")
+
+    solana_address = str(keypair.pubkey())
+    solana_private_hex = seed_bytes.hex()
+
+    wallet_cfg = {
+        "mnemonic_encrypted": "",
+        "backup_confirmed": True,
+        "backup_confirmed_at": _utcnow().isoformat(),
+        "created_at": _utcnow().isoformat(),
+        "chains": {
+            "solana": {
+                "address": solana_address,
+                "private_key_encrypted": encrypt_api_key(solana_private_hex),
+            }
+        },
+    }
+    _set_wallet_config(user, wallet_cfg)
+
+    trading_cfg = _get_trading_config(user)
+    trading_cfg.setdefault("mode", "paper")
+    trading_cfg["wallets_by_chain"] = {"solana": solana_address}
+    trading_cfg["wallet_address"] = solana_address
+    _set_trading_config(user, trading_cfg)
+
+    return {
+        "addresses_by_chain": {"solana": solana_address},
+        "warning": "Private key imported. Keep this wallet as a hot wallet with limited funds.",
     }
 
 

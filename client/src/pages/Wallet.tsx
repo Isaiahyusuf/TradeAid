@@ -15,7 +15,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { SUPPORTED_CHAINS } from "@/hooks/use-chain";
 import { useLocation } from "wouter";
-import { useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { TokenAvatar } from "@/components/token/TokenAvatar";
 import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
 import {
@@ -56,8 +55,6 @@ export default function WalletPage() {
   const [walletTab, setWalletTab] = useState<"assets" | "activity" | "security">("assets");
 
   const tradingStatusQuery = useAssistantTradingStatus();
-  const doctorStatusQuery = useDoctorStatus();
-  const doctorRunOnce = useDoctorRunOnce();
   const walletStatusQuery = useAssistantWalletStatus();
   const walletPortfolioQuery = useAssistantWalletPortfolio();
   const walletTransactionsQuery = useAssistantWalletTransactions(50, walletTab === "activity");
@@ -118,7 +115,8 @@ export default function WalletPage() {
 
   useEffect(() => {
     if (walletAction === "connect") {
-      setWalletTab("assets");
+      setWalletTab("security");
+      setSecuritySetupOpen(true);
     }
   }, [walletAction, location]);
 
@@ -188,7 +186,6 @@ export default function WalletPage() {
 
   const walletSyncing = Boolean(
     tradingStatusQuery.isFetching ||
-    doctorStatusQuery.isFetching ||
     walletStatusQuery.isFetching ||
     walletPortfolioQuery.isFetching ||
     walletTransactionsQuery.isFetching ||
@@ -197,14 +194,12 @@ export default function WalletPage() {
 
   const walletInitialLoading = Boolean(
     tradingStatusQuery.isLoading ||
-    doctorStatusQuery.isLoading ||
     walletStatusQuery.isLoading ||
     walletPortfolioQuery.isLoading,
   );
 
   const lastWalletSyncTs = Math.max(
     Number(tradingStatusQuery.dataUpdatedAt || 0),
-    Number(doctorStatusQuery.dataUpdatedAt || 0),
     Number(walletStatusQuery.dataUpdatedAt || 0),
     Number(walletPortfolioQuery.dataUpdatedAt || 0),
     Number(walletTransactionsQuery.dataUpdatedAt || 0),
@@ -216,7 +211,6 @@ export default function WalletPage() {
   const refreshWalletViews = async () => {
     await Promise.allSettled([
       tradingStatusQuery.refetch(),
-      doctorStatusQuery.refetch(),
       walletStatusQuery.refetch(),
       walletPortfolioQuery.refetch(),
       walletTransactionsQuery.refetch(),
@@ -569,19 +563,6 @@ export default function WalletPage() {
     }
   };
 
-  const handleExecuteAssistantTrade = async () => {
-    if (!trading?.enabled) {
-      toast({ title: "DoctorTrade disabled", description: "Enable DoctorTrade first.", variant: "destructive" });
-      return;
-    }
-    try {
-      await doctorRunOnce.mutateAsync();
-      toast({ title: "Auto cycle started", description: "DoctorTrade is scanning and executing automatically." });
-    } catch (error) {
-      toast({ title: "Auto cycle failed", description: error instanceof Error ? error.message : "Execution failed", variant: "destructive" });
-    }
-  };
-
   return (
     <Layout>
       <div className="space-y-6">
@@ -589,8 +570,8 @@ export default function WalletPage() {
           <Card className="p-4 border-primary/30 bg-primary/5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-sm font-semibold">Connect Wallet for DoctorTrade</p>
-                <p className="text-xs text-muted-foreground">Create or import your wallet, then return to DoctorTrade.</p>
+                <p className="text-sm font-semibold">Wallet Setup</p>
+                <p className="text-xs text-muted-foreground">Create or import your wallet in this tab. DoctorTrade linking is managed on the DoctorTrade page.</p>
               </div>
               {returnTo && (
                 <Button variant="outline" onClick={() => setLocation(returnTo)}>
@@ -889,7 +870,7 @@ export default function WalletPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
-              <span className="text-sm">DoctorTrade Status</span>
+              <span className="text-sm">Assistant Trading Status</span>
               <Badge variant={trading?.enabled ? "default" : "outline"}>{trading?.enabled ? "Enabled" : trading?.pending_approval ? "Pending Approval" : "Disabled"}</Badge>
             </div>
             <p className="text-sm text-muted-foreground">Assistant controls are organized in one panel. Tap <span className="font-medium">Open</span> to manage permissions and execution.</p>
@@ -1122,14 +1103,6 @@ export default function WalletPage() {
 
               <div className="rounded-lg border border-border/60 p-3 text-xs text-muted-foreground">
                 DoctorTrade presets and risk settings were removed from Wallet. Manage them from the DoctorTrade page only.
-              </div>
-
-              <div className="rounded-lg border border-border/60 p-3 space-y-3">
-                <p className="text-sm font-medium flex items-center gap-2"><KeyRound className="w-4 h-4" />Auto Trade Cycle</p>
-                <p className="text-xs text-muted-foreground">
-                  DoctorTrade selects tokens automatically from scanner signals. No manual contract address input is required.
-                </p>
-                <Button onClick={handleExecuteAssistantTrade} disabled={doctorRunOnce.isPending || !trading?.enabled}>{doctorRunOnce.isPending ? "Running..." : "Run Auto Cycle"}</Button>
               </div>
             </div>
           </SheetContent>

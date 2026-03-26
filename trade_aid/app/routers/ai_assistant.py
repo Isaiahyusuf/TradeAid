@@ -18,6 +18,7 @@ from app.services.assistant_trading_service import (
     execute_assistant_trade,
     export_wallet_private_key,
     import_user_wallet_bundle,
+    import_user_wallet_private_key,
     list_wallet_transactions,
     remove_wallet_chain,
     run_auto_trading_cycle,
@@ -92,6 +93,11 @@ class WalletRevealRequest(BaseModel):
 
 class WalletImportRequest(BaseModel):
     mnemonic: str
+    overwrite: bool = False
+
+
+class WalletImportPrivateKeyRequest(BaseModel):
+    private_key: str
     overwrite: bool = False
 
 
@@ -344,6 +350,20 @@ async def import_wallet_bundle(
     user: User = Depends(get_current_user),
 ):
     bundle = import_user_wallet_bundle(user, mnemonic=req.mnemonic, overwrite=bool(req.overwrite))
+    await db.flush()
+    return {
+        "wallet": wallet_status(user),
+        "bundle": bundle,
+    }
+
+
+@router.post("/wallets/import-private-key")
+async def import_wallet_private_key_bundle(
+    req: WalletImportPrivateKeyRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    bundle = import_user_wallet_private_key(user, private_key=req.private_key, overwrite=bool(req.overwrite))
     await db.flush()
     return {
         "wallet": wallet_status(user),

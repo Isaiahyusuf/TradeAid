@@ -1,4 +1,5 @@
 from datetime import datetime
+import hmac
 import random
 import re
 from typing import Optional
@@ -83,10 +84,10 @@ def _validate_access_code_or_raise(access_code: Optional[str]):
 
     expected = str(get_settings().ACCESS_CODE or "").strip()
     if not expected:
-        return
+        raise HTTPException(status_code=503, detail="Access code is not configured on server")
 
     provided = str(access_code or "").strip()
-    if provided != expected:
+    if not provided or not hmac.compare_digest(provided, expected):
         raise HTTPException(status_code=403, detail="Invalid access code")
 
 
