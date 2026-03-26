@@ -85,6 +85,15 @@ def _utcnow() -> datetime:
     return datetime.utcnow()
 
 
+def _normalize_mnemonic_phrase(value: str) -> str:
+    raw = str(value or "")
+    # Wallet phrases are often pasted with newlines or punctuation separators.
+    collapsed = re.sub(r"[\r\n\t]+", " ", raw)
+    tokens = [token.strip(" ,;\"'") for token in collapsed.split(" ")]
+    words = [token.lower() for token in tokens if token.strip(" ,;\"'")]
+    return " ".join(words)
+
+
 def _rate_limit_openclaw(limit_per_minute: int) -> None:
     now_ts = _utcnow().timestamp()
     while _OPENCLOW_CALL_WINDOW and (now_ts - _OPENCLOW_CALL_WINDOW[0]) > 60.0:
@@ -410,9 +419,13 @@ def import_user_wallet_bundle(user: User, *, mnemonic: str, overwrite: bool = Fa
     if existing.get("mnemonic_encrypted") and not overwrite:
         raise HTTPException(status_code=400, detail="Wallet already exists. Use overwrite explicitly.")
 
-    mnemonic_text = " ".join((mnemonic or "").strip().split()).lower()
+    mnemonic_text = _normalize_mnemonic_phrase(mnemonic)
     if not mnemonic_text:
         raise HTTPException(status_code=400, detail="mnemonic is required")
+
+    word_count = len(mnemonic_text.split(" ")) if mnemonic_text else 0
+    if word_count not in {12, 15, 18, 21, 24}:
+        raise HTTPException(status_code=400, detail="Mnemonic must contain 12, 15, 18, 21, or 24 words")
 
     try:
         Bip39MnemonicValidator(mnemonic_text).Validate()
@@ -555,7 +568,9 @@ def confirm_wallet_backup(user: User, mnemonic: str) -> dict[str, Any]:
     except Exception:
         raise HTTPException(status_code=400, detail="Stored wallet is invalid. Create a new wallet.")
 
-    if (mnemonic or "").strip() != stored_mnemonic:
+    provided_mnemonic = _normalize_mnemonic_phrase(mnemonic)
+    stored_mnemonic_normalized = _normalize_mnemonic_phrase(stored_mnemonic)
+    if provided_mnemonic != stored_mnemonic_normalized:
         raise HTTPException(status_code=400, detail="Recovery phrase does not match")
 
     cfg["backup_confirmed"] = True
