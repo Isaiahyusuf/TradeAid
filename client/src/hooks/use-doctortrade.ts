@@ -216,6 +216,16 @@ export type DoctorStatus = {
       last_trained_at?: string | null;
     };
   };
+  auto_agent?: {
+    enabled?: boolean;
+    no_snipe_timeout_minutes?: number;
+    no_snipe_for_minutes?: number | null;
+    last_successful_buy_at?: string | null;
+    last_rotate_at?: string | null;
+    last_from_preset?: string | null;
+    last_to_preset?: string | null;
+    last_reason?: string | null;
+  };
   fresh_feed?: {
     last_cycle_at?: string | null;
     detected?: number;

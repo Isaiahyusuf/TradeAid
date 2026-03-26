@@ -853,6 +853,12 @@ export async function registerRoutes(
       },
       last_trained_at: null as string | null,
     },
+    autoAgent: {
+      lastRotateAt: null as string | null,
+      lastFromPreset: null as string | null,
+      lastToPreset: null as string | null,
+      lastReason: null as string | null,
+    },
     lastDecision: null as Record<string, any> | null,
     lastRunAt: null as string | null,
     lastError: null as string | null,
@@ -1560,6 +1566,86 @@ export async function registerRoutes(
     return normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
   };
 
+  const getDoctorAgentRotationOrder = () => {
+    return ["insider", "balanced", "aggressive", "momentum_trader", "conservative", "in_out_2x"] as const;
+  };
+
+  const getDoctorLastSuccessfulBuyAtMs = () => {
+    return doctorRuntime.recentTrades
+      .filter((trade) => String((trade as any).action || "").toUpperCase() === "BUY")
+      .filter((trade) => {
+        const status = String((trade as any).status || "EXECUTED").toUpperCase();
+        return status === "EXECUTED" || status === "SIMULATED";
+      })
+      .map((trade) => new Date(String((trade as any).timestamp || "")).getTime())
+      .filter((ts) => Number.isFinite(ts) && ts > 0)
+      .sort((a, b) => b - a)[0] || 0;
+  };
+
+  const getDoctorNoSnipeRotationTimeoutMinutes = () => {
+    return Math.max(1, Number(process.env.DOCTOR_AUTO_ROTATE_NO_SNIPE_MINUTES || 10));
+  };
+
+  const maybeRotateDoctorAgentForNoSnipes = async (userId: string, nowMs = Date.now()) => {
+    const enabled = String(process.env.DOCTOR_AUTO_ROTATE_AGENT_ENABLED || "true").trim().toLowerCase() !== "false";
+    if (!enabled) return { rotated: false } as const;
+    if (!doctorRuntime.enabled || doctorRuntime.killSwitch) return { rotated: false } as const;
+
+    const currentPreset = getDoctorActiveSnipePreset();
+    if (currentPreset === "custom") return { rotated: false } as const;
+
+    const lastBuyAtMs = getDoctorLastSuccessfulBuyAtMs();
+    const lastRotateAtMs = new Date(String((doctorRuntime.autoAgent as any)?.lastRotateAt || "")).getTime();
+    const referenceMs = Math.max(lastBuyAtMs, Number.isFinite(lastRotateAtMs) ? lastRotateAtMs : 0);
+    const timeoutMinutes = getDoctorNoSnipeRotationTimeoutMinutes();
+    const idleMs = referenceMs > 0 ? Math.max(0, nowMs - referenceMs) : 0;
+    const timeoutMs = timeoutMinutes * 60 * 1000;
+
+    // If there has never been a buy yet, do not rotate immediately on startup.
+    if (lastBuyAtMs <= 0) {
+      return { rotated: false } as const;
+    }
+
+    if (idleMs < timeoutMs) {
+      return { rotated: false } as const;
+    }
+
+    const order = getDoctorAgentRotationOrder();
+    const currentIndex = order.indexOf(currentPreset as (typeof order)[number]);
+    if (currentIndex < 0) {
+      return { rotated: false } as const;
+    }
+
+    const nextPreset = order[(currentIndex + 1) % order.length];
+    if (!nextPreset || nextPreset === currentPreset) {
+      return { rotated: false } as const;
+    }
+
+    (doctorRuntime.controls as any).snipe_preset = nextPreset;
+    doctorRuntime.autoAgent.lastRotateAt = nowIso();
+    doctorRuntime.autoAgent.lastFromPreset = currentPreset;
+    doctorRuntime.autoAgent.lastToPreset = nextPreset;
+    doctorRuntime.autoAgent.lastReason = "no_snipe_timeout";
+
+    appendDoctorSniperLog({
+      event: "agent_rotated",
+      source: "runtime",
+      reason: "no_snipe_timeout",
+      from_preset: currentPreset,
+      to_preset: nextPreset,
+      no_snipe_minutes: Number((idleMs / 60000).toFixed(2)),
+      timeout_minutes: timeoutMinutes,
+    }, userId);
+
+    return {
+      rotated: true,
+      fromPreset: currentPreset,
+      toPreset: nextPreset,
+      idleMinutes: Number((idleMs / 60000).toFixed(2)),
+      timeoutMinutes,
+    } as const;
+  };
+
   const doctorPresetNumericProfiles: Record<"insider" | "conservative" | "momentum_trader" | "balanced" | "aggressive" | "in_out_2x", Record<string, number>> = {
     insider: {
       max_open_positions: 3,
@@ -2091,6 +2177,13 @@ export async function registerRoutes(
     if (loaded.execution && typeof loaded.execution === "object") {
       const loadedMode = String((loaded.execution as Record<string, any>).mode || "").trim().toLowerCase();
       doctorRuntime.execution.mode = loadedMode === "paper" ? "paper" : "live";
+    }
+    const autoAgent = (loaded as any).autoAgent as Record<string, any> | undefined;
+    if (autoAgent && typeof autoAgent === "object") {
+      doctorRuntime.autoAgent.lastRotateAt = typeof autoAgent.lastRotateAt === "string" ? autoAgent.lastRotateAt : null;
+      doctorRuntime.autoAgent.lastFromPreset = typeof autoAgent.lastFromPreset === "string" ? autoAgent.lastFromPreset : null;
+      doctorRuntime.autoAgent.lastToPreset = typeof autoAgent.lastToPreset === "string" ? autoAgent.lastToPreset : null;
+      doctorRuntime.autoAgent.lastReason = typeof autoAgent.lastReason === "string" ? autoAgent.lastReason : null;
     }
     if (Array.isArray(loaded.executionAudit)) {
       doctorRuntime.executionAudit = loaded.executionAudit.slice(0, 200);
@@ -4798,6 +4891,8 @@ export async function registerRoutes(
 
     const { dailyRealizedPnlUsd, consecutiveLosses } = computeDoctorRiskMetrics(nowMs);
 
+    await maybeRotateDoctorAgentForNoSnipes(scopedUserId, nowMs);
+
     let sellCount = 0;
     const updatedPositions: Array<Record<string, any>> = [];
     const maxOpenPositions = getDoctorEffectiveMaxOpenPositions();
@@ -6572,6 +6667,11 @@ export async function registerRoutes(
     const filteredExecutionAudit = doctorRuntime.executionAudit
       .filter((row) => isHistoryRowOwnedByStatusUser(row))
       .slice(0, 80);
+    const lastSuccessfulBuyAtMs = getDoctorLastSuccessfulBuyAtMs();
+    const noSnipeTimeoutMinutes = getDoctorNoSnipeRotationTimeoutMinutes();
+    const noSnipeForMinutes = lastSuccessfulBuyAtMs > 0
+      ? Number(((Date.now() - lastSuccessfulBuyAtMs) / 60000).toFixed(2))
+      : null;
 
     const latestDecisionJournalConfidence = filteredDecisionJournal
       .map((row) => Number((row as any)?.confidence || 0))
@@ -6833,6 +6933,16 @@ export async function registerRoutes(
         cycles: doctorRuntime.performance.length,
         last_updated_at: doctorRuntime.lastRunAt,
         learning: doctorRuntime.learning,
+      },
+      auto_agent: {
+        enabled: String(process.env.DOCTOR_AUTO_ROTATE_AGENT_ENABLED || "true").trim().toLowerCase() !== "false",
+        no_snipe_timeout_minutes: noSnipeTimeoutMinutes,
+        no_snipe_for_minutes: noSnipeForMinutes,
+        last_successful_buy_at: lastSuccessfulBuyAtMs > 0 ? new Date(lastSuccessfulBuyAtMs).toISOString() : null,
+        last_rotate_at: doctorRuntime.autoAgent.lastRotateAt,
+        last_from_preset: doctorRuntime.autoAgent.lastFromPreset,
+        last_to_preset: doctorRuntime.autoAgent.lastToPreset,
+        last_reason: doctorRuntime.autoAgent.lastReason,
       },
       fresh_feed: {
         last_cycle_at: doctorRuntime.lastRunAt,

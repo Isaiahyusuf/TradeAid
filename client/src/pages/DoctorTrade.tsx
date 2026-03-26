@@ -327,6 +327,14 @@ export default function DoctorTrade() {
       : autoSnipeReady
         ? ""
         : "is-waiting";
+    const autoAgentTimeoutMinutes = Math.max(1, Number(viewData?.auto_agent?.no_snipe_timeout_minutes || 10));
+    const autoAgentIdleMinutes = Number(viewData?.auto_agent?.no_snipe_for_minutes || 0);
+    const autoAgentStatusLabel = !Boolean(viewData?.auto_agent?.enabled)
+      ? "Auto-rotate off"
+      : `Auto rotate after ${autoAgentTimeoutMinutes}m no-snipe`;
+    const autoAgentLastRotateLabel = viewData?.auto_agent?.last_rotate_at
+      ? `Last rotate: ${fmtTs(String(viewData?.auto_agent?.last_rotate_at || ""))} (${String(viewData?.auto_agent?.last_from_preset || "-")} -> ${String(viewData?.auto_agent?.last_to_preset || "-")})`
+      : "Last rotate: -";
   const autoTradeBlockLabel = useMemo(() => {
     const reason = String(viewData?.auto_trade?.block_reason || "").trim().toLowerCase();
     if (!reason) return null;
@@ -717,6 +725,11 @@ export default function DoctorTrade() {
             </div>
           </div>
           <p className="mt-3 text-xs text-muted-foreground">Strategy control now comes from MATE orchestrator scoring, not preset profiles.</p>
+          <div className="mt-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-muted-foreground">
+            <p>{autoAgentStatusLabel}</p>
+            <p className="mt-1">Idle since last successful snipe: {autoAgentIdleMinutes.toFixed(1)}m</p>
+            <p className="mt-1">{autoAgentLastRotateLabel}</p>
+          </div>
         </Card>
 
         <Card className="p-3 bg-card/70 backdrop-blur-sm border-border/60">
