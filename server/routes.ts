@@ -2316,6 +2316,7 @@ export async function registerRoutes(
   const doctorSchedulerStateKey = "doctortrade.scheduler.v1";
   const doctorSchedulerInstanceId = `${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
   let doctorSchedulerTimer: NodeJS.Timeout | null = null;
+  let doctorSchedulerReconcileTimer: NodeJS.Timeout | null = null;
   let doctorEarlyScoredCache: { at: number; tokens: Array<Record<string, any>> } | null = null;
   const doctorTradeLogStateKeyPrefix = "doctortrade.executions.v1";
   const getDoctorTradeLogStateKeyForUser = (userId: string) => {
@@ -2734,16 +2735,77 @@ export async function registerRoutes(
     await setDoctorSchedulerState(state);
   };
 
+  const reconcileDoctorSchedulerJobsWithRuntimes = async () => {
+    try {
+      const runtimeByUser = await getStoredDoctorRuntimesByUser();
+      const state = await getDoctorSchedulerState();
+      const jobs = (state.jobs && typeof state.jobs === "object") ? state.jobs as Record<string, any> : {};
+      const nowMs = Date.now();
+
+      for (const [userId, runtimeAny] of Object.entries(runtimeByUser || {})) {
+        const normalizedUserId = String(userId || "").trim();
+        if (!normalizedUserId) continue;
+        const runtime = (runtimeAny && typeof runtimeAny === "object") ? runtimeAny as Record<string, any> : {};
+        const runtimeEnabled = Boolean(runtime.enabled) && !Boolean(runtime.killSwitch);
+        const intervalSeconds = Math.max(1, Math.trunc(Number(runtime.scanIntervalSeconds || 10)));
+
+        if (!runtimeEnabled) {
+          delete jobs[normalizedUserId];
+          continue;
+        }
+
+        const existingJob = (jobs[normalizedUserId] && typeof jobs[normalizedUserId] === "object")
+          ? jobs[normalizedUserId] as Record<string, any>
+          : {};
+        const nextRunAt = Number(existingJob.next_run_at || 0) > 0
+          ? Number(existingJob.next_run_at)
+          : nowMs;
+
+        jobs[normalizedUserId] = {
+          ...existingJob,
+          user_id: normalizedUserId,
+          enabled: true,
+          interval_seconds: intervalSeconds,
+          next_run_at: Math.max(nowMs, nextRunAt),
+          updated_at: nowIso(),
+        };
+      }
+
+      for (const userId of Object.keys(jobs)) {
+        const runtimeAny = (runtimeByUser as Record<string, any>)[userId];
+        const runtime = (runtimeAny && typeof runtimeAny === "object") ? runtimeAny as Record<string, any> : null;
+        const runtimeEnabled = runtime ? (Boolean(runtime.enabled) && !Boolean(runtime.killSwitch)) : false;
+        if (!runtimeEnabled) {
+          delete jobs[userId];
+        }
+      }
+
+      state.jobs = jobs;
+      await setDoctorSchedulerState(state);
+    } catch {
+    }
+  };
+
   const startDoctorScheduler = () => {
     if (doctorSchedulerTimer) {
       clearInterval(doctorSchedulerTimer);
       doctorSchedulerTimer = null;
+    }
+    if (doctorSchedulerReconcileTimer) {
+      clearInterval(doctorSchedulerReconcileTimer);
+      doctorSchedulerReconcileTimer = null;
     }
     const pollMs = Math.max(250, Math.trunc(Number(process.env.DOCTOR_SCHEDULER_POLL_MS || 500)));
     doctorSchedulerTimer = setInterval(async () => {
       await runDoctorSchedulerTick();
     }, pollMs);
     doctorSchedulerTimer.unref?.();
+    const reconcileMs = Math.max(5_000, Math.trunc(Number(process.env.DOCTOR_SCHEDULER_RECONCILE_MS || 30_000)));
+    doctorSchedulerReconcileTimer = setInterval(async () => {
+      await reconcileDoctorSchedulerJobsWithRuntimes();
+    }, reconcileMs);
+    doctorSchedulerReconcileTimer.unref?.();
+    void reconcileDoctorSchedulerJobsWithRuntimes();
     void runDoctorSchedulerTick();
   };
 
