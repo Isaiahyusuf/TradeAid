@@ -1582,12 +1582,17 @@ export async function registerRoutes(
 
   const applyDoctorUnifiedControls = () => {
     if (!isDoctorUnifiedSimpleMode()) return;
+    const userBuyAmountSol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
+    const userTakeProfitMultiplier = Math.max(1.1, Number(doctorRuntime.controls.take_profit_multiplier || 1.8));
+    const userStopLossPct = Math.max(2, Number(doctorRuntime.controls.stop_loss_pct || 12));
     (doctorRuntime.controls as any).snipe_preset = "balanced";
     doctorRuntime.controls.max_trades_per_day = 12;
     doctorRuntime.controls.max_trades_per_hour = 4;
     doctorRuntime.controls.max_open_positions = 3;
-    doctorRuntime.controls.buy_amount_sol = 0.1;
-    doctorRuntime.controls.min_buy_amount_sol = 0.1;
+    doctorRuntime.controls.buy_amount_sol = userBuyAmountSol;
+    doctorRuntime.controls.min_buy_amount_sol = userBuyAmountSol;
+    doctorRuntime.controls.take_profit_multiplier = userTakeProfitMultiplier;
+    doctorRuntime.controls.stop_loss_pct = userStopLossPct;
     doctorRuntime.controls.max_wallet_allocation_pct = 10;
     doctorRuntime.controls.cooldown_minutes_per_mint = 20;
     doctorRuntime.controls.cooldown_between_trades_seconds = 25;
@@ -1953,6 +1958,16 @@ export async function registerRoutes(
   };
 
   const getDoctorEffectiveControlNumber = (key: string, fallbackValue: number) => {
+    if (isDoctorUnifiedSimpleMode()) {
+      const userTunableKeys = new Set(["buy_amount_sol", "take_profit_multiplier", "stop_loss_pct"]);
+      if (userTunableKeys.has(key)) {
+        const tunableRuntimeValue = Number((doctorRuntime.controls as Record<string, any>)[key]);
+        if (Number.isFinite(tunableRuntimeValue)) {
+          return tunableRuntimeValue;
+        }
+      }
+    }
+
     const preset = getDoctorActiveSnipePreset();
     if (preset !== "custom") {
       const profileValue = Number((doctorPresetNumericProfiles as Record<string, Record<string, number>>)?.[preset]?.[key]);
@@ -7746,6 +7761,16 @@ export async function registerRoutes(
       doctorRuntime.controls.max_token_age_seconds = 120;
     }
     applyDoctorUnifiedControls();
+    if (Number.isFinite(Number(payload.buy_amount_sol))) {
+      doctorRuntime.controls.buy_amount_sol = Math.max(0.1, Number(payload.buy_amount_sol));
+      doctorRuntime.controls.min_buy_amount_sol = doctorRuntime.controls.buy_amount_sol;
+    }
+    if (Number.isFinite(Number(payload.take_profit_multiplier))) {
+      doctorRuntime.controls.take_profit_multiplier = Math.max(1.1, Number(payload.take_profit_multiplier));
+    }
+    if (Number.isFinite(Number(payload.stop_loss_pct))) {
+      doctorRuntime.controls.stop_loss_pct = Math.max(2, Number(payload.stop_loss_pct));
+    }
     try {
       const presetsByUser = await getStoredDoctorPresetsByUser();
       presetsByUser[userId] = "balanced";

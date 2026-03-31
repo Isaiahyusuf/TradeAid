@@ -506,6 +506,33 @@ export default function DoctorTrade() {
     );
   };
 
+  const saveBasicTradingControls = () => {
+    const buyAmountSol = Math.max(0.1, Number(buyAmountInput || 0.1));
+    const takeProfitMultiplier = Math.max(1.1, Number(tpMultInput || 1.8));
+    const stopLossPct = Math.max(2, Number(stopLossInput || 12));
+
+    configMutation.mutate(
+      {
+        buy_amount_sol: buyAmountSol,
+        take_profit_multiplier: takeProfitMultiplier,
+        stop_loss_pct: stopLossPct,
+      },
+      {
+        onSuccess: () => {
+          toast({ title: "Trading controls saved", description: "Buy amount, take profit, and stop loss were updated." });
+          void refetch();
+        },
+        onError: (error) => {
+          toast({
+            title: "Save failed",
+            description: error instanceof Error ? error.message : "Unable to save trading controls",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
+
   const handleManualPrivateKeyConnect = () => {
     const trimmedPrivateKey = String(privateKeyInput || "").trim();
     if (!trimmedPrivateKey) {
@@ -971,8 +998,32 @@ export default function DoctorTrade() {
           </div>
 
           <div className="mb-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
-            Strategy and risk settings are locked globally. Use only Connect Wallet and Start/Stop DoctorTrade.
+            Core risk defaults stay protected. You can customize only Buy Amount, Take Profit, and Stop Loss.
           </div>
+
+          {simpleMode && (
+            <div className="rounded-md border border-border/60 bg-background/50 p-3 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Buy Amount (SOL)</p>
+                  <Input value={buyAmountInput} onChange={(e) => setBuyAmountInput(e.target.value)} placeholder="0.1" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Take Profit Multiplier</p>
+                  <Input value={tpMultInput} onChange={(e) => setTpMultInput(e.target.value)} placeholder="1.8" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Stop Loss %</p>
+                  <Input value={stopLossInput} onChange={(e) => setStopLossInput(e.target.value)} placeholder="12" />
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={saveBasicTradingControls} disabled={configMutation.isPending}>
+                  {configMutation.isPending ? "Saving..." : "Save Trading Controls"}
+                </Button>
+              </div>
+            </div>
+          )}
 
           {!simpleMode && <>
           <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 items-end">
