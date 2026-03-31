@@ -1576,6 +1576,30 @@ export async function registerRoutes(
     return ["insider", "balanced", "aggressive", "momentum_trader", "conservative", "in_out_2x"] as const;
   };
 
+  const isDoctorUnifiedSimpleMode = () => {
+    return String(process.env.DOCTOR_UNIFIED_SIMPLE_MODE || "true").trim().toLowerCase() !== "false";
+  };
+
+  const applyDoctorUnifiedControls = () => {
+    if (!isDoctorUnifiedSimpleMode()) return;
+    (doctorRuntime.controls as any).snipe_preset = "balanced";
+    doctorRuntime.controls.max_trades_per_day = 12;
+    doctorRuntime.controls.max_trades_per_hour = 4;
+    doctorRuntime.controls.max_open_positions = 3;
+    doctorRuntime.controls.buy_amount_sol = 0.1;
+    doctorRuntime.controls.min_buy_amount_sol = 0.1;
+    doctorRuntime.controls.max_wallet_allocation_pct = 10;
+    doctorRuntime.controls.cooldown_minutes_per_mint = 20;
+    doctorRuntime.controls.cooldown_between_trades_seconds = 25;
+    doctorRuntime.controls.min_wallet_fee_buffer_sol = 0.03;
+    doctorRuntime.controls.strategy_window_minutes = 5;
+    (doctorRuntime.controls as any).minimum_ai_score = 70;
+    (doctorRuntime.controls as any).ai_scoring_enabled = true;
+    (doctorRuntime.controls as any).ai_trade_filter = true;
+    (doctorRuntime.controls as any).ai_prediction_check = true;
+    doctorRuntime.scanIntervalSeconds = Math.max(5, doctorRuntime.scanIntervalSeconds || 10);
+  };
+
   const getDoctorLastSuccessfulBuyAtMs = () => {
     return doctorRuntime.recentTrades
       .filter((trade) => String((trade as any).action || "").toUpperCase() === "BUY")
@@ -1593,6 +1617,7 @@ export async function registerRoutes(
   };
 
   const maybeRotateDoctorAgentForNoSnipes = async (userId: string, nowMs = Date.now()) => {
+    if (isDoctorUnifiedSimpleMode()) return { rotated: false } as const;
     const enabled = String(process.env.DOCTOR_AUTO_ROTATE_AGENT_ENABLED || "true").trim().toLowerCase() !== "false";
     if (!enabled) return { rotated: false } as const;
     if (!doctorRuntime.enabled || doctorRuntime.killSwitch) return { rotated: false } as const;
@@ -7534,11 +7559,15 @@ export async function registerRoutes(
     const requestedEnable = req.body.enabled as boolean;
     const presetBeforeToggle = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
 
+    applyDoctorUnifiedControls();
     const enabled = requestedEnable;
-    doctorRuntime.enabled = enabled && !doctorRuntime.killSwitch;
-    (doctorRuntime.controls as any).snipe_preset = presetBeforeToggle;
     if (enabled && doctorRuntime.killSwitch) {
-      doctorRuntime.lastError = "Cannot enable while kill switch is active";
+      doctorRuntime.killSwitch = false;
+    }
+    doctorRuntime.enabled = enabled;
+    (doctorRuntime.controls as any).snipe_preset = presetBeforeToggle;
+    if (enabled) {
+      doctorRuntime.lastError = null;
     }
     await persistDoctorRuntime(userId);
 
@@ -7716,6 +7745,13 @@ export async function registerRoutes(
     if (isDoctorDexTurboEnabled() && !isDoctorSpeedModePreset() && doctorRuntime.controls.max_token_age_seconds < 120) {
       doctorRuntime.controls.max_token_age_seconds = 120;
     }
+    applyDoctorUnifiedControls();
+    try {
+      const presetsByUser = await getStoredDoctorPresetsByUser();
+      presetsByUser[userId] = "balanced";
+      await setStoredDoctorPresetsByUser(presetsByUser);
+    } catch {
+    }
     await persistDoctorRuntime(userId);
 
     await stopDoctorCycleForUser(userId);
@@ -7784,29 +7820,39 @@ export async function registerRoutes(
         const payload = req.body || {};
         const explicitAddress = String(payload.public_address || "").trim();
         const explicitPrivateKey = String(payload.private_key || "").trim();
+        const useExistingWallet = payload.use_existing_wallet === true;
+        let resolvedPrivateKey = explicitPrivateKey;
         const walletBalanceTimeoutMs = Math.max(300, Number(process.env.DOCTOR_WALLET_BALANCE_TIMEOUT_MS || 1200));
 
         console.info("[doctor.connect-wallet] request", {
           userId,
           hasPrivateKey: Boolean(explicitPrivateKey),
           privateKeyLength: explicitPrivateKey.length,
+          useExistingWallet,
           explicitAddress: explicitAddress || null,
         });
 
-        if (!explicitPrivateKey) {
+        if (!resolvedPrivateKey && useExistingWallet) {
+          await syncDoctorWalletFromAssistantRuntime(userId);
+          const wallets = await getStoredDoctorWalletsByUser();
+          const existingWallet = wallets[userId] as Record<string, any> | undefined;
+          resolvedPrivateKey = decryptDoctorPrivateKey(getDoctorWalletStoredPrivateKey(existingWallet));
+        }
+
+        if (!resolvedPrivateKey) {
           console.warn("[doctor.connect-wallet] rejected", {
             userId,
-            reason: "manual_private_key_required",
+            reason: "wallet_private_key_required",
           });
           return res.status(400).json({
-            message: "manual_private_key_required",
-            detail: "Paste your wallet private key to connect DoctorTrade.",
+            message: "wallet_private_key_required",
+            detail: "Connect your main app wallet first, or provide a private key once.",
           });
         }
 
         let resolvedAddress = explicitAddress;
-        if (!resolvedAddress && explicitPrivateKey) {
-          resolvedAddress = deriveSolanaAddressFromPrivateKey(explicitPrivateKey);
+        if (!resolvedAddress && resolvedPrivateKey) {
+          resolvedAddress = deriveSolanaAddressFromPrivateKey(resolvedPrivateKey);
           if (!resolvedAddress) {
             console.warn("[doctor.connect-wallet] rejected", {
               userId,
@@ -7848,7 +7894,7 @@ export async function registerRoutes(
           }
         }
 
-        await setDoctorLivePrivateKeyForUser(userId, explicitPrivateKey);
+        await setDoctorLivePrivateKeyForUser(userId, resolvedPrivateKey);
         console.info("[doctor.connect-wallet] live_private_key_set", {
           userId,
           walletAddress: String(doctorRuntime.wallet.address || "").trim() || null,
@@ -7878,6 +7924,7 @@ export async function registerRoutes(
         await refreshDoctorWalletBalanceFromChain(doctorRuntime.wallet.address, true);
         doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 0);
         await ensureDoctorLiveExecutionModeIfCapable(userId);
+        applyDoctorUnifiedControls();
         doctorRuntime.execution.mode = "live";
         doctorRuntime.enabled = true;
         doctorRuntime.killSwitch = false;

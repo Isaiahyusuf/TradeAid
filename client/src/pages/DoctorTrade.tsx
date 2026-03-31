@@ -95,6 +95,7 @@ export default function DoctorTrade() {
   const [mlBonusCapInput, setMlBonusCapInput] = useState("18");
   const [mlSizeMinInput, setMlSizeMinInput] = useState("0.7");
   const [mlSizeMaxInput, setMlSizeMaxInput] = useState("1.2");
+  const simpleMode = true;
   const [privateKeyInput, setPrivateKeyInput] = useState("");
   const hydratedFromServerRef = useRef(false);
   const viewData = data;
@@ -516,13 +517,6 @@ export default function DoctorTrade() {
       return;
     }
 
-    const confirmed = window.confirm(
-      "Private keys grant full wallet access.\n\nTradeAid encrypts keys before storage and decrypts only in memory for transaction signing. You are responsible for key security.\n\nConnect this wallet now?",
-    );
-    if (!confirmed) {
-      return;
-    }
-
     connectWalletMutation.mutate(
       { private_key: trimmedPrivateKey, use_existing_wallet: false },
       {
@@ -554,11 +548,36 @@ export default function DoctorTrade() {
   };
 
   const handleConnectWallet = () => {
-    setSettingsOpen(true);
-    toast({
-      title: "Private key required",
-      description: "Use Manual Private Key Import in the settings panel to connect your DoctorTrade wallet.",
-    });
+    connectWalletMutation.mutate(
+      { use_existing_wallet: true },
+      {
+        onSuccess: (status) => {
+          const persistedConnected = isDoctorWalletConnected(
+            (status?.wallet as Record<string, any> | undefined) || null,
+            (status?.trade_controls as Record<string, any> | undefined) || null,
+          );
+          if (!persistedConnected) {
+            setSettingsOpen(true);
+            toast({
+              title: "Wallet key needed",
+              description: "No saved app wallet key found. Paste private key once in settings.",
+              variant: "destructive",
+            });
+            return;
+          }
+          toast({ title: "Wallet connected", description: "DoctorTrade linked to your app wallet." });
+          void refetch();
+        },
+        onError: () => {
+          setSettingsOpen(true);
+          toast({
+            title: "Wallet key needed",
+            description: "No saved app wallet key found. Paste private key once in settings.",
+            variant: "destructive",
+          });
+        },
+      },
+    );
   };
 
   const handleDisconnectWallet = () => {
@@ -578,6 +597,58 @@ export default function DoctorTrade() {
 
   const handleToggleDoctor = () => {
     const nextEnabled = !Boolean(viewData?.enabled);
+    if (nextEnabled && !walletConnected) {
+      connectWalletMutation.mutate(
+        { use_existing_wallet: true },
+        {
+          onSuccess: (status) => {
+            const persistedConnected = isDoctorWalletConnected(
+              (status?.wallet as Record<string, any> | undefined) || null,
+              (status?.trade_controls as Record<string, any> | undefined) || null,
+            );
+            if (!persistedConnected) {
+              setSettingsOpen(true);
+              toast({
+                title: "Connect wallet first",
+                description: "No saved app wallet key found. Paste private key once in settings.",
+                variant: "destructive",
+              });
+              return;
+            }
+            controlMutation.mutate(true, {
+              onSuccess: (startStatus) => {
+                if (!Boolean(startStatus?.enabled)) {
+                  toast({
+                    title: "DoctorTrade did not start",
+                    description: String(startStatus?.last_error || "Could not start after wallet connect."),
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                toast({ title: "DoctorTrade started", description: "Wallet connected and autonomous trading is now active." });
+                refetch();
+              },
+              onError: (error) => {
+                toast({
+                  title: "DoctorTrade update failed",
+                  description: error instanceof Error ? error.message : "Could not update DoctorTrade state.",
+                  variant: "destructive",
+                });
+              },
+            });
+          },
+          onError: () => {
+            setSettingsOpen(true);
+            toast({
+              title: "Connect wallet first",
+              description: "No saved app wallet key found. Paste private key once in settings.",
+              variant: "destructive",
+            });
+          },
+        },
+      );
+      return;
+    }
     controlMutation.mutate(nextEnabled, {
       onSuccess: (status) => {
         const enabledNow = Boolean(status?.enabled);
@@ -662,7 +733,7 @@ export default function DoctorTrade() {
               onClick={handleConnectWallet}
               disabled={connectWalletMutation.isPending || walletConnected}
             >
-              <Wallet className="w-4 h-4 mr-2" /> {walletConnected ? "Wallet Connected" : "Use Private Key Below"}
+              <Wallet className="w-4 h-4 mr-2" /> {walletConnected ? "Wallet Connected" : "Connect Wallet"}
             </Button>
             <Button
               variant="outline"
