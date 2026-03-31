@@ -16,6 +16,7 @@ import {
   useAssistantContextOverview,
 } from "@/hooks/use-ai-assistant";
 import { useChain } from "@/hooks/use-chain";
+import { SavingOverlay } from "@/components/ui/saving-overlay";
 
 export default function AssistantPage() {
   const { chain, chainLabel } = useChain();
@@ -33,6 +34,12 @@ export default function AssistantPage() {
   const assistMutation = useAssistDecision();
 
   const context = contextQuery.data?.context;
+  const assistantSavingInProgress = askMutation.isPending || assistMutation.isPending;
+  const assistantSavingMessage = askMutation.isPending
+    ? "DoctorTrade is thinking..."
+    : assistMutation.isPending
+      ? "Analyzing market setup..."
+      : "Saving...";
 
   const sortedChains = useMemo(() => {
     const rows = Object.entries(context?.chain_stats || {});
@@ -90,6 +97,12 @@ export default function AssistantPage() {
   return (
     <Layout>
       <div className="space-y-6">
+        <SavingOverlay
+          visible={assistantSavingInProgress}
+          title="Working On It"
+          message={assistantSavingMessage}
+        />
+
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div className="space-y-1.5">
             <h1 className="text-3xl font-bold flex items-center gap-2">

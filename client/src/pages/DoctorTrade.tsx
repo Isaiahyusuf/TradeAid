@@ -13,6 +13,7 @@ import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, T
 import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
 import { TokenAvatar } from "@/components/token/TokenAvatar";
 import { useLocation } from "wouter";
+import { SavingOverlay } from "@/components/ui/saving-overlay";
 
 function fmtUsd(value: number) {
   if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
@@ -366,6 +367,33 @@ export default function DoctorTrade() {
   }, [viewData?.last_run_at, viewData?.scan_interval_seconds]);
   const walletSolBalance = Number(viewData?.wallet?.balance_sol || 0);
   const walletPrivateKeyConfigured = Boolean(viewData?.wallet?.private_key_configured);
+  const doctorSavingInProgress = Boolean(
+    controlMutation.isPending
+    || configMutation.isPending
+    || connectWalletMutation.isPending
+    || disconnectWalletMutation.isPending
+    || runMutation.isPending
+    || resetLearningMutation.isPending
+    || directBuyMutation.isPending
+    || directSellMutation.isPending,
+  );
+  const doctorSavingMessage = connectWalletMutation.isPending
+    ? "Connecting DoctorTrade wallet..."
+    : disconnectWalletMutation.isPending
+      ? "Disconnecting DoctorTrade wallet..."
+      : controlMutation.isPending
+        ? "Updating DoctorTrade engine state..."
+        : configMutation.isPending
+          ? "Saving DoctorTrade settings..."
+          : runMutation.isPending
+            ? "Running DoctorTrade cycle..."
+            : resetLearningMutation.isPending
+              ? "Resetting learning model..."
+              : directBuyMutation.isPending
+                ? "Submitting buy order..."
+                : directSellMutation.isPending
+                  ? "Submitting sell order..."
+                  : "Applying DoctorTrade changes...";
   const mateState = viewData?.mate;
   const activeMateAgent = useMemo(() => {
     const explicit = String(mateState?.best_agent || "").trim();
@@ -708,6 +736,12 @@ export default function DoctorTrade() {
   return (
     <Layout>
       <div className="space-y-6">
+        <SavingOverlay
+          visible={doctorSavingInProgress}
+          title="Updating DoctorTrade"
+          message={doctorSavingMessage}
+        />
+
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="space-y-1.5">
             <h1 className="text-3xl font-bold flex items-center gap-3">
@@ -722,6 +756,9 @@ export default function DoctorTrade() {
             <Badge variant="outline">Runs Server-Side</Badge>
             <Badge variant="outline" className="border-green-500/40 text-green-400">Trade Mode LIVE ONLY</Badge>
             <Badge variant="outline" className="border-accent/30 text-accent">Risk Locked</Badge>
+            <Badge variant="outline" className={walletConnected ? "border-green-500/40 text-green-400" : "border-yellow-500/40 text-yellow-400"}>
+              {walletConnected ? "Wallet Connected" : "Wallet Not Connected"}
+            </Badge>
             {!hasData && <Badge variant="outline">Syncing</Badge>}
           </div>
         </div>

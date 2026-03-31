@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Shield, Loader2, ArrowRight, Chrome, Apple, Bot, Eye, EyeOff } from "lucide-react";
 import { motion } from "framer-motion";
+import { SavingOverlay } from "@/components/ui/saving-overlay";
 
 const EMAIL_PATTERN = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 const SPECIAL_PATTERN = /[^A-Za-z0-9]/;
@@ -76,6 +77,15 @@ export default function AuthPage() {
     (mode === "verify" && (emailInvalid || code.trim().length < 6)) ||
     (mode === "forgot" && emailInvalid) ||
     (mode === "reset" && (emailInvalid || code.trim().length < 6 || resetPasswordErrors.length > 0 || !resetConfirmPassword || resetPasswordsMismatch));
+  const submitMessage = mode === "login"
+    ? "Signing you in..."
+    : mode === "register"
+      ? "Creating your account..."
+      : mode === "verify"
+        ? "Verifying your code..."
+        : mode === "forgot"
+          ? "Sending reset code..."
+          : "Updating your password...";
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -274,6 +284,7 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
+      <SavingOverlay visible={isSubmitting} title="Processing Request" message={submitMessage} />
       <div className="absolute -top-20 -left-10 w-80 h-80 rounded-full bg-primary/20 blur-3xl animate-pulse pointer-events-none" />
       <div className="absolute -bottom-24 -right-12 w-80 h-80 rounded-full bg-accent/20 blur-3xl animate-pulse pointer-events-none" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(153,69,255,0.15),transparent_45%)] pointer-events-none" />
