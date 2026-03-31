@@ -859,6 +859,11 @@ export async function registerRoutes(
       lastToPreset: null as string | null,
       lastReason: null as string | null,
     },
+    lifecycle: {
+      marketRegime: "range" as "risk_on" | "range" | "risk_off" | "low_signal",
+      statesByMint: {} as Record<string, Record<string, any>>,
+      updatedAt: null as string | null,
+    },
     lastDecision: null as Record<string, any> | null,
     lastRunAt: null as string | null,
     lastError: null as string | null,
@@ -2230,6 +2235,34 @@ export async function registerRoutes(
       doctorRuntime.autoAgent.lastFromPreset = typeof autoAgent.lastFromPreset === "string" ? autoAgent.lastFromPreset : null;
       doctorRuntime.autoAgent.lastToPreset = typeof autoAgent.lastToPreset === "string" ? autoAgent.lastToPreset : null;
       doctorRuntime.autoAgent.lastReason = typeof autoAgent.lastReason === "string" ? autoAgent.lastReason : null;
+    }
+    const lifecycle = (loaded as any).lifecycle as Record<string, any> | undefined;
+    if (lifecycle && typeof lifecycle === "object") {
+      const marketRegime = String(lifecycle.marketRegime || "range").trim().toLowerCase();
+      doctorRuntime.lifecycle.marketRegime = marketRegime === "risk_on"
+        ? "risk_on"
+        : marketRegime === "risk_off"
+          ? "risk_off"
+          : marketRegime === "low_signal"
+            ? "low_signal"
+            : "range";
+      doctorRuntime.lifecycle.updatedAt = typeof lifecycle.updatedAt === "string"
+        ? lifecycle.updatedAt
+        : null;
+
+      const loadedStatesByMint = (lifecycle.statesByMint || {}) as Record<string, any>;
+      doctorRuntime.lifecycle.statesByMint = Object.entries(loadedStatesByMint)
+        .map(([mint, state]) => {
+          const normalizedMint = String(mint || "").trim();
+          if (!normalizedMint || !state || typeof state !== "object") return null;
+          return [normalizedMint, state] as const;
+        })
+        .filter((row): row is readonly [string, Record<string, any>] => Boolean(row))
+        .slice(0, 800)
+        .reduce((acc, [mint, state]) => {
+          acc[mint] = state;
+          return acc;
+        }, {} as Record<string, Record<string, any>>);
     }
     if (Array.isArray(loaded.executionAudit)) {
       doctorRuntime.executionAudit = loaded.executionAudit.slice(0, 200);
@@ -4081,6 +4114,280 @@ export async function registerRoutes(
 
   const normalizeDoctorMint = (value: string) => String(value || "").trim();
 
+  const getDoctorLifecycleRuntime = () => {
+    const runtimeAny = doctorRuntime as any;
+    if (!runtimeAny.lifecycle || typeof runtimeAny.lifecycle !== "object") {
+      runtimeAny.lifecycle = {
+        marketRegime: "range",
+        statesByMint: {},
+        updatedAt: null,
+      };
+    }
+    if (!runtimeAny.lifecycle.statesByMint || typeof runtimeAny.lifecycle.statesByMint !== "object") {
+      runtimeAny.lifecycle.statesByMint = {};
+    }
+    if (typeof runtimeAny.lifecycle.marketRegime !== "string") {
+      runtimeAny.lifecycle.marketRegime = "range";
+    }
+    return runtimeAny.lifecycle as {
+      marketRegime: "risk_on" | "range" | "risk_off" | "low_signal";
+      statesByMint: Record<string, Record<string, any>>;
+      updatedAt: string | null;
+    };
+  };
+
+  const resolveDoctorLifecyclePhase = (token: Record<string, any>) => {
+    const launchSource = normalizeLaunchSource(String(token.launch_source || token.source || "unknown"));
+    const source = String(token.source || "").trim().toLowerCase();
+    const poolAddress = String((token as any).pool_address || "").trim();
+    const hasRaydiumPool = Boolean(poolAddress)
+      || source.includes("raydium")
+      || launchSource === "raydium"
+      || (launchSource === "pumpfun" && Number((token as any).liquidity_sol || 0) >= 20);
+    if (hasRaydiumPool) return "raydium" as const;
+
+    const ageSeconds = Math.max(0, Number(token.age_seconds || 0));
+    const marketCapUsd = Number(token.market_cap_usd || 0);
+    const liquidityUsd = Number(token.liquidity || 0);
+    if (ageSeconds >= 12 * 60 || marketCapUsd >= 120_000 || liquidityUsd >= 40_000) {
+      return "graduated" as const;
+    }
+    return "pumpfun" as const;
+  };
+
+  const computeDoctorLifecycleMarketRegime = (tokens: Array<Record<string, any>>) => {
+    if (!tokens.length) return "low_signal" as const;
+    const sample = tokens.slice(0, 25);
+    const avgMomentum = sample.reduce((sum, token) => {
+      const move5m = Number((token as any).price_change_5m || 0);
+      const move1h = Number((token as any).price_change_1h || 0);
+      const weighted = move5m !== 0 ? move5m : (move1h / 12);
+      return sum + weighted;
+    }, 0) / Math.max(1, sample.length);
+    if (avgMomentum >= 10) return "risk_on" as const;
+    if (avgMomentum <= -5) return "risk_off" as const;
+    return "range" as const;
+  };
+
+  const scoreDoctorLifecycleCandidate = (
+    token: Record<string, any>,
+    phase: "pumpfun" | "graduated" | "raydium",
+    marketRegime: "risk_on" | "range" | "risk_off" | "low_signal",
+  ) => {
+    const buys5m = Math.max(0, Number(token.buys_5m || 0));
+    const sells5m = Math.max(0, Number(token.sells_5m || 0));
+    const holdersCount = Math.max(0, Number(token.holders_count || 0));
+    const buyRatioPct = Math.max(0, Number(token.buy_ratio_pct || 0));
+    const liquidityUsd = Math.max(0, Number(token.liquidity || 0));
+    const volume5mUsd = Math.max(0, Number(token.volume_5m || 0));
+    const topHolderPct = Math.max(0, Number(token.top_holder_pct || 0));
+    const devWalletPct = Math.max(0, Number(token.dev_wallet_pct || 0));
+    const priceChange5m = Number((token as any).price_change_5m || 0);
+    const scoreBase = Math.max(0, Math.min(100, Number(token.score || 0)));
+    const inflowRatio = liquidityUsd > 0 ? volume5mUsd / liquidityUsd : 0;
+    const buyPressure = buys5m / Math.max(1, sells5m);
+
+    let phaseScore = scoreBase;
+    if (phase === "pumpfun") {
+      phaseScore += Math.min(22, buys5m * 1.3);
+      phaseScore += Math.min(18, Math.max(0, buyRatioPct - 50) * 0.45);
+      phaseScore += Math.min(12, holdersCount * 0.18);
+      phaseScore += Math.min(14, inflowRatio * 50);
+      phaseScore -= Math.min(20, Math.max(0, topHolderPct - 25) * 0.9);
+      phaseScore -= Math.min(16, Math.max(0, devWalletPct - 6) * 1.2);
+    } else if (phase === "graduated") {
+      phaseScore += Math.min(16, Math.max(0, buyRatioPct - 48) * 0.35);
+      phaseScore += Math.min(14, inflowRatio * 40);
+      phaseScore += Math.min(10, Math.max(0, priceChange5m));
+      phaseScore += Math.min(12, Math.max(0, holdersCount - 25) * 0.08);
+      phaseScore -= Math.min(12, Math.max(0, topHolderPct - 22) * 0.6);
+      phaseScore -= Math.min(10, Math.max(0, devWalletPct - 5) * 1.1);
+    } else {
+      phaseScore += Math.min(15, Math.max(0, Math.log10(Math.max(1, liquidityUsd)) * 4));
+      phaseScore += Math.min(16, Math.max(0, Math.log10(Math.max(1, volume5mUsd)) * 4.2));
+      phaseScore += Math.min(14, Math.max(0, buyPressure - 1) * 9);
+      phaseScore += Math.min(10, Math.max(0, priceChange5m));
+      phaseScore -= Math.min(14, Math.max(0, -priceChange5m) * 0.9);
+      phaseScore -= Math.min(10, Math.max(0, topHolderPct - 24) * 0.5);
+    }
+
+    if (marketRegime === "risk_on") phaseScore += 5;
+    if (marketRegime === "risk_off") phaseScore -= 6;
+    if (marketRegime === "low_signal") phaseScore -= 3;
+
+    const hardRiskFail =
+      topHolderPct > 38
+      || devWalletPct > 12
+      || (buyRatioPct > 0 && buyRatioPct < 42)
+      || (phase === "pumpfun" && buys5m < 2)
+      || (phase !== "pumpfun" && liquidityUsd < 3_000);
+
+    const thresholdBase = phase === "pumpfun"
+      ? 62
+      : phase === "graduated"
+        ? 66
+        : 69;
+    const threshold = Math.max(50, Math.min(90,
+      thresholdBase
+      + (marketRegime === "risk_on" ? -4 : 0)
+      + (marketRegime === "risk_off" ? 6 : 0)
+      + (marketRegime === "low_signal" ? 4 : 0),
+    ));
+
+    const normalizedScore = Math.max(0, Math.min(100, Number(phaseScore.toFixed(2))));
+    const passed = !hardRiskFail && normalizedScore >= threshold;
+
+    return {
+      phase,
+      score: normalizedScore,
+      threshold,
+      passed,
+      hard_risk_fail: hardRiskFail,
+    };
+  };
+
+  const updateDoctorLifecycleStateForToken = (
+    token: Record<string, any>,
+    marketRegime: "risk_on" | "range" | "risk_off" | "low_signal",
+    nowMs = Date.now(),
+  ) => {
+    const mint = normalizeDoctorMint(String(token.address || token.mint || ""));
+    if (!mint) {
+      return token;
+    }
+
+    const lifecycle = getDoctorLifecycleRuntime();
+    lifecycle.marketRegime = marketRegime;
+    lifecycle.updatedAt = new Date(nowMs).toISOString();
+
+    const currentState = (lifecycle.statesByMint[mint] || {}) as Record<string, any>;
+    const phase = resolveDoctorLifecyclePhase(token);
+    const phaseScore = scoreDoctorLifecycleCandidate(token, phase, marketRegime);
+    const previousPhase = String(currentState.phase || "").trim();
+    const transitionedToGraduated = previousPhase === "pumpfun" && (phase === "graduated" || phase === "raydium");
+
+    lifecycle.statesByMint[mint] = {
+      ...currentState,
+      mint,
+      phase,
+      previous_phase: previousPhase || null,
+      graduated: phase === "graduated" || phase === "raydium",
+      graduated_at: transitionedToGraduated
+        ? new Date(nowMs).toISOString()
+        : String(currentState.graduated_at || "") || null,
+      raydium_pool_detected: phase === "raydium",
+      raydium_pool_detected_at: phase === "raydium"
+        ? (String(currentState.raydium_pool_detected_at || "") || new Date(nowMs).toISOString())
+        : (String(currentState.raydium_pool_detected_at || "") || null),
+      last_seen_at: new Date(nowMs).toISOString(),
+      market_regime: marketRegime,
+      lifecycle_score: phaseScore.score,
+      lifecycle_threshold: phaseScore.threshold,
+      lifecycle_passed: phaseScore.passed,
+      hard_risk_fail: phaseScore.hard_risk_fail,
+      peak_lifecycle_score: Math.max(0, Number(currentState.peak_lifecycle_score || 0), phaseScore.score),
+      entry_count: Math.max(0, Number(currentState.entry_count || 0)),
+      reentry_count: Math.max(0, Number(currentState.reentry_count || 0)),
+      last_entry_at: String(currentState.last_entry_at || "") || null,
+      last_exit_at: String(currentState.last_exit_at || "") || null,
+      last_exit_reason: String(currentState.last_exit_reason || "") || null,
+      cooldown_until_ms: Math.max(0, Number(currentState.cooldown_until_ms || 0)),
+    };
+
+    const statesEntries = Object.entries(lifecycle.statesByMint);
+    if (statesEntries.length > 900) {
+      const sorted = statesEntries.sort((a, b) => {
+        const aTs = new Date(String((a[1] as any)?.last_seen_at || "")).getTime() || 0;
+        const bTs = new Date(String((b[1] as any)?.last_seen_at || "")).getTime() || 0;
+        return bTs - aTs;
+      }).slice(0, 700);
+      lifecycle.statesByMint = sorted.reduce((acc, [stateMint, state]) => {
+        acc[stateMint] = state;
+        return acc;
+      }, {} as Record<string, Record<string, any>>);
+    }
+
+    const finalState = lifecycle.statesByMint[mint] || {};
+    return {
+      ...token,
+      lifecycle_phase: String(finalState.phase || phase),
+      lifecycle_score: Number(finalState.lifecycle_score || phaseScore.score),
+      lifecycle_threshold: Number(finalState.lifecycle_threshold || phaseScore.threshold),
+      lifecycle_passed: Boolean(finalState.lifecycle_passed ?? phaseScore.passed),
+      lifecycle_regime: String(finalState.market_regime || marketRegime),
+      graduated: Boolean(finalState.graduated),
+      graduated_at: finalState.graduated_at || null,
+      reentry_count: Number(finalState.reentry_count || 0),
+    };
+  };
+
+  const isDoctorLifecycleReentryAllowed = (mint: string, nowMs = Date.now()) => {
+    const normalizedMint = normalizeDoctorMint(mint);
+    if (!normalizedMint) return false;
+    const lifecycle = getDoctorLifecycleRuntime();
+    const state = lifecycle.statesByMint[normalizedMint] as Record<string, any> | undefined;
+    if (!state) return false;
+
+    const phase = String(state.phase || "").trim().toLowerCase();
+    if (phase !== "graduated" && phase !== "raydium") return false;
+    if (Math.max(0, Number(state.entry_count || 0)) < 1) return false;
+    const hasExitedBefore = Boolean(String(state.last_exit_at || "").trim());
+    if (!hasExitedBefore) return false;
+
+    const blockedExitReasons = new Set([
+      "stop_loss_hit",
+      "fast_momentum_exit",
+      "momentum_hype_died_exit",
+      "momentum_or_holder_quality_drop",
+    ]);
+    if (blockedExitReasons.has(String(state.last_exit_reason || "").trim().toLowerCase())) {
+      return false;
+    }
+
+    const cooldownUntilMs = Math.max(0, Number(state.cooldown_until_ms || 0));
+    if (cooldownUntilMs > nowMs) return false;
+
+    const lifecycleScore = Math.max(0, Number(state.lifecycle_score || 0));
+    const lifecycleThreshold = Math.max(1, Number(state.lifecycle_threshold || 0));
+    return lifecycleScore >= lifecycleThreshold;
+  };
+
+  const markDoctorLifecycleEntry = (mint: string, nowMs = Date.now()) => {
+    const normalizedMint = normalizeDoctorMint(mint);
+    if (!normalizedMint) return;
+    const lifecycle = getDoctorLifecycleRuntime();
+    const state = (lifecycle.statesByMint[normalizedMint] || {}) as Record<string, any>;
+    const nextEntryCount = Math.max(0, Number(state.entry_count || 0)) + 1;
+    lifecycle.statesByMint[normalizedMint] = {
+      ...state,
+      mint: normalizedMint,
+      entry_count: nextEntryCount,
+      reentry_count: Math.max(0, Number(state.reentry_count || 0)) + (nextEntryCount > 1 ? 1 : 0),
+      last_entry_at: new Date(nowMs).toISOString(),
+      last_exit_reason: null,
+      cooldown_until_ms: 0,
+      last_seen_at: new Date(nowMs).toISOString(),
+    };
+    lifecycle.updatedAt = new Date(nowMs).toISOString();
+  };
+
+  const markDoctorLifecycleExit = (mint: string, reason: string, nowMs = Date.now()) => {
+    const normalizedMint = normalizeDoctorMint(mint);
+    if (!normalizedMint) return;
+    const lifecycle = getDoctorLifecycleRuntime();
+    const state = (lifecycle.statesByMint[normalizedMint] || {}) as Record<string, any>;
+    const cooldownMinutes = Math.max(1, Number(process.env.DOCTOR_REENTRY_COOLDOWN_MINUTES || 12));
+    lifecycle.statesByMint[normalizedMint] = {
+      ...state,
+      mint: normalizedMint,
+      last_exit_at: new Date(nowMs).toISOString(),
+      last_exit_reason: String(reason || "").trim() || "unknown_exit",
+      cooldown_until_ms: nowMs + (cooldownMinutes * 60_000),
+      last_seen_at: new Date(nowMs).toISOString(),
+    };
+    lifecycle.updatedAt = new Date(nowMs).toISOString();
+  };
+
   const hasDoctorBoughtMintBefore = (mint: string) => {
     const normalizedMint = normalizeDoctorMint(mint);
     if (!normalizedMint) return false;
@@ -4244,8 +4551,9 @@ export async function registerRoutes(
     userId?: string;
     baseMint?: string;
     sellFractionPct?: number;
+    allowDuplicateBuy?: boolean;
   }) => {
-    if (params.action === "buy" && hasDoctorBoughtMintBefore(params.mint)) {
+    if (params.action === "buy" && !params.allowDuplicateBuy && hasDoctorBoughtMintBefore(params.mint)) {
       appendDoctorExecutionAudit({
         action: params.action,
         symbol: params.symbol,
@@ -4991,9 +5299,12 @@ export async function registerRoutes(
       return { executed: false, reason: "live_wallet_credentials_missing", trigger };
     }
 
-    const activeTokens = await getDoctorActiveTokens();
-    const tokenMap = new Map(activeTokens.map((token) => [String(token.address || ""), token]));
     const nowMs = Date.now();
+    const activeTokens = await getDoctorActiveTokens();
+    const lifecycleMarketRegime = computeDoctorLifecycleMarketRegime(activeTokens);
+    const lifecycleActiveTokens = activeTokens
+      .map((token) => updateDoctorLifecycleStateForToken(token as Record<string, any>, lifecycleMarketRegime, nowMs));
+    const tokenMap = new Map(lifecycleActiveTokens.map((token) => [String(token.address || ""), token]));
     pruneDoctorRecentExecutionState(nowMs);
 
     if (doctorRuntime.execution.mode === "live" && doctorRuntime.positions.length > 0) {
@@ -5226,6 +5537,9 @@ export async function registerRoutes(
       sellCount += 1;
       const pnlUsd = Number(((soldAmountSol * currentPrice) - (soldAmountSol * entryPrice)).toFixed(2));
       const remainingAmountSol = Number((amountSol - soldAmountSol).toFixed(9));
+      if (remainingAmountSol <= 0.000001) {
+        markDoctorLifecycleExit(String(position.address || ""), sellReason, nowMs);
+      }
       const nextTpStage = sellReason === "take_profit_stage_2_partial"
         ? Math.max(tpStage, 2)
         : sellReason === "take_profit_stage_1_partial"
@@ -5331,8 +5645,9 @@ export async function registerRoutes(
     const requireLiquidityLock = Math.max(0, getDoctorEffectiveControlNumber("min_lock_hours", 24)) > 0;
     const openAddresses = new Set(doctorRuntime.positions.map((position) => String(position.address || "")));
 
-    const candidatePool = activeTokens
+    const candidatePool = lifecycleActiveTokens
       .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
+      .filter((token) => Boolean((token as any).lifecycle_passed ?? true))
       .filter((token) => Number(token.score || 0) >= Math.max(1, getDoctorEffectiveControlNumber("strong_move_threshold_pct", 40)))
       .filter((token) => Number(token.liquidity || 0) >= Math.max(1000, getDoctorEffectiveControlNumber("min_liquidity_usd", 0)))
       .filter((token) => Number(token.liquidity || 0) <= maxLiquidityUsd)
@@ -5432,6 +5747,8 @@ export async function registerRoutes(
         return mintAuthorityDisabled && freezeAuthorityDisabled && topHolderPct <= 25 && creatorHoldingPct <= 8;
       })
       .sort((a, b) => {
+        const lifecycleDiff = Number((b as any).lifecycle_score || 0) - Number((a as any).lifecycle_score || 0);
+        if (lifecycleDiff !== 0) return lifecycleDiff;
         const scoreDiff = getDoctorCandidateLearningScore(b as Record<string, any>, doctorLearningSnapshot).final_score
           - getDoctorCandidateLearningScore(a as Record<string, any>, doctorLearningSnapshot).final_score;
         if (scoreDiff !== 0) return scoreDiff;
@@ -5447,7 +5764,7 @@ export async function registerRoutes(
         if (!rejectedAt) return true;
         return nowMs - rejectedAt > routeRejectRetryMs;
       });
-    const allowReentrySnipes = false;
+    const allowReentrySnipes = String(process.env.DOCTOR_ENABLE_REENTRY || "true").trim().toLowerCase() !== "false";
 
     const getFallbackDetectedCandidate = async () => {
       const passReason = `${activeSnipePreset}_conditions_passed`;
@@ -5525,9 +5842,12 @@ export async function registerRoutes(
       return undefined;
     };
 
-    let buyCandidate: Record<string, any> | undefined = candidatePoolNonOpen[0] || (allowReentrySnipes ? candidatePool[0] : undefined);
+    const reentryCandidate = allowReentrySnipes
+      ? candidatePoolNonOpen.find((token) => isDoctorLifecycleReentryAllowed(String(token.address || ""), nowMs))
+      : undefined;
+    let buyCandidate: Record<string, any> | undefined = candidatePoolNonOpen[0] || reentryCandidate;
     if (!buyCandidate && doctorRuntime.execution.mode === "paper") {
-      const softPaperPool = activeTokens
+      const softPaperPool = lifecycleActiveTokens
         .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
         .filter((token) => !openAddresses.has(String(token.address || "")))
         .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
@@ -5550,7 +5870,7 @@ export async function registerRoutes(
       }
     }
     if (!buyCandidate && activeSnipePreset === "insider") {
-      const insiderFallbackPool = activeTokens
+      const insiderFallbackPool = lifecycleActiveTokens
         .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
         .filter((token) => !openAddresses.has(String(token.address || "")))
         .filter((token) => Number(token.age_seconds || 0) <= strictMaxTokenAgeSeconds)
@@ -5598,10 +5918,13 @@ export async function registerRoutes(
       && String(process.env.DOCTOR_ENABLE_AI_FALLBACK || "true").trim().toLowerCase() !== "false";
 
     if (!buyCandidate && aiFallbackEnabled) {
-      const aiFallbackPool = activeTokens
+      const aiFallbackPool = lifecycleActiveTokens
         .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
         .filter((token) => !openAddresses.has(String(token.address || "")))
-        .filter((token) => !hasDoctorBoughtMintBefore(String(token.address || "")))
+        .filter((token) => {
+          const mint = String(token.address || "");
+          return !hasDoctorBoughtMintBefore(mint) || isDoctorLifecycleReentryAllowed(mint, nowMs);
+        })
         .sort((a, b) => {
           const scoreDiff = getDoctorCandidateLearningScore(b as Record<string, any>, doctorLearningSnapshot).final_score
             - getDoctorCandidateLearningScore(a as Record<string, any>, doctorLearningSnapshot).final_score;
@@ -5804,7 +6127,9 @@ export async function registerRoutes(
         return { allowed: false, reason: "mint_cooldown_active" };
       }
 
-      if (hasDoctorBoughtMintBefore(String(candidate.address || ""))) {
+      const candidateMint = String(candidate.address || "");
+      const reentryAllowed = isDoctorLifecycleReentryAllowed(candidateMint, nowMs);
+      if (hasDoctorBoughtMintBefore(candidateMint) && !reentryAllowed) {
         return { allowed: false, reason: "duplicate_buy_blocked" };
       }
 
@@ -6498,9 +6823,12 @@ export async function registerRoutes(
 
       if (buyCandidate) {
       const tokenPriceUsd = resolveCurrentPriceUsd(buyCandidate, 0);
+      const lifecycleReentryAllowedForBuy = isDoctorLifecycleReentryAllowed(String(buyCandidate.address || ""), nowMs);
       const buyReason = aiFallbackUsed
         ? "ai_fallback_signal"
-        : String(buyCandidate.source || "scanner_signal");
+        : lifecycleReentryAllowedForBuy
+          ? "lifecycle_reentry_signal"
+          : String(buyCandidate.source || "scanner_signal");
       const buyExecution = await executeDoctorOrder({
         action: "buy",
         symbol: String(buyCandidate.symbol || "UNKNOWN"),
@@ -6511,6 +6839,7 @@ export async function registerRoutes(
         trigger,
         userId: scopedUserId,
         baseMint: String(buyCandidate.base_mint || getDoctorTradeBaseAssetMint()),
+        allowDuplicateBuy: lifecycleReentryAllowedForBuy,
       });
       if (!buyExecution.executed) {
         const failedMint = String(buyCandidate.address || "").trim();
@@ -6541,6 +6870,8 @@ export async function registerRoutes(
         amount_sol: buyAmountSol,
         execution_mode: doctorRuntime.execution.mode,
         base_mint: String(buyCandidate.base_mint || getDoctorTradeBaseAssetMint()),
+        lifecycle_phase: String((buyCandidate as any).lifecycle_phase || resolveDoctorLifecyclePhase(buyCandidate as Record<string, any>)),
+        lifecycle_score_at_entry: Number((buyCandidate as any).lifecycle_score || 0),
         opened_at: nowIso(),
         source: String(buyCandidate.source || "scanner"),
       };
@@ -6557,10 +6888,12 @@ export async function registerRoutes(
         address: position.address,
         action: "BUY",
         status: "EXECUTED",
-        reason: aiFallbackUsed ? "ai_fallback_signal" : (String(position.source || "").includes("pump") ? "pump_listener_signal" : "scanner_signal"),
+        reason: buyReason,
         confidence: position.confidence,
         liquidity: position.liquidity,
         volume_5m: Number(buyCandidate.volume_5m || 0),
+        lifecycle_phase: String(position.lifecycle_phase || "pumpfun"),
+        lifecycle_score: Number(position.lifecycle_score_at_entry || 0),
         size_pct: 100,
         notional_usd: Number((buyAmountSol * 160).toFixed(2)),
         execution_mode: doctorRuntime.execution.mode,
@@ -6604,11 +6937,12 @@ export async function registerRoutes(
         reason: "doctortrade_buy_executed",
       });
 
+      markDoctorLifecycleEntry(position.address, nowMs);
       doctorRuntime.decisionJournal.unshift({
         token: position.symbol,
         address: position.address,
         decision: "buy",
-        reason: aiFallbackUsed ? "ai_fallback_signal" : (String(position.source || "").includes("pump") ? "pump_listener_signal" : "scanner_signal"),
+        reason: buyReason,
         confidence: position.confidence,
         size_pct: 100,
         strategy_mode: "autonomous",
@@ -6620,11 +6954,13 @@ export async function registerRoutes(
 
       doctorRuntime.lastDecision = {
         action: "buy",
-        reason: aiFallbackUsed ? "ai_fallback_signal" : (String(position.source || "").includes("pump") ? "pump_listener_signal" : "scanner_signal"),
+        reason: buyReason,
         trigger,
         at: nowIso(),
         token: position.symbol,
         mint: position.address,
+        phase: String(position.lifecycle_phase || "pumpfun"),
+        lifecycle_score: Number(position.lifecycle_score_at_entry || 0),
         confidence: Number(position.confidence || 0),
         ml_learned_bonus: Number(learningScore.learned_bonus || 0),
         ml_size_multiplier: Number((Number(doctorLearningSnapshot.size_multiplier || 1) * confidenceSizer).toFixed(4)),
@@ -6709,10 +7045,13 @@ export async function registerRoutes(
 
   const buildDoctorStatus = async (userId?: string) => {
     const statusUserId = String(userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
-    const [earlyTokens, activeTokens] = await Promise.all([
+    const [earlyTokens, activeTokensRaw] = await Promise.all([
       getSolanaEarlyScoredTokens(120, 220),
       getDoctorActiveTokens(),
     ]);
+    const lifecycleRegime = computeDoctorLifecycleMarketRegime(activeTokensRaw);
+    const activeTokens = activeTokensRaw
+      .map((token) => updateDoctorLifecycleStateForToken(token as Record<string, any>, lifecycleRegime, Date.now()));
     const { dailyRealizedPnlUsd, consecutiveLosses } = computeDoctorRiskMetrics();
     const toMintKey = (value: unknown) => String(value || "").trim().toLowerCase();
     const activeTokenMap = new Map(activeTokens.map((token) => [toMintKey((token as any).address), token]));
@@ -6908,6 +7247,21 @@ export async function registerRoutes(
       return "range";
     })();
     const strategyMode = getDoctorActiveSnipePreset();
+    const lifecycleRuntime = getDoctorLifecycleRuntime();
+    const phaseCounts = activeTokens.reduce((acc, token) => {
+      const phase = String((token as any).lifecycle_phase || "pumpfun").trim().toLowerCase();
+      if (phase === "raydium") {
+        acc.raydium += 1;
+      } else if (phase === "graduated") {
+        acc.graduated += 1;
+      } else {
+        acc.pumpfun += 1;
+      }
+      return acc;
+    }, { pumpfun: 0, graduated: 0, raydium: 0 });
+    const lifecycleReentryReady = Object.keys(lifecycleRuntime.statesByMint).filter((mint) => {
+      return isDoctorLifecycleReentryAllowed(mint, Date.now());
+    }).length;
 
     let statusPositions = doctorRuntime.positions.slice(0, 30);
     if (doctorRuntime.execution.mode === "live") {
@@ -7103,6 +7457,13 @@ export async function registerRoutes(
         scores: {
           [strategyMode]: Number(mateConfidence.toFixed(2)),
         },
+      },
+      lifecycle: {
+        market_regime: lifecycleRuntime.marketRegime,
+        phase_counts: phaseCounts,
+        reentry_ready: lifecycleReentryReady,
+        tracked_tokens: Object.keys(lifecycleRuntime.statesByMint).length,
+        updated_at: lifecycleRuntime.updatedAt,
       },
       sniper_logs: getDoctorSniperLogsForUser(statusUserId)
         .filter((row) => {
