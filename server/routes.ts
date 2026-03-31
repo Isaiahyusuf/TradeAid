@@ -1562,6 +1562,10 @@ export async function registerRoutes(
     return String(process.env.DOCTOR_DEX_TURBO || "true").trim().toLowerCase() !== "false";
   };
 
+  const isDoctorTokenAgeGuardEnabled = () => {
+    return String(process.env.DOCTOR_ENFORCE_TOKEN_AGE_GUARD || "false").trim().toLowerCase() === "true";
+  };
+
   const normalizeDoctorSnipePreset = (value: unknown) => {
     const preset = String(value || "").trim().toLowerCase();
     if (preset === "conservative") return "conservative" as const;
@@ -2575,7 +2579,8 @@ export async function registerRoutes(
   const getDoctorSniperLogsForUser = (userId?: string) => {
     const scopedUserId = String(userId || doctorCurrentCycleUserId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
     if (!scopedUserId) return [] as Array<Record<string, any>>;
-    return doctorSniperLogsByUser.get(scopedUserId) || [];
+    const logs = doctorSniperLogsByUser.get(scopedUserId) || [];
+    return logs.filter((entry) => String((entry as any)?.reason || "") !== "token_too_old_for_sniping");
   };
 
   const appendDoctorSniperLog = (entry: Record<string, any>, userId?: string) => {
@@ -3703,7 +3708,7 @@ export async function registerRoutes(
         const minLiquiditySol = Math.max(0.1, Number(doctorRuntime.controls.min_liquidity_sol || 2));
         const maxLiquiditySol = Math.max(minLiquiditySol, Number(doctorRuntime.controls.max_liquidity_sol || 50));
         if (ageSeconds > windowSeconds) rejectReasons.push("outside_window");
-        if (ageSeconds > maxTokenAgeSecondsControl) rejectReasons.push("above_sniper_max_age");
+        if (isDoctorTokenAgeGuardEnabled() && ageSeconds > maxTokenAgeSecondsControl) rejectReasons.push("above_sniper_max_age");
         if (ageSeconds < Math.max(0, Math.trunc(Number(doctorRuntime.controls.min_token_age_minutes || 0))) * 60) rejectReasons.push("below_min_age");
         const minLiquidityUsdThreshold = Math.max(100, Number(doctorRuntime.controls.min_liquidity_usd || 300));
         if (liquidityUsd < minLiquidityUsdThreshold) rejectReasons.push("low_liquidity");
@@ -5679,7 +5684,7 @@ export async function registerRoutes(
       })
       .filter((token) => Number(token.volume_24h || 0) >= Math.max(1, getDoctorEffectiveControlNumber("min_volume_24h_usd", 12000)))
       .filter((token) => Number(token.age_seconds || 0) >= Math.max(0, Math.trunc(getDoctorEffectiveControlNumber("min_token_age_minutes", 0))) * 60)
-      .filter((token) => Number(token.age_seconds || 0) <= Math.min(maxTokenAgeSeconds, strictMaxTokenAgeSeconds))
+      .filter((token) => !isDoctorTokenAgeGuardEnabled() || Number(token.age_seconds || 0) <= Math.min(maxTokenAgeSeconds, strictMaxTokenAgeSeconds))
       .filter((token) => {
         const liquiditySol = Number((token as any).liquidity_sol || 0);
         if (liquiditySol <= 0) return true;
@@ -5822,7 +5827,7 @@ export async function registerRoutes(
         const ageSeconds = Number.isFinite(createdAtMs) && createdAtMs > 0
           ? Math.max(0, Math.trunc((nowMs - createdAtMs) / 1000))
           : 0;
-        if (ageSeconds > strictMaxTokenAgeSeconds) {
+        if (isDoctorTokenAgeGuardEnabled() && ageSeconds > strictMaxTokenAgeSeconds) {
           continue;
         }
 
@@ -5895,7 +5900,7 @@ export async function registerRoutes(
       const insiderFallbackPool = lifecycleActiveTokens
         .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
         .filter((token) => !openAddresses.has(String(token.address || "")))
-        .filter((token) => Number(token.age_seconds || 0) <= strictMaxTokenAgeSeconds)
+        .filter((token) => !isDoctorTokenAgeGuardEnabled() || Number(token.age_seconds || 0) <= strictMaxTokenAgeSeconds)
         .filter((token) => {
           const marketCapUsd = Number(token.market_cap_usd || 0);
           return marketCapUsd >= minMarketCapUsd && marketCapUsd <= maxMarketCapUsd;
@@ -6021,7 +6026,7 @@ export async function registerRoutes(
 
       if (requiresLiveWallet) {
         const candidateAgeSeconds = Math.max(0, Number(candidate.age_seconds || 0));
-        if (candidateAgeSeconds > strictMaxTokenAgeSeconds) {
+        if (isDoctorTokenAgeGuardEnabled() && candidateAgeSeconds > strictMaxTokenAgeSeconds) {
           return { allowed: false, reason: "token_too_old_for_sniping" };
         }
 
@@ -6032,7 +6037,7 @@ export async function registerRoutes(
 
       if (mode === "strict") {
         const candidateAgeSeconds = Math.max(0, Number(candidate.age_seconds || 0));
-        if (candidateAgeSeconds > strictMaxTokenAgeSeconds) {
+        if (isDoctorTokenAgeGuardEnabled() && candidateAgeSeconds > strictMaxTokenAgeSeconds) {
           return { allowed: false, reason: "token_too_old_for_sniping" };
         }
 
