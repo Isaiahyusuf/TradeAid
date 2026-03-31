@@ -9266,6 +9266,14 @@ export async function registerRoutes(
     return Boolean(requestUserId) && requestUserId === runtimeUserId;
   };
 
+  const getAssistantSwapSlippageBps = (req: any) => {
+    const requestedSlippagePct = Number(req?.body?.max_slippage_pct ?? req?.body?.slippage_pct);
+    const slippagePct = Number.isFinite(requestedSlippagePct) && requestedSlippagePct > 0
+      ? requestedSlippagePct
+      : 4;
+    return Math.max(25, Math.trunc(slippagePct * 100));
+  };
+
   const assistantWalletStatus = () => ({
     has_wallet: assistantRuntime.wallet.has_wallet,
     backup_confirmed: assistantRuntime.wallet.backup_confirmed,
@@ -9793,7 +9801,7 @@ export async function registerRoutes(
         : Math.max(0, amountSolInput * solPriceUsd);
 
       const connection = getSolanaConnection();
-      const slippageBps = Math.max(25, Math.trunc(Number(doctorRuntime.controls.max_slippage_pct || 4) * 100));
+      const slippageBps = getAssistantSwapSlippageBps(req);
 
       try {
         let quote: Record<string, any>;
@@ -9990,7 +9998,7 @@ export async function registerRoutes(
       return res.status(400).json({ message: "invalid amount_sol" });
     }
 
-    const slippageBps = Math.max(25, Math.trunc(Number(doctorRuntime.controls.max_slippage_pct || 4) * 100));
+    const slippageBps = getAssistantSwapSlippageBps(req);
     const inLamports = Math.max(1, Math.trunc(amountSol * 1_000_000_000));
 
     try {
@@ -10141,7 +10149,7 @@ export async function registerRoutes(
       }
 
       const connection = getSolanaConnection();
-      const slippageBps = Math.max(25, Math.trunc(Number(doctorRuntime.controls.max_slippage_pct || 4) * 100));
+      const slippageBps = getAssistantSwapSlippageBps(req);
 
       try {
         let quote: Record<string, any>;

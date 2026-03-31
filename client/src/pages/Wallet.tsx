@@ -295,6 +295,7 @@ export default function WalletPage() {
         amount: amountNumber,
         asset: sendAsset.toUpperCase(),
       });
+      await refreshWalletViews();
       toast({ title: "Transfer submitted", description: `Tx: ${result.transfer.tx_hash.slice(0, 10)}...` });
       if (result.transfer.explorer_url) {
         window.open(result.transfer.explorer_url, "_blank");
@@ -329,6 +330,7 @@ export default function WalletPage() {
         notional_usd: notionalUsd,
         mode: swapMode,
       });
+      await refreshWalletViews();
       toast({ title: "Swap submitted", description: `Tx: ${result.trade.tx_hash.slice(0, 10)}...` });
       if (result.trade.explorer_url) {
         window.open(result.trade.explorer_url, "_blank");

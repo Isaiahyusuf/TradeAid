@@ -140,52 +140,56 @@ export type AssistantContextOverview = {
 };
 
 export function useAssistantTradingStatus() {
-  const { hasToken } = useAuth();
+  const { hasToken, user } = useAuth();
+  const userScope = String(user?.user_id || "anonymous").trim();
   return useQuery({
-    queryKey: ["ai-trading-status"],
+    queryKey: ["ai-trading-status", userScope],
     queryFn: () => apiGet<{ trading: AssistantTradingStatus }>("/api/ai/trading/status"),
     enabled: hasToken,
     retry: 1,
-    refetchInterval: false,
+    refetchInterval: hasToken ? 5_000 : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
 }
 
 export function useAssistantWalletStatus() {
-  const { hasToken } = useAuth();
+  const { hasToken, user } = useAuth();
+  const userScope = String(user?.user_id || "anonymous").trim();
   return useQuery({
-    queryKey: ["ai-wallet-status"],
+    queryKey: ["ai-wallet-status", userScope],
     queryFn: () => apiGet<{ wallet: AssistantWalletStatus }>("/api/ai/wallets/status"),
     enabled: hasToken,
     retry: 1,
-    refetchInterval: false,
+    refetchInterval: hasToken ? 4_000 : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
 }
 
 export function useAssistantWalletPortfolio() {
-  const { hasToken } = useAuth();
+  const { hasToken, user } = useAuth();
+  const userScope = String(user?.user_id || "anonymous").trim();
   return useQuery({
-    queryKey: ["ai-wallet-portfolio"],
+    queryKey: ["ai-wallet-portfolio", userScope],
     queryFn: () => apiGet<{ wallet: AssistantWalletStatus; portfolio: AssistantWalletPortfolio }>("/api/ai/wallets/portfolio"),
     enabled: hasToken,
     retry: 1,
-    refetchInterval: false,
+    refetchInterval: hasToken ? 4_000 : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
 }
 
 export function useAssistantWalletTransactions(limit: number = 25, enabled = true) {
-  const { hasToken } = useAuth();
+  const { hasToken, user } = useAuth();
+  const userScope = String(user?.user_id || "anonymous").trim();
   return useQuery({
-    queryKey: ["ai-wallet-transactions", limit],
+    queryKey: ["ai-wallet-transactions", userScope, limit],
     queryFn: () => apiGet<{ transactions: AssistantWalletTransaction[]; count: number }>(`/api/ai/wallets/transactions?limit=${limit}`),
     enabled: hasToken && enabled,
     retry: 1,
-    refetchInterval: false,
+    refetchInterval: hasToken && enabled ? 4_000 : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
@@ -324,8 +328,10 @@ export function useAssistantWalletSwapQuote(
   },
   enabled = true,
 ) {
+  const { user } = useAuth();
+  const userScope = String(user?.user_id || "anonymous").trim();
   return useQuery({
-    queryKey: ["ai-wallet-swap-quote", params.side, params.token_mint, params.amount_sol],
+    queryKey: ["ai-wallet-swap-quote", userScope, params.side, params.token_mint, params.amount_sol],
     queryFn: () => apiPost<{
       quote: {
         side: string;
@@ -400,13 +406,14 @@ export function useExecuteAssistantTrade() {
 }
 
 export function useAssistantContextOverview(days: number = 30, enabled = true) {
-  const { hasToken } = useAuth();
+  const { hasToken, user } = useAuth();
+  const userScope = String(user?.user_id || "anonymous").trim();
   return useQuery({
-    queryKey: ["ai-context-overview", days],
+    queryKey: ["ai-context-overview", userScope, days],
     queryFn: () => apiGet<{ context: AssistantContextOverview; user_id: string }>(`/api/ai/context/overview?days=${days}`),
     enabled: hasToken && enabled,
     retry: 1,
-    refetchInterval: false,
+    refetchInterval: hasToken && enabled ? 5_000 : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
