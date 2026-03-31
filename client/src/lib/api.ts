@@ -181,7 +181,7 @@ export async function apiFetch<T = any>(
       }
     }
 
-    if (res.status === 401) {
+    if (res.status === 401 && (path === "/api/auth/me" || path === "/api/auth/refresh")) {
       clearToken();
     }
 

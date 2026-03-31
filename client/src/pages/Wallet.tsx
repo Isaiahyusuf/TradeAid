@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDownLeft, ArrowUpRight, CheckCircle2, Copy, History, KeyRound, Settings2, Shield, Trash2, Wallet as WalletIcon } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, CheckCircle2, Copy, History, KeyRound, Loader2, Settings2, Shield, Trash2, Wallet as WalletIcon } from "lucide-react";
 
 import { Layout } from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -222,6 +222,33 @@ export default function WalletPage() {
   };
 
   const selectedReceiveAddress = addressesByChain[receiveChain] || "";
+  const solanaAddress = String(addressesByChain.solana || "").trim();
+  const walletConnected = Boolean(wallet?.has_wallet && solanaAddress);
+  const savingInProgress = Boolean(
+    createWallet.isPending
+    || importWallet.isPending
+    || importWalletPrivateKey.isPending
+    || confirmBackup.isPending
+    || revealWallet.isPending
+    || removeWalletChain.isPending
+    || deleteWallet.isPending
+    || exportWalletKey.isPending
+    || transferWallet.isPending
+    || walletSwap.isPending,
+  );
+  const savingMessage = importWalletPrivateKey.isPending
+    ? "Connecting private key..."
+    : createWallet.isPending
+      ? "Creating wallet..."
+      : importWallet.isPending
+        ? "Importing wallet..."
+        : transferWallet.isPending
+          ? "Sending transaction..."
+          : walletSwap.isPending
+            ? "Submitting swap..."
+            : deleteWallet.isPending
+              ? "Deleting wallet..."
+              : "Saving wallet settings...";
   const swapAmountSolValue = Number(swapAmountSol);
   const swapQuoteQuery = useAssistantWalletSwapQuote(
     {
@@ -502,6 +529,20 @@ export default function WalletPage() {
   return (
     <Layout>
       <div className="space-y-6">
+        {savingInProgress && (
+          <div className="fixed inset-0 z-[100] bg-black/45 backdrop-blur-[1px] flex items-center justify-center px-4">
+            <div className="rounded-xl border border-border/60 bg-card shadow-xl p-5 w-full max-w-sm">
+              <div className="flex items-center gap-3">
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                <div>
+                  <p className="text-sm font-semibold">Please wait</p>
+                  <p className="text-xs text-muted-foreground">{savingMessage}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {walletAction === "connect" && (
           <Card className="p-4 border-primary/30 bg-primary/5">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -528,6 +569,9 @@ export default function WalletPage() {
             <Badge variant="outline" className="solana-badge">Master Recovery Phrase</Badge>
             <Badge variant="outline">Solana Account</Badge>
             <Badge variant="outline">Private Key Export</Badge>
+            <Badge variant={walletConnected ? "default" : "outline"} className={walletConnected ? "border-green-500/40 bg-green-500/15 text-green-300" : ""}>
+              {walletConnected ? "Private Key Connected" : "Private Key Not Connected"}
+            </Badge>
             <Badge variant="outline" className={walletSyncing ? "border-yellow-500/40 text-yellow-400" : "border-green-500/40 text-green-400"}>
               {walletInitialLoading ? "Loading..." : walletSyncing ? "Syncing..." : "Live Sync"}
             </Badge>
@@ -546,6 +590,7 @@ export default function WalletPage() {
                 <p className="text-4xl font-bold mt-1">${estimatedUsdBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 <p className="text-xs text-muted-foreground mt-1">Synced chains: {activeChainsCount}/{enabledChains.length}</p>
                 <p className="text-xs text-muted-foreground mt-1">Portfolio updated: {portfolioUpdatedAt}</p>
+                <p className="text-xs text-muted-foreground mt-1">DoctorTrade wallet: {walletConnected ? `Connected (${shortAddress(solanaAddress)})` : "Not connected"}</p>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant={wallet?.has_wallet ? "default" : "outline"}>{wallet?.has_wallet ? "Wallet Active" : "Wallet Not Created"}</Badge>
@@ -595,6 +640,9 @@ export default function WalletPage() {
                             {chainName}
                             {address ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" /> : <Shield className="w-3.5 h-3.5 text-muted-foreground" />}
                           </p>
+                          <Badge variant={address ? "default" : "outline"} className="mt-1 text-[10px]">
+                            {address ? "Connected" : "Not Connected"}
+                          </Badge>
                           <p className="text-xs text-muted-foreground">{shortAddress(address)}</p>
                           <p className="text-xs text-muted-foreground mt-1">Price: {chainUsdPrice > 0 ? `$${chainUsdPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}` : "Unavailable"}</p>
                           <p className="text-xs text-muted-foreground mt-1">Data: {dataStatus === "ok" ? "Live" : dataStatus === "rpc_unavailable" ? "RPC unavailable" : dataStatus === "rpc_not_configured" ? "RPC not configured" : dataStatus === "invalid_address" ? "Invalid address" : dataStatus === "unsupported" ? "Balance not integrated" : "No wallet"}</p>
@@ -720,6 +768,12 @@ export default function WalletPage() {
 
                   <div className="space-y-2">
                     <Label htmlFor="wallet-import-pk">Connect by private key</Label>
+                    <div className="flex items-center gap-2 text-xs">
+                      <Badge variant={walletConnected ? "default" : "outline"} className={walletConnected ? "border-green-500/40 bg-green-500/15 text-green-300" : ""}>
+                        {walletConnected ? "Connected" : "Not Connected"}
+                      </Badge>
+                      {walletConnected && <span className="text-muted-foreground">{shortAddress(solanaAddress)}</span>}
+                    </div>
                     <Textarea
                       id="wallet-import-pk"
                       value={importPrivateKey}
