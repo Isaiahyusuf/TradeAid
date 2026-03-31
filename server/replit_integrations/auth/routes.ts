@@ -86,10 +86,34 @@ async function setPasswordHashesByUserId(value: Record<string, string>): Promise
 }
 
 function requiredAccessCodeForRoute(routeType: "login" | "register"): string {
+  const genericAccessCode = String(
+    process.env.AUTH_ACCESS_CODE
+    || process.env.ACCESS_CODE
+    || process.env.TRADEAID_ACCESS_CODE
+    || "",
+  ).trim();
+
   if (routeType === "register") {
-    return String(process.env.AUTH_REGISTER_ACCESS_CODE || process.env.AUTH_ACCESS_CODE || "").trim();
+    return String(process.env.AUTH_REGISTER_ACCESS_CODE || genericAccessCode).trim();
   }
-  return String(process.env.AUTH_LOGIN_ACCESS_CODE || process.env.AUTH_ACCESS_CODE || "").trim();
+  return String(process.env.AUTH_LOGIN_ACCESS_CODE || genericAccessCode).trim();
+}
+
+function isAccessCodeValid(provided: string, required: string): boolean {
+  const normalizedProvided = String(provided || "").trim();
+  const normalizedRequired = String(required || "").trim();
+  const providedBuffer = Buffer.from(normalizedProvided);
+  const requiredBuffer = Buffer.from(normalizedRequired);
+
+  if (!normalizedRequired || providedBuffer.length !== requiredBuffer.length) {
+    return false;
+  }
+
+  try {
+    return timingSafeEqual(providedBuffer, requiredBuffer);
+  } catch {
+    return false;
+  }
 }
 
 async function runFreshUserResetIfConfigured(): Promise<void> {
@@ -194,7 +218,10 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       const requiredAccessCode = requiredAccessCodeForRoute("login");
-      if (requiredAccessCode && accessCode !== requiredAccessCode) {
+      if (!requiredAccessCode) {
+        return res.status(503).json({ message: "Access code is not configured" });
+      }
+      if (!isAccessCodeValid(accessCode, requiredAccessCode)) {
         return res.status(401).json({ message: "Invalid access code" });
       }
 
@@ -246,7 +273,10 @@ export function registerAuthRoutes(app: Express): void {
       const email = emailRaw || `${username}@tradeaid.local`;
 
       const requiredAccessCode = requiredAccessCodeForRoute("register");
-      if (requiredAccessCode && accessCode !== requiredAccessCode) {
+      if (!requiredAccessCode) {
+        return res.status(503).json({ message: "Access code is not configured" });
+      }
+      if (!isAccessCodeValid(accessCode, requiredAccessCode)) {
         return res.status(401).json({ message: "Invalid access code" });
       }
 
