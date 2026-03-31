@@ -16,7 +16,7 @@ import { registerChatRoutes } from "./replit_integrations/chat";
 import { registerImageRoutes } from "./replit_integrations/image";
 import { setupAuth, registerAuthRoutes, isAuthenticated, authStorage } from "./replit_integrations/auth";
 import { registerScannerRoutes } from "./routes/scanner";
-import { startBackgroundScanner, scanHotTokens } from "./services/token-scanner";
+import { startBackgroundScanner, scanHotTokens, getScannerHealthStatus } from "./services/token-scanner";
 import { multichainScanner } from "./services/multichain-scanner";
 import { getNewPairs, getTokenPairs, getTokenPairsFast, getTokenPairsProjectInfo, pairToTokenData } from "./services/dexscreener";
 import { FREE_TIER_LIMITS, SUBSCRIPTION_PRICE_USD, SUPPORTED_PAYMENT_CHAINS } from "@shared/schema";
@@ -528,6 +528,8 @@ export async function registerRoutes(
 
     const resolvedChain = normalizeDexChain(String(pair.chainId || requestedChain || "solana"));
     const eligible = rug <= 85 && liquidityUsd >= 2000;
+
+    const scannerHealthSnapshot = getScannerHealthStatus();
 
     return {
       contract_address: contractAddress,
@@ -7539,7 +7541,7 @@ export async function registerRoutes(
         last_reason: doctorRuntime.autoAgent.lastReason,
       },
       fresh_feed: {
-        last_cycle_at: doctorRuntime.lastRunAt,
+        last_cycle_at: scannerHealthSnapshot.lastScanAt || doctorRuntime.lastRunAt,
         detected: earlyTokens.length,
         enriched: earlyTokens.length,
         approved: activeTokens.length,
@@ -7547,10 +7549,12 @@ export async function registerRoutes(
       },
       scanner_health: {
         overall: {
-          calls: Math.max(1, doctorRuntime.performance.length),
-          success: Math.max(1, doctorRuntime.performance.length),
-          errors: doctorRuntime.lastError ? 1 : 0,
-          success_rate_pct: doctorRuntime.lastError ? 75 : 100,
+          calls: Math.max(0, Number(scannerHealthSnapshot.cycleCount || 0)),
+          success: Math.max(0, Number(scannerHealthSnapshot.successfulScans || 0)),
+          errors: Math.max(0, Number(scannerHealthSnapshot.cycleCount || 0) - Number(scannerHealthSnapshot.successfulScans || 0)),
+          success_rate_pct: Number(scannerHealthSnapshot.cycleCount || 0) > 0
+            ? Number(((Number(scannerHealthSnapshot.successfulScans || 0) / Number(scannerHealthSnapshot.cycleCount || 1)) * 100).toFixed(2))
+            : 0,
         },
       },
     };
