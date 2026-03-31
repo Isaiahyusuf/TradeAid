@@ -148,19 +148,17 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     const bearerUserId = getSessionUserId(bearerToken, "access");
     if (bearerUserId) {
       const dbUser = await authStorage.getUser(bearerUserId);
-      if (dbUser) {
-        (req as any).user = {
-          claims: {
-            sub: dbUser.id,
-            email: dbUser.email,
-            preferred_username: dbUser.username,
-            name: dbUser.firstName,
-            profile_image_url: dbUser.profileImageUrl,
-          },
-          expires_at: Math.floor(Date.now() / 1000) + 3600,
-        };
-        return next();
-      }
+      (req as any).user = {
+        claims: {
+          sub: bearerUserId,
+          email: dbUser?.email,
+          preferred_username: dbUser?.username,
+          name: dbUser?.firstName,
+          profile_image_url: dbUser?.profileImageUrl,
+        },
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+      };
+      return next();
     }
   }
 

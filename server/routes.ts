@@ -992,7 +992,12 @@ export async function registerRoutes(
   };
 
   const getRequestUserId = (req: any): string => {
-    return String(req?.user?.claims?.sub || "").trim();
+    return String(
+      req?.user?.claims?.sub
+      || req?.user?.id
+      || req?.user?.sub
+      || "",
+    ).trim();
   };
 
   const getStoredUserSettingsByUser = async (): Promise<Record<string, any>> => {
