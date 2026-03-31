@@ -207,8 +207,8 @@ export function useCreateAssistantWallet() {
 export function useConfirmAssistantWalletBackup() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: { mnemonic: string }) =>
-      apiPost<{ wallet: AssistantWalletStatus }>("/api/ai/wallets/confirm-backup", payload),
+    mutationFn: async () =>
+      apiPost<{ wallet: AssistantWalletStatus }>("/api/ai/wallets/confirm-backup", {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ai-wallet-status"] });
       queryClient.invalidateQueries({ queryKey: ["ai-wallet-portfolio"] });
@@ -218,8 +218,8 @@ export function useConfirmAssistantWalletBackup() {
 
 export function useRevealAssistantWallet() {
   return useMutation({
-    mutationFn: async (payload: { confirmation_text: string }) =>
-      apiPost<{ wallet: AssistantWalletStatus; bundle: AssistantWalletBundle }>("/api/ai/wallets/reveal", payload),
+    mutationFn: async () =>
+      apiPost<{ wallet: AssistantWalletStatus; bundle: AssistantWalletBundle }>("/api/ai/wallets/reveal", {}),
   });
 }
 
@@ -279,7 +279,7 @@ export function useDeleteAssistantWallet() {
 
 export function useExportAssistantWalletKey() {
   return useMutation({
-    mutationFn: async (payload: { chain: string; confirmation_text: string }) =>
+    mutationFn: async (payload: { chain: string }) =>
       apiPost<{ wallet_key: AssistantWalletKeyExport }>("/api/ai/wallets/export-key", payload),
   });
 }

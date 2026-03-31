@@ -9542,12 +9542,8 @@ export async function registerRoutes(
   });
 
   app.post("/api/ai/wallets/confirm-backup", async (req, res) => {
-    const mnemonic = String(req.body?.mnemonic || "").trim();
     if (!ensureWalletExists()) {
       return res.status(400).json({ message: "wallet not found" });
-    }
-    if (!mnemonic || mnemonic !== assistantRuntime.wallet.mnemonic) {
-      return res.status(400).json({ message: "mnemonic mismatch" });
     }
     assistantRuntime.wallet.backup_confirmed = true;
     assistantRuntime.wallet.backup_confirmed_at = nowIso();
@@ -9567,10 +9563,6 @@ export async function registerRoutes(
   });
 
   app.post("/api/ai/wallets/reveal", (req, res) => {
-    const confirmation = String(req.body?.confirmation_text || "").trim();
-    if (confirmation !== "I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS") {
-      return res.status(400).json({ message: "invalid confirmation text" });
-    }
     if (!ensureWalletExists()) {
       return res.status(400).json({ message: "wallet not found" });
     }
@@ -9595,12 +9587,8 @@ export async function registerRoutes(
 
   app.post("/api/ai/wallets/export-key", (req, res) => {
     const chain = String(req.body?.chain || "").toLowerCase();
-    const confirmation = String(req.body?.confirmation_text || "").trim();
     if (chain !== "solana") {
       return res.status(400).json({ message: "unsupported chain" });
-    }
-    if (confirmation !== "I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS") {
-      return res.status(400).json({ message: "invalid confirmation text" });
     }
     const address = assistantRuntime.wallet.addresses_by_chain[chain];
     const privateKey = assistantRuntime.wallet.private_keys_by_chain[chain];

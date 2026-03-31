@@ -72,10 +72,8 @@ export default function WalletPage() {
   const wallet = walletStatusQuery.data?.wallet;
   const context = contextOverviewQuery.data?.context;
 
-  const [backupPhraseInput, setBackupPhraseInput] = useState("");
   const [importMnemonic, setImportMnemonic] = useState("");
   const [importPrivateKey, setImportPrivateKey] = useState("");
-  const [revealPhrase, setRevealPhrase] = useState("I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS");
 
   const [sendOpen, setSendOpen] = useState(false);
   const [swapOpen, setSwapOpen] = useState(false);
@@ -355,7 +353,6 @@ export default function WalletPage() {
     try {
       const result = await createWallet.mutateAsync({ overwrite });
       setLatestBundle(result.bundle);
-      setBackupPhraseInput("");
       await refreshWalletViews();
       toast({ title: "Wallet created", description: "Store your 12-word phrase and private keys before proceeding." });
       if (returnTo) {
@@ -415,7 +412,6 @@ export default function WalletPage() {
     try {
       const result = await importWalletPrivateKey.mutateAsync({ private_key: privateKey, overwrite });
       setLatestBundle(result.bundle);
-      setBackupPhraseInput("");
       await refreshWalletViews();
       toast({ title: "Wallet connected", description: "Private key imported successfully." });
       if (returnTo) {
@@ -431,17 +427,13 @@ export default function WalletPage() {
       toast({ title: "Wallet required", description: "Connect your private key or import phrase first.", variant: "destructive" });
       return;
     }
-    if (wallet?.backup_confirmed && !backupPhraseInput.trim()) {
+    if (wallet?.backup_confirmed) {
       toast({ title: "Backup already confirmed", description: "Your wallet backup is already marked as confirmed." });
-      return;
-    }
-    if (!backupPhraseInput.trim()) {
-      toast({ title: "Phrase required", description: "Paste your recovery phrase exactly to confirm backup.", variant: "destructive" });
       return;
     }
 
     try {
-      await confirmBackup.mutateAsync({ mnemonic: backupPhraseInput.trim() });
+      await confirmBackup.mutateAsync();
       await refreshWalletViews();
       toast({ title: "Backup confirmed", description: "Recovery phrase backup recorded." });
     } catch (error) {
@@ -456,7 +448,7 @@ export default function WalletPage() {
     }
 
     try {
-      const result = await revealWallet.mutateAsync({ confirmation_text: revealPhrase.trim() });
+      const result = await revealWallet.mutateAsync();
       setLatestBundle(result.bundle);
       await refreshWalletViews();
       toast({ title: "Secrets revealed", description: "Keep these keys offline and private." });
@@ -497,7 +489,7 @@ export default function WalletPage() {
 
   const handleExportPrivateKey = async () => {
     try {
-      const result = await exportWalletKey.mutateAsync({ chain: exportChain, confirmation_text: revealPhrase.trim() });
+      const result = await exportWalletKey.mutateAsync({ chain: exportChain });
       setExportedKey(result.wallet_key);
       toast({ title: "Private key exported", description: `Exported key for ${exportChain}. Keep it secure.` });
     } catch (error) {
@@ -763,26 +755,23 @@ export default function WalletPage() {
 
             <SettingsMenuCard
               title="Backup Confirmation"
-              description="Confirm your recovery phrase backup."
+              description="Mark your recovery phrase backup as confirmed."
               open={securityBackupOpen}
               onToggle={() => setSecurityBackupOpen((prev) => !prev)}
             >
               <div className="space-y-2">
-                <Label htmlFor="wallet-backup-phrase">Confirm phrase backup</Label>
-                <Textarea id="wallet-backup-phrase" placeholder="Paste your phrase exactly to confirm backup" value={backupPhraseInput} onChange={(e) => setBackupPhraseInput(e.target.value)} className="min-h-[80px]" />
+                <p className="text-xs text-muted-foreground">No phrase input required.</p>
                 <Button variant="outline" onClick={handleConfirmBackup} disabled={confirmBackup.isPending}>{confirmBackup.isPending ? "Confirming..." : "Confirm Backup"}</Button>
               </div>
             </SettingsMenuCard>
 
             <SettingsMenuCard
               title="Recovery & Reveal"
-              description="Reveal phrase and private keys after confirmation."
+              description="Reveal phrase and private keys instantly."
               open={securityRecoveryOpen}
               onToggle={() => setSecurityRecoveryOpen((prev) => !prev)}
             >
               <div className="space-y-2">
-                <Label htmlFor="wallet-reveal-phrase">Reveal phrase/private keys</Label>
-                <Input id="wallet-reveal-phrase" value={revealPhrase} onChange={(e) => setRevealPhrase(e.target.value)} placeholder="I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS" />
                 <Button variant="outline" onClick={handleRevealWallet} disabled={revealWallet.isPending}>{revealWallet.isPending ? "Revealing..." : "Reveal Secrets"}</Button>
               </div>
 
@@ -953,9 +942,6 @@ export default function WalletPage() {
               <select value={exportChain} onChange={(e) => setExportChain(e.target.value as SupportedWalletChain)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
                 {enabledChains.map((chainName) => <option key={chainName} value={chainName}>{chainName}</option>)}
               </select>
-
-              <Label>Confirmation Phrase</Label>
-              <Input value={revealPhrase} onChange={(e) => setRevealPhrase(e.target.value)} placeholder="I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS" />
 
               <Button onClick={handleExportPrivateKey} disabled={exportWalletKey.isPending}>{exportWalletKey.isPending ? "Exporting..." : "Export Key"}</Button>
 
