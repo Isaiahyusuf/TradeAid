@@ -709,9 +709,11 @@ export default function DoctorTrade() {
               <Power className="w-4 h-4 mr-2" />
               {viewData?.enabled ? "Stop DoctorTrade" : "Start DoctorTrade"}
             </Button>
-            <Button variant="outline" onClick={() => runMutation.mutate()} disabled={runMutation.isPending || !viewData?.enabled}>
-              <Activity className="w-4 h-4 mr-2" /> Run Cycle
-            </Button>
+            {!simpleMode && (
+              <Button variant="outline" onClick={() => runMutation.mutate()} disabled={runMutation.isPending || !viewData?.enabled}>
+                <Activity className="w-4 h-4 mr-2" /> Run Cycle
+              </Button>
+            )}
             <Button variant="outline" onClick={() => refetch()} disabled={isFetching}>
               <Activity className={`w-4 h-4 mr-2 ${isFetching ? "animate-spin" : ""}`} /> {isFetching ? "Syncing..." : "Refresh Data"}
             </Button>
@@ -830,7 +832,7 @@ export default function DoctorTrade() {
 
         <SettingsMenuCard
           title="DoctorTrade Settings"
-          description="Configure live-only trading, wallet session, and risk controls."
+          description="Wallet setup only. Trading strategy is auto-managed."
           open={settingsOpen}
           onToggle={() => setSettingsOpen((prev) => !prev)}
         >
@@ -839,7 +841,7 @@ export default function DoctorTrade() {
               <p className="text-sm font-semibold">Doctor Wallet</p>
               <Badge variant="outline" className="border-green-500/40 text-green-400">LIVE ONLY</Badge>
             </div>
-            <div className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-background/50 p-2">
+            {!simpleMode && <div className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-background/50 p-2">
               <div>
                 <p className="text-xs font-medium">Kill Switch</p>
                 <p className="text-[11px] text-muted-foreground">
@@ -896,7 +898,7 @@ export default function DoctorTrade() {
                   Release
                 </Button>
               </div>
-            </div>
+            </div>}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
               <div>
                 <p className="text-muted-foreground">Address</p>
@@ -969,8 +971,10 @@ export default function DoctorTrade() {
           </div>
 
           <div className="mb-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
-            Preset profiles are disabled. Strategy selection is now controlled by the live MATE orchestrator.
+            Strategy and risk settings are locked globally. Use only Connect Wallet and Start/Stop DoctorTrade.
           </div>
+
+          {!simpleMode && <>
           <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 items-end">
             <div>
               <p className="text-xs text-muted-foreground mb-1">Scan Interval (sec)</p>
@@ -1127,6 +1131,7 @@ export default function DoctorTrade() {
               Save Settings
             </Button>
           </div>
+          </>}
         </SettingsMenuCard>
 
         <Card className="p-3 bg-card/70 backdrop-blur-sm border-border/60">
