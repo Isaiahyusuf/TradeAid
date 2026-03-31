@@ -1582,7 +1582,7 @@ export async function registerRoutes(
   };
 
   const isDoctorUnifiedSimpleMode = () => {
-    return String(process.env.DOCTOR_UNIFIED_SIMPLE_MODE || "true").trim().toLowerCase() !== "false";
+    return String(process.env.DOCTOR_UNIFIED_SIMPLE_MODE || "false").trim().toLowerCase() !== "false";
   };
 
   const applyDoctorUnifiedControls = () => {
@@ -2001,11 +2001,33 @@ export async function registerRoutes(
     if (!profile) return false;
 
     const presetSensitiveKeys = [
+      "buy_amount_sol",
       "take_profit_multiplier",
       "min_profit_pct",
       "stop_loss_pct",
       "trailing_stop_pct",
       "max_hold_minutes",
+      "min_liquidity_usd",
+      "max_liquidity_usd",
+      "min_market_cap_usd",
+      "max_market_cap_usd",
+      "min_volume_24h_usd",
+      "max_slippage_pct",
+      "max_spread_pct",
+      "daily_loss_limit_usd",
+      "max_consecutive_losses",
+      "strong_move_threshold_pct",
+      "max_open_positions",
+      "max_trades_per_day",
+      "max_trades_per_hour",
+      "min_token_age_minutes",
+      "max_token_age_minutes",
+      "max_token_age_seconds",
+      "min_buy_ratio_pct",
+      "min_unique_buyers",
+      "quality_min_volume_spike_pct",
+      "quality_max_top_holder_pct",
+      "max_dev_wallet_pct",
     ] as const;
 
     for (const key of presetSensitiveKeys) {
@@ -7935,7 +7957,6 @@ export async function registerRoutes(
     const requestedEnable = req.body.enabled as boolean;
     const presetBeforeToggle = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
 
-    applyDoctorUnifiedControls();
     const enabled = requestedEnable;
     if (enabled && doctorRuntime.killSwitch) {
       doctorRuntime.killSwitch = false;
@@ -8121,7 +8142,6 @@ export async function registerRoutes(
     if (isDoctorDexTurboEnabled() && !isDoctorSpeedModePreset() && doctorRuntime.controls.max_token_age_seconds < 120) {
       doctorRuntime.controls.max_token_age_seconds = 120;
     }
-    applyDoctorUnifiedControls();
     if (Number.isFinite(Number(payload.buy_amount_sol))) {
       doctorRuntime.controls.buy_amount_sol = Math.max(0.1, Number(payload.buy_amount_sol));
       doctorRuntime.controls.min_buy_amount_sol = doctorRuntime.controls.buy_amount_sol;
@@ -8134,7 +8154,7 @@ export async function registerRoutes(
     }
     try {
       const presetsByUser = await getStoredDoctorPresetsByUser();
-      presetsByUser[userId] = "balanced";
+      presetsByUser[userId] = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
       await setStoredDoctorPresetsByUser(presetsByUser);
     } catch {
     }
@@ -10098,10 +10118,6 @@ export async function registerRoutes(
 
     if (!ensureWalletExists()) {
       return res.status(400).json({ message: "wallet not found" });
-    }
-
-    if (!assistantRuntime.trading.enabled) {
-      return res.status(403).json({ message: "assistant trading is disabled" });
     }
 
     const walletAddress = String(assistantRuntime.wallet.addresses_by_chain.solana || "").trim();

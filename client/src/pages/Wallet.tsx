@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDownLeft, ArrowUpRight, Bot, CheckCircle2, Copy, History, KeyRound, Settings2, Shield, Trash2, Wallet as WalletIcon } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, CheckCircle2, Copy, History, KeyRound, Settings2, Shield, Trash2, Wallet as WalletIcon } from "lucide-react";
 
 import { Layout } from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,7 +18,6 @@ import { useLocation } from "wouter";
 import { TokenAvatar } from "@/components/token/TokenAvatar";
 import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
 import {
-  useApproveAssistantConsent,
   useAssistantWalletSwap,
   useAssistantWalletSwapQuote,
   useAssistantContextOverview,
@@ -33,9 +32,7 @@ import {
   useImportAssistantWallet,
   useImportAssistantWalletPrivateKey,
   useRemoveAssistantWalletChain,
-  useRequestAssistantConsent,
   useRevealAssistantWallet,
-  useRevokeAssistantConsent,
   useTransferAssistantWallet,
 } from "@/hooks/use-ai-assistant";
 
@@ -60,9 +57,6 @@ export default function WalletPage() {
   const walletTransactionsQuery = useAssistantWalletTransactions(50, walletTab === "activity");
   const contextOverviewQuery = useAssistantContextOverview(30, walletTab === "activity");
 
-  const requestConsent = useRequestAssistantConsent();
-  const approveConsent = useApproveAssistantConsent();
-  const revokeConsent = useRevokeAssistantConsent();
   const createWallet = useCreateAssistantWallet();
   const importWallet = useImportAssistantWallet();
   const importWalletPrivateKey = useImportAssistantWalletPrivateKey();
@@ -78,9 +72,6 @@ export default function WalletPage() {
   const wallet = walletStatusQuery.data?.wallet;
   const context = contextOverviewQuery.data?.context;
 
-  const assistantMode = "live" as const;
-  const [confirmationText, setConfirmationText] = useState("I_APPROVE_ASSISTANT_TRADING");
-
   const [backupPhraseInput, setBackupPhraseInput] = useState("");
   const [importMnemonic, setImportMnemonic] = useState("");
   const [importPrivateKey, setImportPrivateKey] = useState("");
@@ -91,7 +82,6 @@ export default function WalletPage() {
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [walletSettingsOpen, setWalletSettingsOpen] = useState(false);
-  const [assistantOpen, setAssistantOpen] = useState(false);
   const [securitySetupOpen, setSecuritySetupOpen] = useState(false);
   const [securityBackupOpen, setSecurityBackupOpen] = useState(false);
   const [securityRecoveryOpen, setSecurityRecoveryOpen] = useState(false);
@@ -515,54 +505,6 @@ export default function WalletPage() {
     }
   };
 
-  const handleRequestAssistantConsent = async () => {
-    if (!wallet?.has_wallet) {
-      toast({ title: "Create wallet first", description: "Generate or import your wallet before enabling assistant trading.", variant: "destructive" });
-      return;
-    }
-
-    if (!wallet?.backup_confirmed) {
-      toast({ title: "Backup required", description: "Confirm your recovery phrase before enabling trading.", variant: "destructive" });
-      return;
-    }
-
-    try {
-      await requestConsent.mutateAsync({
-        mode: assistantMode,
-        wallets_by_chain: addressesByChain,
-      });
-      toast({ title: "Consent requested", description: "Approve consent to enable assistant trading." });
-    } catch (error) {
-      toast({ title: "Consent request failed", description: error instanceof Error ? error.message : "Request failed", variant: "destructive" });
-    }
-  };
-
-  const handleApproveAssistantConsent = async () => {
-    const consentId = String(trading?.consent_id || "");
-    if (!consentId) {
-      toast({ title: "Missing consent", description: "Request consent first.", variant: "destructive" });
-      return;
-    }
-    try {
-      await approveConsent.mutateAsync({
-        consent_id: consentId,
-        confirmation_text: confirmationText,
-      });
-      toast({ title: "Assistant trading enabled", description: "Permission is active. You can revoke anytime." });
-    } catch (error) {
-      toast({ title: "Approve failed", description: error instanceof Error ? error.message : "Approval failed", variant: "destructive" });
-    }
-  };
-
-  const handleRevokeAssistantConsent = async () => {
-    try {
-      await revokeConsent.mutateAsync();
-      toast({ title: "Assistant trading revoked", description: "Assistant no longer has trading permission." });
-    } catch (error) {
-      toast({ title: "Revoke failed", description: error instanceof Error ? error.message : "Revoke failed", variant: "destructive" });
-    }
-  };
-
   return (
     <Layout>
       <div className="space-y-6">
@@ -873,24 +815,6 @@ export default function WalletPage() {
           </TabsContent>
         </Tabs>
 
-        <Card className="solana-card">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center justify-between">
-              <span className="flex items-center gap-2"><Bot className="w-4 h-4" />Assistant Permission & Execution</span>
-              <Button variant="outline" size="sm" onClick={() => setAssistantOpen(true)}>
-                <Settings2 className="w-4 h-4 mr-1" /> Open
-              </Button>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
-              <span className="text-sm">Assistant Trading Status</span>
-              <Badge variant={trading?.enabled ? "default" : "outline"}>{trading?.enabled ? "Enabled" : trading?.pending_approval ? "Pending Approval" : "Disabled"}</Badge>
-            </div>
-            <p className="text-sm text-muted-foreground">Assistant controls are organized in one panel. Tap <span className="font-medium">Open</span> to manage permissions and execution.</p>
-          </CardContent>
-        </Card>
-
         <Sheet open={sendOpen} onOpenChange={setSendOpen}>
           <SheetContent side="right" className="sm:max-w-md">
             <SheetHeader>
@@ -1087,40 +1011,6 @@ export default function WalletPage() {
           </SheetContent>
         </Sheet>
 
-        <Sheet open={assistantOpen} onOpenChange={setAssistantOpen}>
-          <SheetContent side="right" className="sm:max-w-md h-dvh overflow-hidden flex flex-col">
-            <SheetHeader className="shrink-0">
-              <SheetTitle>Assistant Permission & Execution</SheetTitle>
-              <SheetDescription>Enable/disable assistant permission and run assistant execution from one place.</SheetDescription>
-            </SheetHeader>
-            <div className="space-y-3 mt-4 overflow-y-auto pr-1 pb-6 flex-1">
-              <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
-                <span className="text-sm">DoctorTrade Status</span>
-                <Badge variant={trading?.enabled ? "default" : "outline"}>{trading?.enabled ? "Enabled" : trading?.pending_approval ? "Pending Approval" : "Disabled"}</Badge>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Mode</Label>
-                <div className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm flex items-center">Live</div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="assistant-confirmation-sheet">Approval Phrase</Label>
-                <Input id="assistant-confirmation-sheet" value={confirmationText} onChange={(e) => setConfirmationText(e.target.value)} />
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={handleRequestAssistantConsent} disabled={requestConsent.isPending}>{requestConsent.isPending ? "Requesting..." : "Request Consent"}</Button>
-                <Button variant="outline" onClick={handleApproveAssistantConsent} disabled={approveConsent.isPending || !trading?.pending_approval}>{approveConsent.isPending ? "Approving..." : "Approve Consent"}</Button>
-                <Button variant="outline" onClick={handleRevokeAssistantConsent} disabled={revokeConsent.isPending}>{revokeConsent.isPending ? "Revoking..." : "Revoke"}</Button>
-              </div>
-
-              <div className="rounded-lg border border-border/60 p-3 text-xs text-muted-foreground">
-                DoctorTrade presets and risk settings were removed from Wallet. Manage them from the DoctorTrade page only.
-              </div>
-            </div>
-          </SheetContent>
-        </Sheet>
       </div>
     </Layout>
   );

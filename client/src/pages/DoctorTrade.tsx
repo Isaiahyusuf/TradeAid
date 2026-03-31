@@ -95,7 +95,7 @@ export default function DoctorTrade() {
   const [mlBonusCapInput, setMlBonusCapInput] = useState("18");
   const [mlSizeMinInput, setMlSizeMinInput] = useState("0.7");
   const [mlSizeMaxInput, setMlSizeMaxInput] = useState("1.2");
-  const simpleMode = true;
+  const simpleMode = false;
   const [privateKeyInput, setPrivateKeyInput] = useState("");
   const hydratedFromServerRef = useRef(false);
   const viewData = data;
