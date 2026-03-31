@@ -1,0 +1,1200 @@
+[Pipeline] Mint: Bz51ZSSRVcvUGmat3F4itvJzx4GSy8SCtPYM1wyDfae3
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3dm9tkmZW26aEmz3Ra9BhCicGofTYRrHZXfQXcR9FSbkDDDwtSA5pwYmrtMG3gXgVmif8zUjzhZjF2ToLohF4fnY
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: Dq56SQo6m2DtdNRSn8DF3psRsGjqV6joc3KrTVUhHnnn
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: C5vP19xGBZy4GhEtCKe2xJ5F2GnwMFLn8uj2iwqJpzkk
+[Pipeline] Signature: 3dm9tkmZW26aEmz3Ra9BhCicGofTYRrHZXfQXcR9FSbkDDDwtSA5pwYmrtMG3gXgVmif8zUjzhZjF2ToLohF4fnY
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3dm9tkmZW26aEmz3Ra9BhCicGofTYRrHZXfQXcR9FSbkDDDwtSA5pwYmrtMG3gXgVmif8zUjzhZjF2ToLohF4fnY
+[Pipeline] Raydium pools added 136 new mints
+9:30:42 AM [express] GET /api/doctor/status 401 in 1ms :: {"message":"Unauthorized"}
+[Multichain] Found 0 tokens from solana
+[Multichain] Scheduler heartbeat tick=121
+[Multichain] Starting multi-chain launchpad scan...
+[Multichain] Found 0 tokens across all chains
+[Multichain] 0 tokens passed safety checks
+[Multichain] Starting multi-chain launchpad scan...
+[Multichain] Found 0 tokens from solana
+[Multichain] Found 0 tokens across all chains
+[Multichain] 0 tokens passed safety checks
+[Multichain] Starting multi-chain launchpad scan...
+[Multichain] Found 0 tokens from solana
+[Multichain] Found 0 tokens across all chains
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2HDMosmV4LDrwgqDr5fAAmB4u3Bc4pB3L5xSwZuVS5RBiSdgE9tMwD5qmkSy14RVR3qzJJsDJ89BWurRdnTyjqtp
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 4oUfDQCSvnbFPuJK19jLLgi5rATUrT8d9SdBWiCpVKmT
+[Pipeline] Signature: 2HDMosmV4LDrwgqDr5fAAmB4u3Bc4pB3L5xSwZuVS5RBiSdgE9tMwD5qmkSy14RVR3qzJJsDJ89BWurRdnTyjqtp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2HDMosmV4LDrwgqDr5fAAmB4u3Bc4pB3L5xSwZuVS5RBiSdgE9tMwD5qmkSy14RVR3qzJJsDJ89BWurRdnTyjqtp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Mint: 4vwbeZmVSsQtELXmyCNVGEJi6yxGDFdNSA9WpAUJ6w7V
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 4WRgtXhhDbBX6bDQqKkGvmb9zbDxpWaJVCw3rgGmwm8t
+[Pipeline] Creator: unknown
+[Pipeline] Mint: 8eMkgNovyaNNHsvGSCAPKgBR5vxuwRoF3pHk7N4Li3pw
+[Pipeline] Creator: unknown
+[Pipeline] Signature: fdjmR5WCtcWS6GpTZukKne6MgEURxXkrwd256iLayt83HQaQun4obZDDLn6Hs7cG8svTE2cTtU9phsZJvyVaXcx
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 8g8WqgB2fjvVrQGcTb7gFYmxcr4itG4sjoDxHoY7ibzg
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 34mNeGtVDwpDxdPGNFuGTuze58ercv8ruhP9mUXSG31KFxNSAAgsEGzQ7UjTmL7ERnbe5aoEEDSjo9dxSeopzrpi
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: ADfoDvPomGzgYtq7jA6Sy1TWDYQikqhyDY6NXqyEFuYX
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 34mNeGtVDwpDxdPGNFuGTuze58ercv8ruhP9mUXSG31KFxNSAAgsEGzQ7UjTmL7ERnbe5aoEEDSjo9dxSeopzrpi
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 34mNeGtVDwpDxdPGNFuGTuze58ercv8ruhP9mUXSG31KFxNSAAgsEGzQ7UjTmL7ERnbe5aoEEDSjo9dxSeopzrpi
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 5FSsKePaqTgZo9ggKLJgkng8QDA7HWf52YRQN4RxS7Di
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 3bmPn349TPCJSHMg1QGEVLFSqCsJpcDbSADkJ1swwkuf
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5QZvYkFe7mfQ9PLfuedQ4w62dGKTrKFUwb4Gf4h5711wjMnNFhmSq2WPCaaWE63EL7W2peLFg1qdcwcfogiAgnHG
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Signature: 5QZvYkFe7mfQ9PLfuedQ4w62dGKTrKFUwb4Gf4h5711wjMnNFhmSq2WPCaaWE63EL7W2peLFg1qdcwcfogiAgnHG
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 61SkyEnx79SNQWQQKguyX1F7U9uAosqFUodrL8LFLK8eqvn59AHrT4oNADGoXPKpxsU6Dni3KdDrh1QS2nBVez32
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: Cmfxnds54ih3aRxQLnbC3fU3QeLpYVCzJa63E3eT9HnU
+[Pipeline] Signature: 61SkyEnx79SNQWQQKguyX1F7U9uAosqFUodrL8LFLK8eqvn59AHrT4oNADGoXPKpxsU6Dni3KdDrh1QS2nBVez32
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 4VJ99K8LRYv9Ld2EMJ4u3Fdwuz1Cx5cirvkuL1fr5odr
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 61SkyEnx79SNQWQQKguyX1F7U9uAosqFUodrL8LFLK8eqvn59AHrT4oNADGoXPKpxsU6Dni3KdDrh1QS2nBVez32
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 5r7Kpo78mu5xATvLHgRnguMUy8PjTM1swZrdtvHqAvQh
+[Pipeline] Creator: unknown
+[Pipeline] Signature: uFPWvQkHFRmACBge5BDtDfsQiXj2LhhxEeZvNsJqtNyKrRsLEwVbNNDv2jq3ZZq1tWBs6H9sLtHoEWe9dQ6xMz7
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: CofsCc8fuLgp3x4Anehjny6HAm9RJvxjFFRvFtNGwkpY
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3DsRPuesUt8HdPEwhY9zyjVFv24yMbntDuMhaoCkM4KbrScehLfn5N1yoyVEm6TYfZ5zkJ2A8tE4TeEuwerbEADB
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 6bfGDytM7Mu3fVG9AFhqd6VdUAfZgVYLgJ7aC3VDozZj
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3DsRPuesUt8HdPEwhY9zyjVFv24yMbntDuMhaoCkM4KbrScehLfn5N1yoyVEm6TYfZ5zkJ2A8tE4TeEuwerbEADB
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 3vgADZoeaGweaALGzMzn7t8Yj6JSVhGsz5G7SFDW9Htr
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3DsRPuesUt8HdPEwhY9zyjVFv24yMbntDuMhaoCkM4KbrScehLfn5N1yoyVEm6TYfZ5zkJ2A8tE4TeEuwerbEADB
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 3m4CmrxxqQSqDBNUfnUcDiiVCd4US5adPejY6owjVUSZ
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3RLWUqsqofDCyx8tvTurxebwKNXWyEVxJMLkCbtDcxcQeu7gjPTrxKArepUAPJb1Ydc9XPoRtttq5EBGVpMzM9c3
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: BW6hMp7hv9GCsGBqNod4ZTMkHPy9LR9XuvJ3hqjqgfwE
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3RLWUqsqofDCyx8tvTurxebwKNXWyEVxJMLkCbtDcxcQeu7gjPTrxKArepUAPJb1Ydc9XPoRtttq5EBGVpMzM9c3
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 7QaenZqW3bieSuAw5GHeUh9Rs7kk8zdjHttSZyLxWreH
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3RLWUqsqofDCyx8tvTurxebwKNXWyEVxJMLkCbtDcxcQeu7gjPTrxKArepUAPJb1Ydc9XPoRtttq5EBGVpMzM9c3
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: EkDGB5fbPXiRmDDjxKcC7dFjzvFZj2KT9t7oeyyPx4SX
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4asZ7mi1w2c2DZzskPg3jGgcvT9KYwqYBJzp4ZfarDLHEZKd2jfGxPQmjmFh4Uif54TbEw6LaMRvFdjCfvkDVJnu
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: CNsgJdPZ6DUaV5VJKUJpPC14zXABJWbHJD7Xf4NkvEJV
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4asZ7mi1w2c2DZzskPg3jGgcvT9KYwqYBJzp4ZfarDLHEZKd2jfGxPQmjmFh4Uif54TbEw6LaMRvFdjCfvkDVJnu
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 57Z53ftFVNsaNHe1ZMZ6iTLgNTsULU51xjVB6zptp3gA
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4asZ7mi1w2c2DZzskPg3jGgcvT9KYwqYBJzp4ZfarDLHEZKd2jfGxPQmjmFh4Uif54TbEw6LaMRvFdjCfvkDVJnu
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 7MXTss8EUHo5z98bZQ9Ht5s7GaMZug5t1xysME3cZBrE
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4asZ7mi1w2c2DZzskPg3jGgcvT9KYwqYBJzp4ZfarDLHEZKd2jfGxPQmjmFh4Uif54TbEw6LaMRvFdjCfvkDVJnu
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: APANUucUuCrbdxvYwfVZic86PR21kQbEr8ay6Jib4Jbh
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4asZ7mi1w2c2DZzskPg3jGgcvT9KYwqYBJzp4ZfarDLHEZKd2jfGxPQmjmFh4Uif54TbEw6LaMRvFdjCfvkDVJnu
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: Akjom1jMYJtB6EG5rVkdFkA5kkaeqkEaGyyuXunMo5L7
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4asZ7mi1w2c2DZzskPg3jGgcvT9KYwqYBJzp4ZfarDLHEZKd2jfGxPQmjmFh4Uif54TbEw6LaMRvFdjCfvkDVJnu
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: AtgsRtQ7wbC42UhTgZZRzvjDcGgCiRVwfKjJ8VTx392n
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4asZ7mi1w2c2DZzskPg3jGgcvT9KYwqYBJzp4ZfarDLHEZKd2jfGxPQmjmFh4Uif54TbEw6LaMRvFdjCfvkDVJnu
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: E7JTmdcH2rpMiwA7ybHehgMQZyFXJyC56Y4ERL2g8gie
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4asZ7mi1w2c2DZzskPg3jGgcvT9KYwqYBJzp4ZfarDLHEZKd2jfGxPQmjmFh4Uif54TbEw6LaMRvFdjCfvkDVJnu
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: HGJGPq9q8Ap9NmFLCMoEcS9cbdHedjP8V74rRzxhGSc9
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4asZ7mi1w2c2DZzskPg3jGgcvT9KYwqYBJzp4ZfarDLHEZKd2jfGxPQmjmFh4Uif54TbEw6LaMRvFdjCfvkDVJnu
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: HoGwYhyGLF6ns519sj78429RfD4ZDaZLWfAb6Mo1vhhd
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4asZ7mi1w2c2DZzskPg3jGgcvT9KYwqYBJzp4ZfarDLHEZKd2jfGxPQmjmFh4Uif54TbEw6LaMRvFdjCfvkDVJnu
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 4JXCg8tTdY3WiFzPEf3cTmJKHnToL4sj8ebYv5aRE7RT
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4asZ7mi1w2c2DZzskPg3jGgcvT9KYwqYBJzp4ZfarDLHEZKd2jfGxPQmjmFh4Uif54TbEw6LaMRvFdjCfvkDVJnu
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 8LTRgxZ2KWDc2sDGuYAe5VtDgguAzteSeQUJisLQ5BVA
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4asZ7mi1w2c2DZzskPg3jGgcvT9KYwqYBJzp4ZfarDLHEZKd2jfGxPQmjmFh4Uif54TbEw6LaMRvFdjCfvkDVJnu
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: GcGPiDRVzjbBU22cyPt3aDJ58KVYUYzohHHH8c782cVp
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4asZ7mi1w2c2DZzskPg3jGgcvT9KYwqYBJzp4ZfarDLHEZKd2jfGxPQmjmFh4Uif54TbEw6LaMRvFdjCfvkDVJnu
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 44Trc2RufppMfyzUPX4pjVekgFHBwAetK26Un9pnC1j1
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4asZ7mi1w2c2DZzskPg3jGgcvT9KYwqYBJzp4ZfarDLHEZKd2jfGxPQmjmFh4Uif54TbEw6LaMRvFdjCfvkDVJnu
+[Multichain] Starting multi-chain launchpad scan...
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 8FG78hLzMQiB9ttPukGiEd8vKSYeiMGsDe7BCNok611N
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4FMp98pw4ALfsoJrYeSfQ2Yr7YEsvcSGX9w7HMrcEDeaQV4G1QqmBPeUiB9zYAUNuphncyGjLZaTMpZTRcZA7PS2
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 5UGQp9pMJZP2m7dHuaMUC6sEezsmW6g69Hc8MaDydvDT
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4JxhZpxGSfCDAr3QnuTjgteftbXvqzaS7tQxogAgaThhYyAcxji4XuR7RGNE9mJgFKDe8msDdinkrKjs1vLh2xoV
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: AGEH6KrryiYN27Uu83UW9X7uz9Ney27h9burUjvv6NuB
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4JxhZpxGSfCDAr3QnuTjgteftbXvqzaS7tQxogAgaThhYyAcxji4XuR7RGNE9mJgFKDe8msDdinkrKjs1vLh2xoV
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: EaPF91snVwWLj4GK2FdEyrEkHBxGD6Q2LkCiMe9YV5LC
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4JxhZpxGSfCDAr3QnuTjgteftbXvqzaS7tQxogAgaThhYyAcxji4XuR7RGNE9mJgFKDe8msDdinkrKjs1vLh2xoV
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: EvL82NMzkzyTNQYhYEczuAtc9BisiXEGkXYwLyWEwsNX
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4JxhZpxGSfCDAr3QnuTjgteftbXvqzaS7tQxogAgaThhYyAcxji4XuR7RGNE9mJgFKDe8msDdinkrKjs1vLh2xoV
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4JxhZpxGSfCDAr3QnuTjgteftbXvqzaS7tQxogAgaThhYyAcxji4XuR7RGNE9mJgFKDe8msDdinkrKjs1vLh2xoV
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 69yhtoJR4JYPPABZcSNkzuqbaFbwHsCkja1sP1Q2aVT5
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4JxhZpxGSfCDAr3QnuTjgteftbXvqzaS7tQxogAgaThhYyAcxji4XuR7RGNE9mJgFKDe8msDdinkrKjs1vLh2xoV
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2T7dVky3DpTPRSvJ2VDJ6xLbaX4aX4dwR8J3pPqmfAUtds6g9kDHFejEfYxyL42rkcD4LRAEzB4BLNbTvwEjmFGB
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 2Sco4y4hfohnM6gC2z3QgDXwgCaqJ8VDn3jzfEzfw3jG
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2T7dVky3DpTPRSvJ2VDJ6xLbaX4aX4dwR8J3pPqmfAUtds6g9kDHFejEfYxyL42rkcD4LRAEzB4BLNbTvwEjmFGB
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: GHUVuL1XX1MYeHphUhUqoypj182gY5yQsibisHGFfVuk
+[Pipeline] Creator: unknown
+[Pipeline] Raydium pools added 264 new mints
+[Multichain] Found 0 tokens across all chains
+[Multichain] 0 tokens passed safety checks
+[Multichain] Found 0 tokens from solana
+[Multichain] Found 0 tokens across all chains
+[Multichain] 0 tokens passed safety checks
+[Multichain] Starting multi-chain launchpad scan...
+[Multichain] Found 0 tokens from solana
+[Multichain] Found 0 tokens across all chains
+[Multichain] 0 tokens passed safety checks
+[Multichain] Starting multi-chain launchpad scan...
+[Multichain] Found 0 tokens across all chains
+[Multichain] 0 tokens passed safety checks
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 5kw274uDbPs8zWjv454CpUWBQ1FLtmamWX4CJpqta5sh
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 593QALpkQr2Fc9VKChUZ4xa2sMiauJeuuebiJTuBNGN5Gwmo1SSjibFd3Sg3Ja6xSxs1bNEsthTUEtzdEjei6UD7
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 6FJX8JxB2X3fgp8mdV9zMCNgYqTDoLNyybuRp9fPC2C7
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 593QALpkQr2Fc9VKChUZ4xa2sMiauJeuuebiJTuBNGN5Gwmo1SSjibFd3Sg3Ja6xSxs1bNEsthTUEtzdEjei6UD7
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 593QALpkQr2Fc9VKChUZ4xa2sMiauJeuuebiJTuBNGN5Gwmo1SSjibFd3Sg3Ja6xSxs1bNEsthTUEtzdEjei6UD7
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: FKHNPjjPau8yXzZYZyTmFpuLhpwau1TCzxb2YCX987GT
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5uLBQoPmNGCoKAS7GxFVc1q8odJifJZvYf1z2gADGiHFJC9jbqY3UDvcM1Qr3fJxZ71rGs2w9GPjAXjZvh46fkUz
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: FuQHcmskXdPg1UhCJRyFxPhKxi31Sk9P2bo6hZoQRdcM
+[Pipeline] Creator: unknown
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5uLBQoPmNGCoKAS7GxFVc1q8odJifJZvYf1z2gADGiHFJC9jbqY3UDvcM1Qr3fJxZ71rGs2w9GPjAXjZvh46fkUz
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: BUGkMQ8kSFKBY7Es5fLJwmP9czVJr4TeGe22DptYm9gS
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2bzMiLrjiH17yaJmuxGX5LFg7VmN1bz7VEBe6Z7ivEy33wCdWm6dfC4mFcbshFWuHa3G45WZRxeaXV2mekfaCvkE
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 8uQL1FRXKgVHTe1aEne8BL4pSKHg8iXRYBG2vCUJY63a
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2bzMiLrjiH17yaJmuxGX5LFg7VmN1bz7VEBe6Z7ivEy33wCdWm6dfC4mFcbshFWuHa3G45WZRxeaXV2mekfaCvkE
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: Ra8EeKgJJx1fjmNbm9T8rzWE8p1VfkWJyaKaEp6bjgP
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2bzMiLrjiH17yaJmuxGX5LFg7VmN1bz7VEBe6Z7ivEy33wCdWm6dfC4mFcbshFWuHa3G45WZRxeaXV2mekfaCvkE
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 9XgwLqADfNwrswXtoxVaG2FMmUYRKT8hR2ayWTyt5nHd
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4JLcu83htLuxKB92w1aBeLHyCMny2qNgCM3KPTuTCECPMhTQxN5C3G7b8Jdtm2zN5tZeacWNudya2nP62YfzH2Sp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 6nmgR71jpZVbgUcpe56ijYzpAVJoUWqg3C62MenB5jdd
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4JLcu83htLuxKB92w1aBeLHyCMny2qNgCM3KPTuTCECPMhTQxN5C3G7b8Jdtm2zN5tZeacWNudya2nP62YfzH2Sp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Mint: 51P3Bw2d5RbjmjYfmopkph7K45Do147Huif8hExLzdB
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4JLcu83htLuxKB92w1aBeLHyCMny2qNgCM3KPTuTCECPMhTQxN5C3G7b8Jdtm2zN5tZeacWNudya2nP62YfzH2Sp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: DjJmuPFhq9CDy46Xadk9RgJwRZ2gSEyGBXBYSa1rVkC1
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3JtvxRPZoFJeV9vAJjh3EHRLo9V4Aos12hxEie31QDCWm1s13xjKGSMzNpb497b7RWrht24wwW3JTVfbSSFxyijF
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 3Rrg7F765vH5qZpsLNbtdd53MTHfKwhATwYvuUHrP2uX
+[Pipeline] Creator: unknown
+[Pipeline] Mint: BVmBPvUWt5cviyntNhpXQhb6LEyAofRM4FXXsjvryCz7
+[Pipeline] Mint: SgDd59Qbkiroq5KNbt7aqqwzFr3jP9Htt8H8Rk4ALh7
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 5WhazgJgDKGFJdqcYrBESpRun5VbZqPtKkwJMj8ksMur
+[Pipeline] Signature: 6Ljz9p5bypHAf1vuWYtRjUxLjbvjrfkth7k5TCsxJzvb7uySuhvF7CFJvQQuQtecJrQiGYTFrbTN2HKNbbSNjv8
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: G1TFpX7SBVc612Zqr5EhvhWKk6mzEtjrKhbt5vh9Hztv
+[Pipeline] Signature: 6Ljz9p5bypHAf1vuWYtRjUxLjbvjrfkth7k5TCsxJzvb7uySuhvF7CFJvQQuQtecJrQiGYTFrbTN2HKNbbSNjv8
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 2QavkJxYd3X3ak72MSULszS19BRrhuo5Ad83qVDRBHPq
+[Pipeline] Signature: 62vehUUS2Yk3nkXoc7HwwwLHB5fsyZmUQDNcZxt8DnzGpnosrPK4TSytXDcANFFW9i37p1n94fnjuf1KViuvpwPA
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Mint: 7veCJijfJ1QsqZnDbHrkaSFZqCu6YjfNuSTpADJu72jZ
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 62vehUUS2Yk3nkXoc7HwwwLHB5fsyZmUQDNcZxt8DnzGpnosrPK4TSytXDcANFFW9i37p1n94fnjuf1KViuvpwPA
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: hZWtodRrDtKGBLZ9qWcRqUy6nCNfUVjW3VuoZ9WFTxu
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Signature: 62vehUUS2Yk3nkXoc7HwwwLHB5fsyZmUQDNcZxt8DnzGpnosrPK4TSytXDcANFFW9i37p1n94fnjuf1KViuvpwPA
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 6NU8dw3iPe3a81XqQn5Zph1dVwD3PdwnPzQ61rYJrJA5
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2eiex1gzRJx27yzEh9vJu3qWHRdGPwbDPqFMih2SEo3B9swdLS9jBYva3iN8Uvj4LVK1SAGZnMkBbmyu2rhNPXwP
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Mint: GkB94tEp1kee9iFEjM97zd8ZVrz2e1Krdo3C7hUGnAzt
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2eiex1gzRJx27yzEh9vJu3qWHRdGPwbDPqFMih2SEo3B9swdLS9jBYva3iN8Uvj4LVK1SAGZnMkBbmyu2rhNPXwP
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: zQwkqaLhPRVr69CMcKt3tJHm2vkLjQiQLwp9NGMx3Qy
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2eiex1gzRJx27yzEh9vJu3qWHRdGPwbDPqFMih2SEo3B9swdLS9jBYva3iN8Uvj4LVK1SAGZnMkBbmyu2rhNPXwP
+[Pipeline] Mint: GAHGRxKDjoLZwRzepWBPZBFevNJZsTUnGQ2bYCqvTKja
+[Pipeline] Signature: 4snuNeU1CehwYKaqvFTqCFpdb3u3HqqHw7mYpGstsNpqwudjpjdbB7ErbFGSRDV6BKfon4u2axQddxsggeFVGYgx
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: rz9owyoW8MGcRJVjZWofBex9KvcohqyuM2WoXUobckK
+[Pipeline] Signature: 4snuNeU1CehwYKaqvFTqCFpdb3u3HqqHw7mYpGstsNpqwudjpjdbB7ErbFGSRDV6BKfon4u2axQddxsggeFVGYgx
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 6C8dnQtbS3SkLB2SvVrocWTkXYbrLmUYCVo2Fpnxbmyc
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4snuNeU1CehwYKaqvFTqCFpdb3u3HqqHw7mYpGstsNpqwudjpjdbB7ErbFGSRDV6BKfon4u2axQddxsggeFVGYgx
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Mint: App2Sp9pgmQG7yD6uVaygULxALf4TpfALgnhHEkJimih
+[Pipeline] Signature: 4Dk3scrQjkbkC4vhfEvtj1NnVxk4UYrXqUNi7wnyj3uGpCWaRddFSo3iSC5pbX3da8uAApxKgCamfamsDtj33g1U
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: HSbb55wvZeGXAv3j8QBaNigKdZKNsgVxujM7bkVjbPiA
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4Dk3scrQjkbkC4vhfEvtj1NnVxk4UYrXqUNi7wnyj3uGpCWaRddFSo3iSC5pbX3da8uAApxKgCamfamsDtj33g1U
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 7KDXNsrHTgSRMPemJjvmC9G6gdwq2xzGA5UJHwDcZkmj
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4Dk3scrQjkbkC4vhfEvtj1NnVxk4UYrXqUNi7wnyj3uGpCWaRddFSo3iSC5pbX3da8uAApxKgCamfamsDtj33g1U
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: FUmBKmy2p36WBQ7sZMRasujhM7ZHp55md1QaqXjADss7
+[Pipeline] Signature: 4Dk3scrQjkbkC4vhfEvtj1NnVxk4UYrXqUNi7wnyj3uGpCWaRddFSo3iSC5pbX3da8uAApxKgCamfamsDtj33g1U
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Mint: 5KfDJtXehrQgozif86uaFiDyD4YmLEfEcXqULgdeyeHq
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Mint: 1uFfxAmD4KVL8GgjZuQHmHowTCLFNvgKWiETq5C8a7x
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 6wjXjxZuoXrnhtu494XuzH9seJHU9caeyewqLJEe1dSp
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4Dk3scrQjkbkC4vhfEvtj1NnVxk4UYrXqUNi7wnyj3uGpCWaRddFSo3iSC5pbX3da8uAApxKgCamfamsDtj33g1U
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 5S3g41wpWefoUoCP1JPC8HxDmGYdfrzgYX4cbNMk5hfS
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 8PEotFtPURyCEvJwDV9kddsFJbTEJ5qmDkMzjxHPbkTn
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4Dk3scrQjkbkC4vhfEvtj1NnVxk4UYrXqUNi7wnyj3uGpCWaRddFSo3iSC5pbX3da8uAApxKgCamfamsDtj33g1U
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 5shtmngT35ZLxebNoU4VRguzrKP1xjFAxpHKRvgjKHZe
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3Gx3zAdi4dy4dNhQW54kiJJdfxPHzRBZNwYM9EG82aDPYRZV6hpiP4HTSYxtfFpVEjPbEMQcLPFK4qn2Q5e1PMAd
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 6fQaVhYZA4w3MBSXjJ81Vf6W1EDYeUPXpgVQ6UQyU1Av
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3Gx3zAdi4dy4dNhQW54kiJJdfxPHzRBZNwYM9EG82aDPYRZV6hpiP4HTSYxtfFpVEjPbEMQcLPFK4qn2Q5e1PMAd
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 5bJim3cHsvvsBf4NT6DrYxuhCDEqmiZZRGW7apot4R4x
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3Gx3zAdi4dy4dNhQW54kiJJdfxPHzRBZNwYM9EG82aDPYRZV6hpiP4HTSYxtfFpVEjPbEMQcLPFK4qn2Q5e1PMAd
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: ETMUunxmpJqhYq2Ud7sBWNWqiDcx5dBoqiBEHWhSVhrz
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 9vahboativtk4yCvGBbReHKMNCaZs62g9A5ManZ7DaK
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3Gx3zAdi4dy4dNhQW54kiJJdfxPHzRBZNwYM9EG82aDPYRZV6hpiP4HTSYxtfFpVEjPbEMQcLPFK4qn2Q5e1PMAd
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 9S91d2voDuvcLLCA3e7pDXcVxpk6DjtoGxT7r2KyKtsK
+[Pipeline] Signature: 3Gx3zAdi4dy4dNhQW54kiJJdfxPHzRBZNwYM9EG82aDPYRZV6hpiP4HTSYxtfFpVEjPbEMQcLPFK4qn2Q5e1PMAd
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Mint: 2qgkN8YshLxNoxpDw9pVmCWnpP1usd6o8YLVRzPA37rc
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3Gx3zAdi4dy4dNhQW54kiJJdfxPHzRBZNwYM9EG82aDPYRZV6hpiP4HTSYxtfFpVEjPbEMQcLPFK4qn2Q5e1PMAd
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3Gx3zAdi4dy4dNhQW54kiJJdfxPHzRBZNwYM9EG82aDPYRZV6hpiP4HTSYxtfFpVEjPbEMQcLPFK4qn2Q5e1PMAd
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: BbJzwa9vBS7xfRfJgtq6UC6LTeLusQWBFnFNjXGDAtxi
+[Pipeline] Signature: 3Gx3zAdi4dy4dNhQW54kiJJdfxPHzRBZNwYM9EG82aDPYRZV6hpiP4HTSYxtfFpVEjPbEMQcLPFK4qn2Q5e1PMAd
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: BUmiLsUEiHYrLkHsGqcS11r8xufs78X1JBgTXiR4Jucd
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Mint: 3adJsNHKDuXoH2CRhjUYm4K5Xp6UB37jy9Sc2EfEDE37
+[Pipeline] Creator: unknown
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 2ASAzAixWBF35css9mQ7HJYW58q1wwSyDh3nyofYd4Pg
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4p32n2qLD67ZRU3ydxasWXoRQvgTs9iEANETxACA5uZX9bwLo2zqTwja2yexK85dw68asFmbGfzFpVyEUo3x5Lh3
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 7utELaCGEvhG5xxTmobk7BgWw94tnSLX5WEc17GmZmj6
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4p32n2qLD67ZRU3ydxasWXoRQvgTs9iEANETxACA5uZX9bwLo2zqTwja2yexK85dw68asFmbGfzFpVyEUo3x5Lh3
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 9wYM1Af1HHJEVw3Vmg4t3A3YfJHaeXZngpgMCMDxvL4z
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4p32n2qLD67ZRU3ydxasWXoRQvgTs9iEANETxACA5uZX9bwLo2zqTwja2yexK85dw68asFmbGfzFpVyEUo3x5Lh3
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: Dx6Amz8a24jG7KZRwqRh5gNc28UKYaJatgTGZxybfZk3
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4p32n2qLD67ZRU3ydxasWXoRQvgTs9iEANETxACA5uZX9bwLo2zqTwja2yexK85dw68asFmbGfzFpVyEUo3x5Lh3
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: HQpVaJSisFHekfjpHdNN9pCD9NXtCnzbHZLkWdAoARnr
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: HS7Wb2RpR28wU4tL1KetvufxpSN6LhMidc5XU4ugoVUP
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4p32n2qLD67ZRU3ydxasWXoRQvgTs9iEANETxACA5uZX9bwLo2zqTwja2yexK85dw68asFmbGfzFpVyEUo3x5Lh3
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: HdaDY5XYVCKEppzvzf9eSx7UjZcPd7dxRDJWm81vGe2t
+[Pipeline] Signature: 4p32n2qLD67ZRU3ydxasWXoRQvgTs9iEANETxACA5uZX9bwLo2zqTwja2yexK85dw68asFmbGfzFpVyEUo3x5Lh3
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Mint: 6cD1dFax3YRZCagxJPozBPwTfB8KZtg7oreNTARbzdYB
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3XsrmpV6txt4Qq6vPcbcfQCZEAmqgpjHD7T2us8L1gxZhjNkwrdMJXv3J9GNsAHUpm85veaCr13jiBAfNmvt4orm
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Mint: 7GVc855itzvJ9LC6y4JrEphnJMWGCzaFkPks2giAgbcY
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3XsrmpV6txt4Qq6vPcbcfQCZEAmqgpjHD7T2us8L1gxZhjNkwrdMJXv3J9GNsAHUpm85veaCr13jiBAfNmvt4orm
+[Pipeline] Mint: DisGAeZSFfXhTxctqhFykHvpPqsRfM9HcHtgih5U6sPW
+[Pipeline] Creator: unknown
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: BkjcJN54XDg1nCVHRHVGqFat9LQVpdK4hCt6iuhZ51fC
+[Pipeline] Mint: GCxEa7EeBVwL2Hbwd3tHMsHqF2xMwCVXfuzXe4nc94eZ
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Mint: 3uMPFA37HZoasKHUS3cxRnGsUsNKWdosTN1p7Hf9sPyi
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3ETMimrsmN1W4i8WMaWKhnSSJsy1CCgEEmK3F4xR7VZmyDrLHzXbaTZ33w6MhrHftK4Q3Eb2NVSjRVA4iKYed8Wd
+[Pipeline] Mint: Cy8QGHJXQ3KyAL93jrUmdVkQYXSc6TxvDDF4vYEPeTiC
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Mint: 8jdPgBhyvDvdW2KPEUiNS7ZB9EVKdEMJvFFRFwnALaFn
+[Pipeline] Creator: unknown
+[Pipeline] Source: raydium_pool
+[Pipeline] Signature: 21CRNddhiAi42M11Lp1k5SWVVDtxbFoi58PeByDE3v7pQba2bwchRPAFx5PgseVswLPtg6dBH9QiwwtjxtN3uFR6
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3KTdhwVff7UjrxsCwbfwWaVrShYCBz3Z62epkp2d2GVVh7UsF6cCzQrVXCP21awCixrPtuFm6KGBtbzdVUvVWkbe
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: BHYMPbCezsHs2gBGtW4Wh6TTeNRXRXaiwapevPeKCKrB
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3KTdhwVff7UjrxsCwbfwWaVrShYCBz3Z62epkp2d2GVVh7UsF6cCzQrVXCP21awCixrPtuFm6KGBtbzdVUvVWkbe
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: G4zxFHdZ8nqeHeX9bvhRLfFYGEeZLSVQhRdK5BTGaEwh
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3KTdhwVff7UjrxsCwbfwWaVrShYCBz3Z62epkp2d2GVVh7UsF6cCzQrVXCP21awCixrPtuFm6KGBtbzdVUvVWkbe
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: GHjEJbxWcT55xWCucjSRUJAxxVXD8wXsLUAToBWTUPBa
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3KTdhwVff7UjrxsCwbfwWaVrShYCBz3Z62epkp2d2GVVh7UsF6cCzQrVXCP21awCixrPtuFm6KGBtbzdVUvVWkbe
+[Pipeline] Raydium pools added 471 new mints
+[Multichain] Found 0 tokens from solana
+[Multichain] Found 0 tokens across all chains
+[Multichain] 0 tokens passed safety checks
+[Multichain] Starting multi-chain launchpad scan...
+[Scanner] Discovering hot tokens on solana...
+[Multichain] Starting multi-chain launchpad scan...
+[Multichain] Found 0 tokens from solana
+[Multichain] 0 tokens passed safety checks
+[Multichain] Found 0 tokens from solana
+[Multichain] Found 0 tokens across all chains
+[Multichain] 0 tokens passed safety checks
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: DhSADF9177K5PmpzbzSM98REkVBz9A5jUxbhNFc2e7ZW
+[Pipeline] Creator: unknown
+[Pipeline] Signature: wpioRK4Wz7rqfHD2gTPzCdAyacR5s2QJu7FkT6HFypKd9yihYxzdxN1CKAfc4xfvDruaq94S19CnfQzRUDYhrSF
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: BAVpDKqiHLM7vfry12cn8VsJJyZCWn7ZWHSn6fhN91jj
+[Pipeline] Creator: unknown
+[Pipeline] Signature: wpioRK4Wz7rqfHD2gTPzCdAyacR5s2QJu7FkT6HFypKd9yihYxzdxN1CKAfc4xfvDruaq94S19CnfQzRUDYhrSF
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: DXSe5U4bsVgiD6svS9CApoeQc2jUyX9jB1DptBgWqrvg
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Signature: wpioRK4Wz7rqfHD2gTPzCdAyacR5s2QJu7FkT6HFypKd9yihYxzdxN1CKAfc4xfvDruaq94S19CnfQzRUDYhrSF
+[Pipeline] Signature: 56CQgmP8ueaHbNiZodiHXS9HzHVJgSNpowB64xFVC9JfQysPj6zdohNevqnY6kzMwr5tjSBM9Ss1KnjmgfH2UTEn
+[Pipeline] Mint: FcjWD38cLXVFJxx1ewX9G345XfdT2gsr74jGXdhNp4Qv
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: H3e29XSPsrooeuBBUbqmzfhJcRqV4eGUGkEziSAoGXwY
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2WBiBnptWgnmC9MjXe1EwyDribApPggSFvi8EXG9FJVcpKRdSZg3JKJFN91g8kJCmReJnsmjs2zpFTsxC5AFmofM
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 8nKryMLrR4BBgji2i4cSbSPotSEtaoj9jpkAp5eBV7At
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2WBiBnptWgnmC9MjXe1EwyDribApPggSFvi8EXG9FJVcpKRdSZg3JKJFN91g8kJCmReJnsmjs2zpFTsxC5AFmofM
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 13LrRbT967RtzUVSvUdJDmhvy7fQCW5hs2pM1ukhgzjH
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 7iX8Novr25gmJndfta1k9UtTte97xNdNzi8rkzV2GgH
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 56CQgmP8ueaHbNiZodiHXS9HzHVJgSNpowB64xFVC9JfQysPj6zdohNevqnY6kzMwr5tjSBM9Ss1KnjmgfH2UTEn
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 5Tc3HezVTLcYF5cwtmWXtHadnCqp9MVUe1J7gunYKBfi
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 56CQgmP8ueaHbNiZodiHXS9HzHVJgSNpowB64xFVC9JfQysPj6zdohNevqnY6kzMwr5tjSBM9Ss1KnjmgfH2UTEn
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: BzWA69tbSZUzp19vdfM2hpK4YxB8rvKm6WERBaTdAhc5
+[Pipeline] Creator: unknown
+[Pipeline] Signature: VobiqJwZD8rqb1nqexvHchHrf5EzN6hEUx2Fmfx9mNx4qcHruUpMFgE75hUHvygRpryPYgTmUC9X6gqyoxMGGoF
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: BgKv67sPGaY4Svt1Yod4xzqufUpheYzYvKpJVzMYu5Pz
+[Pipeline] Creator: unknown
+[Pipeline] Signature: VobiqJwZD8rqb1nqexvHchHrf5EzN6hEUx2Fmfx9mNx4qcHruUpMFgE75hUHvygRpryPYgTmUC9X6gqyoxMGGoF
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Signature: VobiqJwZD8rqb1nqexvHchHrf5EzN6hEUx2Fmfx9mNx4qcHruUpMFgE75hUHvygRpryPYgTmUC9X6gqyoxMGGoF
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5Wtw3CQzb7ZU4y8K7veqdTGhXUFkvEn8qMdMoSM89JSfqzT5hjViKYcther3sgWryWKzTEAvoX6RuFcMm3xQDrqN
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 5B28gxHhWMaADGEWVr5yQPM2SwVSVUuYZPgfXDWYaPUX
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Mint: 5nSQCCRVUrdt6Z7ZmL4cKfE3RttRWHe4JUZGFAovgm8n
+[Pipeline] Signature: 5Wtw3CQzb7ZU4y8K7veqdTGhXUFkvEn8qMdMoSM89JSfqzT5hjViKYcther3sgWryWKzTEAvoX6RuFcMm3xQDrqN
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: GqCepM7vs4g9RT4o72adauesTvwb9wG4VZpqFbTGWTr8
+[Pipeline] Creator: unknown
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 3q1TAgML9SQtwLqG2h4sFZcu9gqmZgT5mTrjbHQLmyKb
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5d6Es4domF7bzgUdogT5SGHZ983CakZnb7G9hXYDspnm1pAoqULgf8pWyR73fureUPKLqnSnY2MoFSUZLGypmPbn
+[Pipeline] Signature: 5ASyik2Unn8yDchGX8FJwrBjUtFwgym8RBNcPjcP8g3mewoaQ74xGQrg6Fn5t73ZS9WapgVGQxh4Ku5jvAAqkEqw
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 4h2jrsM3BmDc4W3kzuGo4d94dCWdtU485PBTwvT7NXNT
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5ASyik2Unn8yDchGX8FJwrBjUtFwgym8RBNcPjcP8g3mewoaQ74xGQrg6Fn5t73ZS9WapgVGQxh4Ku5jvAAqkEqw
+[Pipeline] Signature: 5d6Es4domF7bzgUdogT5SGHZ983CakZnb7G9hXYDspnm1pAoqULgf8pWyR73fureUPKLqnSnY2MoFSUZLGypmPbn
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 95CTDfVJhwnQQ55dje9Tu36DHSchtTj1gUpSfuJcxAd
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5d6Es4domF7bzgUdogT5SGHZ983CakZnb7G9hXYDspnm1pAoqULgf8pWyR73fureUPKLqnSnY2MoFSUZLGypmPbn
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 8MSjQuqWQkYBNeJqPECxFwodxU4uyK4xtuvPPRsdpMpE
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: H8P8CvSg6cxuG4hxb3CniGKXv3Bb8PKZgMecTAatSbp3
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4fFkVpQHQA3Hc7wN5PNGTH4eXKVQUWmwYoToPBeG7fcMBnUHRWUhhkm18GDuCXK1AZzDpsH1DXRFYREEY7fPouBk
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: yBqAMr6b5uxEpr1L8uqGbSHQJ6ZnLS3bpt8qT7snDFr
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4fFkVpQHQA3Hc7wN5PNGTH4eXKVQUWmwYoToPBeG7fcMBnUHRWUhhkm18GDuCXK1AZzDpsH1DXRFYREEY7fPouBk
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Mint: 71vnk14YZ8UjhGqeTWJj8aMhLGV1FtnP4pAr2HQQYN5f
+[Pipeline] Signature: 4fFkVpQHQA3Hc7wN5PNGTH4eXKVQUWmwYoToPBeG7fcMBnUHRWUhhkm18GDuCXK1AZzDpsH1DXRFYREEY7fPouBk
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] Mint: BA63erwFHVcFxsRmYpxnJawQC2Sz4ey6SNfpJex7hx7u
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4fFkVpQHQA3Hc7wN5PNGTH4eXKVQUWmwYoToPBeG7fcMBnUHRWUhhkm18GDuCXK1AZzDpsH1DXRFYREEY7fPouBk
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4MgzumSEhbTCQgGdRu7SqSgCVkaY5WpS5Ahnmd6LXZYgxzJouNuRKMUD7agYHdSkjUZTbKKb7LaYLKt1cTEZ7NmD
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 6oFk6rAXw4A3Zg5hytwmsLsKqKwufK2mYLdAxX8EfacD
+[Pipeline] Mint: AwD1R95rjiAu4rRCg323MSvudivNtaeWmHD4sqDjG6Vj
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4MgzumSEhbTCQgGdRu7SqSgCVkaY5WpS5Ahnmd6LXZYgxzJouNuRKMUD7agYHdSkjUZTbKKb7LaYLKt1cTEZ7NmD
+[Pipeline] Signature: 4MgzumSEhbTCQgGdRu7SqSgCVkaY5WpS5Ahnmd6LXZYgxzJouNuRKMUD7agYHdSkjUZTbKKb7LaYLKt1cTEZ7NmD
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: HL3MdqcCsopKukUJhLXCmXuXLkYqfq1dwQjwSArVqLcT
+[Pipeline] Signature: 5Rk8AWFxFWbkuEkcnYyrMgKhURUmezzwZBae52NjyrYaWodycAhYLacUd6Uet6b9Qq3Nfp15CkW9wKD3gQvuodrF
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 82p55TaUnwtuJjTM4i6wn4G9Arf5x8eRNrkSZnxDZVBi
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5Rk8AWFxFWbkuEkcnYyrMgKhURUmezzwZBae52NjyrYaWodycAhYLacUd6Uet6b9Qq3Nfp15CkW9wKD3gQvuodrF
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: EXrpERUPaga1k4o3U9rKunxCRsaY7oe2rVUsSf73fCEa
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5Rk8AWFxFWbkuEkcnYyrMgKhURUmezzwZBae52NjyrYaWodycAhYLacUd6Uet6b9Qq3Nfp15CkW9wKD3gQvuodrF
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: gitBoexaZNWqwub9M9NYFZFtfXigWmnaG921gQWuFCb
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3QUfHZypd6CXxhU8Ys9Az8r878nZBexEfg5AjRNmVyQ5JYfCCpoqoTZfrR2ALY7vnxTWbViiA6DDsmUPmpMtutdh
+[Multichain] Starting multi-chain launchpad scan...
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: B44UqY2aR36a3mpr5HcS3BBDyiqL8w2NTJ4iYU1oaREV
+[Pipeline] Creator: unknown
+[Pipeline] Signature: dnpX8GneM1SmkxXSfRsCvTCD5dHFGBzj7MJ8wQkfudaVc73v5ZJHPaz8YQoiqdRWE7nxVJeUkPkdS9BF93mRofz
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: DZMsdgpNJeNSwT5rtnJ2JpcF9qKGMSW9zmBeNZAgZif8
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Creator: unknown
+[Pipeline] Source: raydium_pool
+[Pipeline] Signature: dnpX8GneM1SmkxXSfRsCvTCD5dHFGBzj7MJ8wQkfudaVc73v5ZJHPaz8YQoiqdRWE7nxVJeUkPkdS9BF93mRofz
+[Pipeline] Mint: 2iUFBxbMaNzy8bJW2nY5ycy6tZNzFKBdyDjENWxAavYm
+[Pipeline] Creator: unknown
+[Pipeline] Signature: dnpX8GneM1SmkxXSfRsCvTCD5dHFGBzj7MJ8wQkfudaVc73v5ZJHPaz8YQoiqdRWE7nxVJeUkPkdS9BF93mRofz
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 4Nj7eV1WjC6tCjdWLS1xGARyCtExkn1FWM8gXZQGcFqn
+[Pipeline] Creator: unknown
+[Pipeline] Signature: dnpX8GneM1SmkxXSfRsCvTCD5dHFGBzj7MJ8wQkfudaVc73v5ZJHPaz8YQoiqdRWE7nxVJeUkPkdS9BF93mRofz
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 8rQSg7beRtFeedT5ECaa6vr7nYfmHzaQLPdUyxpVuvvz
+[Pipeline] Creator: unknown
+[Pipeline] Signature: dnpX8GneM1SmkxXSfRsCvTCD5dHFGBzj7MJ8wQkfudaVc73v5ZJHPaz8YQoiqdRWE7nxVJeUkPkdS9BF93mRofz
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] Signature: dnpX8GneM1SmkxXSfRsCvTCD5dHFGBzj7MJ8wQkfudaVc73v5ZJHPaz8YQoiqdRWE7nxVJeUkPkdS9BF93mRofz
+[Pipeline] Mint: 8WUvUoM9G7e5KpKtaAvXFuXZEhc4jihvj8XCytnCNbmF
+[Pipeline] Creator: unknown
+[Pipeline] Signature: dnpX8GneM1SmkxXSfRsCvTCD5dHFGBzj7MJ8wQkfudaVc73v5ZJHPaz8YQoiqdRWE7nxVJeUkPkdS9BF93mRofz
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: D8JGAFJVoF3PeF7b6ENaNKrksKBpCCkRdSw6jvoDse9n
+[Pipeline] Creator: unknown
+[Pipeline] Signature: dnpX8GneM1SmkxXSfRsCvTCD5dHFGBzj7MJ8wQkfudaVc73v5ZJHPaz8YQoiqdRWE7nxVJeUkPkdS9BF93mRofz
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: EAbnRKPsTLK52c5X4bWnbHVQcmfzb4WwfuGqTkD9c79M
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: EHm4j4o748svmSXGyJABpg8YvsqxeZiDLx97R9NRknSz
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2JKkwQVxwvgya1zfgc2bKiNVSpeMKLoMUfBexPLHqkgjbSBURpEwJNXvGDByqCnUFVheqgTZQo5Yia7HfiwcuQin
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: aN8v4Zrryeo8iLLUNCfdTuM5aKS7MHrgcTkBBUyKEm1
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2JKkwQVxwvgya1zfgc2bKiNVSpeMKLoMUfBexPLHqkgjbSBURpEwJNXvGDByqCnUFVheqgTZQo5Yia7HfiwcuQin
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: Dg7647DbjkNvQA6RPTyKKFqBzeyWHtfMSxnJxJ8TGhij
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2JKkwQVxwvgya1zfgc2bKiNVSpeMKLoMUfBexPLHqkgjbSBURpEwJNXvGDByqCnUFVheqgTZQo5Yia7HfiwcuQin
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: Ch1XK7jrqontWuRnvgSmzFDkpY9aHhx44e63d5gT1oi5
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3ba8HkcjnLnU3gN9BmnHj3EP8PFZGYuy68z7wfD6acujLU7XUgzKscZ4k1BsP6ap8SPEZ4nBqMmV4soK1nuk9QEh
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 43NJMX46ba42b1Rgk2mAbrV6wc87E1aZCSfkRHjoacPi
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3ba8HkcjnLnU3gN9BmnHj3EP8PFZGYuy68z7wfD6acujLU7XUgzKscZ4k1BsP6ap8SPEZ4nBqMmV4soK1nuk9QEh
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: G4BzoyrKZvLFgWNtDUj3hJuUAd4eWR5PKmuDFqEkE9rD
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3ba8HkcjnLnU3gN9BmnHj3EP8PFZGYuy68z7wfD6acujLU7XUgzKscZ4k1BsP6ap8SPEZ4nBqMmV4soK1nuk9QEh
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 7eE1o833gFPA9Yx7PDfvojJqbpk4Qd4faiSKXV4orwVk
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 8AGCSwMRnQA8vu9yZdUiwUfAvnm7B6B85LsJGrVQ6wVHBQk7qER49Jf74tg31Ueztag1r5UgdoDXWuBGjEDQGVY
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: FdYEvqEKFG69Spt7BcqpzyRNsMuPL1h5XrdgqUvskmRD
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 8AGCSwMRnQA8vu9yZdUiwUfAvnm7B6B85LsJGrVQ6wVHBQk7qER49Jf74tg31Ueztag1r5UgdoDXWuBGjEDQGVY
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: FTnncQitNZp72T3JmJxq86Wn9ukNA8q2dNS9bo8sMDds
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 8AGCSwMRnQA8vu9yZdUiwUfAvnm7B6B85LsJGrVQ6wVHBQk7qER49Jf74tg31Ueztag1r5UgdoDXWuBGjEDQGVY
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 27ZGyWm5uzADnqzKu85NsHsSQ8mZGwCTPT4YnMBQ17yw
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 65TaPcnYq6JHRRCHBUjshMni6uCwcG9RzSkFux23B2eK42U6b2kNqCwh4fZfBCVLj4SwaHpncFv8fw3XLQjzuzpm
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: FCBqg7gUAHTXCZPUs3E9DrmGyB3hb1bWCvnqFR89TW3f
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 65TaPcnYq6JHRRCHBUjshMni6uCwcG9RzSkFux23B2eK42U6b2kNqCwh4fZfBCVLj4SwaHpncFv8fw3XLQjzuzpm
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: AsU9RNhFb8fnqFPPyZfyFnjznV8sndr2R1brefxESBCX
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 65TaPcnYq6JHRRCHBUjshMni6uCwcG9RzSkFux23B2eK42U6b2kNqCwh4fZfBCVLj4SwaHpncFv8fw3XLQjzuzpm
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: E9R6A4A7v9LPzVvPxsQBckHpiE87hFZLs3dTEqa4yJqv
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 65TaPcnYq6JHRRCHBUjshMni6uCwcG9RzSkFux23B2eK42U6b2kNqCwh4fZfBCVLj4SwaHpncFv8fw3XLQjzuzpm
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: ESoEmRQzbiF7Q96xZJTar92B9fGyLG7x8hzeYWovJEcy
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 65TaPcnYq6JHRRCHBUjshMni6uCwcG9RzSkFux23B2eK42U6b2kNqCwh4fZfBCVLj4SwaHpncFv8fw3XLQjzuzpm
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 3DucuWmXKnMt3Z72SUmJetJ2zv3WwhJtrGPZMMuwDDUL
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 65TaPcnYq6JHRRCHBUjshMni6uCwcG9RzSkFux23B2eK42U6b2kNqCwh4fZfBCVLj4SwaHpncFv8fw3XLQjzuzpm
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: nosXBVoaCTtYdLvKY6Csb4AC8JCdQKKAaWYtx2ZMoo7
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5BbWYWdPz5qCmycVerHsFh7K5mstYXm8Q9riLQdMu5FsPjWf7W3zcX1chNJjc443nvg3u1AD2BWHm27qZ47qnJzp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: FZ2S9YZKMoiDNDqYtm4jJjRAjNuNM2VdR3fCyYmkxAq6
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5BbWYWdPz5qCmycVerHsFh7K5mstYXm8Q9riLQdMu5FsPjWf7W3zcX1chNJjc443nvg3u1AD2BWHm27qZ47qnJzp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 4PzWVEyc9wFD7fDcBZ3yxNAMFmxRFKEJ9GkeVukBQ3Mc
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5BbWYWdPz5qCmycVerHsFh7K5mstYXm8Q9riLQdMu5FsPjWf7W3zcX1chNJjc443nvg3u1AD2BWHm27qZ47qnJzp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 51gyaouLrWRywdkpgkmkcSoBVPayUwHmQLEQcHjcvzqM
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5BbWYWdPz5qCmycVerHsFh7K5mstYXm8Q9riLQdMu5FsPjWf7W3zcX1chNJjc443nvg3u1AD2BWHm27qZ47qnJzp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 94efjJedyaTZJRfAiPtU7Fdtnvr6Xn3pfsckDmpwvbvE
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5BbWYWdPz5qCmycVerHsFh7K5mstYXm8Q9riLQdMu5FsPjWf7W3zcX1chNJjc443nvg3u1AD2BWHm27qZ47qnJzp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: DZWh9YvpEEohjLJMkGiSYv4HB9p9iLbcqsaYGsmbuFhZ
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5BbWYWdPz5qCmycVerHsFh7K5mstYXm8Q9riLQdMu5FsPjWf7W3zcX1chNJjc443nvg3u1AD2BWHm27qZ47qnJzp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 3fCMZfWg48aUNYtdPm9KG4kmwseenr446fLAnafd2Uvj
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5BbWYWdPz5qCmycVerHsFh7K5mstYXm8Q9riLQdMu5FsPjWf7W3zcX1chNJjc443nvg3u1AD2BWHm27qZ47qnJzp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 3odKyR3Bym3m166F8AZm87QKFUSxzxsAq8ssWvucPNYU
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5BbWYWdPz5qCmycVerHsFh7K5mstYXm8Q9riLQdMu5FsPjWf7W3zcX1chNJjc443nvg3u1AD2BWHm27qZ47qnJzp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 6564ATkPyf7G5a94EGUbs3MR8itBPtkFaZwzttz8rmmb
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5BbWYWdPz5qCmycVerHsFh7K5mstYXm8Q9riLQdMu5FsPjWf7W3zcX1chNJjc443nvg3u1AD2BWHm27qZ47qnJzp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 6cEhP71hkriMZnhpvTgwQaVPCtRBH2MudEa6r6TBeHQo
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5BbWYWdPz5qCmycVerHsFh7K5mstYXm8Q9riLQdMu5FsPjWf7W3zcX1chNJjc443nvg3u1AD2BWHm27qZ47qnJzp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: AZeBUuenmejWDKdqezLqQk9i4yGsj6EH2ZxQwzoroUMi
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5BbWYWdPz5qCmycVerHsFh7K5mstYXm8Q9riLQdMu5FsPjWf7W3zcX1chNJjc443nvg3u1AD2BWHm27qZ47qnJzp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: GwvC8jdgebjraoyd6Qus36hrVR6J4EBpWSu8ZJUDHsqv
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5BbWYWdPz5qCmycVerHsFh7K5mstYXm8Q9riLQdMu5FsPjWf7W3zcX1chNJjc443nvg3u1AD2BWHm27qZ47qnJzp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: HgWBo5FK8TpEEKnzvbSWQXjwDMDFhnV1bdBvRWAjzX24
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5BbWYWdPz5qCmycVerHsFh7K5mstYXm8Q9riLQdMu5FsPjWf7W3zcX1chNJjc443nvg3u1AD2BWHm27qZ47qnJzp
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: BXUaUz1tShA1VB7p7HdpjuutBvHyEzkYfzM7sh2UKkLC
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5BbWYWdPz5qCmycVerHsFh7K5mstYXm8Q9riLQdMu5FsPjWf7W3zcX1chNJjc443nvg3u1AD2BWHm27qZ47qnJzp
+[Pipeline] Raydium pools added 335 new mints
+[Multichain] Found 0 tokens from solana
+[Multichain] Found 0 tokens across all chains
+[Multichain] 0 tokens passed safety checks
+[Multichain] Starting multi-chain launchpad scan...
+[Multichain] Found 0 tokens from solana
+[Multichain] Found 0 tokens across all chains
+[Multichain] 0 tokens passed safety checks
+[Multichain] Starting multi-chain launchpad scan...
+[Multichain] Found 0 tokens from solana
+[Multichain] Found 0 tokens across all chains
+[Multichain] 0 tokens passed safety checks
+[Multichain] Starting multi-chain launchpad scan...
+[Scanner] Found 0 hot/new token candidates
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: BgjFQH3dDdjQYVMDfULfgHnSQVSHvUDR9m9mJj1xntK4
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2AXhY9dw82g2xmMtbJJGa4zkbKRALvJtrvJFHQfxhSJxNCxskbR5ziHhP3L6yim15EsLnd3HeTVtPHbwwZdyasHu
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: AcawujU1tHDVqSWXXstqSBq12gTGPAsRM3r3vnthKKuK
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2AXhY9dw82g2xmMtbJJGa4zkbKRALvJtrvJFHQfxhSJxNCxskbR5ziHhP3L6yim15EsLnd3HeTVtPHbwwZdyasHu
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 3Th25R5qr3VBqU3Nf9eDcMDTgdJc9qpgXGJWcM1hbdnE
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2AXhY9dw82g2xmMtbJJGa4zkbKRALvJtrvJFHQfxhSJxNCxskbR5ziHhP3L6yim15EsLnd3HeTVtPHbwwZdyasHu
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: BP8h9A9JEPmsYdxxQfTnzLxrqvNH4zve7cb46a7Wpump
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2oCCAHx7GmnqkhNtNBxKkqTy2RDcDFLCMQXyXPWc6wPWq5kZ3BvgjQmKSytx3eB2dRYWX4bmxQRVkpa1ubxTDXR4
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 62DQirSst8BWPyaEMN5L79JN7buhiQRFvE2ezbxY5zq2
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2oCCAHx7GmnqkhNtNBxKkqTy2RDcDFLCMQXyXPWc6wPWq5kZ3BvgjQmKSytx3eB2dRYWX4bmxQRVkpa1ubxTDXR4
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 3PFYrD5KNAwcg9vorUBmysbEfVLrqZjz1hNHfx2NYB6h
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2oCCAHx7GmnqkhNtNBxKkqTy2RDcDFLCMQXyXPWc6wPWq5kZ3BvgjQmKSytx3eB2dRYWX4bmxQRVkpa1ubxTDXR4
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 9Vy3u2tLRuA3Rn8wdjkKjXoEvMwUz1fmaRuCGC1Woscy
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2oCCAHx7GmnqkhNtNBxKkqTy2RDcDFLCMQXyXPWc6wPWq5kZ3BvgjQmKSytx3eB2dRYWX4bmxQRVkpa1ubxTDXR4
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: DXEgF5LFsomuCrWoGXym9MhKZL7fp58ceEexjE9Pnqzy
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2oCCAHx7GmnqkhNtNBxKkqTy2RDcDFLCMQXyXPWc6wPWq5kZ3BvgjQmKSytx3eB2dRYWX4bmxQRVkpa1ubxTDXR4
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: DtCALoefF1GPWNVc2n2V4E7R2Zki4AwNfM6ekev7sEGT
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2oCCAHx7GmnqkhNtNBxKkqTy2RDcDFLCMQXyXPWc6wPWq5kZ3BvgjQmKSytx3eB2dRYWX4bmxQRVkpa1ubxTDXR4
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: EJW4DctfzJCazr5ev18hN3TTqvarbNNSVxheRhEze6hw
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2oCCAHx7GmnqkhNtNBxKkqTy2RDcDFLCMQXyXPWc6wPWq5kZ3BvgjQmKSytx3eB2dRYWX4bmxQRVkpa1ubxTDXR4
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: HwZaamgXzbP1m4SZVyj6c9CUszVeJK9vSgsFDDXnSQiR
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2oCCAHx7GmnqkhNtNBxKkqTy2RDcDFLCMQXyXPWc6wPWq5kZ3BvgjQmKSytx3eB2dRYWX4bmxQRVkpa1ubxTDXR4
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 2JvBwc9za1zykvBen8h3KLdmW5jG9BiAw6gkVaMFnmYa
+[Pipeline] Creator: unknown
+[Pipeline] Signature: HzVXJAP1URohg1dtUCdvbtFtFztjvXeSaNPzwwqxDQeZW4vLsMvFJgTimNGJ5xjPTg6hDSGsUwkJcnNQaHNVuUg
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: Hiy2dk28p5Y2h6wb7TQxpHmigqe6PfxpTCMgykR961zX
+[Pipeline] Creator: unknown
+[Pipeline] Signature: HzVXJAP1URohg1dtUCdvbtFtFztjvXeSaNPzwwqxDQeZW4vLsMvFJgTimNGJ5xjPTg6hDSGsUwkJcnNQaHNVuUg
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: J2bYQM3G2RUZTmCEdjteFduyWnCKyXpuqBeWywmnCbrj
+[Pipeline] Creator: unknown
+[Pipeline] Signature: HzVXJAP1URohg1dtUCdvbtFtFztjvXeSaNPzwwqxDQeZW4vLsMvFJgTimNGJ5xjPTg6hDSGsUwkJcnNQaHNVuUg
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 6LRcfkoPAN8UBArgaGyH5wod4BcdtNVDxvVu6EvMhPJD
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4u9La2eXSkpFR3J4e5mYXkyuS4ghLarSFhzfkYVKXvUPdBdZBsFb6wVn6S4DruycSrA9GqgmotmepWegaBaKhkgg
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 69DctnyNvHkHWFeQ4DTyU3aRPxm133AYw3b9PBqgwivs
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4u9La2eXSkpFR3J4e5mYXkyuS4ghLarSFhzfkYVKXvUPdBdZBsFb6wVn6S4DruycSrA9GqgmotmepWegaBaKhkgg
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: EEmA8Strg3cTRrXaNjptrW9mJdJ2uxSDgJ3x4HUHdHv8
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4u9La2eXSkpFR3J4e5mYXkyuS4ghLarSFhzfkYVKXvUPdBdZBsFb6wVn6S4DruycSrA9GqgmotmepWegaBaKhkgg
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: BtDGMNsm5urYuBmBkSDZrYwndV6LxKUTzrHk7e5ciqC2
+[Pipeline] Creator: unknown
+[Pipeline] Signature: JXdKDnAUzxX2Z9ZNHhgKM7Dg5DAU7dUvpzJDEC2qpcZ4YvLAHRSW8FnXoRtnAm53RQcumaZ34KgQ98S72YShNGx
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 7LkSg8Kkzw47a5pT6SR6CV1yhYVtbjNE3xxepzzm5N8L
+[Pipeline] Creator: unknown
+[Pipeline] Signature: JXdKDnAUzxX2Z9ZNHhgKM7Dg5DAU7dUvpzJDEC2qpcZ4YvLAHRSW8FnXoRtnAm53RQcumaZ34KgQ98S72YShNGx
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: FAXiSUKYwfGb4Z2VdvhK5uBcW1NaNRRkj85YiXDsqA7r
+[Pipeline] Creator: unknown
+[Pipeline] Signature: JXdKDnAUzxX2Z9ZNHhgKM7Dg5DAU7dUvpzJDEC2qpcZ4YvLAHRSW8FnXoRtnAm53RQcumaZ34KgQ98S72YShNGx
+[Multichain] Scan already in progress
+[Multichain] Found 0 tokens from solana
+[Multichain] Found 0 tokens across all chains
+[Multichain] 0 tokens passed safety checks
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 7mZMG7URYuQDG3J2ff754oCtSVVij9jf7JTk2eA9pMpp
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4DbkWpCvJDcBGyQPBzdDGSa8D1iLisKcm8k9EY6qAEmWgQCrZgq5wQr4cAQNP9QBwEFTDS4Ru8mVhPMdGFiZn21w
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: FTGT5W94ZYbLinsESnXQxJotuvfue23NGoxPqz9ichUa
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3XNbsSQfTXxjkzbockqdY4gfPjBsnQt1CkPoyys4rK7qwEA13WMY7yYHQmVAyGrWsjs9kEdFRGg4bAG1ZF69pM8g
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 7bYajNxPJeKZWtT6AEK3eBecCPwYubybP1jWrmxzFWCH
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3XNbsSQfTXxjkzbockqdY4gfPjBsnQt1CkPoyys4rK7qwEA13WMY7yYHQmVAyGrWsjs9kEdFRGg4bAG1ZF69pM8g
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: Fr3Ge2eHFptmhGwVovPZ93AfZQpwe5SE5Xd6azTyX9Qa
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 3XNbsSQfTXxjkzbockqdY4gfPjBsnQt1CkPoyys4rK7qwEA13WMY7yYHQmVAyGrWsjs9kEdFRGg4bAG1ZF69pM8g
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: BPTcryprCPZJ3A8KfrAroj5ipaNnAZjsQNJuzCS4v7tV
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 52j27RiM8FRw2iD8Ln7ay4AJq8SWPBQh9PJDKjYnsvPWRjiTYdmhKSbkvcN2SQzcumE7ThSs89rFxdxZtcjJq2yd
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 4SUTDegDRmGbsF5dnzb3rJTNzNtfmD8tRsyyAkSxoqCJ
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 52j27RiM8FRw2iD8Ln7ay4AJq8SWPBQh9PJDKjYnsvPWRjiTYdmhKSbkvcN2SQzcumE7ThSs89rFxdxZtcjJq2yd
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: FxXgYSHzNaCyyAmyFzpQn8RX6ikJ2endv5onkkHyMATe
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 52j27RiM8FRw2iD8Ln7ay4AJq8SWPBQh9PJDKjYnsvPWRjiTYdmhKSbkvcN2SQzcumE7ThSs89rFxdxZtcjJq2yd
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: AoYwbh99oWqSur1y7kEnj82sz7CzFc5NEywxuFpocsEG
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 52j27RiM8FRw2iD8Ln7ay4AJq8SWPBQh9PJDKjYnsvPWRjiTYdmhKSbkvcN2SQzcumE7ThSs89rFxdxZtcjJq2yd
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 5TTcnrze5u288SbT9Kb9nvELfXDT7ufZALwgCz1DHiFR
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 52j27RiM8FRw2iD8Ln7ay4AJq8SWPBQh9PJDKjYnsvPWRjiTYdmhKSbkvcN2SQzcumE7ThSs89rFxdxZtcjJq2yd
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 6UUgnDuEd3sxMJSo9CEYMmyKkSkbYoNtk7y14bYetu6X
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 52j27RiM8FRw2iD8Ln7ay4AJq8SWPBQh9PJDKjYnsvPWRjiTYdmhKSbkvcN2SQzcumE7ThSs89rFxdxZtcjJq2yd
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Signature: 5HJe7WEEXJCQJL3XAgX6Y8VzaxRz8mLuVrAGme4KQ8UfrczRHYtCrZc2q9DP9xyyP1gkitMvYsTw6JxJYhyqP9gZ
+[Pipeline] Mint: DHbWR1V5dn7HiBCH3dmTfGkvTt7n1bkTsN1VPta57xjK
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5Q2vTWkGPkVKVigje26uJDXpnoJoV19EMGwNsPPvk6QvHD4X2epcy9S3Ud8JeBwdyfx1tTiYwx8efPFVhdkbMRCB
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: CRR5Ego4fFTJ5mWgK3wmX6WVsWEPFfa1YtRn7z8MQFer
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5HJe7WEEXJCQJL3XAgX6Y8VzaxRz8mLuVrAGme4KQ8UfrczRHYtCrZc2q9DP9xyyP1gkitMvYsTw6JxJYhyqP9gZ
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 34y8qcQrxYoeERrV7LXb5JfNLt2e86dkJLN5rCPvBpTu
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2Ev5Xq32xpUKcnPvh8U6yigSuoWxaCyUHDnWcBAK3UkcmzMyewbcubDkM1fj2qDgRRdsp8ZrYkHkxHbaigKwPG83
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 2pXLNDNbXQn2dJ4QT9gccWDwisQksGHKrYq7vbCy2gYP
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2Ev5Xq32xpUKcnPvh8U6yigSuoWxaCyUHDnWcBAK3UkcmzMyewbcubDkM1fj2qDgRRdsp8ZrYkHkxHbaigKwPG83
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: GRNDAcVgbcMZgC3UeJuquea9HCTSiGxYuEyxtfPWPe7N
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 2Ev5Xq32xpUKcnPvh8U6yigSuoWxaCyUHDnWcBAK3UkcmzMyewbcubDkM1fj2qDgRRdsp8ZrYkHkxHbaigKwPG83
+[Pipeline] Mint: 5jRynCjijJRiCK7JAH31UvTHWwHpeNghF9XEpV2siNub
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5Q2vTWkGPkVKVigje26uJDXpnoJoV19EMGwNsPPvk6QvHD4X2epcy9S3Ud8JeBwdyfx1tTiYwx8efPFVhdkbMRCB
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 6kUFwFcSBsedWyE6G8BXA1hMjLdafEE6RkNkrrXPBnVf
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5Q2vTWkGPkVKVigje26uJDXpnoJoV19EMGwNsPPvk6QvHD4X2epcy9S3Ud8JeBwdyfx1tTiYwx8efPFVhdkbMRCB
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 7rNizyzaC2pAKVryeVc1N5RCUKSeNDGHxsZhMYBgFebf
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5HJe7WEEXJCQJL3XAgX6Y8VzaxRz8mLuVrAGme4KQ8UfrczRHYtCrZc2q9DP9xyyP1gkitMvYsTw6JxJYhyqP9gZ
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: BY6EPpoPyhMhTbG8P2FWfcuotSy7Y9pNvKUGuf8kzyLB
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 22C5x9KjPjdU9PDUS65zobFQuggPGyY6CDRu6WfZKPQT
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4LmQ6bSn4NApwEgJd2GZzyaQgA4m54FsazbTi4CW7ie5Q1nY6DdQDVU8sQyKH3Ecvtj8NUwzjPSFqXNGqGCM52BZ
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: EvkMn5C6hhAdqgxC3quaa7d4wFDNh8dMTXgqsgbEGvy3
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4LmQ6bSn4NApwEgJd2GZzyaQgA4m54FsazbTi4CW7ie5Q1nY6DdQDVU8sQyKH3Ecvtj8NUwzjPSFqXNGqGCM52BZ
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 5bK3cBhjYdgDU9K6CZSMrVEhVtpETCwbd4h7wkh9Unaq
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4LmQ6bSn4NApwEgJd2GZzyaQgA4m54FsazbTi4CW7ie5Q1nY6DdQDVU8sQyKH3Ecvtj8NUwzjPSFqXNGqGCM52BZ
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: EjdbFqka2PoYAenZWS89aQiKGJfeSm1fM4pkRBU3bonk
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 7VgGRxiJhfXuLFiRoqHiZsEcnswQA8oMc7SHdPw5kDkK
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: Cj4z6rJpRPF8bjtGu8yaBm5c8tQnLT3vdZ4BbKfsK1Gv
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: RMdy5KX3TefxsLU63qWFhNcvAddze5aHQu7SNZszsZZ
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 3oRgJkpmyYfG6bBx9WLHGjXQ1CWRtSVeB4sYFUrJoKkP
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 8ToN8nc5xvwKX2iQqHas9JbEoxup2u5VyX7aKsFCjoXG
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: E5upxzhe9bWexzos5BZQxCzubfWgG141HDedd3oXzk4k
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: HdNVXavkUL66Hsm2sDxtKV7eVHgERJUqAxmSigoV85Vw
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 3T6qNbQqWYDfSTew1ifsNedtoeDP8LRuCegmUH27ykEZ
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 3kEBsgJenBhHLBCJ3q3uD6FnpEtfHmnPFYRSLMKENF8e
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 5BzogZvHNEuwstR4iwTWdd7jknFBZqJQWVjxPsDfEUD6
+[Pipeline] Creator: unknown
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 7qdJd8pFRDTYKjnegDu523T4qqj4nV1PQm9SuGTX6nt9
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 9GTj99g9tbz9U6UYDsX6YeRTgUnkYG6GTnHv3qLa5aXq
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] Mint: 787oSkUh9gLoZyw4SzPWqAooRsoJZr9San74kswwHewV
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 9WZTxhJSCff2ugzL2q9f3KAmN6PVYDJZJAAN6zqeQLP6
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Mint: AJ3nQMnHAe8MJAy2oQCa3PDm6oMqu1ULBKPYqS1JwBjV
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 2wkZtdF3xMJtj5SyurWTnGBwo8hgU6cyWUvDWM3MtNuk
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: 4E6xP73xzTs4aCvY92hbXRwWkYptNwvViPZmLcZEBUk4
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 4SJN7vFhw355kFkPmeZFRsUAxTAyjNLvQy8oBcHHvxC2Nv4Ej5hYiZhLSytGwhnw8KcBz4ShkNV15tiASaP3giCN
+[Pipeline] Raydium pools added 301 new mints
+[Multichain] Starting multi-chain launchpad scan...
+[Multichain] Scan already in progress
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Source: raydium_pool
+[Pipeline] Mint: GcnHiaezHoYLMgp81CR9Y4g66XzMcTkfk7Lvc8q64Fzo
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5nUYqrmJFgqqXbvzyvgfUMaN1udps7VJZJ8UsSkHRY4SnoufkrUMpXsHTi7smeuqokcFyjSz7hMyudDXN2SuuNFZ
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5nUYqrmJFgqqXbvzyvgfUMaN1udps7VJZJ8UsSkHRY4SnoufkrUMpXsHTi7smeuqokcFyjSz7hMyudDXN2SuuNFZ
+[Pipeline] Creator: unknown
+[Pipeline] Signature: 5nUYqrmJFgqqXbvzyvgfUMaN1udps7VJZJ8UsSkHRY4SnoufkrUMpXsHTi7smeuqokcFyjSz7hMyudDXN2SuuNFZ
+[Pipeline] Source: raydium_pool
+[Pipeline] Creator: unknown
+[Pipeline] NEW TOKEN DETECTED
+[Pipeline] Creator: unknown
+[Pipeline] Source: raydium_pool
+[Pipeline] Signature: 73qpqkwzT5PTwRbQTvpNT7UxMdNuDHeHYUKAPwF1PPwehgMEtZSMe9DgosDRAAddmX3WTmBu8R9qWDWQZFGYxw2
