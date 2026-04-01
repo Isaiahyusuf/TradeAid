@@ -25,6 +25,20 @@ if (railwayPublicDomain) {
 }
 
 allowedOrigins.add("https://tradeaid.ink");
+allowedOrigins.add("https://www.tradeaid.ink");
+allowedOrigins.add("https://app.tradeaid.ink");
+
+function isTradeAidOrigin(origin: string): boolean {
+  const value = String(origin || "").trim();
+  if (!value) return false;
+
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" && (parsed.hostname === "tradeaid.ink" || parsed.hostname.endsWith(".tradeaid.ink"));
+  } catch {
+    return false;
+  }
+}
 
 declare module "http" {
   interface IncomingMessage {
@@ -46,7 +60,7 @@ app.use(express.urlencoded({ extended: false, limit: "25mb" }));
 app.use((req, res, next) => {
   const origin = String(req.headers.origin || "").trim();
   const allowAny = allowedOrigins.has("*");
-  const isAllowedOrigin = !!origin && (allowAny || allowedOrigins.has(origin));
+  const isAllowedOrigin = !!origin && (allowAny || allowedOrigins.has(origin) || isTradeAidOrigin(origin));
 
   if (isAllowedOrigin) {
     res.setHeader("Access-Control-Allow-Origin", origin);
