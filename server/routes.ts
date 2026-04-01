@@ -60,6 +60,9 @@ let multichainSchedulerTickCount = 0;
 const ENABLE_PUMP_INGEST_LOGS = String(
   process.env.ENABLE_PUMP_INGEST_LOGS || "false",
 ).trim().toLowerCase() === "true";
+const ENABLE_BACKGROUND_WORKERS = String(
+  process.env.ENABLE_BACKGROUND_WORKERS || "false",
+).trim().toLowerCase() === "true";
 
 function resolveOpenAiApiKey(): string {
   return String(
@@ -8786,8 +8789,12 @@ export async function registerRoutes(
     }
   };
 
-  startDoctorScheduler();
-  void startDoctorCyclesForEnabledUsers();
+  if (ENABLE_BACKGROUND_WORKERS) {
+    startDoctorScheduler();
+    void startDoctorCyclesForEnabledUsers();
+  } else {
+    console.log("[DoctorTrade] Background scheduler disabled (set ENABLE_BACKGROUND_WORKERS=true to enable)");
+  }
 
   const assistantChains = ["solana"] as const;
   type AssistantChain = (typeof assistantChains)[number];
@@ -8964,8 +8971,12 @@ export async function registerRoutes(
   const generateMnemonic = () => bip39.generateMnemonic(128);
   const chainNativeSymbol = (_chain: AssistantChain) => "SOL";
 
-  await loadDoctorDexWorkerState();
-  startDoctorDexWorker();
+  if (ENABLE_BACKGROUND_WORKERS) {
+    await loadDoctorDexWorkerState();
+    startDoctorDexWorker();
+  } else {
+    console.log("[DoctorTrade] Dex worker disabled (set ENABLE_BACKGROUND_WORKERS=true to enable)");
+  }
 
   const chainExplorerTxUrl = (_chain: AssistantChain, txHash: string) => `https://explorer.solana.com/tx/${txHash}`;
 
@@ -11385,32 +11396,36 @@ export async function registerRoutes(
   } catch {
   }
   
-  // Start background token scanner (fresh pair detection)
-  const scannerIntervalMs = Math.max(10_000, Number(process.env.BACKGROUND_SCANNER_INTERVAL_MS || 20_000));
-  startBackgroundScanner(scannerIntervalMs);
+  if (ENABLE_BACKGROUND_WORKERS) {
+    // Start background token scanner (fresh pair detection)
+    const scannerIntervalMs = Math.max(10_000, Number(process.env.BACKGROUND_SCANNER_INTERVAL_MS || 20_000));
+    startBackgroundScanner(scannerIntervalMs);
 
-  // Start periodic multichain launchpad scans
-  try {
-    const multichainIntervalMs = Math.max(2_000, Number(process.env.MULTICHAIN_SCAN_INTERVAL_MS || 5_000));
-    if (!multichainSchedulerStarted) {
-      multichainSchedulerStarted = true;
-      console.log(`[Multichain] Scheduler started (interval=${multichainIntervalMs}ms)`);
+    // Start periodic multichain launchpad scans
+    try {
+      const multichainIntervalMs = Math.max(2_000, Number(process.env.MULTICHAIN_SCAN_INTERVAL_MS || 5_000));
+      if (!multichainSchedulerStarted) {
+        multichainSchedulerStarted = true;
+        console.log(`[Multichain] Scheduler started (interval=${multichainIntervalMs}ms)`);
 
-      setInterval(() => {
-        multichainSchedulerTickCount += 1;
-        if (multichainSchedulerTickCount % 30 === 1) {
-          console.log(`[Multichain] Scheduler heartbeat tick=${multichainSchedulerTickCount}`);
-        }
+        setInterval(() => {
+          multichainSchedulerTickCount += 1;
+          if (multichainSchedulerTickCount % 30 === 1) {
+            console.log(`[Multichain] Scheduler heartbeat tick=${multichainSchedulerTickCount}`);
+          }
+          multichainScanner.scanAllLaunchpads().catch(console.error);
+        }, multichainIntervalMs);
+
+        // Run one immediate scan at boot.
         multichainScanner.scanAllLaunchpads().catch(console.error);
-      }, multichainIntervalMs);
-
-      // Run one immediate scan at boot.
-      multichainScanner.scanAllLaunchpads().catch(console.error);
-    } else {
-      console.log("[Multichain] Scheduler already started; skipping duplicate bootstrap");
+      } else {
+        console.log("[Multichain] Scheduler already started; skipping duplicate bootstrap");
+      }
+    } catch (e) {
+      console.error("Failed to start multichain scanner:", e);
     }
-  } catch (e) {
-    console.error("Failed to start multichain scanner:", e);
+  } else {
+    console.log("[Scanner] Background scanners disabled (set ENABLE_BACKGROUND_WORKERS=true to enable)");
   }
 
   // === RugShield ===
