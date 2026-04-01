@@ -1455,6 +1455,41 @@ export async function registerRoutes(
     } as const;
   };
 
+  const getAssistantWalletPrivateKeyForUser = async (userId: string) => {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) {
+      return "";
+    }
+
+    let privateKey = "";
+    try {
+      const assistantState = await storage.getAppState<Record<string, any>>(`${assistantRuntimeByUserStateKeyPrefix}:${normalizedUserId}`);
+      privateKey = String(
+        assistantState?.wallet?.private_keys_by_chain?.solana
+        || assistantState?.wallet?.privateKey
+        || "",
+      ).trim();
+    } catch {
+      privateKey = "";
+    }
+
+    if (privateKey) {
+      return privateKey;
+    }
+
+    try {
+      await loadAssistantRuntime(normalizedUserId);
+      privateKey = String(
+        assistantRuntime.wallet.private_keys_by_chain?.solana
+        || "",
+      ).trim();
+    } catch {
+      privateKey = "";
+    }
+
+    return privateKey;
+  };
+
   const setDoctorLivePrivateKeyForUser = async (userId: string, privateKey: string) => {
     const timestamp = nowIso();
     const encryptedPrivateKey = encryptDoctorPrivateKey(privateKey);
@@ -8296,10 +8331,28 @@ export async function registerRoutes(
         });
 
         if (!resolvedPrivateKey && useExistingWallet) {
-          await syncDoctorWalletFromAssistantRuntime(userId);
           const wallets = await getStoredDoctorWalletsByUser();
           const existingWallet = wallets[userId] as Record<string, any> | undefined;
           resolvedPrivateKey = decryptDoctorPrivateKey(getDoctorWalletStoredPrivateKey(existingWallet));
+
+          if (!resolvedPrivateKey) {
+            await syncDoctorWalletFromAssistantRuntime(userId);
+            const refreshedWallets = await getStoredDoctorWalletsByUser();
+            const refreshedWallet = refreshedWallets[userId] as Record<string, any> | undefined;
+            resolvedPrivateKey = decryptDoctorPrivateKey(getDoctorWalletStoredPrivateKey(refreshedWallet));
+          }
+
+          if (!resolvedPrivateKey) {
+            resolvedPrivateKey = await getAssistantWalletPrivateKeyForUser(userId);
+            if (resolvedPrivateKey) {
+              const assistantAddress = deriveSolanaAddressFromPrivateKey(resolvedPrivateKey);
+              if (assistantAddress) {
+                doctorRuntime.wallet.address = assistantAddress;
+              }
+              await setDoctorLivePrivateKeyForUser(userId, resolvedPrivateKey);
+              await persistDoctorRuntime(userId);
+            }
+          }
         }
 
         if (!resolvedPrivateKey) {

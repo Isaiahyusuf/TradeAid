@@ -224,6 +224,7 @@ export default function WalletPage() {
   const selectedReceiveAddress = addressesByChain[receiveChain] || "";
   const solanaAddress = String(addressesByChain.solana || "").trim();
   const walletConnected = Boolean(wallet?.has_wallet && solanaAddress);
+  const walletExists = Boolean(wallet?.has_wallet || solanaAddress);
   const savingInProgress = Boolean(
     createWallet.isPending
     || importWallet.isPending
@@ -756,42 +757,56 @@ export default function WalletPage() {
               onToggle={() => setSecuritySetupOpen((prev) => !prev)}
             >
               <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="wallet-import">Import 12-word phrase</Label>
-                    <Textarea id="wallet-import" value={importMnemonic} onChange={(e) => setImportMnemonic(e.target.value)} className="min-h-[90px]" placeholder="Enter your 12-word recovery phrase" />
-                    <div className="flex gap-2">
-                      <Button variant="outline" onClick={() => handleImportWallet(false)} disabled={importWallet.isPending}>{importWallet.isPending ? "Importing..." : "Import Wallet"}</Button>
-                      <Button variant="outline" onClick={() => handleImportWallet(true)} disabled={importWallet.isPending}>Import + Overwrite</Button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="wallet-import-pk">Connect by private key</Label>
+                {walletExists ? (
+                  <div className="rounded-lg border border-green-500/40 bg-green-500/10 p-3 space-y-2">
                     <div className="flex items-center gap-2 text-xs">
-                      <Badge variant={walletConnected ? "default" : "outline"} className={walletConnected ? "border-green-500/40 bg-green-500/15 text-green-300" : ""}>
-                        {walletConnected ? "Connected" : "Not Connected"}
+                      <Badge variant="default" className="border-green-500/40 bg-green-500/15 text-green-300">
+                        Wallet already exists
                       </Badge>
-                      {walletConnected && <span className="text-muted-foreground">{shortAddress(solanaAddress)}</span>}
+                      {solanaAddress && <span className="text-muted-foreground">{shortAddress(solanaAddress)}</span>}
                     </div>
-                    <Textarea
-                      id="wallet-import-pk"
-                      value={importPrivateKey}
-                      onChange={(e) => setImportPrivateKey(e.target.value)}
-                      className="min-h-[90px]"
-                      placeholder="Paste Solana private key (base58, base64, or JSON array)"
-                    />
-                    <div className="flex gap-2">
-                      <Button variant="outline" onClick={() => handleImportWalletPrivateKey(false)} disabled={importWalletPrivateKey.isPending}>
-                        {importWalletPrivateKey.isPending ? "Connecting..." : "Connect Key"}
-                      </Button>
-                      <Button variant="outline" onClick={() => handleImportWalletPrivateKey(true)} disabled={importWalletPrivateKey.isPending}>
-                        Connect + Overwrite
-                      </Button>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">Private-key import marks backup as confirmed automatically.</p>
+                    <p className="text-sm text-muted-foreground">
+                      This account already has a wallet. Import fields are hidden to prevent accidental overwrite. Delete wallet first if you want to import a new phrase or private key.
+                    </p>
                   </div>
-                </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="wallet-import">Import 12-word phrase</Label>
+                      <Textarea id="wallet-import" value={importMnemonic} onChange={(e) => setImportMnemonic(e.target.value)} className="min-h-[90px]" placeholder="Enter your 12-word recovery phrase" />
+                      <div className="flex gap-2">
+                        <Button variant="outline" onClick={() => handleImportWallet(false)} disabled={importWallet.isPending}>{importWallet.isPending ? "Importing..." : "Import Wallet"}</Button>
+                        <Button variant="outline" onClick={() => handleImportWallet(true)} disabled={importWallet.isPending}>Import + Overwrite</Button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="wallet-import-pk">Connect by private key</Label>
+                      <div className="flex items-center gap-2 text-xs">
+                        <Badge variant={walletConnected ? "default" : "outline"} className={walletConnected ? "border-green-500/40 bg-green-500/15 text-green-300" : ""}>
+                          {walletConnected ? "Connected" : "Not Connected"}
+                        </Badge>
+                        {walletConnected && <span className="text-muted-foreground">{shortAddress(solanaAddress)}</span>}
+                      </div>
+                      <Textarea
+                        id="wallet-import-pk"
+                        value={importPrivateKey}
+                        onChange={(e) => setImportPrivateKey(e.target.value)}
+                        className="min-h-[90px]"
+                        placeholder="Paste Solana private key (base58, base64, or JSON array)"
+                      />
+                      <div className="flex gap-2">
+                        <Button variant="outline" onClick={() => handleImportWalletPrivateKey(false)} disabled={importWalletPrivateKey.isPending}>
+                          {importWalletPrivateKey.isPending ? "Connecting..." : "Connect Key"}
+                        </Button>
+                        <Button variant="outline" onClick={() => handleImportWalletPrivateKey(true)} disabled={importWalletPrivateKey.isPending}>
+                          Connect + Overwrite
+                        </Button>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">Private-key import marks backup as confirmed automatically.</p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="rounded-lg border border-border/60 p-3 bg-muted/20 space-y-2">
                   <p className="text-sm font-medium">Delete Existing App Wallet</p>
