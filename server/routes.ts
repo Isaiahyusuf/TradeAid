@@ -7958,6 +7958,28 @@ export async function registerRoutes(
   app.get("/api/doctor/wallet-map", isAuthenticated, handleDoctorWalletMap);
   app.get("/api/doctor/admin/wallet-map", isAuthenticated, handleDoctorWalletMap);
 
+  const runDoctorTaskWithTimeout = async <T>(
+    label: string,
+    userId: string,
+    task: Promise<T>,
+    timeoutMs: number,
+  ): Promise<T | undefined> => {
+    const safeTimeoutMs = Math.max(250, Math.trunc(Number(timeoutMs || 0)));
+    try {
+      return await Promise.race<T>([
+        task,
+        new Promise<T>((_resolve, reject) => setTimeout(() => reject(new Error(`${label}_timeout`)), safeTimeoutMs)),
+      ]);
+    } catch (error: any) {
+      console.warn("[doctor.runtime.task] timed_or_failed", {
+        label,
+        userId,
+        message: String(error?.message || "unknown_error"),
+      });
+      return undefined;
+    }
+  };
+
   app.post("/api/doctor/control", isAuthenticated, async (req: any, res) => {
     const userId = getRequestUserId(req);
     if (!userId) {
@@ -7982,10 +8004,10 @@ export async function registerRoutes(
     }
     await persistDoctorRuntime(userId);
 
-    await stopDoctorCycleForUser(userId);
+    await runDoctorTaskWithTimeout("control.stop_cycle", userId, stopDoctorCycleForUser(userId), 3_000);
     if (doctorRuntime.enabled) {
-      await ensureDoctorLiveExecutionModeIfCapable(userId);
-      await startDoctorCycleForUser(userId);
+      await runDoctorTaskWithTimeout("control.ensure_live", userId, ensureDoctorLiveExecutionModeIfCapable(userId), 3_000);
+      await runDoctorTaskWithTimeout("control.start_cycle", userId, startDoctorCycleForUser(userId), 5_000);
       // Guard against stale runtime snapshots immediately after start.
       await loadDoctorRuntimeForUser(userId);
       if (!doctorRuntime.killSwitch && !doctorRuntime.enabled) {
@@ -7995,7 +8017,7 @@ export async function registerRoutes(
       }
     }
 
-    await saveDoctorWalletForUser(userId);
+    await runDoctorTaskWithTimeout("control.save_wallet", userId, saveDoctorWalletForUser(userId), 3_000);
     return res.json(await buildDoctorStatus(userId));
   });
 
@@ -8174,13 +8196,13 @@ export async function registerRoutes(
     }
     await persistDoctorRuntime(userId);
 
-    await stopDoctorCycleForUser(userId);
+    await runDoctorTaskWithTimeout("config.stop_cycle", userId, stopDoctorCycleForUser(userId), 3_000);
     if (doctorRuntime.enabled) {
-      await ensureDoctorLiveExecutionModeIfCapable(userId);
-      await startDoctorCycleForUser(userId);
+      await runDoctorTaskWithTimeout("config.ensure_live", userId, ensureDoctorLiveExecutionModeIfCapable(userId), 3_000);
+      await runDoctorTaskWithTimeout("config.start_cycle", userId, startDoctorCycleForUser(userId), 5_000);
     }
 
-    await saveDoctorWalletForUser(userId);
+    await runDoctorTaskWithTimeout("config.save_wallet", userId, saveDoctorWalletForUser(userId), 3_000);
     return res.json(await buildDoctorStatus(userId));
   });
 
