@@ -211,10 +211,9 @@ export default function AuthPage() {
       || hostname === "www.tradeaid.ink"
       || hostname === "app.tradeaid.ink"
       || hostname.endsWith(".tradeaid.ink");
-    const apiBase = configuredBase
-      || (isTradeAidDomain
-        ? "https://api.tradeaid.ink"
-        : "");
+    const apiBase = isTradeAidDomain
+      ? "https://api.tradeaid.ink"
+      : configuredBase;
     if (!apiBase) {
       toast({ title: "Configuration required", description: "OAuth sign-in is unavailable. Missing VITE_API_URL.", variant: "destructive" });
       return;

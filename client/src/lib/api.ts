@@ -21,10 +21,6 @@ const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL);
 const API_DOMAIN_OVERRIDE = "https://api.tradeaid.ink";
 
 function resolveApiBaseUrl(): string {
-  if (API_URL) {
-    return API_URL;
-  }
-
   if (typeof window !== "undefined") {
     const hostname = String(window.location.hostname || "").toLowerCase();
     const isTradeAidDomain = hostname === "tradeaid.ink"
@@ -34,7 +30,14 @@ function resolveApiBaseUrl(): string {
     if (isTradeAidDomain) {
       return API_DOMAIN_OVERRIDE;
     }
+    if (API_URL) {
+      return API_URL;
+    }
     return window.location.origin;
+  }
+
+  if (API_URL) {
+    return API_URL;
   }
 
   return "";
