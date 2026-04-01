@@ -428,6 +428,14 @@ export function useDoctorConnectWallet() {
   });
 }
 
+export function useDoctorCreateAppWallet() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost<{ wallet?: { has_wallet?: boolean } }>("/api/ai/wallets/create", {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade"] }),
+  });
+}
+
 export function useDoctorDisconnectWallet() {
   const qc = useQueryClient();
   return useMutation({
