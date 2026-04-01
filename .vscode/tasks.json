@@ -1,0 +1,221 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "redeploy-web-railway",
+			"type": "shell",
+			"command": "cmd /c railway up --service web",
+			"isBackground": false
+		},
+		{
+			"label": "redeploy-web-railway-verbose",
+			"type": "shell",
+			"command": "cmd /c railway up --service web --verbose",
+			"isBackground": false
+		},
+		{
+			"label": "railway-up-help",
+			"type": "shell",
+			"command": "cmd /c railway up --help",
+			"isBackground": false
+		},
+		{
+			"label": "railway-help",
+			"type": "shell",
+			"command": "cmd /c railway --help",
+			"isBackground": false
+		},
+		{
+			"label": "railway-redeploy-help",
+			"type": "shell",
+			"command": "cmd /c railway redeploy --help",
+			"isBackground": false
+		},
+		{
+			"label": "railway-redeploy-web",
+			"type": "shell",
+			"command": "cmd /c railway redeploy -s web -y",
+			"isBackground": false
+		},
+		{
+			"label": "railway-redeploy-backend",
+			"type": "shell",
+			"command": "cmd /c railway redeploy -s trade-aid-backend -y",
+			"isBackground": false
+		},
+		{
+			"label": "check-railway-dns",
+			"type": "shell",
+			"command": "cmd /c nslookup backboard.railway.com && ping -n 1 railway.com",
+			"isBackground": false
+		},
+		{
+			"label": "check-railway-dns-2",
+			"type": "shell",
+			"command": "cmd /c \"nslookup backboard.railway.com & ping -n 1 railway.com\"",
+			"isBackground": false
+		},
+		{
+			"label": "check-railway-dns-ps",
+			"type": "shell",
+			"command": "nslookup backboard.railway.com; ping railway.com -n 1",
+			"isBackground": false
+		},
+		{
+			"label": "railway-redeploy-web-retry",
+			"type": "shell",
+			"command": "railway redeploy -s web -y",
+			"isBackground": false
+		},
+		{
+			"label": "railway-redeploy-backend-retry",
+			"type": "shell",
+			"command": "railway redeploy -s trade-aid-backend -y",
+			"isBackground": false
+		},
+		{
+			"label": "railway-service-help",
+			"type": "shell",
+			"command": "railway service --help",
+			"isBackground": false
+		},
+		{
+			"label": "railway-service-status",
+			"type": "shell",
+			"command": "railway service status",
+			"isBackground": false
+		},
+		{
+			"label": "railway-project-list",
+			"type": "shell",
+			"command": "railway list",
+			"isBackground": false
+		},
+		{
+			"label": "railway-project-list-json",
+			"type": "shell",
+			"command": "railway list --json",
+			"isBackground": false
+		},
+		{
+			"label": "railway-find-tradeaid-projects",
+			"type": "shell",
+			"command": "$projects = railway list --json | ConvertFrom-Json; $projects | Where-Object { $_.name -match 'trade aid' } | ForEach-Object { \"PROJECT: $($_.name) | ID: $($_.id)\"; $_.services.edges | ForEach-Object { \"  SERVICE: $($_.node.name) | ID: $($_.node.id)\" } }",
+			"isBackground": false
+		},
+		{
+			"label": "railway-find-tradeaid-projects-2",
+			"type": "shell",
+			"command": "$projects = railway list --json | ConvertFrom-Json; $projects | Where-Object { $_.name -match 'trade aid' } | ForEach-Object { Write-Output ('PROJECT ' + $_.name + ' ID ' + $_.id); $_.services.edges | ForEach-Object { Write-Output ('SERVICE ' + $_.node.name + ' ID ' + $_.node.id) } }",
+			"isBackground": false
+		},
+		{
+			"label": "railway-redeploy-backend-project",
+			"type": "shell",
+			"command": "railway redeploy -p 2a91928e-16cb-4006-9409-4c40ff9d3ba8 -s web -y",
+			"isBackground": false
+		},
+		{
+			"label": "railway-link-help",
+			"type": "shell",
+			"command": "railway link --help",
+			"isBackground": false
+		},
+		{
+			"label": "railway-redeploy-backend-via-link",
+			"type": "shell",
+			"command": "railway link -p 2a91928e-16cb-4006-9409-4c40ff9d3ba8 -e production -s web; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; railway redeploy -s web -y; $redeployCode = $LASTEXITCODE; railway link -p d56b44c6-e65c-4f04-bcfa-e7263a9c6a4c -e production -s web; if ($redeployCode -ne 0) { exit $redeployCode }",
+			"isBackground": false
+		},
+		{
+			"label": "railway-verify-both-status",
+			"type": "shell",
+			"command": "railway link -p 2a91928e-16cb-4006-9409-4c40ff9d3ba8 -e production -s web; railway service status; railway link -p d56b44c6-e65c-4f04-bcfa-e7263a9c6a4c -e production -s web; railway service status",
+			"isBackground": false
+		},
+		{
+			"label": "railway-redeploy-frontend-now",
+			"type": "shell",
+			"command": "railway link -p d56b44c6-e65c-4f04-bcfa-e7263a9c6a4c -e production -s web; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; railway redeploy -s web -y; $code = $LASTEXITCODE; railway service status; exit $code",
+			"isBackground": false
+		},
+		{
+			"label": "railway-frontend-status-poll",
+			"type": "shell",
+			"command": "railway link -p d56b44c6-e65c-4f04-bcfa-e7263a9c6a4c -e production -s web; railway service status",
+			"isBackground": false
+		},
+		{
+			"label": "railway-frontend-status-poll-2",
+			"type": "shell",
+			"command": "railway link -p d56b44c6-e65c-4f04-bcfa-e7263a9c6a4c -e production -s web; railway service status",
+			"isBackground": false
+		},
+		{
+			"label": "redeploy-backend-frontend-wallet-change",
+			"type": "shell",
+			"command": "railway link -p 2a91928e-16cb-4006-9409-4c40ff9d3ba8 -e production -s web; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; railway redeploy -s web -y; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; railway service status; railway link -p d56b44c6-e65c-4f04-bcfa-e7263a9c6a4c -e production -s web; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; railway redeploy -s web -y; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; railway service status",
+			"isBackground": false
+		},
+		{
+			"label": "poll-backend-frontend-deploy-status",
+			"type": "shell",
+			"command": "railway link -p 2a91928e-16cb-4006-9409-4c40ff9d3ba8 -e production -s web; railway service status; railway link -p d56b44c6-e65c-4f04-bcfa-e7263a9c6a4c -e production -s web; railway service status",
+			"isBackground": false
+		},
+		{
+			"label": "poll-backend-only-status",
+			"type": "shell",
+			"command": "railway link -p 2a91928e-16cb-4006-9409-4c40ff9d3ba8 -e production -s web; railway service status",
+			"isBackground": false
+		},
+		{
+			"label": "poll-backend-only-status-2",
+			"type": "shell",
+			"command": "railway link -p 2a91928e-16cb-4006-9409-4c40ff9d3ba8 -e production -s web; railway service status",
+			"isBackground": false
+		},
+		{
+			"label": "redeploy-backend-frontend-snipe-fix",
+			"type": "shell",
+			"command": "railway link -p 2a91928e-16cb-4006-9409-4c40ff9d3ba8 -e production -s web; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; railway redeploy -s web -y; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; railway service status; railway link -p d56b44c6-e65c-4f04-bcfa-e7263a9c6a4c -e production -s web; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; railway redeploy -s web -y; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; railway service status",
+			"isBackground": false
+		},
+		{
+			"label": "poll-snipe-fix-deploy-status",
+			"type": "shell",
+			"command": "railway link -p 2a91928e-16cb-4006-9409-4c40ff9d3ba8 -e production -s web; railway service status; railway link -p d56b44c6-e65c-4f04-bcfa-e7263a9c6a4c -e production -s web; railway service status",
+			"isBackground": false
+		},
+		{
+			"label": "poll-backend-snipe-fix-final",
+			"type": "shell",
+			"command": "railway link -p 2a91928e-16cb-4006-9409-4c40ff9d3ba8 -e production -s web; railway service status",
+			"isBackground": false
+		},
+		{
+			"label": "redeploy-backend-freshness-check",
+			"type": "shell",
+			"command": "railway link -p 2a91928e-16cb-4006-9409-4c40ff9d3ba8 -e production -s web; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; railway redeploy -s web -y; railway service status",
+			"isBackground": false
+		},
+		{
+			"label": "poll-backend-freshness-check-status",
+			"type": "shell",
+			"command": "railway link -p 2a91928e-16cb-4006-9409-4c40ff9d3ba8 -e production -s web; railway service status",
+			"isBackground": false
+		},
+		{
+			"label": "poll-backend-freshness-check-status-2",
+			"type": "shell",
+			"command": "railway link -p 2a91928e-16cb-4006-9409-4c40ff9d3ba8 -e production -s web; railway service status",
+			"isBackground": false
+		},
+		{
+			"label": "poll-backend-freshness-check-status-3",
+			"type": "shell",
+			"command": "railway link -p 2a91928e-16cb-4006-9409-4c40ff9d3ba8 -e production -s web; railway service status",
+			"isBackground": false
+		}
+	]
+}
