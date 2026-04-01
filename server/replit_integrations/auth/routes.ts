@@ -339,15 +339,38 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(400).json({ message: usernameError });
       }
 
+      let hashesByUserId = await getPasswordHashesByUserId();
+      const purgeGhostUserIfNeeded = async (user: any | undefined): Promise<boolean> => {
+        if (!user?.id) return false;
+        const existingHash = String(hashesByUserId[user.id] || "").trim();
+        if (existingHash) return false;
+
+        try {
+          await db.execute(sql`DELETE FROM users WHERE id = ${user.id}`);
+        } catch {
+          return false;
+        }
+
+        delete hashesByUserId[user.id];
+        await setPasswordHashesByUserId(hashesByUserId);
+        return true;
+      };
+
       const existingByUsername = await authStorage.getUserByUsername(username);
       if (existingByUsername) {
-        return res.status(409).json({ message: "Username already taken" });
+        const purged = await purgeGhostUserIfNeeded(existingByUsername);
+        if (!purged) {
+          return res.status(409).json({ message: "Username already taken" });
+        }
       }
 
       if (email) {
         const existingByEmail = await authStorage.getUserByEmail(email);
         if (existingByEmail) {
-          return res.status(409).json({ message: "Email already in use" });
+          const purged = await purgeGhostUserIfNeeded(existingByEmail);
+          if (!purged) {
+            return res.status(409).json({ message: "Email already in use" });
+          }
         }
       }
 
@@ -374,7 +397,7 @@ export function registerAuthRoutes(app: Express): void {
         return fallbackUser;
       });
 
-      const hashesByUserId = await getPasswordHashesByUserId();
+      hashesByUserId = await getPasswordHashesByUserId();
       hashesByUserId[newUser.id] = hashPassword(password);
       await setPasswordHashesByUserId(hashesByUserId);
 
