@@ -602,53 +602,79 @@ export default function DoctorTrade() {
     return false;
   };
 
+  const connectWithRetries = async () => {
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const status = await connectWalletMutation.mutateAsync({ use_existing_wallet: true });
+        const persistedConnected = isDoctorWalletConnected(
+          (status?.wallet as Record<string, any> | undefined) || null,
+          (status?.trade_controls as Record<string, any> | undefined) || null,
+        );
+
+        if (persistedConnected) {
+          return true;
+        }
+      } catch (error) {
+        if (isMissingAppWalletError(error)) {
+          promptWalletSetup();
+          return false;
+        }
+        lastError = error;
+      }
+
+      const connectedAfterRetry = await recheckWalletConnection(10, 1500);
+      if (connectedAfterRetry) {
+        return true;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+    return false;
+  };
+
   const handleConnectWallet = () => {
-    connectWalletMutation.mutate(
-      { use_existing_wallet: true },
-      {
-        onSuccess: (status) => {
-          const persistedConnected = isDoctorWalletConnected(
-            (status?.wallet as Record<string, any> | undefined) || null,
-            (status?.trade_controls as Record<string, any> | undefined) || null,
-          );
-          if (!persistedConnected) {
-            promptWalletSetup();
+    void (async () => {
+      try {
+        const connected = await connectWithRetries();
+        if (!connected) {
+          return;
+        }
+        toast({ title: "Wallet connected", description: "DoctorTrade linked to your app wallet." });
+        void refetch();
+      } catch (error) {
+        if (isMissingAppWalletError(error)) {
+          promptWalletSetup();
+          return;
+        }
+
+        if (isTransientConnectError(error)) {
+          const connectedAfterRetry = await recheckWalletConnection(25, 2000);
+          if (connectedAfterRetry) {
+            toast({ title: "Wallet connected", description: "Connection was delayed but completed successfully." });
             return;
           }
-          toast({ title: "Wallet connected", description: "DoctorTrade linked to your app wallet." });
-          void refetch();
-        },
-        onError: (error) => {
-          if (isMissingAppWalletError(error)) {
-            promptWalletSetup();
-            return;
-          }
 
-          void (async () => {
-            if (isTransientConnectError(error)) {
-              const connectedAfterRetry = await recheckWalletConnection(25, 2000);
-              if (connectedAfterRetry) {
-                toast({ title: "Wallet connected", description: "Connection was delayed but completed successfully." });
-                return;
-              }
+          toast({
+            title: "Wallet connection still processing",
+            description: "The request took too long to respond, but your wallet may still be syncing. Wait a few seconds and tap Refresh Data.",
+            variant: "destructive",
+          });
+          return;
+        }
 
-              toast({
-                title: "Wallet connection still processing",
-                description: "The request took too long to respond, but your wallet may still be syncing. Wait a few seconds and tap Refresh Data.",
-                variant: "destructive",
-              });
-              return;
-            }
-
-            toast({
-              title: "Wallet connection failed",
-              description: error instanceof Error ? error.message : "Could not connect wallet.",
-              variant: "destructive",
-            });
-          })();
-        },
-      },
-    );
+        toast({
+          title: "Wallet connection failed",
+          description: error instanceof Error ? error.message : "Could not connect wallet.",
+          variant: "destructive",
+        });
+      }
+    })();
   };
 
   const handleDisconnectWallet = () => {
