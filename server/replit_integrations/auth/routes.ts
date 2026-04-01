@@ -240,10 +240,7 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       const requiredAccessCode = requiredAccessCodeForRoute("login");
-      if (!requiredAccessCode) {
-        return res.status(503).json({ message: "Access code is not configured" });
-      }
-      if (!isAccessCodeValid(accessCode, requiredAccessCode)) {
+      if (requiredAccessCode && !isAccessCodeValid(accessCode, requiredAccessCode)) {
         return res.status(401).json({ message: "Invalid access code" });
       }
 
@@ -295,10 +292,7 @@ export function registerAuthRoutes(app: Express): void {
       const email = emailRaw || `${username}@tradeaid.local`;
 
       const requiredAccessCode = requiredAccessCodeForRoute("register");
-      if (!requiredAccessCode) {
-        return res.status(503).json({ message: "Access code is not configured" });
-      }
-      if (!isAccessCodeValid(accessCode, requiredAccessCode)) {
+      if (requiredAccessCode && !isAccessCodeValid(accessCode, requiredAccessCode)) {
         return res.status(401).json({ message: "Invalid access code" });
       }
 
