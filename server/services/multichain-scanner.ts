@@ -80,6 +80,16 @@ const FRESH_LISTENER_MAX_AGE_SECONDS = Math.max(
   ),
 );
 const FRESH_LISTENER_MAX_AGE_MINUTES = FRESH_LISTENER_MAX_AGE_SECONDS / 60;
+const MULTICHAIN_VERBOSE_LOGS = String(
+  process.env.MULTICHAIN_VERBOSE_LOGS
+  || process.env.DOCTOR_VERBOSE_LOGS
+  || "false",
+).trim().toLowerCase() === "true";
+
+function logMultichainVerbose(...args: any[]) {
+  if (!MULTICHAIN_VERBOSE_LOGS) return;
+  console.log(...args);
+}
 
 export class MultichainLaunchpadScanner {
   private isScanning = false;
@@ -182,11 +192,11 @@ export class MultichainLaunchpadScanner {
       source,
     });
 
-    console.log("[Pipeline] NEW TOKEN DETECTED");
-    console.log(`[Pipeline] Source: ${source}`);
-    console.log(`[Pipeline] Mint: ${normalizedMint}`);
-    console.log(`[Pipeline] Creator: ${String(creator || "unknown")}`);
-    console.log(`[Pipeline] Signature: ${signature}`);
+    logMultichainVerbose("[Pipeline] NEW TOKEN DETECTED");
+    logMultichainVerbose(`[Pipeline] Source: ${source}`);
+    logMultichainVerbose(`[Pipeline] Mint: ${normalizedMint}`);
+    logMultichainVerbose(`[Pipeline] Creator: ${String(creator || "unknown")}`);
+    logMultichainVerbose(`[Pipeline] Signature: ${signature}`);
   }
 
   private startSupplementalLaunchListeners() {
@@ -197,7 +207,7 @@ export class MultichainLaunchpadScanner {
     const dexIntervalMs = Math.max(4_000, Number(process.env.DEX_PROFILES_POLL_MS || 10_000));
     const raydiumIntervalMs = Math.max(4_000, Number(process.env.RAYDIUM_POOLS_POLL_MS || 8_000));
 
-    console.log("[Pipeline] Supplemental listeners started (pumpfun feed + dex profiles + raydium pools)");
+    logMultichainVerbose("[Pipeline] Supplemental listeners started (pumpfun feed + dex profiles + raydium pools)");
 
     void this.pollPumpFunFeed();
     setInterval(() => {
@@ -232,7 +242,7 @@ export class MultichainLaunchpadScanner {
         added += 1;
       }
       if (added > 0) {
-        console.log(`[Pipeline] Pump.fun feed added ${added} new mints`);
+        logMultichainVerbose(`[Pipeline] Pump.fun feed added ${added} new mints`);
       }
     } catch {
     }
@@ -256,7 +266,7 @@ export class MultichainLaunchpadScanner {
         added += 1;
       }
       if (added > 0) {
-        console.log(`[Pipeline] Dex profiles added ${added} new mints`);
+        logMultichainVerbose(`[Pipeline] Dex profiles added ${added} new mints`);
       }
     } catch {
     }
@@ -428,7 +438,7 @@ export class MultichainLaunchpadScanner {
             }
           } else if (this.isRaydiumInitializeTx(tx) && this.raydiumDebugSamples < debugSampleLimit) {
             this.raydiumDebugSamples += 1;
-            console.log("[Pipeline] Raydium init tx had zero extracted mints", JSON.stringify({
+            logMultichainVerbose("[Pipeline] Raydium init tx had zero extracted mints", JSON.stringify({
               signature,
               hints: this.getRaydiumTxDebugHints(tx),
             }));
@@ -439,13 +449,13 @@ export class MultichainLaunchpadScanner {
       }
 
       if (added > 0) {
-        console.log(`[Pipeline] Raydium pools added ${added} new mints`);
+        logMultichainVerbose(`[Pipeline] Raydium pools added ${added} new mints`);
       }
 
       const now = Date.now();
       if (now - this.lastRaydiumPollReportAt > 30_000) {
         this.lastRaydiumPollReportAt = now;
-        console.log(`[Pipeline] Raydium poll checked ${checkedSignatures} signatures, added ${added} mints`);
+        logMultichainVerbose(`[Pipeline] Raydium poll checked ${checkedSignatures} signatures, added ${added} mints`);
       }
     } catch (error) {
       console.warn("[Pipeline] Raydium poll error", error instanceof Error ? error.message : String(error || "unknown_error"));
@@ -633,11 +643,11 @@ export class MultichainLaunchpadScanner {
   }
 
   private async handlePumpLogNotification(notification: Record<string, any>) {
-    console.log("[Pump.fun Event]", JSON.stringify(notification));
+    logMultichainVerbose("[Pump.fun Event]", JSON.stringify(notification));
 
     const detected = this.extractPumpLaunchFromProgramEvent(notification);
     if (!detected) return;
-    console.log("[Pump.fun] Possible token launch");
+    logMultichainVerbose("[Pump.fun] Possible token launch");
 
     const nowMs = Date.now();
     this.prunePumpListenerCaches(nowMs);
@@ -657,10 +667,10 @@ export class MultichainLaunchpadScanner {
       retries: 0,
     });
 
-    console.log("[Pump.fun] NEW TOKEN DETECTED");
-    console.log(`[Pump.fun] Mint: ${mint}`);
-    console.log(`[Pump.fun] Creator: ${creator || "unknown"}`);
-    console.log(`[Pump.fun] Signature: ${detected.signature}`);
+    logMultichainVerbose("[Pump.fun] NEW TOKEN DETECTED");
+    logMultichainVerbose(`[Pump.fun] Mint: ${mint}`);
+    logMultichainVerbose(`[Pump.fun] Creator: ${creator || "unknown"}`);
+    logMultichainVerbose(`[Pump.fun] Signature: ${detected.signature}`);
   }
 
   private startPumpFunListener() {
@@ -698,7 +708,7 @@ export class MultichainLaunchpadScanner {
                 ],
               };
               ws.send(JSON.stringify(payload));
-              console.log("[Pump.fun] Subscribed to program logs via Helius WS");
+              logMultichainVerbose("[Pump.fun] Subscribed to program logs via Helius WS");
 
               keepaliveTimer = setInterval(() => {
                 try {
@@ -715,7 +725,7 @@ export class MultichainLaunchpadScanner {
 
                 // Confirm logsSubscribe activation with the explicit RPC ack frame.
                 if (payload?.id === 1 && Object.prototype.hasOwnProperty.call(payload, "result")) {
-                  console.log("[Pump.fun] Subscription response:", JSON.stringify(payload));
+                  logMultichainVerbose("[Pump.fun] Subscription response:", JSON.stringify(payload));
                 }
 
                 void this.handlePumpLogNotification(payload);
@@ -751,16 +761,16 @@ export class MultichainLaunchpadScanner {
 
   async scanAllLaunchpads(): Promise<LaunchpadToken[]> {
     if (this.isScanning) {
-      console.log("[Multichain] Scan already in progress");
+      logMultichainVerbose("[Multichain] Scan already in progress");
       return [];
     }
 
     this.isScanning = true;
     if (!this.runtimeInitialized) {
       this.runtimeInitialized = true;
-      console.log(`[Pipeline] Runtime initialized instance=${this.scannerInstanceId}`);
+      logMultichainVerbose(`[Pipeline] Runtime initialized instance=${this.scannerInstanceId}`);
     }
-    console.log("[Multichain] Starting multi-chain launchpad scan...");
+    logMultichainVerbose("[Multichain] Starting multi-chain launchpad scan...");
     this.startPumpFunListener();
     this.startSupplementalLaunchListeners();
 
@@ -779,10 +789,10 @@ export class MultichainLaunchpadScanner {
         }
       }
 
-      console.log(`[Multichain] Found ${allTokens.length} tokens across all chains`);
+      logMultichainVerbose(`[Multichain] Found ${allTokens.length} tokens across all chains`);
 
       const safeTokens = await this.analyzeAndFilterSafe(allTokens);
-      console.log(`[Multichain] ${safeTokens.length} tokens passed safety checks`);
+      logMultichainVerbose(`[Multichain] ${safeTokens.length} tokens passed safety checks`);
 
       await this.saveTokens(safeTokens);
 
@@ -801,7 +811,7 @@ export class MultichainLaunchpadScanner {
     const maxBatch = Math.max(1, Number(process.env.PUMP_LISTENER_DETECTED_BATCH_SIZE || 30));
 
     if (this.pendingPumpLaunches.length === 0) {
-      console.log("[Pump.fun] Waiting for mint detections from Helius WebSocket listener");
+      logMultichainVerbose("[Pump.fun] Waiting for mint detections from Helius WebSocket listener");
       return tokens;
     }
 
@@ -874,7 +884,7 @@ export class MultichainLaunchpadScanner {
       }
     }
 
-    console.log(`[Multichain] Found ${tokens.length} tokens from solana`);
+    logMultichainVerbose(`[Multichain] Found ${tokens.length} tokens from solana`);
     return tokens;
   }
 
