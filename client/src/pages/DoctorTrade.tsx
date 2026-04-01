@@ -97,7 +97,6 @@ export default function DoctorTrade() {
   const [mlSizeMinInput, setMlSizeMinInput] = useState("0.7");
   const [mlSizeMaxInput, setMlSizeMaxInput] = useState("1.2");
   const simpleMode = false;
-  const [privateKeyInput, setPrivateKeyInput] = useState("");
   const hydratedFromServerRef = useRef(false);
   const viewData = data;
   const hasData = Boolean(viewData);
@@ -561,82 +560,48 @@ export default function DoctorTrade() {
     );
   };
 
-  const handleManualPrivateKeyConnect = () => {
-    const trimmedPrivateKey = String(privateKeyInput || "").trim();
-    if (!trimmedPrivateKey) {
-      toast({
-        title: "Private key required",
-        description: "Paste a Solana private key to connect DoctorTrade wallet.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const isTransientConnectError = (error: unknown) => {
-      const message = String((error as any)?.message || "").toLowerCase();
-      return (
-        message.includes("network")
-        || message.includes("fetch")
-        || message.includes("timeout")
-        || message.includes("timed out")
-        || message.includes("connection failed")
-      );
-    };
-
-    const recheckWalletConnection = async () => {
-      for (let attempt = 0; attempt < 4; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-        const latest = await refetch();
-        const connected = isDoctorWalletConnected(
-          (latest.data?.wallet as Record<string, any> | undefined) || null,
-          (latest.data?.trade_controls as Record<string, any> | undefined) || null,
-        );
-        if (connected) {
-          return true;
-        }
-      }
-      return false;
-    };
-
-    connectWalletMutation.mutate(
-      { private_key: trimmedPrivateKey, use_existing_wallet: false },
-      {
-        onSuccess: (status) => {
-          const persistedConnected = isDoctorWalletConnected(
-            (status?.wallet as Record<string, any> | undefined) || null,
-            (status?.trade_controls as Record<string, any> | undefined) || null,
-          );
-          if (!persistedConnected) {
-            toast({
-              title: "Wallet not persisted",
-              description: "Wallet connection is pending sync. Refreshing live status now.",
-              variant: "destructive",
-            });
-            void refetch();
-          }
-          setPrivateKeyInput("");
-          toast({ title: "Wallet connected", description: "DoctorTrade wallet connected from private key." });
-        },
-        onError: (error) => {
-          void (async () => {
-            if (isTransientConnectError(error)) {
-              const connectedAfterRetry = await recheckWalletConnection();
-              if (connectedAfterRetry) {
-                setPrivateKeyInput("");
-                toast({ title: "Wallet connected", description: "Connection was delayed but completed successfully." });
-                return;
-              }
-            }
-
-            toast({
-              title: "Wallet connection failed",
-              description: error instanceof Error ? error.message : "Could not connect wallet.",
-              variant: "destructive",
-            });
-          })();
-        },
-      },
+  const isMissingAppWalletError = (error: unknown) => {
+    const message = String((error as any)?.message || "").toLowerCase();
+    return (
+      message.includes("wallet_private_key_required")
+      || (message.includes("connect") && message.includes("wallet first"))
+      || (message.includes("no saved") && message.includes("wallet"))
     );
+  };
+
+  const promptWalletSetup = () => {
+    toast({
+      title: "Set up Wallet first",
+      description: "No wallet key found for your account. Create or connect your wallet in the Wallet tab, then come back.",
+      variant: "destructive",
+    });
+    setLocation("/wallet");
+  };
+
+  const isTransientConnectError = (error: unknown) => {
+    const message = String((error as any)?.message || "").toLowerCase();
+    return (
+      message.includes("network")
+      || message.includes("fetch")
+      || message.includes("timeout")
+      || message.includes("timed out")
+      || message.includes("connection failed")
+    );
+  };
+
+  const recheckWalletConnection = async () => {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const latest = await refetch();
+      const connected = isDoctorWalletConnected(
+        (latest.data?.wallet as Record<string, any> | undefined) || null,
+        (latest.data?.trade_controls as Record<string, any> | undefined) || null,
+      );
+      if (connected) {
+        return true;
+      }
+    }
+    return false;
   };
 
   const handleConnectWallet = () => {
@@ -649,22 +614,20 @@ export default function DoctorTrade() {
             (status?.trade_controls as Record<string, any> | undefined) || null,
           );
           if (!persistedConnected) {
-            setSettingsOpen(true);
-            toast({
-              title: "Wallet key needed",
-              description: "No saved app wallet key found. Paste private key once in settings.",
-              variant: "destructive",
-            });
+            promptWalletSetup();
             return;
           }
           toast({ title: "Wallet connected", description: "DoctorTrade linked to your app wallet." });
           void refetch();
         },
-        onError: () => {
-          setSettingsOpen(true);
+        onError: (error) => {
+          if (isMissingAppWalletError(error)) {
+            promptWalletSetup();
+            return;
+          }
           toast({
-            title: "Wallet key needed",
-            description: "No saved app wallet key found. Paste private key once in settings.",
+            title: "Wallet connection failed",
+            description: error instanceof Error ? error.message : "Could not connect wallet.",
             variant: "destructive",
           });
         },
@@ -699,12 +662,7 @@ export default function DoctorTrade() {
               (status?.trade_controls as Record<string, any> | undefined) || null,
             );
             if (!persistedConnected) {
-              setSettingsOpen(true);
-              toast({
-                title: "Connect wallet first",
-                description: "No saved app wallet key found. Paste private key once in settings.",
-                variant: "destructive",
-              });
+              promptWalletSetup();
               return;
             }
             controlMutation.mutate(true, {
@@ -729,13 +687,28 @@ export default function DoctorTrade() {
               },
             });
           },
-          onError: () => {
-            setSettingsOpen(true);
-            toast({
-              title: "Connect wallet first",
-              description: "No saved app wallet key found. Paste private key once in settings.",
-              variant: "destructive",
-            });
+          onError: (error) => {
+            if (isMissingAppWalletError(error)) {
+              promptWalletSetup();
+              return;
+            }
+
+            void (async () => {
+              if (isTransientConnectError(error)) {
+                const connectedAfterRetry = await recheckWalletConnection();
+                if (connectedAfterRetry) {
+                  toast({ title: "Wallet connected", description: "Connection was delayed but completed successfully." });
+                  controlMutation.mutate(true);
+                  return;
+                }
+              }
+
+              toast({
+                title: "Wallet connection failed",
+                description: error instanceof Error ? error.message : "Could not connect wallet.",
+                variant: "destructive",
+              });
+            })();
           },
         },
       );
@@ -1048,27 +1021,11 @@ export default function DoctorTrade() {
                 </Button>
               ) : null}
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2 items-end">
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Manual Private Key Import</p>
-                <Input
-                  type="password"
-                  value={privateKeyInput}
-                  onChange={(event) => setPrivateKeyInput(event.target.value)}
-                  placeholder="Paste Solana private key"
-                  disabled={walletConnected}
-                />
+            {!walletConnected && (
+              <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-100">
+                Connect Wallet uses your saved Wallet tab key automatically. If no wallet is saved yet, you will be redirected to Wallet to create or connect one.
               </div>
-              <Button
-                onClick={handleManualPrivateKeyConnect}
-                disabled={connectWalletMutation.isPending || walletConnected}
-              >
-                {walletConnected ? "Wallet Connected" : "Connect Wallet"}
-              </Button>
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              Warning: Private keys grant full wallet access. TradeAid encrypts keys before storage and decrypts only in memory to sign transactions.
-            </p>
+            )}
           </div>
 
           <div className="mb-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
