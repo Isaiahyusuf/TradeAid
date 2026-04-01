@@ -52,6 +52,17 @@ function isDoctorWalletConnected(wallet?: Record<string, any> | null, tradeContr
   return keyConfigured || controlsConnected || (statusConnected && Boolean(address));
 }
 
+function isAuthFailureMessage(message: string): boolean {
+  const normalized = String(message || "").toLowerCase();
+  return (
+    normalized.includes("unauthorized")
+    || normalized.includes("not authenticated")
+    || normalized.includes("invalid refresh token")
+    || normalized.includes("session")
+    || normalized.includes("401")
+  );
+}
+
 export default function DoctorTrade() {
   const [, setLocation] = useLocation();
     // Only show new launches on Solana (created within 24h and chain is solana)
@@ -648,6 +659,16 @@ export default function DoctorTrade() {
         toast({ title: "Wallet connected", description: "DoctorTrade linked to your app wallet." });
         void refetch();
       } catch (error) {
+        const rawMessage = error instanceof Error ? error.message : "";
+        if (isAuthFailureMessage(rawMessage)) {
+          toast({
+            title: "Sign in required",
+            description: "Your session expired. Sign in again, then retry Connect Wallet.",
+            variant: "destructive",
+          });
+          return;
+        }
+
         if (isMissingAppWalletError(error)) {
           promptWalletSetup();
           return;
@@ -670,7 +691,7 @@ export default function DoctorTrade() {
 
         toast({
           title: "Wallet connection failed",
-          description: error instanceof Error ? error.message : "Could not connect wallet.",
+          description: rawMessage || "Could not connect wallet.",
           variant: "destructive",
         });
       }
@@ -730,6 +751,16 @@ export default function DoctorTrade() {
             });
           },
           onError: (error) => {
+            const rawMessage = error instanceof Error ? error.message : "";
+            if (isAuthFailureMessage(rawMessage)) {
+              toast({
+                title: "Sign in required",
+                description: "Your session expired. Sign in again, then retry Connect Wallet.",
+                variant: "destructive",
+              });
+              return;
+            }
+
             if (isMissingAppWalletError(error)) {
               promptWalletSetup();
               return;
@@ -747,7 +778,7 @@ export default function DoctorTrade() {
 
               toast({
                 title: "Wallet connection failed",
-                description: error instanceof Error ? error.message : "Could not connect wallet.",
+                description: rawMessage || "Could not connect wallet.",
                 variant: "destructive",
               });
             })();

@@ -21,17 +21,19 @@ const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL);
 const API_DOMAIN_OVERRIDE = "https://api.tradeaid.ink";
 
 function resolveApiBaseUrl(): string {
+  if (API_URL) {
+    return API_URL;
+  }
+
   if (typeof window !== "undefined") {
     const hostname = String(window.location.hostname || "").toLowerCase();
     if (hostname === "tradeaid.ink" || hostname === "www.tradeaid.ink") {
       return API_DOMAIN_OVERRIDE;
     }
-    if (!API_URL) {
-      return window.location.origin;
-    }
+    return window.location.origin;
   }
 
-  return API_URL;
+  return "";
 }
 const ACCESS_TOKEN_KEY = "trade_aid_token";
 const REFRESH_TOKEN_KEY = "trade_aid_refresh_token";

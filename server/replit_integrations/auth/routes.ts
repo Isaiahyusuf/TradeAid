@@ -32,6 +32,7 @@ const AUTH_PASSWORDS_STATE_KEY = "auth.password_hashes.v1";
 const AUTH_FRESH_RESET_STATE_KEY = "auth.fresh_reset.v1";
 const PASSWORD_SALT_BYTES = 16;
 const PASSWORD_KEYLEN_BYTES = 64;
+const PASSWORD_MAX_BYTES = 72;
 
 function isStrongPassword(value: string): boolean {
   const password = String(value || "");
@@ -41,6 +42,24 @@ function isStrongPassword(value: string): boolean {
     && /[0-9]/.test(password)
     && /[^A-Za-z0-9]/.test(password)
   );
+}
+
+function passwordByteLength(value: string): number {
+  return Buffer.byteLength(String(value || ""), "utf8");
+}
+
+function getPasswordValidationMessage(value: string): string | null {
+  const password = String(value || "");
+  if (!password) {
+    return "password is required";
+  }
+  if (passwordByteLength(password) > PASSWORD_MAX_BYTES) {
+    return `Password must be ${PASSWORD_MAX_BYTES} bytes or fewer.`;
+  }
+  if (!isStrongPassword(password)) {
+    return "Password must be at least 8 chars and include uppercase, number, and special character.";
+  }
+  return null;
 }
 
 function hashPassword(plainText: string): string {
@@ -216,6 +235,9 @@ export function registerAuthRoutes(app: Express): void {
       if (!password) {
         return res.status(400).json({ message: "password is required" });
       }
+      if (passwordByteLength(password) > PASSWORD_MAX_BYTES) {
+        return res.status(400).json({ message: `Password must be ${PASSWORD_MAX_BYTES} bytes or fewer.` });
+      }
 
       const requiredAccessCode = requiredAccessCodeForRoute("login");
       if (!requiredAccessCode) {
@@ -280,11 +302,9 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(401).json({ message: "Invalid access code" });
       }
 
-      if (!password) {
-        return res.status(400).json({ message: "password is required" });
-      }
-      if (!isStrongPassword(password)) {
-        return res.status(400).json({ message: "Password must be at least 8 chars and include uppercase, number, and special character." });
+      const passwordValidationMessage = getPasswordValidationMessage(password);
+      if (passwordValidationMessage) {
+        return res.status(400).json({ message: passwordValidationMessage });
       }
 
       const usernameError = getUsernameValidationMessage(username);

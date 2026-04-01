@@ -13,6 +13,7 @@ import { SavingOverlay } from "@/components/ui/saving-overlay";
 const EMAIL_PATTERN = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 const SPECIAL_PATTERN = /[^A-Za-z0-9]/;
 const USERNAME_PATTERN = /^[a-z][a-z0-9._]{1,22}[a-z0-9]$/;
+const PASSWORD_MAX_BYTES = 72;
 
 function normalizeUsername(value: string) {
   return String(value || "").trim().toLowerCase();
@@ -39,6 +40,9 @@ function getPasswordErrors(value: string): string[] {
   if (!/[A-Z]/.test(value)) errors.push("At least 1 uppercase letter");
   if (!/[0-9]/.test(value)) errors.push("At least 1 number");
   if (!SPECIAL_PATTERN.test(value)) errors.push("At least 1 special character");
+  if (new TextEncoder().encode(value).length > PASSWORD_MAX_BYTES) {
+    errors.push(`At most ${PASSWORD_MAX_BYTES} UTF-8 bytes`);
+  }
   return errors;
 }
 
@@ -191,9 +195,10 @@ export default function AuthPage() {
   const startOAuthSignIn = (provider: "google" | "apple") => {
     const configuredBase = String(import.meta.env.VITE_API_URL || "").trim();
     const hostname = String(window.location.hostname || "").toLowerCase();
-    const apiBase = (hostname === "tradeaid.ink" || hostname === "www.tradeaid.ink")
-      ? "https://api.tradeaid.ink"
-      : configuredBase;
+    const apiBase = configuredBase
+      || ((hostname === "tradeaid.ink" || hostname === "www.tradeaid.ink")
+        ? "https://api.tradeaid.ink"
+        : "");
     if (!apiBase) {
       toast({ title: "Configuration required", description: "OAuth sign-in is unavailable. Missing VITE_API_URL.", variant: "destructive" });
       return;
