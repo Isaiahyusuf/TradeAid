@@ -90,6 +90,9 @@ function logMultichainVerbose(...args: any[]) {
   if (!MULTICHAIN_VERBOSE_LOGS) return;
   console.log(...args);
 }
+const ENABLE_PUMP_INGEST_LOGS = String(
+  process.env.ENABLE_PUMP_INGEST_LOGS || "false",
+).trim().toLowerCase() === "true";
 
 export class MultichainLaunchpadScanner {
   private isScanning = false;
@@ -1412,18 +1415,20 @@ export class MultichainLaunchpadScanner {
 
         if ((isEarlySafe || isSafeFallback) && !this.emittedFreshMints.has(token.address)) {
           this.emittedFreshMints.set(token.address, nowMs);
-          logStructured("info", "pump_listener.token_ingested", {
-            mintAddress: token.address,
-            symbol: token.symbol,
-            source: isEarlySafe ? "multichain_pump_listener_fallback" : "multichain_safe_listener_fallback",
-            creatorWallet: null,
-            transactionSignature: null,
-            liquidityUsd: Number(token.liquidity || 0),
-            marketCapUsd: Number(token.marketCap || 0),
-            volumeUsd: Number(token.volume24h || 0),
-            pairAgeMinutes: Number(tokenAgeMinutes.toFixed(4)),
-            ageLimitSeconds: FRESH_LISTENER_MAX_AGE_SECONDS,
-          });
+          if (ENABLE_PUMP_INGEST_LOGS) {
+            logStructured("info", "pump_listener.token_ingested", {
+              mintAddress: token.address,
+              symbol: token.symbol,
+              source: isEarlySafe ? "multichain_pump_listener_fallback" : "multichain_safe_listener_fallback",
+              creatorWallet: null,
+              transactionSignature: null,
+              liquidityUsd: Number(token.liquidity || 0),
+              marketCapUsd: Number(token.marketCap || 0),
+              volumeUsd: Number(token.volume24h || 0),
+              pairAgeMinutes: Number(tokenAgeMinutes.toFixed(4)),
+              ageLimitSeconds: FRESH_LISTENER_MAX_AGE_SECONDS,
+            });
+          }
         }
       } catch (error) {
         console.error(`[Multichain] Failed to save token ${token.symbol}:`, error);
