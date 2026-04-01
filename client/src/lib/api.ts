@@ -98,8 +98,6 @@ async function refreshAccessToken(): Promise<string | null> {
       }
 
       if (!response.ok) {
-        if (response.status === 401) {
-        }
         return null;
       }
 
@@ -108,7 +106,6 @@ async function refreshAccessToken(): Promise<string | null> {
       const nextRefreshToken = typeof data?.refresh_token === "string" ? data.refresh_token : null;
 
       if (!nextAccessToken) {
-        clearToken();
         return null;
       }
 
@@ -188,10 +185,6 @@ export async function apiFetch<T = any>(
       if (text?.trim()) {
         message = text;
       }
-    }
-
-    if (res.status === 401 && (path === "/api/auth/me" || path === "/api/auth/refresh")) {
-      clearToken();
     }
 
     throw new Error(message);
