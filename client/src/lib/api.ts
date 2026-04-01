@@ -79,7 +79,6 @@ export function hasRefreshToken(): boolean {
 async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = getRefreshToken();
   if (!refreshToken) {
-    clearToken();
     return null;
   }
 
@@ -100,7 +99,6 @@ async function refreshAccessToken(): Promise<string | null> {
 
       if (!response.ok) {
         if (response.status === 401) {
-          clearToken();
         }
         return null;
       }
