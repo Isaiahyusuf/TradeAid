@@ -46,12 +46,10 @@ const TRADEAID_TELEGRAM_BOT_URL = "https://t.me/Tradeaid_bot";
 
 function isDoctorWalletConnected(wallet?: Record<string, any> | null, tradeControls?: Record<string, any> | null) {
   const address = String(wallet?.address || "").trim();
-  if (!address) return false;
-
   const statusConnected = String(wallet?.connection_status || "").trim().toLowerCase() === "connected";
   const keyConfigured = Boolean(wallet?.private_key_configured);
   const controlsConnected = Boolean(tradeControls?.wallet_connected);
-  return statusConnected || keyConfigured || controlsConnected;
+  return keyConfigured || controlsConnected || (statusConnected && Boolean(address));
 }
 
 export default function DoctorTrade() {
