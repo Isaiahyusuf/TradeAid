@@ -584,7 +584,7 @@ export default function DoctorTrade() {
       description: "No wallet key found for your account. Create or connect your wallet in the Wallet tab, then come back.",
       variant: "destructive",
     });
-    setLocation("/wallet");
+    setLocation(`/wallet?action=connect&returnTo=${encodeURIComponent("/doctortrade")}`);
   };
 
   const isTransientConnectError = (error: unknown) => {
@@ -884,6 +884,14 @@ export default function DoctorTrade() {
             >
               <Wallet className="w-4 h-4 mr-2" /> {walletConnected ? "Wallet Connected" : "Connect Wallet"}
             </Button>
+            {!walletConnected && (
+              <Button
+                variant="default"
+                onClick={() => setLocation(`/wallet?action=connect&returnTo=${encodeURIComponent("/doctortrade")}`)}
+              >
+                Create Wallet
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={handleDisconnectWallet}
