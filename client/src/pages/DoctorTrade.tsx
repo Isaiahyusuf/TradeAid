@@ -587,9 +587,9 @@ export default function DoctorTrade() {
     );
   };
 
-  const recheckWalletConnection = async () => {
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+  const recheckWalletConnection = async (attempts = 20, delayMs = 2000) => {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
       const latest = await refetch();
       const connected = isDoctorWalletConnected(
         (latest.data?.wallet as Record<string, any> | undefined) || null,
@@ -626,7 +626,7 @@ export default function DoctorTrade() {
 
           void (async () => {
             if (isTransientConnectError(error)) {
-              const connectedAfterRetry = await recheckWalletConnection();
+              const connectedAfterRetry = await recheckWalletConnection(25, 2000);
               if (connectedAfterRetry) {
                 toast({ title: "Wallet connected", description: "Connection was delayed but completed successfully." });
                 return;
@@ -711,7 +711,7 @@ export default function DoctorTrade() {
 
             void (async () => {
               if (isTransientConnectError(error)) {
-                const connectedAfterRetry = await recheckWalletConnection();
+                const connectedAfterRetry = await recheckWalletConnection(25, 2000);
                 if (connectedAfterRetry) {
                   toast({ title: "Wallet connected", description: "Connection was delayed but completed successfully." });
                   controlMutation.mutate(true);
