@@ -125,13 +125,15 @@ export async function ensureAuthSession(): Promise<boolean> {
 
 export async function apiFetch<T = any>(
   path: string,
-  options: RequestInit = {},
+  options: (RequestInit & { timeoutMs?: number }) = {},
   shouldRetry: boolean = true,
 ): Promise<T> {
   const token = getToken();
+  const requestTimeoutMs = Math.max(1_000, Number(options.timeoutMs || API_TIMEOUT_MS));
+  const { timeoutMs: _timeoutMs, ...requestOptions } = options;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...(options.headers as Record<string, string> || {}),
+    ...(requestOptions.headers as Record<string, string> || {}),
   };
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
@@ -139,13 +141,13 @@ export async function apiFetch<T = any>(
 
   let res: Response;
   const timeoutController = new AbortController();
-  const timeoutId = window.setTimeout(() => timeoutController.abort(), API_TIMEOUT_MS);
-  const mergedSignal = options.signal ?? timeoutController.signal;
+  const timeoutId = window.setTimeout(() => timeoutController.abort(), requestTimeoutMs);
+  const mergedSignal = requestOptions.signal ?? timeoutController.signal;
   try {
     const apiBase = resolveApiBaseUrl();
     const target = apiBase ? `${apiBase}${path}` : path;
     res = await fetch(target, {
-      ...options,
+      ...requestOptions,
       headers,
       signal: mergedSignal,
     });
