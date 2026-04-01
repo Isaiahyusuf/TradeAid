@@ -26,6 +26,9 @@ function resolveApiBaseUrl(): string {
       || hostname === "www.tradeaid.ink"
       || hostname === "app.tradeaid.ink"
       || hostname.endsWith(".tradeaid.ink");
+    if (isTradeAidDomain) {
+      return window.location.origin;
+    }
     if (API_URL) {
       return API_URL;
     }

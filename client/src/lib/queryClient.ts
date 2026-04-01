@@ -22,6 +22,14 @@ const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL);
 
 function resolveApiBaseUrl(): string {
   if (typeof window !== "undefined") {
+    const hostname = String(window.location.hostname || "").toLowerCase();
+    const isTradeAidDomain = hostname === "tradeaid.ink"
+      || hostname === "www.tradeaid.ink"
+      || hostname === "app.tradeaid.ink"
+      || hostname.endsWith(".tradeaid.ink");
+    if (isTradeAidDomain) {
+      return window.location.origin;
+    }
     if (API_URL) {
       return API_URL;
     }
