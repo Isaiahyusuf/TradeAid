@@ -74,10 +74,22 @@ export default function AuthPage() {
   const usernameValidation = validateUsername(username);
   const usernameInvalid = mode === "register" && !!username && !usernameValidation.valid;
 
+  const registerBlockers: string[] = [];
+  if (mode === "register") {
+    if (!username.trim()) registerBlockers.push("Enter a username");
+    if (!accessCode.trim()) registerBlockers.push("Enter your access code");
+    if (usernameInvalid) registerBlockers.push(usernameValidation.message || "Username is invalid");
+    if (usernameStatus === "checking") registerBlockers.push("Checking username availability");
+    if (usernameStatus === "taken") registerBlockers.push("Username is already taken");
+    if (registerPasswordErrors.length > 0) registerBlockers.push("Password does not meet requirements");
+    if (!registerConfirmPassword) registerBlockers.push("Confirm your password");
+    if (registerPasswordsMismatch) registerBlockers.push("Password and confirm password must match");
+  }
+
   const isSubmitDisabled =
     isSubmitting ||
     (mode === "login" && (!username.trim() || !password || !accessCode.trim())) ||
-    (mode === "register" && (!username.trim() || !accessCode.trim() || usernameInvalid || usernameStatus === "checking" || usernameStatus === "taken" || registerPasswordErrors.length > 0 || !registerConfirmPassword || registerPasswordsMismatch)) ||
+    (mode === "register" && registerBlockers.length > 0) ||
     (mode === "verify" && (emailInvalid || code.trim().length < 6)) ||
     (mode === "forgot" && emailInvalid) ||
     (mode === "reset" && (emailInvalid || code.trim().length < 6 || resetPasswordErrors.length > 0 || !resetConfirmPassword || resetPasswordsMismatch));
@@ -515,6 +527,11 @@ export default function AuthPage() {
                 </>
               )}
             </Button>
+            {mode === "register" && !isSubmitting && registerBlockers.length > 0 && (
+              <p className="text-xs text-destructive" data-testid="text-register-blocker">
+                {registerBlockers[0]}
+              </p>
+            )}
 
             {(mode === "login" || mode === "register") && (
               <>
