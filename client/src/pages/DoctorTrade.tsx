@@ -625,11 +625,29 @@ export default function DoctorTrade() {
             promptWalletSetup();
             return;
           }
-          toast({
-            title: "Wallet connection failed",
-            description: error instanceof Error ? error.message : "Could not connect wallet.",
-            variant: "destructive",
-          });
+
+          void (async () => {
+            if (isTransientConnectError(error)) {
+              const connectedAfterRetry = await recheckWalletConnection();
+              if (connectedAfterRetry) {
+                toast({ title: "Wallet connected", description: "Connection was delayed but completed successfully." });
+                return;
+              }
+
+              toast({
+                title: "Wallet connection still processing",
+                description: "The request took too long to respond, but your wallet may still be syncing. Wait a few seconds and tap Refresh Data.",
+                variant: "destructive",
+              });
+              return;
+            }
+
+            toast({
+              title: "Wallet connection failed",
+              description: error instanceof Error ? error.message : "Could not connect wallet.",
+              variant: "destructive",
+            });
+          })();
         },
       },
     );
