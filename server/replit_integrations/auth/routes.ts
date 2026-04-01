@@ -86,22 +86,29 @@ function verifyPassword(plainText: string, stored: string): boolean {
 }
 
 async function getPasswordHashesByUserId(): Promise<Record<string, string>> {
-  const state = await storage.getAppState<Record<string, any>>(AUTH_PASSWORDS_STATE_KEY);
-  if (!state || typeof state !== "object" || Array.isArray(state)) {
+  try {
+    const state = await storage.getAppState<Record<string, any>>(AUTH_PASSWORDS_STATE_KEY);
+    if (!state || typeof state !== "object" || Array.isArray(state)) {
+      return {};
+    }
+    const out: Record<string, string> = {};
+    for (const [userId, hash] of Object.entries(state)) {
+      const normalizedUserId = String(userId || "").trim();
+      const normalizedHash = String(hash || "").trim();
+      if (!normalizedUserId || !normalizedHash) continue;
+      out[normalizedUserId] = normalizedHash;
+    }
+    return out;
+  } catch {
     return {};
   }
-  const out: Record<string, string> = {};
-  for (const [userId, hash] of Object.entries(state)) {
-    const normalizedUserId = String(userId || "").trim();
-    const normalizedHash = String(hash || "").trim();
-    if (!normalizedUserId || !normalizedHash) continue;
-    out[normalizedUserId] = normalizedHash;
-  }
-  return out;
 }
 
 async function setPasswordHashesByUserId(value: Record<string, string>): Promise<void> {
-  await storage.setAppState(AUTH_PASSWORDS_STATE_KEY, value);
+  try {
+    await storage.setAppState(AUTH_PASSWORDS_STATE_KEY, value);
+  } catch {
+  }
 }
 
 async function ensurePasswordHashTable(): Promise<void> {
