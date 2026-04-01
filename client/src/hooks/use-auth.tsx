@@ -53,7 +53,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       setUser(data);
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
-      if (message.includes("401") || message.toLowerCase().includes("not authenticated")) {
+      const normalized = message.toLowerCase();
+      const hasStoredToken = !!localStorage.getItem("trade_aid_token");
+      if (
+        !hasStoredToken
+        || message.includes("401")
+        || normalized.includes("unauthorized")
+        || normalized.includes("not authenticated")
+      ) {
         clearToken();
         setUser(null);
         setTokenState(false);
