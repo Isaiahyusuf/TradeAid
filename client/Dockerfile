@@ -2,7 +2,7 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-ENV VITE_API_URL=https://tradeaid-production.up.railway.app
+ENV VITE_API_URL=https://api.tradeaid.ink
 
 COPY package.json package-lock.json ./
 
