@@ -116,7 +116,12 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  registerTradeAidTelegramWebhookRoute(app);
+  const telegramBotEnabled = String(process.env.ENABLE_TELEGRAM_BOT || "").trim().toLowerCase() === "true";
+  if (telegramBotEnabled) {
+    registerTradeAidTelegramWebhookRoute(app);
+  } else {
+    console.info("[TelegramBot] Startup disabled (set ENABLE_TELEGRAM_BOT=true to enable)");
+  }
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -197,5 +202,7 @@ app.use((req, res, next) => {
   };
 
   await listenWithRetry();
-  await startTradeAidTelegramBot();
+  if (telegramBotEnabled) {
+    await startTradeAidTelegramBot();
+  }
 })();
