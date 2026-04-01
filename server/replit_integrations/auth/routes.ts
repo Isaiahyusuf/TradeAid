@@ -118,6 +118,39 @@ function requiredAccessCodeForRoute(routeType: "login" | "register"): string {
   return String(process.env.AUTH_LOGIN_ACCESS_CODE || genericAccessCode).trim();
 }
 
+function mapRegistrationError(error: unknown): { status: number; message: string } {
+  const raw = String((error as any)?.message || "").toLowerCase();
+  if (!raw) {
+    return { status: 500, message: "Registration failed" };
+  }
+
+  if (
+    raw.includes("users_username_key")
+    || (raw.includes("duplicate") && raw.includes("username"))
+    || raw.includes("username already")
+  ) {
+    return { status: 409, message: "Username already taken" };
+  }
+
+  if (
+    raw.includes("users_email_key")
+    || (raw.includes("duplicate") && raw.includes("email"))
+    || raw.includes("email already")
+  ) {
+    return { status: 409, message: "Email already in use" };
+  }
+
+  if (raw.includes("invalid access code")) {
+    return { status: 401, message: "Invalid access code" };
+  }
+
+  if (raw.includes("password")) {
+    return { status: 400, message: "Invalid password format" };
+  }
+
+  return { status: 500, message: "Registration failed" };
+}
+
 function isAccessCodeValid(provided: string, required: string): boolean {
   const normalizedProvided = String(provided || "").trim();
   const normalizedRequired = String(required || "").trim();
@@ -354,7 +387,8 @@ export function registerAuthRoutes(app: Express): void {
       });
     } catch (error) {
       console.error("Error during registration:", error);
-      res.status(500).json({ message: "Registration failed" });
+      const mapped = mapRegistrationError(error);
+      res.status(mapped.status).json({ message: mapped.message });
     }
   });
 
