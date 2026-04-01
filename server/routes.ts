@@ -8284,7 +8284,7 @@ export async function registerRoutes(
   app.post(
     "/api/doctor/connect-wallet",
     (req: any, _res, next) => {
-      console.info("[doctor.connect-wallet] incoming", {
+      logStructured("info", "doctor.connect_wallet.http_incoming", {
         method: req.method,
         path: req.path,
         hasAuthHeader: Boolean(req.headers?.authorization),
@@ -8294,6 +8294,8 @@ export async function registerRoutes(
     },
     isAuthenticated,
     async (req: any, res) => {
+      const attemptId = randomUUID();
+      const startedAtMs = Date.now();
       const runWithSoftTimeout = async <T>(label: string, task: Promise<T>, timeoutMs: number): Promise<T | undefined> => {
         const safeTimeoutMs = Math.max(250, Math.trunc(Number(timeoutMs || 0)));
         try {
@@ -8302,7 +8304,8 @@ export async function registerRoutes(
             new Promise<T>((_resolve, reject) => setTimeout(() => reject(new Error(`${label}_timeout`)), safeTimeoutMs)),
           ]);
         } catch (error: any) {
-          console.warn("[doctor.connect-wallet] soft_timeout_or_failed", {
+          logStructured("warn", "doctor.connect_wallet.soft_timeout_or_failed", {
+            attemptId,
             label,
             message: String(error?.message || "unknown_error"),
           });
@@ -8312,8 +8315,20 @@ export async function registerRoutes(
 
       try {
         const userId = getRequestUserId(req);
+        const logConnect = (level: "info" | "warn" | "error", event: string, payload: Record<string, any> = {}) => {
+          logStructured(level, event, {
+            attemptId,
+            durationMs: Math.max(0, Date.now() - startedAtMs),
+            userId,
+            ...payload,
+          });
+        };
         if (!userId) {
-          console.warn("[doctor.connect-wallet] denied", { reason: "missing_user_id" });
+          logStructured("warn", "doctor.connect_wallet.denied", {
+            attemptId,
+            durationMs: Math.max(0, Date.now() - startedAtMs),
+            reason: "missing_user_id",
+          });
           return res.status(401).json({ message: "Unauthorized" });
         }
         await loadDoctorRuntimeForUser(userId);
@@ -8325,8 +8340,7 @@ export async function registerRoutes(
         let resolvedPrivateKey = explicitPrivateKey;
         const walletBalanceTimeoutMs = Math.max(300, Number(process.env.DOCTOR_WALLET_BALANCE_TIMEOUT_MS || 1200));
 
-        console.info("[doctor.connect-wallet] request", {
-          userId,
+        logConnect("info", "doctor.connect_wallet.request", {
           hasPrivateKey: Boolean(explicitPrivateKey),
           privateKeyLength: explicitPrivateKey.length,
           useExistingWallet,
@@ -8359,8 +8373,7 @@ export async function registerRoutes(
         }
 
         if (!resolvedPrivateKey) {
-          console.warn("[doctor.connect-wallet] rejected", {
-            userId,
+          logConnect("warn", "doctor.connect_wallet.rejected", {
             reason: "wallet_private_key_required",
           });
           return res.status(400).json({
@@ -8373,8 +8386,7 @@ export async function registerRoutes(
         if (!resolvedAddress && resolvedPrivateKey) {
           resolvedAddress = deriveSolanaAddressFromPrivateKey(resolvedPrivateKey);
           if (!resolvedAddress) {
-            console.warn("[doctor.connect-wallet] rejected", {
-              userId,
+            logConnect("warn", "doctor.connect_wallet.rejected", {
               reason: "invalid_private_key_format",
             });
             return res.status(400).json({ message: "Invalid Solana private key format" });
@@ -8382,8 +8394,7 @@ export async function registerRoutes(
         }
 
         if (explicitAddress && resolvedAddress && explicitAddress !== resolvedAddress) {
-          console.warn("[doctor.connect-wallet] rejected", {
-            userId,
+          logConnect("warn", "doctor.connect_wallet.rejected", {
             reason: "wallet_address_mismatch",
             explicitAddress,
             resolvedAddress,
@@ -8405,8 +8416,7 @@ export async function registerRoutes(
             const onchainBalanceSol = Number((lamports / 1_000_000_000).toFixed(6));
             doctorRuntime.wallet.balanceSol = Math.max(0, onchainBalanceSol);
           } catch (error: any) {
-            console.warn("[doctor.connect-wallet] balance_refresh_failed", {
-              userId,
+            logConnect("warn", "doctor.connect_wallet.balance_refresh_failed", {
               walletAddress: resolvedAddress,
               message: String(error?.message || "unknown_error"),
             });
@@ -8414,8 +8424,7 @@ export async function registerRoutes(
         }
 
         await setDoctorLivePrivateKeyForUser(userId, resolvedPrivateKey);
-        console.info("[doctor.connect-wallet] live_private_key_set", {
-          userId,
+        logConnect("info", "doctor.connect_wallet.live_private_key_set", {
           walletAddress: String(doctorRuntime.wallet.address || "").trim() || null,
         });
 
@@ -8433,8 +8442,7 @@ export async function registerRoutes(
           };
           await setStoredDoctorWalletsByUser(wallets);
           pruneDoctorWalletDisconnectedSniperLogs(userId, String(wallets[userId]?.connectedAt || wallets[userId]?.updatedAt || ""));
-          console.info("[doctor.connect-wallet] wallet_map_persisted", {
-            userId,
+          logConnect("info", "doctor.connect_wallet.wallet_map_persisted", {
             walletAddress: String(wallets[userId]?.address || "").trim() || null,
             autoHydrateBlocked: wallets[userId]?.autoHydrateBlocked === true,
           });
@@ -8447,8 +8455,7 @@ export async function registerRoutes(
         doctorRuntime.enabled = true;
         doctorRuntime.killSwitch = false;
         await persistDoctorRuntime(userId);
-        console.info("[doctor.connect-wallet] runtime_persisted", {
-          userId,
+        logConnect("info", "doctor.connect_wallet.runtime_persisted", {
           walletAddress: String(doctorRuntime.wallet.address || "").trim() || null,
           enabled: doctorRuntime.enabled,
           executionMode: doctorRuntime.execution.mode,
@@ -8469,19 +8476,24 @@ export async function registerRoutes(
             startDoctorCycleForUser(userId),
             connectStartCycleTimeoutMs,
           );
-          console.info("[doctor.connect-wallet] cycle_started", {
-            userId,
+          logConnect("info", "doctor.connect_wallet.cycle_started", {
             scanIntervalSeconds: doctorRuntime.scanIntervalSeconds,
           });
         })();
 
-        console.info("[doctor.connect-wallet] success", {
-          userId,
+        const status = await buildDoctorStatus(userId);
+        logConnect("info", "doctor.connect_wallet.success", {
           walletAddress: String(doctorRuntime.wallet.address || "").trim() || null,
+          privateKeyConfigured: Boolean((status as any)?.wallet?.private_key_configured),
+          connectionStatus: String((status as any)?.wallet?.connection_status || "").trim() || null,
+          tradeControlsWalletConnected: Boolean((status as any)?.trade_controls?.wallet_connected),
         });
-        return res.json(await buildDoctorStatus(userId));
+        return res.json(status);
       } catch (error: any) {
-        console.error("[doctor.connect-wallet] failed", {
+        logStructured("error", "doctor.connect_wallet.failed", {
+          attemptId,
+          durationMs: Math.max(0, Date.now() - startedAtMs),
+          userId: getRequestUserId(req),
           message: String(error?.message || "unknown_error"),
           stack: String(error?.stack || ""),
         });
