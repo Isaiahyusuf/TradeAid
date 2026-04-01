@@ -1511,6 +1511,33 @@ export async function registerRoutes(
     await setStoredDoctorWalletsByUser(wallets);
   };
 
+  const seedDoctorWalletFromAssistantBundle = async (
+    userId: string,
+    bundle: { addresses_by_chain?: Record<string, string>; private_keys_by_chain?: Record<string, string> },
+  ) => {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return;
+
+    const solanaPrivateKey = String(bundle?.private_keys_by_chain?.solana || "").trim();
+    if (!solanaPrivateKey) return;
+
+    const solanaAddress = String(bundle?.addresses_by_chain?.solana || "").trim();
+    const now = nowIso();
+    const wallets = await getStoredDoctorWalletsByUser();
+    const current = wallets[normalizedUserId] as Record<string, any> | undefined;
+    wallets[normalizedUserId] = {
+      ...(current || {}),
+      address: solanaAddress || String(current?.address || "").trim(),
+      balanceSol: Math.max(0, Number(current?.balanceSol || 0)),
+      separateWalletEnforced: (current?.separateWalletEnforced ?? true) !== false,
+      livePrivateKey: encryptDoctorPrivateKey(solanaPrivateKey),
+      autoHydrateBlocked: false,
+      connectedAt: String(current?.connectedAt || now).trim(),
+      updatedAt: now,
+    };
+    await setStoredDoctorWalletsByUser(wallets);
+  };
+
   const ensureDoctorOwnerAndWalletHydrated = async (preferredUserId?: string) => {
     let hydrated = false;
     const currentOwner = String(preferredUserId || doctorRuntime.ownerUserId || "").trim();
@@ -9594,6 +9621,7 @@ export async function registerRoutes(
     assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
 
     await persistAssistantRuntime();
+  await seedDoctorWalletFromAssistantBundle(userId, walletBundle);
     await syncDoctorWalletFromAssistantRuntime(getRequestUserId(req));
 
     logStructured("info", "wallet.create.success", {
@@ -9642,6 +9670,7 @@ export async function registerRoutes(
     assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
 
     await persistAssistantRuntime();
+  await seedDoctorWalletFromAssistantBundle(userId, walletBundle);
     await syncDoctorWalletFromAssistantRuntime(getRequestUserId(req));
 
     logStructured("info", "wallet.import.mnemonic_success", {
@@ -9686,6 +9715,7 @@ export async function registerRoutes(
     assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
 
     await persistAssistantRuntime();
+  await seedDoctorWalletFromAssistantBundle(userId, walletBundle);
     await syncDoctorWalletFromAssistantRuntime(getRequestUserId(req));
 
     logStructured("info", "wallet.import.private_key_success", {
