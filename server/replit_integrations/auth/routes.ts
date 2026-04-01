@@ -104,6 +104,49 @@ async function setPasswordHashesByUserId(value: Record<string, string>): Promise
   await storage.setAppState(AUTH_PASSWORDS_STATE_KEY, value);
 }
 
+async function ensurePasswordHashTable(): Promise<void> {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS auth_password_hashes (
+      user_id VARCHAR PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      password_hash TEXT NOT NULL,
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+}
+
+async function getPersistentPasswordHash(userId: string): Promise<string> {
+  const normalizedUserId = String(userId || "").trim();
+  if (!normalizedUserId) return "";
+
+  try {
+    await ensurePasswordHashTable();
+    const result = await db.execute(sql`
+      SELECT password_hash
+      FROM auth_password_hashes
+      WHERE user_id = ${normalizedUserId}
+      LIMIT 1
+    `);
+    const rows = (result as any)?.rows as Array<{ password_hash?: string }> | undefined;
+    return String(rows?.[0]?.password_hash || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+async function setPersistentPasswordHash(userId: string, passwordHash: string): Promise<void> {
+  const normalizedUserId = String(userId || "").trim();
+  const normalizedHash = String(passwordHash || "").trim();
+  if (!normalizedUserId || !normalizedHash) return;
+
+  await ensurePasswordHashTable();
+  await db.execute(sql`
+    INSERT INTO auth_password_hashes (user_id, password_hash, updated_at)
+    VALUES (${normalizedUserId}, ${normalizedHash}, NOW())
+    ON CONFLICT (user_id)
+    DO UPDATE SET password_hash = EXCLUDED.password_hash, updated_at = NOW()
+  `);
+}
+
 function requiredAccessCodeForRoute(routeType: "login" | "register"): string {
   const genericAccessCode = String(
     process.env.AUTH_ACCESS_CODE
@@ -252,6 +295,10 @@ async function resolveUserFromRequest(req: any) {
 
 // Register auth-specific routes
 export function registerAuthRoutes(app: Express): void {
+  ensurePasswordHashTable().catch((error) => {
+    console.error("[auth] failed to ensure password hash table", error);
+  });
+
   runFreshUserResetIfConfigured().catch((error) => {
     console.error("[auth] failed to perform forced fresh-user reset", error);
   });
@@ -286,7 +333,15 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       const hashesByUserId = await getPasswordHashesByUserId();
-      const storedHash = String(hashesByUserId[user.id] || "").trim();
+      let storedHash = String(hashesByUserId[user.id] || "").trim();
+      if (!storedHash) {
+        const persistentHash = await getPersistentPasswordHash(user.id);
+        if (persistentHash) {
+          storedHash = persistentHash;
+          hashesByUserId[user.id] = persistentHash;
+          await setPasswordHashesByUserId(hashesByUserId);
+        }
+      }
       if (!storedHash) {
         try {
           await db.execute(sql`DELETE FROM users WHERE id = ${user.id}`);
@@ -342,7 +397,7 @@ export function registerAuthRoutes(app: Express): void {
       let hashesByUserId = await getPasswordHashesByUserId();
       const purgeGhostUserIfNeeded = async (user: any | undefined): Promise<boolean> => {
         if (!user?.id) return false;
-        const existingHash = String(hashesByUserId[user.id] || "").trim();
+        const existingHash = String(hashesByUserId[user.id] || "").trim() || await getPersistentPasswordHash(user.id);
         if (existingHash) return false;
 
         try {
@@ -398,8 +453,10 @@ export function registerAuthRoutes(app: Express): void {
       });
 
       hashesByUserId = await getPasswordHashesByUserId();
-      hashesByUserId[newUser.id] = hashPassword(password);
+      const nextHash = hashPassword(password);
+      hashesByUserId[newUser.id] = nextHash;
       await setPasswordHashesByUserId(hashesByUserId);
+      await setPersistentPasswordHash(newUser.id, nextHash);
 
       res.json({
         user_id: newUser.id,
