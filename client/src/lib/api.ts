@@ -44,30 +44,50 @@ function resolveApiBaseUrl(): string {
 }
 const ACCESS_TOKEN_KEY = "trade_aid_token";
 const REFRESH_TOKEN_KEY = "trade_aid_refresh_token";
+let runtimeAccessToken: string | null = null;
+let runtimeRefreshToken: string | null = null;
 
 let refreshInFlight: Promise<string | null> | null = null;
 const API_TIMEOUT_MS = 20000;
 
 function getToken(): string | null {
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
+  if (runtimeAccessToken) {
+    return runtimeAccessToken;
+  }
+  const persisted = localStorage.getItem(ACCESS_TOKEN_KEY);
+  if (persisted) {
+    runtimeAccessToken = persisted;
+  }
+  return persisted;
 }
 
 function getRefreshToken(): string | null {
-  return localStorage.getItem(REFRESH_TOKEN_KEY);
+  if (runtimeRefreshToken) {
+    return runtimeRefreshToken;
+  }
+  const persisted = localStorage.getItem(REFRESH_TOKEN_KEY);
+  if (persisted) {
+    runtimeRefreshToken = persisted;
+  }
+  return persisted;
 }
 
 export function setToken(token: string) {
+  runtimeAccessToken = token;
   localStorage.setItem(ACCESS_TOKEN_KEY, token);
 }
 
 export function setAuthTokens(accessToken: string, refreshToken?: string | null) {
   setToken(accessToken);
   if (refreshToken) {
+    runtimeRefreshToken = refreshToken;
     localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
   }
 }
 
 export function clearToken() {
+  runtimeAccessToken = null;
+  runtimeRefreshToken = null;
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
