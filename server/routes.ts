@@ -8229,6 +8229,22 @@ export async function registerRoutes(
     },
     isAuthenticated,
     async (req: any, res) => {
+      const runWithSoftTimeout = async <T>(label: string, task: Promise<T>, timeoutMs: number): Promise<T | undefined> => {
+        const safeTimeoutMs = Math.max(250, Math.trunc(Number(timeoutMs || 0)));
+        try {
+          return await Promise.race<T>([
+            task,
+            new Promise<T>((_resolve, reject) => setTimeout(() => reject(new Error(`${label}_timeout`)), safeTimeoutMs)),
+          ]);
+        } catch (error: any) {
+          console.warn("[doctor.connect-wallet] soft_timeout_or_failed", {
+            label,
+            message: String(error?.message || "unknown_error"),
+          });
+          return undefined;
+        }
+      };
+
       try {
         const userId = getRequestUserId(req);
         if (!userId) {
@@ -8341,7 +8357,12 @@ export async function registerRoutes(
           });
         }
 
-        await refreshDoctorWalletBalanceFromChain(doctorRuntime.wallet.address, true);
+        const connectBalanceTimeoutMs = Math.max(800, Number(process.env.DOCTOR_CONNECT_BALANCE_TIMEOUT_MS || 2500));
+        await runWithSoftTimeout(
+          "refresh_balance",
+          refreshDoctorWalletBalanceFromChain(doctorRuntime.wallet.address, true),
+          connectBalanceTimeoutMs,
+        );
         doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 0);
         await ensureDoctorLiveExecutionModeIfCapable(userId);
         applyDoctorUnifiedControls();
@@ -8356,7 +8377,12 @@ export async function registerRoutes(
           executionMode: doctorRuntime.execution.mode,
         });
         await saveDoctorWalletForUser(userId);
-        await startDoctorCycleForUser(userId);
+        const connectStartCycleTimeoutMs = Math.max(1000, Number(process.env.DOCTOR_CONNECT_START_CYCLE_TIMEOUT_MS || 5000));
+        await runWithSoftTimeout(
+          "start_cycle",
+          startDoctorCycleForUser(userId),
+          connectStartCycleTimeoutMs,
+        );
         console.info("[doctor.connect-wallet] cycle_started", {
           userId,
           scanIntervalSeconds: doctorRuntime.scanIntervalSeconds,
