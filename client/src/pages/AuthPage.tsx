@@ -195,8 +195,12 @@ export default function AuthPage() {
   const startOAuthSignIn = (provider: "google" | "apple") => {
     const configuredBase = String(import.meta.env.VITE_API_URL || "").trim();
     const hostname = String(window.location.hostname || "").toLowerCase();
+    const isTradeAidDomain = hostname === "tradeaid.ink"
+      || hostname === "www.tradeaid.ink"
+      || hostname === "app.tradeaid.ink"
+      || hostname.endsWith(".tradeaid.ink");
     const apiBase = configuredBase
-      || ((hostname === "tradeaid.ink" || hostname === "www.tradeaid.ink")
+      || (isTradeAidDomain
         ? "https://api.tradeaid.ink"
         : "");
     if (!apiBase) {

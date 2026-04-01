@@ -27,7 +27,11 @@ function resolveApiBaseUrl(): string {
 
   if (typeof window !== "undefined") {
     const hostname = String(window.location.hostname || "").toLowerCase();
-    if (hostname === "tradeaid.ink" || hostname === "www.tradeaid.ink") {
+    const isTradeAidDomain = hostname === "tradeaid.ink"
+      || hostname === "www.tradeaid.ink"
+      || hostname === "app.tradeaid.ink"
+      || hostname.endsWith(".tradeaid.ink");
+    if (isTradeAidDomain) {
       return API_DOMAIN_OVERRIDE;
     }
     return window.location.origin;
