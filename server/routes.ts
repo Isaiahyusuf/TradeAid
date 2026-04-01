@@ -2974,16 +2974,36 @@ export async function registerRoutes(
     }
     const pollMs = Math.max(250, Math.trunc(Number(process.env.DOCTOR_SCHEDULER_POLL_MS || 500)));
     doctorSchedulerTimer = setInterval(async () => {
-      await runDoctorSchedulerTick();
+      try {
+        await runDoctorSchedulerTick();
+      } catch (error: any) {
+        console.error("[doctor.scheduler] tick_failed", {
+          message: String(error?.message || "unknown_error"),
+        });
+      }
     }, pollMs);
     doctorSchedulerTimer.unref?.();
     const reconcileMs = Math.max(5_000, Math.trunc(Number(process.env.DOCTOR_SCHEDULER_RECONCILE_MS || 30_000)));
     doctorSchedulerReconcileTimer = setInterval(async () => {
-      await reconcileDoctorSchedulerJobsWithRuntimes();
+      try {
+        await reconcileDoctorSchedulerJobsWithRuntimes();
+      } catch (error: any) {
+        console.error("[doctor.scheduler] reconcile_failed", {
+          message: String(error?.message || "unknown_error"),
+        });
+      }
     }, reconcileMs);
     doctorSchedulerReconcileTimer.unref?.();
-    void reconcileDoctorSchedulerJobsWithRuntimes();
-    void runDoctorSchedulerTick();
+    void reconcileDoctorSchedulerJobsWithRuntimes().catch((error: any) => {
+      console.error("[doctor.scheduler] initial_reconcile_failed", {
+        message: String(error?.message || "unknown_error"),
+      });
+    });
+    void runDoctorSchedulerTick().catch((error: any) => {
+      console.error("[doctor.scheduler] initial_tick_failed", {
+        message: String(error?.message || "unknown_error"),
+      });
+    });
   };
 
   const persistDoctorDexWorkerState = async () => {
@@ -3472,11 +3492,21 @@ export async function registerRoutes(
 
     const intervalSeconds = Math.max(2, Math.trunc(Number(process.env.DOCTOR_DEX_POLL_SECONDS || 3)));
     doctorDexWorkerTimer = setInterval(async () => {
-      await runDoctorDexWorkerPoll();
+      try {
+        await runDoctorDexWorkerPoll();
+      } catch (error: any) {
+        console.error("[doctor.dex-worker] poll_failed", {
+          message: String(error?.message || "unknown_error"),
+        });
+      }
     }, intervalSeconds * 1000);
     doctorDexWorkerTimer.unref?.();
 
-    void runDoctorDexWorkerPoll();
+    void runDoctorDexWorkerPoll().catch((error: any) => {
+      console.error("[doctor.dex-worker] initial_poll_failed", {
+        message: String(error?.message || "unknown_error"),
+      });
+    });
   };
 
   const normalizeLaunchSource = (value: string) => {
