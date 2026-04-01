@@ -8440,12 +8440,6 @@ export async function registerRoutes(
           });
         }
 
-        const connectBalanceTimeoutMs = Math.max(800, Number(process.env.DOCTOR_CONNECT_BALANCE_TIMEOUT_MS || 2500));
-        await runWithSoftTimeout(
-          "refresh_balance",
-          refreshDoctorWalletBalanceFromChain(doctorRuntime.wallet.address, true),
-          connectBalanceTimeoutMs,
-        );
         doctorRuntime.wallet.balanceSol = Math.max(doctorRuntime.wallet.balanceSol, 0);
         await ensureDoctorLiveExecutionModeIfCapable(userId);
         applyDoctorUnifiedControls();
@@ -8459,17 +8453,28 @@ export async function registerRoutes(
           enabled: doctorRuntime.enabled,
           executionMode: doctorRuntime.execution.mode,
         });
-        await saveDoctorWalletForUser(userId);
+
+        // Keep connect response fast: run slower balance/cycle work in background.
+        const connectBalanceTimeoutMs = Math.max(800, Number(process.env.DOCTOR_CONNECT_BALANCE_TIMEOUT_MS || 2500));
         const connectStartCycleTimeoutMs = Math.max(1000, Number(process.env.DOCTOR_CONNECT_START_CYCLE_TIMEOUT_MS || 5000));
-        await runWithSoftTimeout(
-          "start_cycle",
-          startDoctorCycleForUser(userId),
-          connectStartCycleTimeoutMs,
-        );
-        console.info("[doctor.connect-wallet] cycle_started", {
-          userId,
-          scanIntervalSeconds: doctorRuntime.scanIntervalSeconds,
-        });
+        void (async () => {
+          await runWithSoftTimeout(
+            "refresh_balance",
+            refreshDoctorWalletBalanceFromChain(doctorRuntime.wallet.address, true),
+            connectBalanceTimeoutMs,
+          );
+          await saveDoctorWalletForUser(userId);
+          await runWithSoftTimeout(
+            "start_cycle",
+            startDoctorCycleForUser(userId),
+            connectStartCycleTimeoutMs,
+          );
+          console.info("[doctor.connect-wallet] cycle_started", {
+            userId,
+            scanIntervalSeconds: doctorRuntime.scanIntervalSeconds,
+          });
+        })();
+
         console.info("[doctor.connect-wallet] success", {
           userId,
           walletAddress: String(doctorRuntime.wallet.address || "").trim() || null,
