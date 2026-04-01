@@ -79,7 +79,6 @@ export default function AuthPage() {
     if (!username.trim()) registerBlockers.push("Enter a username");
     if (!accessCode.trim()) registerBlockers.push("Enter your access code");
     if (usernameInvalid) registerBlockers.push(usernameValidation.message || "Username is invalid");
-    if (usernameStatus === "checking") registerBlockers.push("Checking username availability");
     if (usernameStatus === "taken") registerBlockers.push("Username is already taken");
     if (registerPasswordErrors.length > 0) registerBlockers.push("Password does not meet requirements");
     if (!registerConfirmPassword) registerBlockers.push("Confirm your password");
@@ -237,6 +236,16 @@ export default function AuthPage() {
 
       if (mode === "register" && password !== registerConfirmPassword) {
         throw new Error("Password and confirm password must match.");
+      }
+
+      if (mode === "register") {
+        const usernameCheck = await checkUsername(normalizeUsername(username));
+        if (!usernameCheck.valid) {
+          throw new Error(usernameCheck.message || "Username is invalid.");
+        }
+        if (!usernameCheck.available) {
+          throw new Error(usernameCheck.message || "Username is already taken.");
+        }
       }
 
       if (mode === "reset" && resetPasswordErrors.length > 0) {
