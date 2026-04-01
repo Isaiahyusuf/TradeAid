@@ -114,7 +114,7 @@ async function setPasswordHashesByUserId(value: Record<string, string>): Promise
 async function ensurePasswordHashTable(): Promise<void> {
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS auth_password_hashes (
-      user_id VARCHAR PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      user_id TEXT PRIMARY KEY,
       password_hash TEXT NOT NULL,
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
@@ -194,7 +194,11 @@ function mapRegistrationError(error: unknown): { status: number; message: string
     return { status: 401, message: "Invalid access code" };
   }
 
-  if (raw.includes("password")) {
+  if (
+    raw.includes("password must")
+    || raw.includes("invalid password format")
+    || raw.includes("weak password")
+  ) {
     return { status: 400, message: "Invalid password format" };
   }
 
