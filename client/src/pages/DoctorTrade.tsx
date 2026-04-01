@@ -572,6 +572,32 @@ export default function DoctorTrade() {
       return;
     }
 
+    const isTransientConnectError = (error: unknown) => {
+      const message = String((error as any)?.message || "").toLowerCase();
+      return (
+        message.includes("network")
+        || message.includes("fetch")
+        || message.includes("timeout")
+        || message.includes("timed out")
+        || message.includes("connection failed")
+      );
+    };
+
+    const recheckWalletConnection = async () => {
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const latest = await refetch();
+        const connected = isDoctorWalletConnected(
+          (latest.data?.wallet as Record<string, any> | undefined) || null,
+          (latest.data?.trade_controls as Record<string, any> | undefined) || null,
+        );
+        if (connected) {
+          return true;
+        }
+      }
+      return false;
+    };
+
     connectWalletMutation.mutate(
       { private_key: trimmedPrivateKey, use_existing_wallet: false },
       {
@@ -592,11 +618,22 @@ export default function DoctorTrade() {
           toast({ title: "Wallet connected", description: "DoctorTrade wallet connected from private key." });
         },
         onError: (error) => {
-          toast({
-            title: "Wallet connection failed",
-            description: error instanceof Error ? error.message : "Could not connect wallet.",
-            variant: "destructive",
-          });
+          void (async () => {
+            if (isTransientConnectError(error)) {
+              const connectedAfterRetry = await recheckWalletConnection();
+              if (connectedAfterRetry) {
+                setPrivateKeyInput("");
+                toast({ title: "Wallet connected", description: "Connection was delayed but completed successfully." });
+                return;
+              }
+            }
+
+            toast({
+              title: "Wallet connection failed",
+              description: error instanceof Error ? error.message : "Could not connect wallet.",
+              variant: "destructive",
+            });
+          })();
         },
       },
     );
