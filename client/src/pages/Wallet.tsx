@@ -1027,7 +1027,7 @@ export default function WalletPage() {
         </Sheet>
 
         <Sheet open={swapOpen} onOpenChange={setSwapOpen}>
-          <SheetContent side="right" className="sm:max-w-md">
+          <SheetContent side="right" className="sm:max-w-md overflow-y-auto">
             <SheetHeader>
               <SheetTitle>Swap</SheetTitle>
               <SheetDescription>Swap SOL and Solana tokens directly from your in-app wallet.</SheetDescription>
