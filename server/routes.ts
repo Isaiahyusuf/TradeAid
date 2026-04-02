@@ -1754,6 +1754,14 @@ export async function registerRoutes(
     } as const;
   };
 
+  const hasDoctorSuccessfulBuy = () => {
+    return doctorRuntime.recentTrades.some((trade) => {
+      const action = String((trade as any)?.action || "").toUpperCase();
+      const status = String((trade as any)?.status || "EXECUTED").toUpperCase();
+      return action === "BUY" && (status === "EXECUTED" || status === "SIMULATED");
+    });
+  };
+
   const maybeRotateDoctorAgentForNoSnipes = async (userId: string, nowMs = Date.now()) => {
     if (isDoctorUnifiedSimpleMode()) return { rotated: false } as const;
     const enabled = String(process.env.DOCTOR_AUTO_ROTATE_AGENT_ENABLED || "true").trim().toLowerCase() !== "false";
@@ -6812,7 +6820,7 @@ export async function registerRoutes(
       }
 
       const timeoutMs = Math.max(2000, Number(process.env.DOCTOR_OPENAI_FALLBACK_TIMEOUT_MS || 9000));
-      const minConfidence = Math.max(50, Math.min(99, Number(process.env.DOCTOR_AI_FALLBACK_CONFIDENCE_MIN || 78)));
+      const minConfidence = Math.max(50, Math.min(99, Number(process.env.DOCTOR_AI_FALLBACK_CONFIDENCE_MIN || 62)));
       const messages = [
         {
           role: "system" as const,
@@ -6953,6 +6961,37 @@ export async function registerRoutes(
             ai_confidence: Number((fallbackDecision as any).confidence || 0),
           });
         } else {
+          const firstBuyBootstrapEligible = !hasDoctorSuccessfulBuy();
+          const candidateLiquidityUsd = Number((buyCandidate as any)?.liquidity || 0);
+          const candidateVolume24hUsd = Number((buyCandidate as any)?.volume_24h || 0);
+          const candidateMarketCapUsd = Number((buyCandidate as any)?.market_cap_usd || 0);
+          const candidateScore = Number((buyCandidate as any)?.score || 0);
+          const candidateBuyRatio = Number((buyCandidate as any)?.buy_ratio_pct || 0);
+          const bootstrapOverrideAllowed = firstBuyBootstrapEligible
+            && candidateLiquidityUsd >= 5000
+            && candidateVolume24hUsd >= 25000
+            && candidateMarketCapUsd >= minMarketCapUsd
+            && candidateMarketCapUsd <= effectiveMaxMarketCapUsd
+            && candidateScore >= 52
+            && (candidateBuyRatio <= 0 || candidateBuyRatio >= 52);
+
+          if (bootstrapOverrideAllowed) {
+            aiFallbackUsed = true;
+            aiFallbackDecision = {
+              allowed: true,
+              reason: "bootstrap_first_buy_override",
+              source: "bootstrap_override",
+              confidence: Number(candidateScore.toFixed(2)),
+            };
+            appendDoctorSniperLog({
+              event: "detected",
+              source: String(buyCandidate.source || "ai_fallback"),
+              symbol: String(buyCandidate.symbol || "UNKNOWN"),
+              mint: String(buyCandidate.address || ""),
+              reason: "bootstrap_first_buy_override",
+              ai_confidence: Number(candidateScore.toFixed(2)),
+            });
+          } else {
           appendDoctorSniperLog({
             event: "blocked",
             source: String(buyCandidate.source || "scanner"),
@@ -6998,6 +7037,7 @@ export async function registerRoutes(
             ai_validation: aiValidation,
             ai_fallback: fallbackDecision,
           };
+          }
         }
       }
 
@@ -7013,7 +7053,7 @@ export async function registerRoutes(
         && aiScoringEnabledControl
         &&
         doctorRuntime.execution.mode === "live"
-        && String(process.env.DOCTOR_REQUIRE_OPENAI_SAFETY_GATE || "true").trim().toLowerCase() !== "false";
+        && String(process.env.DOCTOR_REQUIRE_OPENAI_SAFETY_GATE || "false").trim().toLowerCase() !== "false";
       if (requireOpenAiSafetyGate) {
         const openAiSafety = await evaluateDoctorOpenAiSafetyGate(buyCandidate, aiValidation as Record<string, any>);
         if (!openAiSafety.allowed) {
