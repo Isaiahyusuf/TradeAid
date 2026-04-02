@@ -10285,12 +10285,14 @@ export async function registerRoutes(
     const tokenMint = String(req.body?.token_mint || req.body?.contract_address || "").trim();
     const notionalUsd = Number(req.body?.notional_usd || 0);
     const amountSolInput = Number(req.body?.amount_sol || 0);
+    const sellTokenAmountInput = Number(req.body?.sell_token_amount || 0);
     const sellAll = Boolean(req.body?.sell_all);
     const mode = String(req.body?.mode || "live").toLowerCase() === "paper" ? "paper" : "live";
     const hasNotionalUsd = Number.isFinite(notionalUsd) && notionalUsd > 0;
     const hasAmountSolInput = Number.isFinite(amountSolInput) && amountSolInput > 0;
+    const hasSellTokenAmountInput = Number.isFinite(sellTokenAmountInput) && sellTokenAmountInput > 0;
 
-    if (!tokenMint || (side === "buy" ? (!hasNotionalUsd && !hasAmountSolInput) : (!sellAll && !hasNotionalUsd && !hasAmountSolInput))) {
+    if (!tokenMint || (side === "buy" ? (!hasNotionalUsd && !hasAmountSolInput) : (!sellAll && !hasNotionalUsd && !hasAmountSolInput && !hasSellTokenAmountInput))) {
       return res.status(400).json({ message: "invalid swap payload" });
     }
     if (!validateAddressForChain("solana", tokenMint)) {
@@ -10360,7 +10362,18 @@ export async function registerRoutes(
             return res.status(400).json({ message: "insufficient token balance for sell" });
           }
 
-          if (sellAll) {
+          const tokenDecimals = Number((accounts.value[0]?.account.data as any)?.parsed?.info?.tokenAmount?.decimals || 0);
+
+          if (hasSellTokenAmountInput) {
+            const requestedRaw = BigInt(Math.max(1, Math.trunc(sellTokenAmountInput * Math.pow(10, Math.max(0, tokenDecimals)))));
+            const sellRaw = requestedRaw > totalRaw ? totalRaw : requestedRaw;
+            quote = await fetchJupiterQuote({
+              inputMint: tokenMint,
+              outputMint: SOL_MINT,
+              amountAtomic: sellRaw.toString(),
+              slippageBps,
+            });
+          } else if (sellAll) {
             quote = await fetchJupiterQuote({
               inputMint: tokenMint,
               outputMint: SOL_MINT,

@@ -95,6 +95,7 @@ export default function WalletPage() {
   const [swapSide, setSwapSide] = useState<"buy" | "sell">("buy");
   const [swapTokenMint, setSwapTokenMint] = useState("");
   const [swapAmountSol, setSwapAmountSol] = useState("0.1");
+  const [swapSellAmountTokens, setSwapSellAmountTokens] = useState("");
   const swapMode = "live" as const;
 
   const [exportedKey, setExportedKey] = useState<{ chain: string; address: string; private_key: string; warning: string } | null>(null);
@@ -175,6 +176,13 @@ export default function WalletPage() {
     const recentNotional = context?.recent_trades?.slice(0, 8).reduce((sum, item) => sum + Number(item.notional_usd || 0), 0) || 0;
     return Math.max(0, Math.round(recentNotional * 0.18 * 100) / 100);
   }, [portfolio?.total_usd, context?.recent_trades]);
+
+  const selectedSellTokenBalance = useMemo(() => {
+    const mint = String(swapTokenMint || "").trim();
+    if (!mint || swapSide !== "sell") return 0;
+    const token = solanaSplTokens.find((item) => String(item.mint || "").trim() === mint);
+    return Number(token?.ui_amount || 0);
+  }, [solanaSplTokens, swapSide, swapTokenMint]);
 
   const walletSyncing = Boolean(
     tradingStatusQuery.isFetching ||
@@ -343,6 +351,7 @@ export default function WalletPage() {
   const handleSwapSubmit = async () => {
     const tokenMint = swapTokenMint.trim();
     const amountSol = Number(swapAmountSol);
+    const sellTokenAmount = Number(swapSellAmountTokens);
     if (!tokenMint) {
       toast({ title: "CA required", description: "Enter a Solana token CA address.", variant: "destructive" });
       return;
@@ -351,17 +360,20 @@ export default function WalletPage() {
       toast({ title: "Invalid amount", description: "Enter a valid SOL amount for the swap.", variant: "destructive" });
       return;
     }
-    const hasSellTargetAmount = Number.isFinite(amountSol) && amountSol > 0;
+    if (swapSide === "sell" && (!Number.isFinite(sellTokenAmount) || sellTokenAmount <= 0)) {
+      toast({ title: "Invalid amount", description: "Enter token amount to swap back to SOL.", variant: "destructive" });
+      return;
+    }
 
     try {
       const solPriceUsd = Number(chainPrices.solana || 0);
-      const notionalUsd = solPriceUsd > 0 && hasSellTargetAmount ? amountSol * solPriceUsd : undefined;
+      const notionalUsd = swapSide === "buy" && solPriceUsd > 0 ? amountSol * solPriceUsd : undefined;
       const result = await walletSwap.mutateAsync({
         side: swapSide,
         token_mint: tokenMint,
-        amount_sol: hasSellTargetAmount ? amountSol : undefined,
+        amount_sol: swapSide === "buy" ? amountSol : undefined,
+        sell_token_amount: swapSide === "sell" ? sellTokenAmount : undefined,
         notional_usd: notionalUsd,
-        sell_all: swapSide === "sell" && !hasSellTargetAmount,
         mode: swapMode,
       });
       await refreshWalletViews();
@@ -372,6 +384,7 @@ export default function WalletPage() {
       setSwapOpen(false);
       setSwapTokenMint("");
       setSwapAmountSol("0.1");
+      setSwapSellAmountTokens("");
     } catch (error) {
       toast({ title: "Swap failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
     }
@@ -393,21 +406,18 @@ export default function WalletPage() {
       return;
     }
 
-    try {
-      const result = await walletSwap.mutateAsync({
-        side: "sell",
-        token_mint: mint,
-        sell_all: true,
-        mode: swapMode,
-      });
-      await refreshWalletViews();
-      toast({ title: `Swapped ${String(token.symbol || "token")} to SOL`, description: `Tx: ${result.trade.tx_hash.slice(0, 10)}...` });
-      if (result.trade.explorer_url) {
-        window.open(result.trade.explorer_url, "_blank");
-      }
-    } catch (error) {
-      toast({ title: "Swap failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
-    }
+    setSwapSide("sell");
+    setSwapTokenMint(mint);
+    setSwapSellAmountTokens(amount.toString());
+    setSwapOpen(true);
+  };
+
+  const applySellPercent = (percent: number) => {
+    const p = Math.max(1, Math.min(100, Number(percent || 0)));
+    const balance = Math.max(0, Number(selectedSellTokenBalance || 0));
+    if (!(balance > 0)) return;
+    const amount = (balance * p) / 100;
+    setSwapSellAmountTokens(String(Number(amount.toFixed(9))));
   };
 
   const handleCreateWallet = async (overwrite: boolean) => {
@@ -1011,10 +1021,26 @@ export default function WalletPage() {
                 <Input placeholder="Enter Solana token CA address" value={swapTokenMint} onChange={(e) => setSwapTokenMint(e.target.value)} />
               </div>
 
-              <div className="space-y-1">
-                <Label>{swapSide === "buy" ? "Amount (SOL)" : "Target Receive (SOL, optional)"}</Label>
-                <Input type="number" min={0.0001} step="0.0001" value={swapAmountSol} onChange={(e) => setSwapAmountSol(e.target.value)} />
-              </div>
+              {swapSide === "buy" ? (
+                <div className="space-y-1">
+                  <Label>Amount (SOL)</Label>
+                  <Input type="number" min={0.0001} step="0.0001" value={swapAmountSol} onChange={(e) => setSwapAmountSol(e.target.value)} />
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Amount ({String(solanaSplTokens.find((t) => String(t.mint || "").trim() === String(swapTokenMint || "").trim())?.symbol || "TOKEN")})</Label>
+                    <span className="text-[11px] text-muted-foreground">Balance: {selectedSellTokenBalance.toLocaleString(undefined, { maximumFractionDigits: 9 })}</span>
+                  </div>
+                  <Input type="number" min={0.000000001} step="0.000000001" value={swapSellAmountTokens} onChange={(e) => setSwapSellAmountTokens(e.target.value)} />
+                  <div className="grid grid-cols-4 gap-2">
+                    <Button type="button" variant="outline" className="h-8 text-xs" onClick={() => applySellPercent(25)}>25%</Button>
+                    <Button type="button" variant="outline" className="h-8 text-xs" onClick={() => applySellPercent(50)}>50%</Button>
+                    <Button type="button" variant="outline" className="h-8 text-xs" onClick={() => applySellPercent(75)}>75%</Button>
+                    <Button type="button" variant="outline" className="h-8 text-xs" onClick={() => applySellPercent(100)}>100%</Button>
+                  </div>
+                </div>
+              )}
 
               {swapSide === "buy" && (
                 <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs space-y-1">
@@ -1044,7 +1070,7 @@ export default function WalletPage() {
               <p className="text-xs text-muted-foreground">
                 {swapSide === "buy"
                   ? "Buy uses SOL input and shows estimated token output before submitting."
-                  : "Sell swaps your token CA balance back into SOL. Leave target empty to swap full balance."}
+                  : "Sell swaps selected token amount back to SOL. Use 25/50/75/100 shortcuts like Phantom."}
               </p>
             </div>
             <SheetFooter className="mt-6">
