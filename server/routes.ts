@@ -5194,8 +5194,32 @@ export async function registerRoutes(
             doctorRuntime.wallet.balanceSol = availableSol;
           }
           const maxSpendableSol = Math.max(0, availableSol - feeBufferSol - estimatedFeeSol);
-          effectiveAmountSol = Math.min(effectiveAmountSol, maxSpendableSol);
-          effectiveAmountSol = Number(effectiveAmountSol.toFixed(6));
+          const requestedAmountSol = Number(effectiveAmountSol.toFixed(6));
+          const spendableRoundedSol = Number(maxSpendableSol.toFixed(6));
+          if (params.action === "buy" && requestedAmountSol > spendableRoundedSol) {
+            appendDoctorExecutionAudit({
+              action: params.action,
+              symbol: params.symbol,
+              mint: params.mint,
+              amount_sol: params.amountSol,
+              expected_price_usd: params.expectedPriceUsd,
+              expected_notional_usd: Number((params.amountSol * params.expectedPriceUsd).toFixed(2)),
+              trigger: params.trigger,
+              reason: params.reason,
+              status: "blocked",
+              block_reason: "requested_buy_exceeds_max_spendable",
+              router: "raydium",
+              available_sol: availableSol,
+              max_spendable_sol: spendableRoundedSol,
+              required_sol: Number((requestedAmountSol + feeBufferSol + estimatedFeeSol).toFixed(6)),
+            });
+            return {
+              executed: false,
+              status: "blocked",
+              reason: "requested_buy_exceeds_max_spendable",
+            } as const;
+          }
+          effectiveAmountSol = requestedAmountSol;
           if (effectiveAmountSol < 0.0001) {
             appendDoctorExecutionAudit({
               action: params.action,
