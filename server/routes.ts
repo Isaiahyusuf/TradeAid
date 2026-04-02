@@ -1711,7 +1711,8 @@ export async function registerRoutes(
   };
 
   const getDoctorNoSnipeRotationTimeoutMinutes = () => {
-    return Math.max(1, Number(process.env.DOCTOR_AUTO_ROTATE_NO_SNIPE_MINUTES || 10));
+    const configuredMinutes = Number(process.env.DOCTOR_AUTO_ROTATE_NO_SNIPE_MINUTES || 5);
+    return Math.max(1, Math.min(5, configuredMinutes));
   };
 
   const getDoctorBootstrapRelaxation = () => {
@@ -1766,13 +1767,9 @@ export async function registerRoutes(
     const lastRotateAtMs = new Date(String((doctorRuntime.autoAgent as any)?.lastRotateAt || "")).getTime();
     const referenceMs = Math.max(lastBuyAtMs, Number.isFinite(lastRotateAtMs) ? lastRotateAtMs : 0);
     const timeoutMinutes = getDoctorNoSnipeRotationTimeoutMinutes();
-    const idleMs = referenceMs > 0 ? Math.max(0, nowMs - referenceMs) : 0;
     const timeoutMs = timeoutMinutes * 60 * 1000;
-
-    // If there has never been a buy yet, do not rotate immediately on startup.
-    if (lastBuyAtMs <= 0) {
-      return { rotated: false } as const;
-    }
+    const effectiveReferenceMs = referenceMs > 0 ? referenceMs : (nowMs - timeoutMs);
+    const idleMs = Math.max(0, nowMs - effectiveReferenceMs);
 
     if (idleMs < timeoutMs) {
       return { rotated: false } as const;
@@ -6038,6 +6035,18 @@ export async function registerRoutes(
       ? candidatePoolNonOpen.find((token) => isDoctorLifecycleReentryAllowed(String(token.address || ""), nowMs))
       : undefined;
     let buyCandidate: Record<string, any> | undefined = candidatePoolNonOpen[0] || reentryCandidate;
+    if (buyCandidate) {
+      appendDoctorSniperLog({
+        event: "candidate_selected",
+        source: String((buyCandidate as any).source || "scanner"),
+        symbol: String((buyCandidate as any).symbol || "UNKNOWN"),
+        mint: String((buyCandidate as any).address || ""),
+        reason: reentryCandidate && String((reentryCandidate as any).address || "") === String((buyCandidate as any).address || "")
+          ? "lifecycle_reentry_candidate"
+          : "primary_candidate_pool",
+        preset: activeSnipePreset,
+      }, scopedUserId);
+    }
     if (!buyCandidate && doctorRuntime.execution.mode === "paper") {
       const softPaperPool = lifecycleActiveTokens
         .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
@@ -6145,6 +6154,31 @@ export async function registerRoutes(
           preset: activeSnipePreset,
         });
       }
+    }
+
+    if (!buyCandidate) {
+      const rejectReasonCounts = new Map<string, number>();
+      for (const token of lifecycleActiveTokens) {
+        const reasons = Array.isArray((token as any).reject_reasons) ? (token as any).reject_reasons : [];
+        for (const reason of reasons) {
+          const key = String(reason || "unknown").trim() || "unknown";
+          rejectReasonCounts.set(key, (rejectReasonCounts.get(key) || 0) + 1);
+        }
+      }
+      const topRejectReasons = Array.from(rejectReasonCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4)
+        .map(([reason, count]) => ({ reason, count }));
+
+      appendDoctorSniperLog({
+        event: "cycle",
+        source: "runtime",
+        reason: "no_candidate_after_filters",
+        preset: activeSnipePreset,
+        candidate_pool_size: candidatePool.length,
+        candidate_pool_non_open_size: candidatePoolNonOpen.length,
+        top_reject_reasons: topRejectReasons,
+      }, scopedUserId);
     }
 
     const evaluatePreTradeGuard = async (
@@ -7229,6 +7263,18 @@ export async function registerRoutes(
     if (!hasBlockingError) {
       doctorRuntime.lastError = null;
     }
+
+    appendDoctorSniperLog({
+      event: "cycle_summary",
+      source: "runtime",
+      reason: buyCount > 0 || sellCount > 0 ? "actions_executed" : "no_eligible_action",
+      trigger,
+      preset: activeSnipePreset,
+      buys: buyCount,
+      sells: sellCount,
+      positions_open: doctorRuntime.positions.length,
+      wallet_connected: Boolean(String(doctorRuntime.wallet.address || "").trim()),
+    }, scopedUserId);
 
     await persistDoctorRuntime(scopedUserId);
 
