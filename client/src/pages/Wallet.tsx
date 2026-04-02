@@ -137,8 +137,12 @@ export default function WalletPage() {
     () => ((portfolioChains as any)?.solana?.spl_tokens || []) as Array<{
       mint: string;
       symbol: string;
+      name?: string;
+      logo_url?: string;
       ui_amount: number;
+      price_usd?: number;
       value_usd: number;
+      decimals?: number;
     }>,
     [portfolioChains],
   );
@@ -689,23 +693,27 @@ export default function WalletPage() {
                   solanaSplTokens.map((token) => {
                     const tokenAmount = Number(token.ui_amount || 0);
                     const tokenValueUsd = Number(token.value_usd || 0);
+                    const tokenPriceUsd = Number((token as any).price_usd || 0);
+                    const tokenName = String((token as any).name || token.symbol || "Token");
                     return (
                       <div key={token.mint} className="rounded-lg border border-border/60 px-3 py-2 bg-muted/20 flex items-center justify-between gap-3">
                         <div className="min-w-0 flex items-center gap-2">
                           <TokenAvatar
                             logoUrl={(token as any).logo_url}
                             symbol={token.symbol}
-                            name={token.symbol}
+                            name={tokenName}
                             className="h-8 w-8 border-none"
                             fallbackClassName="text-[10px]"
                           />
                           <div className="min-w-0">
                           <p className="text-sm font-semibold truncate">{String(token.symbol || "TOKEN")}</p>
-                          <p className="text-xs text-muted-foreground break-all">{shortAddress(token.mint)}</p>
+                          <p className="text-xs text-muted-foreground truncate">{tokenName}</p>
+                          <p className="text-[11px] text-muted-foreground break-all">{shortAddress(token.mint)}</p>
                           </div>
                         </div>
                         <div className="text-right shrink-0">
                           <p className="text-sm font-semibold">{tokenAmount.toLocaleString(undefined, { maximumFractionDigits: 9 })}</p>
+                          <p className="text-[11px] text-muted-foreground">{tokenPriceUsd > 0 ? `$${tokenPriceUsd.toLocaleString(undefined, { minimumFractionDigits: 6, maximumFractionDigits: 9 })}` : "Price unavailable"}</p>
                           <p className="text-xs text-muted-foreground">$ {tokenValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                         </div>
                       </div>

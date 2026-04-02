@@ -1681,7 +1681,7 @@ export async function registerRoutes(
     (doctorRuntime.controls as any).snipe_preset = "balanced";
     doctorRuntime.controls.max_trades_per_day = 12;
     doctorRuntime.controls.max_trades_per_hour = 4;
-    doctorRuntime.controls.max_open_positions = 3;
+    doctorRuntime.controls.max_open_positions = 1;
     doctorRuntime.controls.buy_amount_sol = userBuyAmountSol;
     doctorRuntime.controls.min_buy_amount_sol = userBuyAmountSol;
     doctorRuntime.controls.take_profit_multiplier = userTakeProfitMultiplier;
@@ -2121,7 +2121,7 @@ export async function registerRoutes(
   };
 
   const getDoctorEffectiveMaxOpenPositions = () => {
-    return Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("max_open_positions", Number(doctorRuntime.controls.max_open_positions || 3))));
+    return 1;
   };
 
   const shouldForceDoctorCustomPreset = (
@@ -2450,7 +2450,7 @@ export async function registerRoutes(
       (doctorRuntime.controls as any).ai_prediction_check = false;
     }
     if (isDoctorMomentumTraderPreset()) {
-      doctorRuntime.controls.stop_loss_pct = Math.max(15, Number(doctorRuntime.controls.stop_loss_pct || 15));
+      doctorRuntime.controls.stop_loss_pct = Math.max(2, Number(doctorRuntime.controls.stop_loss_pct || 8));
       (doctorRuntime.controls as any).minimum_ai_score = Math.max(1, Number((doctorRuntime.controls as any).minimum_ai_score || 65));
       (doctorRuntime.controls as any).ai_scoring_enabled = typeof (doctorRuntime.controls as any).ai_scoring_enabled === "boolean"
         ? Boolean((doctorRuntime.controls as any).ai_scoring_enabled)
@@ -4984,11 +4984,21 @@ export async function registerRoutes(
             } as const;
           }
 
-          const configuredSellFraction = Math.max(
-            1,
-            Math.min(100, Number((params.sellFractionPct ?? orderControls.live_sell_fraction_pct) || 100)),
-          );
-          const maxSellNotionalUsd = Math.max(1, Number(orderControls.max_sell_notional_usd || Number.POSITIVE_INFINITY));
+          const normalizedSellReason = String(params.reason || "").trim().toLowerCase();
+          const isRiskExitReason = normalizedSellReason === "stop_loss_hit"
+            || normalizedSellReason === "trailing_stop_triggered"
+            || normalizedSellReason === "max_hold_reached"
+            || normalizedSellReason === "fast_momentum_exit"
+            || normalizedSellReason === "momentum_hype_died_exit";
+          const configuredSellFraction = isRiskExitReason
+            ? 100
+            : Math.max(
+              1,
+              Math.min(100, Number((params.sellFractionPct ?? orderControls.live_sell_fraction_pct) || 100)),
+            );
+          const maxSellNotionalUsd = isRiskExitReason
+            ? Number.POSITIVE_INFINITY
+            : Math.max(1, Number(orderControls.max_sell_notional_usd || Number.POSITIVE_INFINITY));
           const expectedNotionalUsd = Math.max(0, Number(params.amountSol * params.expectedPriceUsd || 0));
           const notionalFractionCap = Number.isFinite(maxSellNotionalUsd) && expectedNotionalUsd > 0
             ? Math.min(1, maxSellNotionalUsd / expectedNotionalUsd)
@@ -8487,7 +8497,7 @@ export async function registerRoutes(
       (doctorRuntime.controls as any).ai_prediction_check = false;
     }
     if (isDoctorMomentumTraderPreset()) {
-      doctorRuntime.controls.stop_loss_pct = Math.max(15, Number(doctorRuntime.controls.stop_loss_pct || 15));
+      doctorRuntime.controls.stop_loss_pct = Math.max(2, Number(doctorRuntime.controls.stop_loss_pct || 8));
       (doctorRuntime.controls as any).minimum_ai_score = Math.max(1, Number((doctorRuntime.controls as any).minimum_ai_score || 65));
       (doctorRuntime.controls as any).ai_scoring_enabled = typeof (doctorRuntime.controls as any).ai_scoring_enabled === "boolean"
         ? Boolean((doctorRuntime.controls as any).ai_scoring_enabled)
@@ -9518,6 +9528,50 @@ export async function registerRoutes(
       ]);
       const activeTokenMap = new Map(activeTokens.map((token) => [String(token.address || "").trim(), token]));
 
+      const tokenMetadataCacheMs = Math.max(60_000, Number(process.env.ASSISTANT_TOKEN_METADATA_CACHE_MS || 10 * 60 * 1000));
+      const tokenMetadataCache = new Map<string, { ts: number; data: Record<string, any> }>();
+      const getTokenMetadata = async (mint: string) => {
+        const mintKey = String(mint || "").trim();
+        if (!mintKey) return {} as Record<string, any>;
+
+        const cached = tokenMetadataCache.get(mintKey);
+        if (cached && Date.now() - cached.ts <= tokenMetadataCacheMs) {
+          return cached.data;
+        }
+
+        const fromActive = activeTokenMap.get(mintKey) || {};
+        const fromDb = await storage.getScannedTokenByAddress(mintKey).catch(() => undefined) as Record<string, any> | undefined;
+        const fromDexPair = await (async () => {
+          try {
+            const pairs = await Promise.race([
+              getTokenPairsFast(mintKey),
+              new Promise<any[]>((resolve) => setTimeout(() => resolve([]), Math.max(900, Math.trunc(rpcTimeoutMs * 0.8)))),
+            ]);
+            const bestPair = Array.isArray(pairs)
+              ? (pairs.find((pair) => String((pair as any)?.chainId || "").toLowerCase() === "solana") || pairs[0])
+              : null;
+            if (!bestPair) return {} as Record<string, any>;
+            return {
+              symbol: String((bestPair as any)?.baseToken?.symbol || "").trim(),
+              name: String((bestPair as any)?.baseToken?.name || "").trim(),
+              logo_url: String((bestPair as any)?.info?.imageUrl || "").trim(),
+              price_usd: Number((bestPair as any)?.priceUsd || 0),
+            } as Record<string, any>;
+          } catch {
+            return {} as Record<string, any>;
+          }
+        })();
+
+        const merged: Record<string, any> = {
+          symbol: String((fromActive as any).symbol || (fromDb as any)?.symbol || (fromDexPair as any).symbol || "").trim(),
+          name: String((fromActive as any).name || (fromDb as any)?.name || (fromDexPair as any).name || "").trim(),
+          logo_url: String((fromActive as any).logo_url || (fromDb as any)?.logoUrl || (fromDb as any)?.logo_url || (fromDexPair as any).logo_url || "").trim(),
+          price_usd: Number((fromActive as any).price_usd || (fromDb as any)?.priceUsd || (fromDb as any)?.price_usd || (fromDexPair as any).price_usd || 0),
+        };
+        tokenMetadataCache.set(mintKey, { ts: Date.now(), data: merged });
+        return merged;
+      };
+
       const rows: Array<Record<string, any>> = [];
       for (const entry of accounts.value) {
         const parsedInfo = (entry.account.data as any)?.parsed?.info as Record<string, any> | undefined;
@@ -9528,17 +9582,20 @@ export async function registerRoutes(
 
         const amountRaw = String(tokenAmount?.amount || "0");
         const decimals = Math.max(0, Math.trunc(Number(tokenAmount?.decimals || 0)));
-        const marketToken = activeTokenMap.get(mint) as Record<string, any> | undefined;
-        const resolvedPriceUsd = resolveCurrentPriceUsd(marketToken || {}, 0);
+        const metadata = await getTokenMetadata(mint);
+        const resolvedPriceUsd = resolveCurrentPriceUsd(metadata || {}, 0);
         const valueUsd = Number((uiAmount * Math.max(0, resolvedPriceUsd || 0)).toFixed(6));
-        const symbol = String(marketToken?.symbol || marketToken?.token || "").trim() || `${mint.slice(0, 4)}...${mint.slice(-4)}`;
+        const symbol = String((metadata as any)?.symbol || "").trim() || `${mint.slice(0, 4)}...${mint.slice(-4)}`;
+        const name = String((metadata as any)?.name || symbol || mint).trim();
 
         rows.push({
           mint,
           symbol,
+          name,
           ui_amount: Number(uiAmount.toFixed(9)),
           amount_raw: amountRaw,
           decimals,
+          logo_url: String((metadata as any)?.logo_url || ""),
           price_usd: Number((Math.max(0, resolvedPriceUsd || 0)).toFixed(9)),
           value_usd: valueUsd,
         });
