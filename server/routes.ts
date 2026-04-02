@@ -6409,18 +6409,24 @@ export async function registerRoutes(
         const candidateBuys1m = estimateBuys1m(candidateAny);
         const candidateTopHolderPct = Number(candidateAny.top_holder_pct || 0);
         const candidateCreatorHoldingPct = Number(candidateAny.creator_wallet_holding || candidateAny.dev_wallet_pct || 0);
+        const mintAuthoritySignalPresent = candidateAny.mint_authority_disabled !== undefined
+          || candidateAny.mintAuthorityDisabled !== undefined
+          || candidateAny.isMintAuthorityDisabled !== undefined;
+        const freezeAuthoritySignalPresent = candidateAny.freeze_authority_disabled !== undefined
+          || candidateAny.freezeAuthorityDisabled !== undefined
+          || candidateAny.isFreezeAuthorityDisabled !== undefined;
         const mintAuthorityDisabled = Boolean(candidateAny.mint_authority_disabled ?? candidateAny.mintAuthorityDisabled ?? candidateAny.isMintAuthorityDisabled);
         const freezeAuthorityDisabled = Boolean(candidateAny.freeze_authority_disabled ?? candidateAny.freezeAuthorityDisabled ?? candidateAny.isFreezeAuthorityDisabled);
 
-        if (candidateAgeSeconds > 90) return { allowed: false, reason: "speed_age_window_failed" };
-        if (candidateLiquiditySol < 15) return { allowed: false, reason: "speed_min_liquidity_sol_failed" };
-        if (candidateMarketCapUsd < 6000 || candidateMarketCapUsd > 100000) return { allowed: false, reason: "speed_market_cap_window_failed" };
-        if (candidateVolume1mUsd < 2500) return { allowed: false, reason: "speed_volume_1m_failed" };
-        if (candidateBuys1m < 8) return { allowed: false, reason: "speed_buys_60s_failed" };
-        if (!mintAuthorityDisabled) return { allowed: false, reason: "speed_mint_authority_enabled" };
-        if (!freezeAuthorityDisabled) return { allowed: false, reason: "speed_freeze_authority_enabled" };
-        if (candidateTopHolderPct > 25) return { allowed: false, reason: "speed_top_holder_pct_failed" };
-        if (candidateCreatorHoldingPct > 8) return { allowed: false, reason: "speed_creator_wallet_pct_failed" };
+        if (candidateAgeSeconds > 240) return { allowed: false, reason: "speed_age_window_failed" };
+        if (candidateLiquiditySol > 0 && candidateLiquiditySol < 5) return { allowed: false, reason: "speed_min_liquidity_sol_failed" };
+        if (candidateMarketCapUsd < 3000 || candidateMarketCapUsd > 250000) return { allowed: false, reason: "speed_market_cap_window_failed" };
+        if (candidateVolume1mUsd < 400) return { allowed: false, reason: "speed_volume_1m_failed" };
+        if (candidateBuys1m < 2) return { allowed: false, reason: "speed_buys_60s_failed" };
+        if (mintAuthoritySignalPresent && !mintAuthorityDisabled) return { allowed: false, reason: "speed_mint_authority_enabled" };
+        if (freezeAuthoritySignalPresent && !freezeAuthorityDisabled) return { allowed: false, reason: "speed_freeze_authority_enabled" };
+        if (candidateTopHolderPct > 35) return { allowed: false, reason: "speed_top_holder_pct_failed" };
+        if (candidateCreatorHoldingPct > 12) return { allowed: false, reason: "speed_creator_wallet_pct_failed" };
       }
 
       const baseAssetMint = getDoctorTradeBaseAssetMint();
