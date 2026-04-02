@@ -11,32 +11,50 @@ const isRailwayRuntime = Boolean(
 
 const allowLocalDotenv = String(process.env.ALLOW_LOCAL_DOTENV || "false").trim().toLowerCase() === "true";
 
+function firstNonEmpty(...values: Array<string | undefined>) {
+  for (const value of values) {
+    const normalized = String(value || "").trim();
+    if (normalized.length > 0) {
+      return normalized;
+    }
+  }
+  return "";
+}
+
 if (!isRailwayRuntime && process.env.NODE_ENV !== "production" && allowLocalDotenv) {
   const dotenv = require("dotenv") as typeof import("dotenv");
   dotenv.config({ path: ".env.local" });
   dotenv.config();
 }
 
-if (!process.env.DATABASE_URL) {
+const primaryDatabaseUrl = firstNonEmpty(
+  process.env.DATABASE_URL,
+  process.env.RAILWAY_WALLET_DATABASE_URL,
+  process.env.WALLET_DATABASE_URL,
+  process.env.RAILWAY_TRADE_DATABASE_URL,
+  process.env.TRADE_DATABASE_URL,
+);
+
+if (!primaryDatabaseUrl) {
   throw new Error(
-    "DATABASE_URL must be set in environment variables (Railway service variables in production).",
+    "No database connection string found. Set DATABASE_URL, RAILWAY_WALLET_DATABASE_URL/WALLET_DATABASE_URL, or RAILWAY_TRADE_DATABASE_URL/TRADE_DATABASE_URL.",
   );
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+export const pool = new Pool({ connectionString: primaryDatabaseUrl });
 export const db = drizzle(pool, { schema });
 
-const walletDatabaseUrl = String(
-  process.env.RAILWAY_WALLET_DATABASE_URL
-  || process.env.WALLET_DATABASE_URL
-  || process.env.DATABASE_URL,
-).trim();
+const walletDatabaseUrl = firstNonEmpty(
+  process.env.RAILWAY_WALLET_DATABASE_URL,
+  process.env.WALLET_DATABASE_URL,
+  primaryDatabaseUrl,
+);
 
-const tradeDatabaseUrl = String(
-  process.env.RAILWAY_TRADE_DATABASE_URL
-  || process.env.TRADE_DATABASE_URL
-  || process.env.DATABASE_URL,
-).trim();
+const tradeDatabaseUrl = firstNonEmpty(
+  process.env.RAILWAY_TRADE_DATABASE_URL,
+  process.env.TRADE_DATABASE_URL,
+  primaryDatabaseUrl,
+);
 
 const walletPool = new Pool({ connectionString: walletDatabaseUrl });
 const tradePool = new Pool({ connectionString: tradeDatabaseUrl });
