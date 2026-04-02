@@ -5906,7 +5906,7 @@ export async function registerRoutes(
       })
       .filter((token) => Number(token.volume_24h || 0) >= Math.max(1, getDoctorEffectiveControlNumber("min_volume_24h_usd", 12000)))
       .filter((token) => Number(token.age_seconds || 0) >= Math.max(0, Math.trunc(getDoctorEffectiveControlNumber("min_token_age_minutes", 0))) * 60)
-      .filter((token) => !isDoctorTokenAgeGuardEnabled() || Number(token.age_seconds || 0) <= Math.min(maxTokenAgeSeconds, strictMaxTokenAgeSeconds))
+      .filter((token) => Number(token.age_seconds || 0) <= Math.min(maxTokenAgeSeconds, strictMaxTokenAgeSeconds))
       .filter((token) => {
         const liquiditySol = Number((token as any).liquidity_sol || 0);
         if (liquiditySol <= 0) return true;
@@ -5927,7 +5927,7 @@ export async function registerRoutes(
         const devWalletPct = Number(token.dev_wallet_pct || 0);
         return devWalletPct <= 0 || devWalletPct <= maxDevWalletPct;
       })
-      .filter((token) => isLaunchSourceAllowed(String(token.launch_source || token.source || "unknown")))
+      .filter((token) => isDoctorLaunchCandidateAllowed(token as Record<string, any>, strictMaxTokenAgeSeconds))
       .filter((token) => {
         const topHolderPct = Number(token.top_holder_pct || 0);
         if (topHolderPct <= 0) return true;
@@ -6051,11 +6051,15 @@ export async function registerRoutes(
         const ageSeconds = Number.isFinite(createdAtMs) && createdAtMs > 0
           ? Math.max(0, Math.trunc((nowMs - createdAtMs) / 1000))
           : 0;
-        if (isDoctorTokenAgeGuardEnabled() && ageSeconds > strictMaxTokenAgeSeconds) {
+        const launchSource = normalizeLaunchSource(String((scanned as any).dexId || log?.source || "dexscreener"));
+        if (!isDoctorLaunchCandidateAllowed({
+          launch_source: launchSource,
+          age_seconds: ageSeconds,
+          lifecycle_phase: String((scanned as any).lifecycle_phase || ""),
+          graduated: Boolean((scanned as any).graduated),
+        }, strictMaxTokenAgeSeconds)) {
           continue;
         }
-
-        const launchSource = normalizeLaunchSource(String((scanned as any).dexId || log?.source || "dexscreener"));
         if (!isLaunchSourceAllowed(launchSource)) {
           continue;
         }
@@ -6118,6 +6122,7 @@ export async function registerRoutes(
       const softPaperPool = lifecycleActiveTokens
         .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
         .filter((token) => !openAddresses.has(String(token.address || "")))
+        .filter((token) => isDoctorLaunchCandidateAllowed(token as Record<string, any>, strictMaxTokenAgeSeconds))
         .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
       const sortedSoftPaperPool = softPaperPool.sort((a, b) => {
         const scoreDiff = getDoctorCandidateLearningScore(b as Record<string, any>, doctorLearningSnapshot).final_score
@@ -6141,7 +6146,7 @@ export async function registerRoutes(
       const insiderFallbackPool = lifecycleActiveTokens
         .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
         .filter((token) => !openAddresses.has(String(token.address || "")))
-        .filter((token) => !isDoctorTokenAgeGuardEnabled() || Number(token.age_seconds || 0) <= strictMaxTokenAgeSeconds)
+        .filter((token) => isDoctorLaunchCandidateAllowed(token as Record<string, any>, strictMaxTokenAgeSeconds))
         .filter((token) => {
           const marketCapUsd = Number(token.market_cap_usd || 0);
           return marketCapUsd >= minMarketCapUsd && marketCapUsd <= effectiveMaxMarketCapUsd;
@@ -6189,6 +6194,7 @@ export async function registerRoutes(
       const aiFallbackPool = lifecycleActiveTokens
         .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
         .filter((token) => !openAddresses.has(String(token.address || "")))
+        .filter((token) => isDoctorLaunchCandidateAllowed(token as Record<string, any>, strictMaxTokenAgeSeconds))
         .filter((token) => {
           const mint = String(token.address || "");
           return !hasDoctorBoughtMintBefore(mint) || isDoctorLifecycleReentryAllowed(mint, nowMs);
@@ -6295,8 +6301,7 @@ export async function registerRoutes(
       }
 
       if (requiresLiveWallet) {
-        const candidateAgeSeconds = Math.max(0, Number(candidate.age_seconds || 0));
-        if (isDoctorTokenAgeGuardEnabled() && candidateAgeSeconds > strictMaxTokenAgeSeconds) {
+        if (!isDoctorLaunchCandidateAllowed(candidate, strictMaxTokenAgeSeconds)) {
           return { allowed: false, reason: "token_too_old_for_sniping" };
         }
 
@@ -6306,8 +6311,7 @@ export async function registerRoutes(
       }
 
       if (mode === "strict") {
-        const candidateAgeSeconds = Math.max(0, Number(candidate.age_seconds || 0));
-        if (isDoctorTokenAgeGuardEnabled() && candidateAgeSeconds > strictMaxTokenAgeSeconds) {
+        if (!isDoctorLaunchCandidateAllowed(candidate, strictMaxTokenAgeSeconds)) {
           return { allowed: false, reason: "token_too_old_for_sniping" };
         }
 
@@ -7591,7 +7595,10 @@ export async function registerRoutes(
       .map((row) => Number((row as any)?.confidence || 0))
       .find((value) => Number.isFinite(value) && value > 0) || 0;
     const latestDecisionConfidence = Number((doctorRuntime.lastDecision as any)?.confidence || 0);
-    const topTokenConfidence = activeTokens
+    const displayMaxTokenAgeSeconds = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 90));
+    const displayActiveTokens = activeTokens.filter((token) => isDoctorLaunchCandidateAllowed(token as Record<string, any>, displayMaxTokenAgeSeconds));
+
+    const topTokenConfidence = displayActiveTokens
       .slice(0, 5)
       .map((row) => Number((row as any)?.score || 0))
       .find((value) => Number.isFinite(value) && value > 0) || 0;
@@ -7604,17 +7611,17 @@ export async function registerRoutes(
     const mateRegime = (() => {
       const explicit = String((doctorRuntime.lastDecision as any)?.regime || "").trim();
       if (explicit) return explicit;
-      if (!activeTokens.length) return "low_signal";
-      const avgMomentum = activeTokens
+      if (!displayActiveTokens.length) return "low_signal";
+      const avgMomentum = displayActiveTokens
         .slice(0, 20)
-        .reduce((sum, row) => sum + Number((row as any)?.price_change_5m || 0), 0) / Math.max(1, Math.min(20, activeTokens.length));
+        .reduce((sum, row) => sum + Number((row as any)?.price_change_5m || 0), 0) / Math.max(1, Math.min(20, displayActiveTokens.length));
       if (avgMomentum >= 8) return "risk_on";
       if (avgMomentum <= -4) return "risk_off";
       return "range";
     })();
     const strategyMode = getDoctorActiveSnipePreset();
     const lifecycleRuntime = getDoctorLifecycleRuntime();
-    const phaseCounts = activeTokens.reduce((acc, token) => {
+    const phaseCounts = displayActiveTokens.reduce((acc, token) => {
       const phase = String((token as any).lifecycle_phase || "pumpfun").trim().toLowerCase();
       if (phase === "raydium") {
         acc.raydium += 1;
@@ -7809,7 +7816,7 @@ export async function registerRoutes(
         last_error: (schedulerJob as any)?.last_error || null,
         lease_holder: doctorSchedulerInstanceId,
       },
-      active_tokens: activeTokens,
+      active_tokens: displayActiveTokens,
       positions: statusPositions,
       wallet_tokens: statusWalletTokens,
       wallet_transactions: statusWalletTransactions,
