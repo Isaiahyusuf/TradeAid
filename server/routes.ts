@@ -5609,6 +5609,7 @@ export async function registerRoutes(
     await maybeRotateDoctorAgentForNoSnipes(scopedUserId, nowMs);
 
     let sellCount = 0;
+    let pendingRiskExitLock = false;
     const updatedPositions: Array<Record<string, any>> = [];
     const maxOpenPositions = getDoctorEffectiveMaxOpenPositions();
     const activeSnipePreset = getDoctorActiveSnipePreset();
@@ -5711,6 +5712,7 @@ export async function registerRoutes(
       if (!sellReason) {
         updatedPositions.push({
           ...position,
+          risk_exit_pending_at: null,
           current_price: currentPrice,
           peak_price: peakPrice,
           last_seen_at: nowIso(),
@@ -5733,8 +5735,28 @@ export async function registerRoutes(
         sellFractionPct,
       });
       if (!sellExecution.executed) {
+        const isRiskExitReason = sellReason === "stop_loss_hit"
+          || sellReason === "trailing_stop_triggered"
+          || sellReason === "max_hold_reached";
+        const failedReason = String((sellExecution as any).reason || "").trim();
+        if (failedReason === "live_sell_balance_zero") {
+          markDoctorLifecycleExit(String(position.address || ""), "position_already_closed_onchain", nowMs);
+          doctorRuntime.lastDecision = {
+            action: "skip",
+            reason: "position_already_closed_onchain",
+            trigger,
+            at: nowIso(),
+            token: String(position.symbol || "UNKNOWN"),
+            mint: String(position.address || ""),
+          };
+          continue;
+        }
+        if (isRiskExitReason) {
+          pendingRiskExitLock = true;
+        }
         updatedPositions.push({
           ...position,
+          risk_exit_pending_at: isRiskExitReason ? nowIso() : null,
           current_price: currentPrice,
           peak_price: peakPrice,
           last_seen_at: nowIso(),
@@ -5802,6 +5824,7 @@ export async function registerRoutes(
       if (remainingAmountSol > 0.000001) {
         updatedPositions.push({
           ...position,
+          risk_exit_pending_at: null,
           tp_stage: nextTpStage,
           amount_sol: remainingAmountSol,
           current_price: currentPrice,
@@ -5813,6 +5836,9 @@ export async function registerRoutes(
     }
 
     doctorRuntime.positions = updatedPositions.slice(0, 30);
+    const hasPendingRiskExit = pendingRiskExitLock || doctorRuntime.positions.some((position) => {
+      return Boolean(String((position as any).risk_exit_pending_at || "").trim());
+    });
 
     let buyCount = 0;
     const maxTradesPerDay = Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("max_trades_per_day", Number(doctorRuntime.controls.max_trades_per_day || 1))));
@@ -6228,6 +6254,10 @@ export async function registerRoutes(
     ) => {
       if (!candidate) {
         return { allowed: false, reason: "no_eligible_candidate" };
+      }
+
+      if (hasPendingRiskExit) {
+        return { allowed: false, reason: "pending_risk_exit" };
       }
 
       const requiresLiveWallet = isDoctorLiveOnlyMode() || doctorRuntime.execution.mode === "live";
