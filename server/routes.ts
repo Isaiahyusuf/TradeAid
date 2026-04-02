@@ -2925,6 +2925,18 @@ export async function registerRoutes(
         continue;
       }
 
+      const walletSnapshot = await getDoctorWalletSnapshotForUser(userId).catch(() => null as any);
+      if (!Boolean(walletSnapshot?.connected)) {
+        jobs[userId] = {
+          ...(job || {}),
+          user_id: userId,
+          enabled: false,
+          last_error: "wallet_key_not_connected",
+          updated_at: nowIso(),
+        };
+        continue;
+      }
+
       const intervalSeconds = Math.max(1, Math.trunc(Number(job?.interval_seconds || 1)));
       const nextRunAt = Number(job?.next_run_at || 0);
       if (nextRunAt > nowMs) {
@@ -2943,7 +2955,7 @@ export async function registerRoutes(
         user_id: userId,
         enabled: true,
         interval_seconds: intervalSeconds,
-        next_run_at: nowMs + (intervalSeconds * 1000),
+        next_run_at: Date.now() + (intervalSeconds * 1000),
         last_run_at: runCompletedAtIso,
         last_run_duration_ms: runDurationMs,
         last_success_at: runResult.ok ? runCompletedAtIso : String(job?.last_success_at || ""),
@@ -2975,9 +2987,11 @@ export async function registerRoutes(
         if (!normalizedUserId) continue;
         const runtime = (runtimeAny && typeof runtimeAny === "object") ? runtimeAny as Record<string, any> : {};
         const runtimeEnabled = Boolean(runtime.enabled) && !Boolean(runtime.killSwitch);
+        const walletSnapshot = await getDoctorWalletSnapshotForUser(normalizedUserId).catch(() => null as any);
+        const walletConnected = Boolean(walletSnapshot?.connected);
         const intervalSeconds = Math.max(1, Math.trunc(Number(runtime.scanIntervalSeconds || 10)));
 
-        if (!runtimeEnabled) {
+        if (!runtimeEnabled || !walletConnected) {
           delete jobs[normalizedUserId];
           continue;
         }
