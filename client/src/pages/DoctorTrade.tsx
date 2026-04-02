@@ -1533,38 +1533,40 @@ export default function DoctorTrade() {
           </>}
         </SettingsMenuCard>
 
-        <Card className="rounded-2xl border-slate-700/70 bg-slate-900/75 p-3 backdrop-blur-md">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <p className="text-xs font-semibold">Live Ticker</p>
-            <Badge variant="outline" className={autoSnipeReady ? "border-green-500/40 text-green-400" : "border-yellow-500/40 text-yellow-400"}>
-              {autoSnipeReady ? "Auto-Snipe Active" : "Auto-Snipe Waiting"}
-            </Badge>
-          </div>
-          <p className="text-[10px] text-muted-foreground mb-2">{autoSnipeStatusLabel}</p>
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {tickerTokens.map((token) => (
-              <div key={token.address} className="min-w-[180px] rounded-lg border border-slate-700/80 bg-slate-900/80 px-2 py-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <TokenAvatar
-                      logoUrl={token.logo_url}
-                      symbol={token.symbol}
-                      name={token.name}
-                      className="h-5 w-5 border-none"
-                      fallbackClassName="text-[9px]"
-                    />
-                    <p className="text-xs font-semibold truncate">{token.symbol}</p>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">S {Math.round(token.score)}</p>
-                </div>
-                <p className="text-[10px] text-muted-foreground">{fmtUsd(token.liquidity)} · {fmtUsd(token.volume_5m)}</p>
+        {doctorTab === "trading" && (
+          <>
+            <Card className="rounded-2xl border-slate-700/70 bg-slate-900/75 p-3 backdrop-blur-md">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-xs font-semibold">Live Ticker</p>
+                <Badge variant="outline" className={autoSnipeReady ? "border-green-500/40 text-green-400" : "border-yellow-500/40 text-yellow-400"}>
+                  {autoSnipeReady ? "Auto-Snipe Active" : "Auto-Snipe Waiting"}
+                </Badge>
               </div>
-            ))}
-            {!tickerTokens.length && <p className="text-xs text-muted-foreground">No new Solana launches to snipe (last 24h).</p>}
-          </div>
-        </Card>
+              <p className="text-[10px] text-muted-foreground mb-2">{autoSnipeStatusLabel}</p>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {tickerTokens.map((token) => (
+                  <div key={token.address} className="min-w-[180px] rounded-lg border border-slate-700/80 bg-slate-900/80 px-2 py-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <TokenAvatar
+                          logoUrl={token.logo_url}
+                          symbol={token.symbol}
+                          name={token.name}
+                          className="h-5 w-5 border-none"
+                          fallbackClassName="text-[9px]"
+                        />
+                        <p className="text-xs font-semibold truncate">{token.symbol}</p>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">S {Math.round(token.score)}</p>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">{fmtUsd(token.liquidity)} · {fmtUsd(token.volume_5m)}</p>
+                  </div>
+                ))}
+                {!tickerTokens.length && <p className="text-xs text-muted-foreground">No new Solana launches to snipe (last 24h).</p>}
+              </div>
+            </Card>
 
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
             <Card className="rounded-2xl border-slate-700/70 bg-slate-900/75 p-4 xl:col-span-3 backdrop-blur-md">
             <h2 className="text-sm font-semibold mb-1">Safe Buys</h2>
             <p className="text-[11px] text-muted-foreground mb-3">{safeBuyTokens.length} candidate{safeBuyTokens.length === 1 ? "" : "s"} ready for review</p>
@@ -1937,7 +1939,9 @@ export default function DoctorTrade() {
               </Card>
             )}
           </div>
-        </div>
+            </div>
+          </>
+        )}
       </div>
     </Layout>
   );
