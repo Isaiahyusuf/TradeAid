@@ -384,7 +384,7 @@ export default function WalletPage() {
       const result = await createWallet.mutateAsync({ overwrite });
       setLatestBundle(result.bundle);
       await refreshWalletViews();
-      toast({ title: "Wallet created", description: "Store your 12-word phrase and private keys before proceeding." });
+      toast({ title: "Wallet created", description: "Wallet is ready. Secret reveal/export is restricted by security policy." });
       if (returnTo) {
         setLocation(returnTo);
       }
@@ -416,7 +416,7 @@ export default function WalletPage() {
       const result = await importWallet.mutateAsync({ mnemonic, overwrite });
       setLatestBundle(result.bundle);
       await refreshWalletViews();
-      toast({ title: "Wallet imported", description: "Addresses loaded successfully." });
+      toast({ title: "Wallet imported", description: "Addresses loaded successfully. Secret reveal/export is restricted by default." });
       if (returnTo) {
         setLocation(returnTo);
       }
@@ -443,7 +443,7 @@ export default function WalletPage() {
       const result = await importWalletPrivateKey.mutateAsync({ private_key: privateKey, overwrite });
       setLatestBundle(result.bundle);
       await refreshWalletViews();
-      toast({ title: "Wallet connected", description: "Private key imported successfully." });
+      toast({ title: "Wallet connected", description: "Private key imported securely." });
       if (returnTo) {
         setLocation(returnTo);
       }
