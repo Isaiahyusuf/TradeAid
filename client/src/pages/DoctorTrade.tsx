@@ -932,22 +932,27 @@ export default function DoctorTrade() {
 
   return (
     <Layout>
-      <div className="space-y-6">
+      <div className="relative space-y-6 overflow-hidden">
+        <div className="pointer-events-none absolute -top-24 -left-24 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
+        <div className="pointer-events-none absolute -top-16 right-0 h-80 w-80 rounded-full bg-emerald-500/10 blur-3xl" />
         <SavingOverlay
           visible={doctorSavingInProgress}
           title="Updating DoctorTrade"
           message={doctorSavingMessage}
         />
 
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="relative flex flex-col gap-4 overflow-hidden rounded-2xl border border-cyan-500/20 bg-gradient-to-r from-slate-950/90 via-slate-900/90 to-emerald-950/80 p-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.2),transparent_45%)]" />
           <div className="space-y-1.5">
-            <h1 className="text-3xl font-bold flex items-center gap-3">
-              <Bot className="w-8 h-8 text-primary" />
+            <h1 className="flex items-center gap-3 text-3xl font-bold tracking-tight">
+              <Bot className="h-8 w-8 text-cyan-300" />
               DoctorTrade Terminal
             </h1>
-            <p className="text-muted-foreground">Autonomous multi-chain trading terminal with live watchlist, execution feed, and risk engine controls.</p>
+            <p className="max-w-2xl text-sm text-slate-300">
+              Autonomous trading command center with live watchlist, execution feed, and adaptive risk controls.
+            </p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">Solana Only</Badge>
             <Badge variant="outline">Independent Engine</Badge>
             <Badge variant="outline">Runs Server-Side</Badge>
@@ -960,7 +965,7 @@ export default function DoctorTrade() {
           </div>
         </div>
 
-        <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60">
+        <Card className="rounded-2xl border-cyan-500/20 bg-slate-900/70 p-4 backdrop-blur-md">
           <div className="flex flex-wrap gap-2 items-center">
             <Button
               onClick={handleToggleDoctor}
@@ -1036,7 +1041,7 @@ export default function DoctorTrade() {
           </Card>
         )}
 
-        <Card className="p-4 border-emerald-500/30 bg-emerald-500/5">
+        <Card className="rounded-2xl border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 to-cyan-500/5 p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h3 className="text-sm font-semibold flex items-center gap-2">
@@ -1074,9 +1079,9 @@ export default function DoctorTrade() {
           </div>
         </Card>
 
-        <Card className="p-3 bg-card/70 backdrop-blur-sm border-border/60">
+        <Card className="rounded-2xl border-cyan-500/20 bg-slate-900/70 p-3 backdrop-blur-md">
           <Tabs value={doctorTab} onValueChange={(value) => setDoctorTab(value as "trading" | "engine" | "pnl")}>
-            <TabsList className="w-full grid grid-cols-3">
+            <TabsList className="grid w-full grid-cols-3 rounded-xl bg-slate-800/70 p-1">
               <TabsTrigger value="trading">Trading</TabsTrigger>
               <TabsTrigger value="engine">Strategy Brain</TabsTrigger>
               <TabsTrigger value="pnl">PnL</TabsTrigger>

@@ -795,7 +795,7 @@ export async function registerRoutes(
       max_liquidity_sol: 500,
       min_buys_5m: 1,
       max_sells_5m: 50,
-      max_token_age_seconds: 240,
+      max_token_age_seconds: 90,
       live_sell_fraction_pct: 100,
       max_sell_notional_usd: 300,
       max_wallet_allocation_pct: 10,
@@ -1647,7 +1647,11 @@ export async function registerRoutes(
   };
 
   const isDoctorTokenAgeGuardEnabled = () => {
-    return String(process.env.DOCTOR_ENFORCE_TOKEN_AGE_GUARD || "false").trim().toLowerCase() === "true";
+    return String(process.env.DOCTOR_ENFORCE_TOKEN_AGE_GUARD || "true").trim().toLowerCase() !== "false";
+  };
+
+  const isDoctorStrictLaunchOnlyMode = () => {
+    return String(process.env.DOCTOR_STRICT_LAUNCH_ONLY || "true").trim().toLowerCase() !== "false";
   };
 
   const normalizeDoctorSnipePreset = (value: unknown) => {
@@ -3594,7 +3598,7 @@ export async function registerRoutes(
   };
 
   const getAllowedLaunchSources = () => {
-    const configuredRaw = String(process.env.DOCTORTRADE_ALLOWED_LAUNCH_SOURCES || "all").trim();
+    const configuredRaw = String(process.env.DOCTORTRADE_ALLOWED_LAUNCH_SOURCES || "pumpfun").trim();
     const configuredItems = configuredRaw
       .split(",")
       .map((item) => String(item || "").trim().toLowerCase())
@@ -3620,6 +3624,24 @@ export async function registerRoutes(
     const { allowAll, allowed } = getAllowedLaunchSources();
     if (allowAll) return true;
     return allowed.has(normalizeLaunchSource(launchSource));
+  };
+
+  const isDoctorLaunchCandidateAllowed = (token: Record<string, any>, maxAgeSeconds: number) => {
+    if (!isDoctorStrictLaunchOnlyMode()) return true;
+
+    const launchSource = normalizeLaunchSource(String(token.launch_source || token.source || "unknown"));
+    if (launchSource !== "pumpfun") return false;
+
+    const ageSeconds = Math.max(0, Number(token.age_seconds || 0));
+    if (ageSeconds > Math.max(1, maxAgeSeconds)) return false;
+
+    const lifecyclePhase = String((token as any).lifecycle_phase || "").trim().toLowerCase();
+    if (lifecyclePhase && lifecyclePhase !== "pumpfun") return false;
+
+    const graduated = Boolean((token as any).graduated);
+    if (graduated) return false;
+
+    return true;
   };
 
   const getLiquidityLockLaunchGraceSeconds = () => {
