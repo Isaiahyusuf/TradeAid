@@ -15,6 +15,61 @@ import { TokenAvatar } from "@/components/token/TokenAvatar";
 import { useLocation } from "wouter";
 import { SavingOverlay } from "@/components/ui/saving-overlay";
 
+const DOCTORTRADE_UI_STATUS_CACHE_KEY = "doctortrade.ui.last_status.v1";
+
+function buildDoctorUiStatusSnapshot(status: any) {
+  if (!status || typeof status !== "object") return null;
+  return {
+    user_id: status.user_id ?? null,
+    enabled: Boolean(status.enabled),
+    kill_switch: Boolean(status.kill_switch),
+    scan_interval_seconds: Number(status.scan_interval_seconds || 10),
+    last_run_at: status.last_run_at ?? null,
+    last_error: status.last_error ?? null,
+    wallet: status.wallet || {},
+    execution: status.execution || {},
+    auto_trade: status.auto_trade || {},
+    trade_controls: status.trade_controls || {},
+    mate: status.mate || {},
+    strategy_mode: status.strategy_mode || "",
+    auto_agent: status.auto_agent || {},
+    self_evolution: status.self_evolution || {},
+    tuning_suggestion: status.tuning_suggestion || null,
+    risk_state: status.risk_state || {},
+    active_tokens: Array.isArray(status.active_tokens) ? status.active_tokens.slice(0, 25) : [],
+    positions: Array.isArray(status.positions) ? status.positions.slice(0, 25) : [],
+    recent_trades: Array.isArray(status.recent_trades) ? status.recent_trades.slice(0, 40) : [],
+    decision_journal: Array.isArray(status.decision_journal) ? status.decision_journal.slice(0, 40) : [],
+    performance: Array.isArray(status.performance) ? status.performance.slice(0, 30) : [],
+    sniper_logs: Array.isArray(status.sniper_logs) ? status.sniper_logs.slice(0, 40) : [],
+    wallet_tokens: Array.isArray(status.wallet_tokens) ? status.wallet_tokens.slice(0, 25) : [],
+    wallet_transactions: Array.isArray(status.wallet_transactions) ? status.wallet_transactions.slice(0, 25) : [],
+    cached_at: new Date().toISOString(),
+  };
+}
+
+function loadDoctorUiStatusSnapshot() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(DOCTORTRADE_UI_STATUS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return buildDoctorUiStatusSnapshot(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function saveDoctorUiStatusSnapshot(status: any) {
+  if (typeof window === "undefined") return;
+  try {
+    const snapshot = buildDoctorUiStatusSnapshot(status);
+    if (!snapshot) return;
+    window.localStorage.setItem(DOCTORTRADE_UI_STATUS_CACHE_KEY, JSON.stringify(snapshot));
+  } catch {
+  }
+}
+
 function fmtUsd(value: number) {
   if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
   if (value >= 1000) return `$${(value / 1000).toFixed(1)}K`;
@@ -107,7 +162,17 @@ export default function DoctorTrade() {
   const [mlSizeMaxInput, setMlSizeMaxInput] = useState("1.2");
   const simpleMode = false;
   const hydratedFromServerRef = useRef(false);
-  const viewData = data;
+  const [cachedStatus, setCachedStatus] = useState<any>(() => loadDoctorUiStatusSnapshot());
+
+  useEffect(() => {
+    if (!data) return;
+    const snapshot = buildDoctorUiStatusSnapshot(data);
+    if (!snapshot) return;
+    setCachedStatus(snapshot);
+    saveDoctorUiStatusSnapshot(snapshot);
+  }, [data]);
+
+  const viewData = data || cachedStatus;
   const hasData = Boolean(viewData);
   // Only show new launches on Solana (created within 24h and chain is solana)
   const now = Date.now();
