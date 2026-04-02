@@ -3356,7 +3356,6 @@ export async function registerRoutes(
     if (doctorCycleRunningByUser.has(normalizedUserId)) return { ok: false, error: "cycle_already_running" } as const;
     doctorCycleRunningByUser.add(normalizedUserId);
     const previousCycleUserId = doctorCurrentCycleUserId;
-    doctorCurrentCycleUserId = normalizedUserId;
     let releaseGlobalLock: () => void = () => {};
     const previousGlobalLock = doctorCycleGlobalLock;
     doctorCycleGlobalLock = new Promise<void>((resolve) => {
@@ -3364,6 +3363,7 @@ export async function registerRoutes(
     });
     try {
       await previousGlobalLock;
+      doctorCurrentCycleUserId = normalizedUserId;
       await loadDoctorRuntimeForUser(normalizedUserId);
       await executeDoctorCycle(trigger, normalizedUserId);
       await persistDoctorRuntime(normalizedUserId);
