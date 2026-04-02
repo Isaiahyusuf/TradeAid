@@ -35,6 +35,7 @@ import {
   useRevealAssistantWallet,
   useTransferAssistantWallet,
 } from "@/hooks/use-ai-assistant";
+import { useDoctorStatus } from "@/hooks/use-doctortrade";
 
 type SupportedWalletChain = (typeof SUPPORTED_CHAINS)[number];
 
@@ -56,6 +57,7 @@ export default function WalletPage() {
   const walletPortfolioQuery = useAssistantWalletPortfolio();
   const walletTransactionsQuery = useAssistantWalletTransactions(50, walletTab === "activity");
   const contextOverviewQuery = useAssistantContextOverview(30, walletTab === "activity");
+  const doctorStatusQuery = useDoctorStatus();
 
   const createWallet = useCreateAssistantWallet();
   const importWallet = useImportAssistantWallet();
@@ -134,7 +136,7 @@ export default function WalletPage() {
   const portfolio = walletPortfolioQuery.data?.portfolio;
   const portfolioChains = portfolio?.chains || {};
   const portfolioUpdatedAt = portfolio?.updated_at ? new Date(portfolio.updated_at).toLocaleString() : "-";
-  const solanaSplTokens = useMemo(
+  const solanaPortfolioTokens = useMemo(
     () => ((portfolioChains as any)?.solana?.spl_tokens || []) as Array<{
       mint: string;
       symbol: string;
@@ -146,6 +148,24 @@ export default function WalletPage() {
       decimals?: number;
     }>,
     [portfolioChains],
+  );
+  const doctorWalletTokens = useMemo(
+    () => ((doctorStatusQuery.data?.wallet_tokens || []) as Array<any>).map((token) => ({
+      mint: String(token?.mint || "").trim(),
+      symbol: String(token?.symbol || "").trim() || "TOKEN",
+      name: String(token?.name || token?.symbol || "Token").trim(),
+      logo_url: String(token?.logo_url || "").trim(),
+      ui_amount: Number(token?.ui_amount || 0),
+      price_usd: Number(token?.price_usd || 0),
+      value_usd: Number(token?.worth_usd || 0),
+      decimals: Math.max(0, Math.trunc(Number(token?.decimals || 0))),
+    })).filter((token) => Boolean(token.mint) && Number(token.ui_amount || 0) > 0),
+    [doctorStatusQuery.data?.wallet_tokens],
+  );
+  const usingDoctorWalletTokenFallback = solanaPortfolioTokens.length === 0 && doctorWalletTokens.length > 0;
+  const solanaSplTokens = useMemo(
+    () => (usingDoctorWalletTokenFallback ? doctorWalletTokens : solanaPortfolioTokens),
+    [usingDoctorWalletTokenFallback, doctorWalletTokens, solanaPortfolioTokens],
   );
 
   const activeChainsCount = Object.values(addressesByChain).filter(Boolean).length;
@@ -170,12 +190,16 @@ export default function WalletPage() {
 
   const estimatedUsdBalance = useMemo(() => {
     const reportedTotal = Number(portfolio?.total_usd || 0);
+    const displayedTokenValueUsd = solanaSplTokens.reduce((sum, token) => sum + Number((token as any).value_usd || 0), 0);
     if (reportedTotal > 0) {
-      return Math.round(reportedTotal * 100) / 100;
+      const adjustedTotal = usingDoctorWalletTokenFallback
+        ? reportedTotal + displayedTokenValueUsd
+        : reportedTotal;
+      return Math.round(adjustedTotal * 100) / 100;
     }
     const recentNotional = context?.recent_trades?.slice(0, 8).reduce((sum, item) => sum + Number(item.notional_usd || 0), 0) || 0;
-    return Math.max(0, Math.round(recentNotional * 0.18 * 100) / 100);
-  }, [portfolio?.total_usd, context?.recent_trades]);
+    return Math.max(0, Math.round(Math.max(displayedTokenValueUsd, recentNotional * 0.18) * 100) / 100);
+  }, [portfolio?.total_usd, solanaSplTokens, usingDoctorWalletTokenFallback, context?.recent_trades]);
 
   const selectedSellTokenBalance = useMemo(() => {
     const mint = String(swapTokenMint || "").trim();
@@ -189,13 +213,15 @@ export default function WalletPage() {
     walletStatusQuery.isFetching ||
     walletPortfolioQuery.isFetching ||
     walletTransactionsQuery.isFetching ||
-    contextOverviewQuery.isFetching,
+    contextOverviewQuery.isFetching ||
+    doctorStatusQuery.isFetching,
   );
 
   const walletInitialLoading = Boolean(
     tradingStatusQuery.isLoading ||
     walletStatusQuery.isLoading ||
-    walletPortfolioQuery.isLoading,
+    walletPortfolioQuery.isLoading ||
+    doctorStatusQuery.isLoading,
   );
 
   const lastWalletSyncTs = Math.max(
@@ -204,6 +230,7 @@ export default function WalletPage() {
     Number(walletPortfolioQuery.dataUpdatedAt || 0),
     Number(walletTransactionsQuery.dataUpdatedAt || 0),
     Number(contextOverviewQuery.dataUpdatedAt || 0),
+    Number(doctorStatusQuery.dataUpdatedAt || 0),
   );
 
   const lastWalletSyncLabel = lastWalletSyncTs > 0 ? new Date(lastWalletSyncTs).toLocaleTimeString() : "-";
@@ -215,6 +242,7 @@ export default function WalletPage() {
       walletPortfolioQuery.refetch(),
       walletTransactionsQuery.refetch(),
       contextOverviewQuery.refetch(),
+      doctorStatusQuery.refetch(),
     ]);
   };
 
@@ -641,6 +669,9 @@ export default function WalletPage() {
                 <p className="text-xs text-muted-foreground mt-1">Synced chains: {activeChainsCount}/{enabledChains.length}</p>
                 <p className="text-xs text-muted-foreground mt-1">Portfolio updated: {portfolioUpdatedAt}</p>
                 <p className="text-xs text-muted-foreground mt-1">DoctorTrade wallet: {walletConnected ? `Connected (${shortAddress(solanaAddress)})` : "Not connected"}</p>
+                {usingDoctorWalletTokenFallback && (
+                  <p className="text-xs text-amber-400 mt-1">Using DoctorTrade token snapshot while wallet indexing catches up.</p>
+                )}
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant={wallet?.has_wallet ? "default" : "outline"}>{wallet?.has_wallet ? "Wallet Active" : "Wallet Not Created"}</Badge>
