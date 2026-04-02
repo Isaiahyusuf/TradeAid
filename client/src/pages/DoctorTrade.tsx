@@ -354,6 +354,23 @@ export default function DoctorTrade() {
     };
   }, [decisionJournalRows, learningState]);
 
+  const rejectStats = useMemo(() => {
+    const tokens = (viewData?.active_tokens || []) as Array<Record<string, any>>;
+    let ageRejected = 0;
+    let sourceRejected = 0;
+    let safetyRejected = 0;
+
+    for (const token of tokens) {
+      const reasons = Array.isArray((token as any)?.reject_reasons) ? (token as any).reject_reasons : [];
+      const normalized = reasons.map((reason: any) => String(reason || "").toLowerCase());
+      if (normalized.some((reason: string) => reason.includes("age") || reason.includes("old"))) ageRejected += 1;
+      if (normalized.some((reason: string) => reason.includes("launch_source") || reason.includes("source"))) sourceRejected += 1;
+      if (normalized.some((reason: string) => reason.includes("safety") || reason.includes("dev_commitment") || reason.includes("confidence"))) safetyRejected += 1;
+    }
+
+    return { ageRejected, sourceRejected, safetyRejected };
+  }, [viewData?.active_tokens]);
+
   const walletConnected = isDoctorWalletConnected(
     (viewData?.wallet as Record<string, any> | undefined) || null,
     (viewData?.trade_controls as Record<string, any> | undefined) || null,
@@ -965,6 +982,33 @@ export default function DoctorTrade() {
           </div>
         </div>
 
+        <Card className="rounded-2xl border border-slate-700/70 bg-slate-950/70 p-4 backdrop-blur-md">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">Mission Control</p>
+            <Badge variant="outline" className={autoSnipeReady ? "border-emerald-400/50 text-emerald-300" : "border-amber-400/50 text-amber-300"}>
+              {autoSnipeReady ? "Execution Ready" : "Standby"}
+            </Badge>
+          </div>
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+            <div className="rounded-xl border border-slate-700/70 bg-slate-900/80 px-3 py-2">
+              <p className="text-[11px] text-slate-400">Freshness Window</p>
+              <p className="text-sm font-semibold text-slate-100">{Math.max(30, Number(viewData?.trade_controls?.max_token_age_seconds || 90))}s</p>
+            </div>
+            <div className="rounded-xl border border-slate-700/70 bg-slate-900/80 px-3 py-2">
+              <p className="text-[11px] text-slate-400">Age Rejections</p>
+              <p className="text-sm font-semibold text-amber-300">{rejectStats.ageRejected}</p>
+            </div>
+            <div className="rounded-xl border border-slate-700/70 bg-slate-900/80 px-3 py-2">
+              <p className="text-[11px] text-slate-400">Source Rejections</p>
+              <p className="text-sm font-semibold text-cyan-300">{rejectStats.sourceRejected}</p>
+            </div>
+            <div className="rounded-xl border border-slate-700/70 bg-slate-900/80 px-3 py-2">
+              <p className="text-[11px] text-slate-400">Safety Rejections</p>
+              <p className="text-sm font-semibold text-rose-300">{rejectStats.safetyRejected}</p>
+            </div>
+          </div>
+        </Card>
+
         <Card className="rounded-2xl border-cyan-500/20 bg-slate-900/70 p-4 backdrop-blur-md">
           <div className="flex flex-wrap gap-2 items-center">
             <Button
@@ -1082,15 +1126,15 @@ export default function DoctorTrade() {
         <Card className="rounded-2xl border-cyan-500/20 bg-slate-900/70 p-3 backdrop-blur-md">
           <Tabs value={doctorTab} onValueChange={(value) => setDoctorTab(value as "trading" | "engine" | "pnl")}>
             <TabsList className="grid w-full grid-cols-3 rounded-xl bg-slate-800/70 p-1">
-              <TabsTrigger value="trading">Trading</TabsTrigger>
-              <TabsTrigger value="engine">Strategy Brain</TabsTrigger>
-              <TabsTrigger value="pnl">PnL</TabsTrigger>
+              <TabsTrigger className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-100" value="trading">Trading</TabsTrigger>
+              <TabsTrigger className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-100" value="engine">Strategy Brain</TabsTrigger>
+              <TabsTrigger className="data-[state=active]:bg-indigo-500/20 data-[state=active]:text-indigo-100" value="pnl">PnL</TabsTrigger>
             </TabsList>
           </Tabs>
         </Card>
 
         {doctorTab === "engine" && (
-          <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60">
+          <Card className="rounded-2xl border-emerald-500/20 bg-gradient-to-br from-slate-900/85 to-emerald-950/40 p-4 backdrop-blur-md">
             <h3 className="text-sm font-semibold mb-2">MATE Scoring Snapshot</h3>
             <div className="space-y-2 text-sm">
               {Object.entries(mateState?.scores || {}).length ? Object.entries(mateState?.scores || {}).map(([agent, score]) => (
@@ -1106,7 +1150,7 @@ export default function DoctorTrade() {
         )}
 
         {doctorTab === "pnl" && (
-          <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60">
+          <Card className="rounded-2xl border-indigo-500/20 bg-gradient-to-br from-slate-900/85 to-indigo-950/40 p-4 backdrop-blur-md">
             <div className="flex items-center justify-between gap-2 mb-3">
               <h3 className="text-sm font-semibold">PnL Tracker</h3>
               <Badge
@@ -1489,7 +1533,7 @@ export default function DoctorTrade() {
           </>}
         </SettingsMenuCard>
 
-        <Card className="p-3 bg-card/70 backdrop-blur-sm border-border/60">
+        <Card className="rounded-2xl border-slate-700/70 bg-slate-900/75 p-3 backdrop-blur-md">
           <div className="flex items-center justify-between gap-2 mb-2">
             <p className="text-xs font-semibold">Live Ticker</p>
             <Badge variant="outline" className={autoSnipeReady ? "border-green-500/40 text-green-400" : "border-yellow-500/40 text-yellow-400"}>
@@ -1499,7 +1543,7 @@ export default function DoctorTrade() {
           <p className="text-[10px] text-muted-foreground mb-2">{autoSnipeStatusLabel}</p>
           <div className="flex gap-2 overflow-x-auto pb-1">
             {tickerTokens.map((token) => (
-              <div key={token.address} className="min-w-[180px] border rounded-md px-2 py-1.5">
+              <div key={token.address} className="min-w-[180px] rounded-lg border border-slate-700/80 bg-slate-900/80 px-2 py-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <TokenAvatar
@@ -1521,12 +1565,12 @@ export default function DoctorTrade() {
         </Card>
 
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-            <Card className="p-4 xl:col-span-3">
+            <Card className="rounded-2xl border-slate-700/70 bg-slate-900/75 p-4 xl:col-span-3 backdrop-blur-md">
             <h2 className="text-sm font-semibold mb-1">Safe Buys</h2>
             <p className="text-[11px] text-muted-foreground mb-3">{safeBuyTokens.length} candidate{safeBuyTokens.length === 1 ? "" : "s"} ready for review</p>
             <div className="space-y-2 max-h-[640px] overflow-auto">
               {safeBuyTokens.map((token: any) => (
-                <div key={token.address} className="border rounded-md p-2">
+                <div key={token.address} className="rounded-lg border border-slate-700/80 bg-slate-900/80 p-2">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <TokenAvatar
@@ -1552,7 +1596,7 @@ export default function DoctorTrade() {
           </Card>
 
           <div className="xl:col-span-6 space-y-4">
-            <Card className="p-4">
+            <Card className="rounded-2xl border-slate-700/70 bg-slate-900/75 p-4 backdrop-blur-md">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-sm font-semibold flex items-center gap-2"><TrendingUp className="w-4 h-4" />Performance</h2>
                 <p className="text-xs text-muted-foreground">Win-rate vs drawdown</p>
@@ -1571,7 +1615,7 @@ export default function DoctorTrade() {
               </div>
             </Card>
 
-            <Card className="p-4">
+            <Card className="rounded-2xl border-slate-700/70 bg-slate-900/75 p-4 backdrop-blur-md">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-sm font-semibold flex items-center gap-2"><BarChart3 className="w-4 h-4" />Execution Pulse</h2>
                 <p className="text-xs text-muted-foreground">Confidence and size</p>
@@ -1590,7 +1634,7 @@ export default function DoctorTrade() {
               </div>
             </Card>
 
-            <Card className="p-4">
+            <Card className="rounded-2xl border-slate-700/70 bg-slate-900/75 p-4 backdrop-blur-md">
               <h2 className="text-sm font-semibold mb-3 flex items-center gap-2"><Radio className="w-4 h-4" />Recent Executions</h2>
               <div className="space-y-2 max-h-56 overflow-auto">
                 {(viewData?.recent_trades || []).slice(0, 12).map((trade, index) => (
@@ -1607,7 +1651,7 @@ export default function DoctorTrade() {
               </div>
             </Card>
 
-            <Card className="p-4">
+            <Card className="rounded-2xl border-slate-700/70 bg-slate-900/75 p-4 backdrop-blur-md">
               <h2 className="text-sm font-semibold mb-3">Decision Journal</h2>
               <div className="space-y-2 max-h-56 overflow-auto">
                 {decisionJournalRows.map((row, index) => (
@@ -1633,7 +1677,7 @@ export default function DoctorTrade() {
           </div>
 
           <div className="xl:col-span-3 space-y-4">
-            <Card className="p-4">
+            <Card className="rounded-2xl border-slate-700/70 bg-slate-900/75 p-4 backdrop-blur-md">
               <h2 className="text-sm font-semibold mb-3">Account</h2>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">Engine</span><span>{viewData?.enabled ? "Live" : "Stopped"}</span></div>
@@ -1652,7 +1696,7 @@ export default function DoctorTrade() {
               </div>
             </Card>
 
-            <Card className="p-4 border-cyan-500/30 bg-cyan-500/5">
+            <Card className="rounded-2xl border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 to-slate-900/70 p-4 backdrop-blur-md">
               <div className="flex items-center justify-between gap-2 mb-3">
                 <h2 className="text-sm font-semibold">Adaptive Learning</h2>
                 <div className="flex items-center gap-2">
@@ -1721,7 +1765,7 @@ export default function DoctorTrade() {
               </p>
             </Card>
 
-            <Card className="p-4">
+            <Card className="rounded-2xl border-slate-700/70 bg-slate-900/75 p-4 backdrop-blur-md">
               <h2 className="text-sm font-semibold mb-3">Sniper Logs</h2>
               <div className="space-y-2 max-h-[220px] overflow-auto">
                 {(viewData?.sniper_logs || []).slice(0, 12).map((row, index) => (
@@ -1755,7 +1799,7 @@ export default function DoctorTrade() {
               </div>
             </Card>
 
-            <Card className="p-4">
+            <Card className="rounded-2xl border-slate-700/70 bg-slate-900/75 p-4 backdrop-blur-md">
               <h2 className="text-sm font-semibold mb-3">Order Ticket</h2>
               <div className="space-y-2">
                 <div className="grid grid-cols-2 gap-2 text-xs">
@@ -1797,7 +1841,7 @@ export default function DoctorTrade() {
               </div>
             </Card>
 
-            <Card className="p-4">
+            <Card className="rounded-2xl border-slate-700/70 bg-slate-900/75 p-4 backdrop-blur-md">
               <h2 className="text-sm font-semibold mb-3">Open Positions</h2>
               <div className="space-y-2 max-h-[300px] overflow-auto">
                 {(viewData?.positions || []).map((position) => (
@@ -1836,7 +1880,7 @@ export default function DoctorTrade() {
               </div>
             </Card>
 
-            <Card className="p-4">
+            <Card className="rounded-2xl border-slate-700/70 bg-slate-900/75 p-4 backdrop-blur-md">
               <h2 className="text-sm font-semibold mb-3">Wallet Tokens</h2>
               <div className="space-y-2 max-h-[240px] overflow-auto">
                 {(viewData?.wallet_tokens || []).map((token) => (
