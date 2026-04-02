@@ -7504,6 +7504,8 @@ export async function registerRoutes(
       autoTradeBlockReason = "max_consecutive_losses_reached";
     }
 
+    const scannerHealthSnapshot = getScannerHealthStatus();
+
     return {
       user_id: statusUserId || null,
       api_target: String(process.env.VITE_API_URL || process.env.TRADE_AID_BACKEND_URL || "").trim() || null,
