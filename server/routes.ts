@@ -3353,7 +3353,17 @@ export async function registerRoutes(
   const runDoctorCycleSafely = async (trigger: "manual" | "auto", userId?: string) => {
     const normalizedUserId = String(userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
     if (!normalizedUserId) return { ok: false, error: "missing_user_id" } as const;
-    if (doctorCycleRunningByUser.has(normalizedUserId)) return { ok: false, error: "cycle_already_running" } as const;
+    if (doctorCycleRunningByUser.has(normalizedUserId)) {
+      if (trigger === "manual") {
+        const waitUntil = Date.now() + Math.max(1500, Number(process.env.DOCTOR_MANUAL_CYCLE_WAIT_MS || 6000));
+        while (doctorCycleRunningByUser.has(normalizedUserId) && Date.now() < waitUntil) {
+          await new Promise((resolve) => setTimeout(resolve, 120));
+        }
+      }
+      if (doctorCycleRunningByUser.has(normalizedUserId)) {
+        return { ok: false, error: "cycle_already_running" } as const;
+      }
+    }
     doctorCycleRunningByUser.add(normalizedUserId);
     const previousCycleUserId = doctorCurrentCycleUserId;
     let releaseGlobalLock: () => void = () => {};
