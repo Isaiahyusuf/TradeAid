@@ -79,7 +79,7 @@ export default function DoctorTrade() {
   const directBuyMutation = useDoctorDirectBuy();
   const directSellMutation = useDoctorDirectSell();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [doctorTab, setDoctorTab] = useState<"trading" | "engine">("trading");
+  const [doctorTab, setDoctorTab] = useState<"trading" | "engine" | "pnl">("trading");
   const [intervalInput, setIntervalInput] = useState("10");
   const [buyAmountInput, setBuyAmountInput] = useState("0.1");
   const [maxTradesInput, setMaxTradesInput] = useState("12");
@@ -234,6 +234,48 @@ export default function DoctorTrade() {
       })),
     [viewData?.recent_trades],
   );
+
+  const pnlRows = useMemo(() => {
+    return (viewData?.recent_trades || [])
+      .filter((row: any) => {
+        const action = String(row?.action || "").toUpperCase();
+        return action === "BUY" || action === "SELL";
+      })
+      .slice(0, 40);
+  }, [viewData?.recent_trades]);
+
+  const pnlSummary = useMemo(() => {
+    let realizedPnlUsd = 0;
+    let realizedPnlPctTotal = 0;
+    let realizedCount = 0;
+    let wins = 0;
+    let losses = 0;
+
+    for (const trade of pnlRows) {
+      if (String(trade?.action || "").toUpperCase() !== "SELL") continue;
+
+      const pnlUsd = Number(trade?.pnl_usd || 0);
+      const pnlPct = Number(trade?.pnl_pct || 0);
+      if (Number.isFinite(pnlUsd)) realizedPnlUsd += pnlUsd;
+      if (Number.isFinite(pnlPct)) realizedPnlPctTotal += pnlPct;
+      realizedCount += 1;
+
+      if (pnlPct > 0) wins += 1;
+      else if (pnlPct < 0) losses += 1;
+    }
+
+    const winRatePct = realizedCount > 0 ? (wins / realizedCount) * 100 : 0;
+    const avgRealizedPnlPct = realizedCount > 0 ? realizedPnlPctTotal / realizedCount : 0;
+
+    return {
+      realizedPnlUsd,
+      realizedCount,
+      wins,
+      losses,
+      winRatePct,
+      avgRealizedPnlPct,
+    };
+  }, [pnlRows]);
 
   const decisionJournalRows = useMemo(() => {
     const cutoffMs = Date.now() - (24 * 60 * 60 * 1000);
@@ -1033,10 +1075,11 @@ export default function DoctorTrade() {
         </Card>
 
         <Card className="p-3 bg-card/70 backdrop-blur-sm border-border/60">
-          <Tabs value={doctorTab} onValueChange={(value) => setDoctorTab(value as "trading" | "engine")}>
-            <TabsList className="w-full grid grid-cols-2">
+          <Tabs value={doctorTab} onValueChange={(value) => setDoctorTab(value as "trading" | "engine" | "pnl")}>
+            <TabsList className="w-full grid grid-cols-3">
               <TabsTrigger value="trading">Trading</TabsTrigger>
               <TabsTrigger value="engine">Strategy Brain</TabsTrigger>
+              <TabsTrigger value="pnl">PnL</TabsTrigger>
             </TabsList>
           </Tabs>
         </Card>
@@ -1053,6 +1096,78 @@ export default function DoctorTrade() {
               )) : (
                 <p className="text-xs text-muted-foreground">Waiting for enough market samples to publish score table.</p>
               )}
+            </div>
+          </Card>
+        )}
+
+        {doctorTab === "pnl" && (
+          <Card className="p-4 bg-card/70 backdrop-blur-sm border-border/60">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h3 className="text-sm font-semibold">PnL Tracker</h3>
+              <Badge
+                variant="outline"
+                className={pnlSummary.realizedPnlUsd >= 0 ? "border-green-500/40 text-green-400" : "border-red-500/40 text-red-400"}
+              >
+                Realized {pnlSummary.realizedPnlUsd >= 0 ? "+" : ""}${pnlSummary.realizedPnlUsd.toFixed(2)}
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 mb-3 text-sm">
+              <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
+                <p className="text-xs text-muted-foreground">Realized PnL</p>
+                <p className={pnlSummary.realizedPnlUsd >= 0 ? "font-semibold text-green-400" : "font-semibold text-red-400"}>
+                  {pnlSummary.realizedPnlUsd >= 0 ? "+" : ""}${pnlSummary.realizedPnlUsd.toFixed(2)}
+                </p>
+              </div>
+              <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
+                <p className="text-xs text-muted-foreground">Closed Trades</p>
+                <p className="font-semibold">{pnlSummary.realizedCount}</p>
+              </div>
+              <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
+                <p className="text-xs text-muted-foreground">Win Rate</p>
+                <p className="font-semibold">{pnlSummary.winRatePct.toFixed(1)}%</p>
+              </div>
+              <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
+                <p className="text-xs text-muted-foreground">Wins</p>
+                <p className="font-semibold text-green-400">{pnlSummary.wins}</p>
+              </div>
+              <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
+                <p className="text-xs text-muted-foreground">Losses</p>
+                <p className="font-semibold text-red-400">{pnlSummary.losses}</p>
+              </div>
+              <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
+                <p className="text-xs text-muted-foreground">Avg Closed PnL %</p>
+                <p className={pnlSummary.avgRealizedPnlPct >= 0 ? "font-semibold text-green-400" : "font-semibold text-red-400"}>
+                  {pnlSummary.avgRealizedPnlPct >= 0 ? "+" : ""}{pnlSummary.avgRealizedPnlPct.toFixed(2)}%
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 max-h-80 overflow-auto">
+              {pnlRows.slice(0, 20).map((trade: any, index: number) => {
+                const action = String(trade?.action || "-").toUpperCase();
+                const pnlPct = Number(trade?.pnl_pct || 0);
+                const pnlUsd = Number(trade?.pnl_usd || 0);
+                const isSell = action === "SELL";
+                return (
+                  <div key={`${trade.address || "pnl"}-${index}`} className="border rounded-md p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold">{trade.token || "UNKNOWN"}</p>
+                      <Badge variant="outline" className="text-[10px]">{action}</Badge>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">{trade.status || "unknown"} · {trade.reason || "-"}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {fmtTs(trade.timestamp)} · {isSell ? "Closed" : "Open/Entry"}
+                    </p>
+                    {isSell && (
+                      <p className={pnlPct >= 0 ? "text-[11px] text-green-400" : "text-[11px] text-red-400"}>
+                        PnL {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(2)}% · {pnlUsd >= 0 ? "+" : ""}${pnlUsd.toFixed(2)}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+              {!pnlRows.length && <p className="text-sm text-muted-foreground">No trades available for PnL tracking yet.</p>}
             </div>
           </Card>
         )}
