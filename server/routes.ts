@@ -61,7 +61,7 @@ const ENABLE_PUMP_INGEST_LOGS = String(
   process.env.ENABLE_PUMP_INGEST_LOGS || "false",
 ).trim().toLowerCase() === "true";
 const ENABLE_BACKGROUND_WORKERS = String(
-  process.env.ENABLE_BACKGROUND_WORKERS || "false",
+  process.env.ENABLE_BACKGROUND_WORKERS || "true",
 ).trim().toLowerCase() === "true";
 
 function resolveOpenAiApiKey(): string {
@@ -6964,16 +6964,31 @@ export async function registerRoutes(
           const firstBuyBootstrapEligible = !hasDoctorSuccessfulBuy();
           const candidateLiquidityUsd = Number((buyCandidate as any)?.liquidity || 0);
           const candidateVolume24hUsd = Number((buyCandidate as any)?.volume_24h || 0);
+          const candidateVolume5mUsd = Number((buyCandidate as any)?.volume_5m || 0);
           const candidateMarketCapUsd = Number((buyCandidate as any)?.market_cap_usd || 0);
           const candidateScore = Number((buyCandidate as any)?.score || 0);
           const candidateBuyRatio = Number((buyCandidate as any)?.buy_ratio_pct || 0);
+          const aiFailureReasons = Array.isArray((aiValidation as any)?.reasons)
+            ? (aiValidation as any).reasons.map((reason: unknown) => String(reason || "")).filter(Boolean)
+            : [];
+          const bootstrapAllowableFailures = new Set<string>([
+            "new_token_validation_failed",
+            "market_momentum_failed",
+            "volume_activity_failed",
+            "wallet_participation_failed",
+            "whale_activity_failed",
+          ]);
+          const onlySoftFailures = aiFailureReasons.length > 0
+            && aiFailureReasons.every((reason) => bootstrapAllowableFailures.has(reason));
           const bootstrapOverrideAllowed = firstBuyBootstrapEligible
             && candidateLiquidityUsd >= 5000
             && candidateVolume24hUsd >= 25000
+            && candidateVolume5mUsd >= 150
             && candidateMarketCapUsd >= minMarketCapUsd
             && candidateMarketCapUsd <= effectiveMaxMarketCapUsd
-            && candidateScore >= 52
-            && (candidateBuyRatio <= 0 || candidateBuyRatio >= 52);
+            && candidateScore >= 40
+            && (candidateBuyRatio <= 0 || candidateBuyRatio >= 55)
+            && onlySoftFailures;
 
           if (bootstrapOverrideAllowed) {
             aiFallbackUsed = true;
