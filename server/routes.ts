@@ -3355,7 +3355,7 @@ export async function registerRoutes(
     if (!normalizedUserId) return { ok: false, error: "missing_user_id" } as const;
     if (doctorCycleRunningByUser.has(normalizedUserId)) {
       if (trigger === "manual") {
-        const waitUntil = Date.now() + Math.max(1500, Number(process.env.DOCTOR_MANUAL_CYCLE_WAIT_MS || 6000));
+        const waitUntil = Date.now() + Math.max(1500, Number(process.env.DOCTOR_MANUAL_CYCLE_WAIT_MS || 20000));
         while (doctorCycleRunningByUser.has(normalizedUserId) && Date.now() < waitUntil) {
           await new Promise((resolve) => setTimeout(resolve, 120));
         }
@@ -5841,7 +5841,10 @@ export async function registerRoutes(
     const maxMarketCapUsd = Math.max(minMarketCapUsd, getDoctorEffectiveControlNumber("max_market_cap_usd", 250000));
     const hardMaxMarketCapUsd = Math.max(100_000, Number(process.env.DOCTOR_HARD_MAX_MARKET_CAP_USD || 5_000_000));
     const effectiveMaxMarketCapUsd = Math.min(maxMarketCapUsd, hardMaxMarketCapUsd);
-    const hardMinVolume24hUsd = Math.max(1_000, Number(process.env.DOCTOR_HARD_MIN_VOLUME_24H_USD || 12_000));
+    const hardMinVolume24hUsdBase = Math.max(1_000, Number(process.env.DOCTOR_HARD_MIN_VOLUME_24H_USD || 12_000));
+    const hardMinVolume24hUsd = hasDoctorSuccessfulBuy()
+      ? hardMinVolume24hUsdBase
+      : Math.max(1_000, Math.min(hardMinVolume24hUsdBase, 2_500));
     const hardMinSafetyScoreBase = Math.max(1, Number(process.env.DOCTOR_HARD_MIN_SAFETY_SCORE || 60));
     const hardMinSafetyScore = bootstrapRelaxation.active
       ? Math.max(45, hardMinSafetyScoreBase - bootstrapRelaxation.safetyDelta)
