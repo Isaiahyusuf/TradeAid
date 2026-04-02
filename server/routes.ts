@@ -5144,7 +5144,13 @@ export async function registerRoutes(
         const estimatedFeeSol = Number((Math.max(0.000005, Number(orderControls.gas_priority_lamports || 0) / 1_000_000_000) + 0.00002).toFixed(6));
         let effectiveAmountSol = Math.max(0, Number(params.amountSol || 0));
         if (tradeBaseMint === SOL_MINT) {
-          const availableSol = Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0));
+          let availableSol = Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0));
+          if (params.action === "buy" && walletPublicKey) {
+            const refreshedBalance = await refreshDoctorWalletBalanceFromChain(walletPublicKey, true)
+              .catch(() => availableSol);
+            availableSol = Math.max(availableSol, Math.max(0, Number(refreshedBalance || 0)));
+            doctorRuntime.wallet.balanceSol = availableSol;
+          }
           const maxSpendableSol = Math.max(0, availableSol - feeBufferSol - estimatedFeeSol);
           effectiveAmountSol = Math.min(effectiveAmountSol, maxSpendableSol);
           effectiveAmountSol = Number(effectiveAmountSol.toFixed(6));
