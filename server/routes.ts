@@ -9475,11 +9475,22 @@ export async function registerRoutes(
     const rpcTimeoutMs = Math.max(1200, Number(process.env.ASSISTANT_WALLET_RPC_TIMEOUT_MS || 2500));
     try {
       const ownerPk = new PublicKey(address);
-      const tokenProgram = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
-      const accounts = await Promise.race([
-        getSolanaConnection().getParsedTokenAccountsByOwner(ownerPk, { programId: tokenProgram }, "confirmed"),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("spl_portfolio_timeout")), rpcTimeoutMs)),
-      ]);
+      const tokenPrograms = [
+        new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+        new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
+      ];
+      const accountResults = await Promise.allSettled(
+        tokenPrograms.map((programId) =>
+          Promise.race([
+            getSolanaConnection().getParsedTokenAccountsByOwner(ownerPk, { programId }, "confirmed"),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("spl_portfolio_timeout")), rpcTimeoutMs)),
+          ]),
+        ),
+      );
+      const accountEntries = accountResults
+        .flatMap((result) => (result.status === "fulfilled" && Array.isArray((result.value as any)?.value)
+          ? ((result.value as any).value as any[])
+          : []));
       const activeTokens = await Promise.race([
         getDoctorActiveTokens().catch(() => [] as Array<Record<string, any>>),
         new Promise<Array<Record<string, any>>>((resolve) => setTimeout(() => resolve([]), rpcTimeoutMs)),
@@ -9531,18 +9542,35 @@ export async function registerRoutes(
       };
 
       const rows: Array<Record<string, any>> = [];
-      for (const entry of accounts.value) {
+      const mintBalanceMap = new Map<string, { uiAmount: number; amountRaw: string; decimals: number }>();
+      for (const entry of accountEntries) {
         const parsedInfo = (entry.account.data as any)?.parsed?.info as Record<string, any> | undefined;
         const tokenAmount = (parsedInfo?.tokenAmount || {}) as Record<string, any>;
         const mint = String(parsedInfo?.mint || "").trim();
         const uiAmount = Number(tokenAmount?.uiAmount || 0);
         if (!mint || !Number.isFinite(uiAmount) || uiAmount <= 0) continue;
 
-        const amountRaw = String(tokenAmount?.amount || "0");
         const decimals = Math.max(0, Math.trunc(Number(tokenAmount?.decimals || 0)));
+        const amountRaw = String(tokenAmount?.amount || "0");
+        const existing = mintBalanceMap.get(mint);
+        if (!existing) {
+          mintBalanceMap.set(mint, { uiAmount, amountRaw, decimals });
+          continue;
+        }
+
+        const combinedUiAmount = Number((Number(existing.uiAmount || 0) + uiAmount).toFixed(9));
+        const combinedRaw = (BigInt(existing.amountRaw || "0") + BigInt(amountRaw || "0")).toString();
+        mintBalanceMap.set(mint, {
+          uiAmount: combinedUiAmount,
+          amountRaw: combinedRaw,
+          decimals: Math.max(existing.decimals, decimals),
+        });
+      }
+
+      for (const [mint, balance] of mintBalanceMap.entries()) {
         const metadata = await getTokenMetadata(mint);
         const resolvedPriceUsd = resolveCurrentPriceUsd(metadata || {}, 0);
-        const valueUsd = Number((uiAmount * Math.max(0, resolvedPriceUsd || 0)).toFixed(6));
+        const valueUsd = Number((Number(balance.uiAmount || 0) * Math.max(0, resolvedPriceUsd || 0)).toFixed(6));
         const symbol = String((metadata as any)?.symbol || "").trim() || `${mint.slice(0, 4)}...${mint.slice(-4)}`;
         const name = String((metadata as any)?.name || symbol || mint).trim();
 
@@ -9550,9 +9578,9 @@ export async function registerRoutes(
           mint,
           symbol,
           name,
-          ui_amount: Number(uiAmount.toFixed(9)),
-          amount_raw: amountRaw,
-          decimals,
+          ui_amount: Number(Number(balance.uiAmount || 0).toFixed(9)),
+          amount_raw: String(balance.amountRaw || "0"),
+          decimals: Math.max(0, Math.trunc(Number(balance.decimals || 0))),
           logo_url: String((metadata as any)?.logo_url || ""),
           price_usd: Number((Math.max(0, resolvedPriceUsd || 0)).toFixed(9)),
           value_usd: valueUsd,
