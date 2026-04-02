@@ -5629,6 +5629,7 @@ export async function registerRoutes(
     const configuredTakeProfitMultiplier = Math.max(1.01, getDoctorEffectiveControlNumber("take_profit_multiplier", Number(doctorRuntime.controls.take_profit_multiplier || 2)));
     const configuredStopLossPct = Math.max(0.1, getDoctorEffectiveControlNumber("stop_loss_pct", Number(doctorRuntime.controls.stop_loss_pct || 0)));
     const configuredTrailingStopPct = Math.max(0.1, getDoctorEffectiveControlNumber("trailing_stop_pct", Number(doctorRuntime.controls.trailing_stop_pct || 0)));
+    const configuredMaxHoldMinutes = Math.max(1, getDoctorEffectiveControlNumber("max_hold_minutes", Number(doctorRuntime.controls.max_hold_minutes || 120)));
     const configuredLiveSellFractionPct = Math.max(1, Math.min(100, getDoctorEffectiveControlNumber("live_sell_fraction_pct", Number(doctorRuntime.controls.live_sell_fraction_pct || 100))));
     const takeProfitPct = Math.max(
       configuredMinProfitPct,
@@ -5675,6 +5676,8 @@ export async function registerRoutes(
         drawdownFromPeakPct >= configuredTrailingStopPct
       ) {
         sellReason = "trailing_stop_triggered";
+      } else if (holdMinutes >= configuredMaxHoldMinutes) {
+        sellReason = "max_hold_reached";
       }
 
       if (!sellReason) {
