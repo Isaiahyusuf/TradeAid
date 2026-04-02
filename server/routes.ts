@@ -10285,11 +10285,12 @@ export async function registerRoutes(
     const tokenMint = String(req.body?.token_mint || req.body?.contract_address || "").trim();
     const notionalUsd = Number(req.body?.notional_usd || 0);
     const amountSolInput = Number(req.body?.amount_sol || 0);
+    const sellAll = Boolean(req.body?.sell_all);
     const mode = String(req.body?.mode || "live").toLowerCase() === "paper" ? "paper" : "live";
     const hasNotionalUsd = Number.isFinite(notionalUsd) && notionalUsd > 0;
     const hasAmountSolInput = Number.isFinite(amountSolInput) && amountSolInput > 0;
 
-    if (!tokenMint || (side === "buy" ? (!hasNotionalUsd && !hasAmountSolInput) : !hasNotionalUsd)) {
+    if (!tokenMint || (side === "buy" ? (!hasNotionalUsd && !hasAmountSolInput) : (!sellAll && !hasNotionalUsd && !hasAmountSolInput))) {
       return res.status(400).json({ message: "invalid swap payload" });
     }
     if (!validateAddressForChain("solana", tokenMint)) {
@@ -10359,25 +10360,39 @@ export async function registerRoutes(
             return res.status(400).json({ message: "insufficient token balance for sell" });
           }
 
-          const fullQuote = await fetchJupiterQuote({
-            inputMint: tokenMint,
-            outputMint: SOL_MINT,
-            amountAtomic: totalRaw.toString(),
-            slippageBps,
-          });
-          const fullOutLamports = Number(fullQuote?.outAmount || 0);
-          const fullOutSol = fullOutLamports > 0 ? fullOutLamports / 1_000_000_000 : 0;
-          const fullOutUsd = fullOutSol * solPriceUsd;
-          const sellFraction = fullOutUsd > 0 ? Math.max(0.01, Math.min(1, notionalUsd / fullOutUsd)) : 1;
-          const scaledFraction = BigInt(Math.max(1, Math.floor(sellFraction * 1_000_000)));
-          const sellRaw = (totalRaw * scaledFraction) / BigInt(1_000_000);
+          if (sellAll) {
+            quote = await fetchJupiterQuote({
+              inputMint: tokenMint,
+              outputMint: SOL_MINT,
+              amountAtomic: totalRaw.toString(),
+              slippageBps,
+            });
+          } else {
+            const targetNotionalUsd = hasNotionalUsd
+              ? notionalUsd
+              : Math.max(0, amountSolInput * solPriceUsd);
+            const fullQuote = await fetchJupiterQuote({
+              inputMint: tokenMint,
+              outputMint: SOL_MINT,
+              amountAtomic: totalRaw.toString(),
+              slippageBps,
+            });
+            const fullOutLamports = Number(fullQuote?.outAmount || 0);
+            const fullOutSol = fullOutLamports > 0 ? fullOutLamports / 1_000_000_000 : 0;
+            const fullOutUsd = fullOutSol * solPriceUsd;
+            const sellFraction = fullOutUsd > 0
+              ? Math.max(0.01, Math.min(1, targetNotionalUsd / fullOutUsd))
+              : 1;
+            const scaledFraction = BigInt(Math.max(1, Math.floor(sellFraction * 1_000_000)));
+            const sellRaw = (totalRaw * scaledFraction) / BigInt(1_000_000);
 
-          quote = await fetchJupiterQuote({
-            inputMint: tokenMint,
-            outputMint: SOL_MINT,
-            amountAtomic: (sellRaw > BigInt(0) ? sellRaw : BigInt(1)).toString(),
-            slippageBps,
-          });
+            quote = await fetchJupiterQuote({
+              inputMint: tokenMint,
+              outputMint: SOL_MINT,
+              amountAtomic: (sellRaw > BigInt(0) ? sellRaw : BigInt(1)).toString(),
+              slippageBps,
+            });
+          }
         }
 
         const tokenDecimals = await getTokenMintDecimals(tokenMint).catch(() => 6);
@@ -10389,7 +10404,12 @@ export async function registerRoutes(
         const activeTokens = await getDoctorActiveTokens().catch(() => [] as Array<Record<string, any>>);
         const tokenMeta = activeTokens.find((item) => String(item.address || "").trim() === tokenMint) as Record<string, any> | undefined;
         const tokenSymbol = String(tokenMeta?.symbol || tokenMeta?.token || "").trim() || `${tokenMint.slice(0, 4)}...${tokenMint.slice(-4)}`;
-        const worthSol = solPriceUsd > 0 ? Number((resolvedNotionalUsd / solPriceUsd).toFixed(9)) : 0;
+        const worthSol = side === "sell"
+          ? Number(((quoteOutRaw > 0 ? quoteOutRaw / 1_000_000_000 : 0)).toFixed(9))
+          : (solPriceUsd > 0 ? Number((resolvedNotionalUsd / solPriceUsd).toFixed(9)) : 0);
+        const tradeNotionalUsd = side === "sell"
+          ? Number(((quoteOutRaw > 0 ? quoteOutRaw / 1_000_000_000 : 0) * solPriceUsd).toFixed(2))
+          : Number(resolvedNotionalUsd.toFixed(2));
 
         const swapPayload = await fetchJupiterSwapPayload({
           quoteResponse: quote,
@@ -10424,7 +10444,7 @@ export async function registerRoutes(
           side,
           status: "executed",
           contract_address: tokenMint,
-          notional_usd: Number(resolvedNotionalUsd.toFixed(2)),
+          notional_usd: tradeNotionalUsd,
           quantity: Number(tokenQty.toFixed(9)),
           quantity_unit: "TOKEN",
           asset: "TOKEN",

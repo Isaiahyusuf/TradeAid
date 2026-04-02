@@ -347,19 +347,21 @@ export default function WalletPage() {
       toast({ title: "CA required", description: "Enter a Solana token CA address.", variant: "destructive" });
       return;
     }
-    if (!Number.isFinite(amountSol) || amountSol <= 0) {
+    if (swapSide === "buy" && (!Number.isFinite(amountSol) || amountSol <= 0)) {
       toast({ title: "Invalid amount", description: "Enter a valid SOL amount for the swap.", variant: "destructive" });
       return;
     }
+    const hasSellTargetAmount = Number.isFinite(amountSol) && amountSol > 0;
 
     try {
       const solPriceUsd = Number(chainPrices.solana || 0);
-      const notionalUsd = solPriceUsd > 0 ? amountSol * solPriceUsd : undefined;
+      const notionalUsd = solPriceUsd > 0 && hasSellTargetAmount ? amountSol * solPriceUsd : undefined;
       const result = await walletSwap.mutateAsync({
         side: swapSide,
         token_mint: tokenMint,
-        amount_sol: amountSol,
+        amount_sol: hasSellTargetAmount ? amountSol : undefined,
         notional_usd: notionalUsd,
+        sell_all: swapSide === "sell" && !hasSellTargetAmount,
         mode: swapMode,
       });
       await refreshWalletViews();
@@ -370,6 +372,39 @@ export default function WalletPage() {
       setSwapOpen(false);
       setSwapTokenMint("");
       setSwapAmountSol("0.1");
+    } catch (error) {
+      toast({ title: "Swap failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
+  };
+
+  const handleQuickSwapToSol = async (token: { mint: string; symbol?: string; ui_amount?: number }) => {
+    if (!wallet?.has_wallet) {
+      toast({ title: "Create wallet first", description: "Generate or import your wallet before swapping.", variant: "destructive" });
+      return;
+    }
+    const mint = String(token.mint || "").trim();
+    if (!mint) {
+      toast({ title: "Swap failed", description: "Token mint is missing.", variant: "destructive" });
+      return;
+    }
+    const amount = Number(token.ui_amount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast({ title: "No balance", description: "This token has no spendable balance.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const result = await walletSwap.mutateAsync({
+        side: "sell",
+        token_mint: mint,
+        sell_all: true,
+        mode: swapMode,
+      });
+      await refreshWalletViews();
+      toast({ title: `Swapped ${String(token.symbol || "token")} to SOL`, description: `Tx: ${result.trade.tx_hash.slice(0, 10)}...` });
+      if (result.trade.explorer_url) {
+        window.open(result.trade.explorer_url, "_blank");
+      }
     } catch (error) {
       toast({ title: "Swap failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
     }
@@ -715,6 +750,15 @@ export default function WalletPage() {
                           <p className="text-sm font-semibold">{tokenAmount.toLocaleString(undefined, { maximumFractionDigits: 9 })}</p>
                           <p className="text-[11px] text-muted-foreground">{tokenPriceUsd > 0 ? `$${tokenPriceUsd.toLocaleString(undefined, { minimumFractionDigits: 6, maximumFractionDigits: 9 })}` : "Price unavailable"}</p>
                           <p className="text-xs text-muted-foreground">$ {tokenValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="mt-2 h-7 px-2 text-[11px]"
+                            disabled={walletSwap.isPending || tokenAmount <= 0}
+                            onClick={() => handleQuickSwapToSol(token)}
+                          >
+                            Swap to SOL
+                          </Button>
                         </div>
                       </div>
                     );
@@ -968,7 +1012,7 @@ export default function WalletPage() {
               </div>
 
               <div className="space-y-1">
-                <Label>Amount (SOL)</Label>
+                <Label>{swapSide === "buy" ? "Amount (SOL)" : "Target Receive (SOL, optional)"}</Label>
                 <Input type="number" min={0.0001} step="0.0001" value={swapAmountSol} onChange={(e) => setSwapAmountSol(e.target.value)} />
               </div>
 
@@ -1000,7 +1044,7 @@ export default function WalletPage() {
               <p className="text-xs text-muted-foreground">
                 {swapSide === "buy"
                   ? "Buy uses SOL input and shows estimated token output before submitting."
-                  : "Sell swaps your token CA balance back into SOL."}
+                  : "Sell swaps your token CA balance back into SOL. Leave target empty to swap full balance."}
               </p>
             </div>
             <SheetFooter className="mt-6">

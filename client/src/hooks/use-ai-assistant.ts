@@ -309,6 +309,7 @@ export function useAssistantWalletSwap() {
       token_mint: string;
       notional_usd?: number;
       amount_sol?: number;
+      sell_all?: boolean;
       mode?: "paper" | "live";
     }) => apiPost<{ trade: { id: string; chain: string; mode: string; side: string; status: string; tx_hash: string; explorer_url: string } }>("/api/ai/wallets/swap", payload),
     onSuccess: () => {
