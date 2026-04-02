@@ -1714,6 +1714,45 @@ export async function registerRoutes(
     return Math.max(1, Number(process.env.DOCTOR_AUTO_ROTATE_NO_SNIPE_MINUTES || 10));
   };
 
+  const getDoctorBootstrapRelaxation = () => {
+    if (!doctorRuntime.enabled || doctorRuntime.killSwitch) {
+      return {
+        active: false,
+        safetyDelta: 0,
+        buyRatioDelta: 0,
+      } as const;
+    }
+
+    if (doctorRuntime.positions.length > 0) {
+      return {
+        active: false,
+        safetyDelta: 0,
+        buyRatioDelta: 0,
+      } as const;
+    }
+
+    const hasExecutedBuy = doctorRuntime.recentTrades
+      .some((trade) => {
+        const action = String((trade as any)?.action || "").toUpperCase();
+        const status = String((trade as any)?.status || "EXECUTED").toUpperCase();
+        return action === "BUY" && (status === "EXECUTED" || status === "SIMULATED");
+      });
+
+    if (hasExecutedBuy) {
+      return {
+        active: false,
+        safetyDelta: 0,
+        buyRatioDelta: 0,
+      } as const;
+    }
+
+    return {
+      active: true,
+      safetyDelta: Math.max(0, Number(process.env.DOCTOR_BOOTSTRAP_SAFETY_RELAX_DELTA || 8)),
+      buyRatioDelta: Math.max(0, Number(process.env.DOCTOR_BOOTSTRAP_BUY_RATIO_RELAX_DELTA || 7)),
+    } as const;
+  };
+
   const maybeRotateDoctorAgentForNoSnipes = async (userId: string, nowMs = Date.now()) => {
     if (isDoctorUnifiedSimpleMode()) return { rotated: false } as const;
     const enabled = String(process.env.DOCTOR_AUTO_ROTATE_AGENT_ENABLED || "true").trim().toLowerCase() !== "false";
@@ -3835,7 +3874,12 @@ export async function registerRoutes(
         if (Number(token.dev_wallet_pct || 0) <= 0) rejectReasons.push("dev_commitment_missing");
         if (topHolderPct > 65) rejectReasons.push("holder_concentration_high");
         if (!liquidityLockPass) rejectReasons.push("liquidity_not_locked");
-        if (buyRatioPct > 0 && buyRatioPct < Math.max(1, Number(doctorRuntime.controls.min_buy_ratio_pct || 65))) rejectReasons.push("buy_ratio_below_threshold");
+        const bootstrapRelaxation = getDoctorBootstrapRelaxation();
+        const minBuyRatioPct = Math.max(1, Number(doctorRuntime.controls.min_buy_ratio_pct || 65));
+        const effectiveMinBuyRatioPct = bootstrapRelaxation.active
+          ? Math.max(45, minBuyRatioPct - bootstrapRelaxation.buyRatioDelta)
+          : minBuyRatioPct;
+        if (buyRatioPct > 0 && buyRatioPct < effectiveMinBuyRatioPct) rejectReasons.push("buy_ratio_below_threshold");
         if (!isLaunchSourceAllowed(launchSource)) rejectReasons.push("launch_source_not_allowed");
         if (confidenceScore < 45) rejectReasons.push("confidence_below_threshold");
 
@@ -5751,7 +5795,11 @@ export async function registerRoutes(
       : strictMaxTokenAgeSecondsRaw;
     const maxDevWalletPct = Math.max(0, getDoctorEffectiveControlNumber("max_dev_wallet_pct", 3));
     const minUniqueBuyers = Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("min_unique_buyers", 40)));
-    const minBuyRatioPct = Math.max(1, getDoctorEffectiveControlNumber("min_buy_ratio_pct", 65));
+    const bootstrapRelaxation = getDoctorBootstrapRelaxation();
+    const minBuyRatioPctBase = Math.max(1, getDoctorEffectiveControlNumber("min_buy_ratio_pct", 65));
+    const minBuyRatioPct = bootstrapRelaxation.active
+      ? Math.max(45, minBuyRatioPctBase - bootstrapRelaxation.buyRatioDelta)
+      : minBuyRatioPctBase;
     const minBuys5m = Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("min_buys_5m", 3)));
     const maxSells5m = Math.max(0, Math.trunc(getDoctorEffectiveControlNumber("max_sells_5m", 1)));
     const minMarketCapUsd = Math.max(1, getDoctorEffectiveControlNumber("min_market_cap_usd", 15000));
@@ -5759,7 +5807,10 @@ export async function registerRoutes(
     const hardMaxMarketCapUsd = Math.max(100_000, Number(process.env.DOCTOR_HARD_MAX_MARKET_CAP_USD || 5_000_000));
     const effectiveMaxMarketCapUsd = Math.min(maxMarketCapUsd, hardMaxMarketCapUsd);
     const hardMinVolume24hUsd = Math.max(1_000, Number(process.env.DOCTOR_HARD_MIN_VOLUME_24H_USD || 12_000));
-    const hardMinSafetyScore = Math.max(1, Number(process.env.DOCTOR_HARD_MIN_SAFETY_SCORE || 60));
+    const hardMinSafetyScoreBase = Math.max(1, Number(process.env.DOCTOR_HARD_MIN_SAFETY_SCORE || 60));
+    const hardMinSafetyScore = bootstrapRelaxation.active
+      ? Math.max(45, hardMinSafetyScoreBase - bootstrapRelaxation.safetyDelta)
+      : hardMinSafetyScoreBase;
     const doctorLearningSnapshot = buildDoctorLearningSnapshot(nowMs) as Record<string, any>;
     doctorRuntime.learning = {
       enabled: Boolean(doctorLearningSnapshot.enabled),
@@ -6371,7 +6422,11 @@ export async function registerRoutes(
       const strictContractSafety = String(process.env.DOCTOR_STRICT_CONTRACT_SAFETY || "true").trim().toLowerCase() !== "false";
       const strictLiquidityStability = String(process.env.DOCTOR_STRICT_LIQUIDITY_STABILITY || "false").trim().toLowerCase() === "true";
       const allowedLaunchSources = getAllowedLaunchSources();
-      const minBuyRatioPct = Math.max(1, getDoctorEffectiveControlNumber("min_buy_ratio_pct", 65));
+      const bootstrapRelaxation = getDoctorBootstrapRelaxation();
+      const minBuyRatioPctBase = Math.max(1, getDoctorEffectiveControlNumber("min_buy_ratio_pct", 65));
+      const minBuyRatioPct = bootstrapRelaxation.active
+        ? Math.max(45, minBuyRatioPctBase - bootstrapRelaxation.buyRatioDelta)
+        : minBuyRatioPctBase;
 
       const createdAtMs = new Date(String(candidate.created_at || nowIso())).getTime();
       const fallbackAgeSeconds = Number.isFinite(createdAtMs) && createdAtMs > 0
