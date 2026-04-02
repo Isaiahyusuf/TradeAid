@@ -808,7 +808,7 @@ export async function registerRoutes(
       min_liquidity_usd: 100,
       max_liquidity_usd: 7500,
       min_market_cap_usd: 1000,
-      max_market_cap_usd: 250000,
+      max_market_cap_usd: 100000,
       min_volume_24h_usd: 100,
       min_token_age_minutes: 0,
       max_token_age_minutes: 2,
@@ -1971,7 +1971,7 @@ export async function registerRoutes(
       min_liquidity_usd: 200,
       max_liquidity_usd: 12000,
       min_market_cap_usd: 5000,
-      max_market_cap_usd: 250000,
+      max_market_cap_usd: 100000,
       min_volume_24h_usd: 4000,
       min_token_age_minutes: 0,
       max_token_age_minutes: 3,
@@ -5835,8 +5835,8 @@ export async function registerRoutes(
     const minBuys5m = Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("min_buys_5m", 3)));
     const maxSells5m = Math.max(0, Math.trunc(getDoctorEffectiveControlNumber("max_sells_5m", 1)));
     const minMarketCapUsd = Math.max(1, getDoctorEffectiveControlNumber("min_market_cap_usd", 15000));
-    const maxMarketCapUsd = Math.max(minMarketCapUsd, getDoctorEffectiveControlNumber("max_market_cap_usd", 250000));
-    const hardMaxMarketCapUsd = Math.max(50_000, Number(process.env.DOCTOR_HARD_MAX_MARKET_CAP_USD || 150_000));
+    const maxMarketCapUsd = Math.max(minMarketCapUsd, getDoctorEffectiveControlNumber("max_market_cap_usd", 100000));
+    const hardMaxMarketCapUsd = Math.max(50_000, Number(process.env.DOCTOR_HARD_MAX_MARKET_CAP_USD || 100_000));
     const effectiveMaxMarketCapUsd = Math.min(maxMarketCapUsd, hardMaxMarketCapUsd);
     const hardMinVolume24hUsdBase = Math.max(1_000, Number(process.env.DOCTOR_HARD_MIN_VOLUME_24H_USD || 12_000));
     const hardMinVolume24hUsd = hasDoctorSuccessfulBuy()
@@ -6503,7 +6503,7 @@ export async function registerRoutes(
       const minVolume24h = Math.max(1, getDoctorEffectiveControlNumber("min_volume_24h_usd", 12000));
       const minMarketCap = Math.max(1, getDoctorEffectiveControlNumber("min_market_cap_usd", 15000));
       const maxMarketCap = Math.min(
-        Math.max(minMarketCap, getDoctorEffectiveControlNumber("max_market_cap_usd", 250000)),
+        Math.max(minMarketCap, getDoctorEffectiveControlNumber("max_market_cap_usd", 100000)),
         hardMaxMarketCapUsd,
       );
       const requireLiquidityLock = Math.max(0, getDoctorEffectiveControlNumber("min_lock_hours", 24)) > 0;
