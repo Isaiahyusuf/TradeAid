@@ -5836,7 +5836,7 @@ export async function registerRoutes(
     const maxSells5m = Math.max(0, Math.trunc(getDoctorEffectiveControlNumber("max_sells_5m", 1)));
     const minMarketCapUsd = Math.max(1, getDoctorEffectiveControlNumber("min_market_cap_usd", 15000));
     const maxMarketCapUsd = Math.max(minMarketCapUsd, getDoctorEffectiveControlNumber("max_market_cap_usd", 250000));
-    const hardMaxMarketCapUsd = Math.max(100_000, Number(process.env.DOCTOR_HARD_MAX_MARKET_CAP_USD || 5_000_000));
+    const hardMaxMarketCapUsd = Math.max(50_000, Number(process.env.DOCTOR_HARD_MAX_MARKET_CAP_USD || 150_000));
     const effectiveMaxMarketCapUsd = Math.min(maxMarketCapUsd, hardMaxMarketCapUsd);
     const hardMinVolume24hUsdBase = Math.max(1_000, Number(process.env.DOCTOR_HARD_MIN_VOLUME_24H_USD || 12_000));
     const hardMinVolume24hUsd = hasDoctorSuccessfulBuy()
@@ -5979,6 +5979,8 @@ export async function registerRoutes(
         const scoreDiff = getDoctorCandidateLearningScore(b as Record<string, any>, doctorLearningSnapshot).final_score
           - getDoctorCandidateLearningScore(a as Record<string, any>, doctorLearningSnapshot).final_score;
         if (scoreDiff !== 0) return scoreDiff;
+        const marketCapDiff = Number((a as any).market_cap_usd || 0) - Number((b as any).market_cap_usd || 0);
+        if (marketCapDiff !== 0) return marketCapDiff;
         return Number(b.volume_5m || 0) - Number(a.volume_5m || 0);
       });
 
@@ -6033,6 +6035,11 @@ export async function registerRoutes(
 
         const launchSource = normalizeLaunchSource(String((scanned as any).dexId || log?.source || "dexscreener"));
         if (!isLaunchSourceAllowed(launchSource)) {
+          continue;
+        }
+
+        const scannedMarketCapUsd = Number((scanned as any).marketCap || 0);
+        if (scannedMarketCapUsd > 0 && (scannedMarketCapUsd < minMarketCapUsd || scannedMarketCapUsd > effectiveMaxMarketCapUsd)) {
           continue;
         }
 
@@ -6115,7 +6122,7 @@ export async function registerRoutes(
         .filter((token) => !isDoctorTokenAgeGuardEnabled() || Number(token.age_seconds || 0) <= strictMaxTokenAgeSeconds)
         .filter((token) => {
           const marketCapUsd = Number(token.market_cap_usd || 0);
-          return marketCapUsd >= minMarketCapUsd && marketCapUsd <= maxMarketCapUsd;
+          return marketCapUsd >= minMarketCapUsd && marketCapUsd <= effectiveMaxMarketCapUsd;
         })
         .filter((token) => isLaunchSourceAllowed(String(token.launch_source || token.source || "unknown")))
         .sort((a, b) => {
