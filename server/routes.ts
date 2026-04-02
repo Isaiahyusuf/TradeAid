@@ -2002,8 +2002,8 @@ export async function registerRoutes(
       take_profit_multiplier: 2.0,
       min_profit_pct: 100,
       stop_loss_pct: 30,
-      trailing_stop_pct: 18,
-      max_hold_minutes: 4,
+      trailing_stop_pct: 25,
+      max_hold_minutes: 10,
       position_rotation_minutes: 1,
       live_sell_fraction_pct: 100,
       max_sell_notional_usd: 100000,
@@ -2029,7 +2029,7 @@ export async function registerRoutes(
       quality_min_volume_spike_pct: 0,
       max_early_spike_pct: 500,
       strategy_window_minutes: 3,
-      max_slippage_pct: 15,
+      max_slippage_pct: 3,
       gas_priority_lamports: 1500000,
       cooldown_between_trades_seconds: 12,
     },
@@ -4889,7 +4889,9 @@ export async function registerRoutes(
       }
 
       const { walletPublicKey, walletPrivateKey } = liveCredentials;
-      const slippageBps = Math.max(25, Math.trunc(Number(orderControls.max_slippage_pct || 1) * 100));
+      const requestedSlippagePct = Number(orderControls.max_slippage_pct || 1);
+      const boundedSlippagePct = Math.max(0.1, Math.min(5, Number.isFinite(requestedSlippagePct) ? requestedSlippagePct : 1));
+      const slippageBps = Math.max(10, Math.trunc(boundedSlippagePct * 100));
       const tradeBaseMint = [SOL_MINT, BONK_MINT].includes(String(params.baseMint || "").trim())
         ? String(params.baseMint || "").trim()
         : getDoctorTradeBaseAssetMint();
@@ -5681,6 +5683,7 @@ export async function registerRoutes(
       configuredMinProfitPct,
       (configuredTakeProfitMultiplier - 1) * 100,
     );
+    const trailingActivationPct = Math.max(5, takeProfitPct);
 
     for (let positionIndex = 0; positionIndex < doctorRuntime.positions.length; positionIndex += 1) {
       const position = doctorRuntime.positions[positionIndex];
@@ -5718,7 +5721,7 @@ export async function registerRoutes(
       } else if (pnlPct <= -configuredStopLossPct) {
         sellReason = "stop_loss_hit";
       } else if (
-        pnlPct > 0 &&
+        pnlPct >= trailingActivationPct &&
         drawdownFromPeakPct >= configuredTrailingStopPct
       ) {
         sellReason = "trailing_stop_triggered";
@@ -8552,6 +8555,12 @@ export async function registerRoutes(
     }
     if (Number.isFinite(Number(payload.stop_loss_pct))) {
       doctorRuntime.controls.stop_loss_pct = Math.max(2, Number(payload.stop_loss_pct));
+    }
+    if (Number.isFinite(Number((doctorRuntime.controls as any).max_slippage_pct))) {
+      (doctorRuntime.controls as any).max_slippage_pct = Math.max(
+        0.1,
+        Math.min(5, Number((doctorRuntime.controls as any).max_slippage_pct || 1)),
+      );
     }
     try {
       const presetsByUser = await getStoredDoctorPresetsByUser();
