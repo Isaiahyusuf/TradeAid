@@ -11,7 +11,11 @@ type SessionTokenPayload = {
 };
 
 const TOKEN_PREFIX = "ta";
-const TOKEN_SECRET = String(process.env.SESSION_SECRET || "default-secret-change-in-production").trim() || "default-secret-change-in-production";
+const TOKEN_SECRET = String(process.env.SESSION_SECRET || process.env.JWT_SECRET || "").trim();
+
+if (!TOKEN_SECRET || TOKEN_SECRET === "default-secret-change-in-production" || TOKEN_SECRET.length < 32) {
+  throw new Error("SESSION_SECRET (or JWT_SECRET) must be set to a strong value with at least 32 characters");
+}
 
 function toBase64Url(value: string): string {
   return Buffer.from(value, "utf8").toString("base64url");

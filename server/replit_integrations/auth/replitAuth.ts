@@ -23,6 +23,11 @@ const getOidcConfig = memoize(
 );
 
 export function getSession() {
+  const sessionSecret = String(process.env.SESSION_SECRET || process.env.JWT_SECRET || "").trim();
+  if (!sessionSecret || sessionSecret === "default-secret-change-in-production" || sessionSecret.length < 32) {
+    throw new Error("SESSION_SECRET (or JWT_SECRET) must be set to a strong value with at least 32 characters");
+  }
+
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
@@ -33,7 +38,7 @@ export function getSession() {
     schemaName: "public",
   });
   return session({
-    secret: process.env.SESSION_SECRET || "default-secret-change-in-production",
+    secret: sessionSecret,
     store: sessionStore,
     resave: false,
     saveUninitialized: false,

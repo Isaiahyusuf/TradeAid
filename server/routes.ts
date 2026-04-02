@@ -884,6 +884,7 @@ export async function registerRoutes(
   const doctorWalletByUserStateKey = "doctortrade.wallets.by_user.v1";
   const assistantRuntimeByUserStateKeyPrefix = "assistant.runtime.v1";
   const userSettingsByUserStateKey = "tradeaid.user.settings.by_user.v1";
+  const WALLET_SECRET_REVEAL_CONFIRMATION = "I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS";
 
   const encodeBase64 = (value: Uint8Array) => Buffer.from(value).toString("base64");
   const decodeBase64 = (value: string) => Buffer.from(value, "base64");
@@ -898,22 +899,25 @@ export async function registerRoutes(
         || "",
     ).trim();
   };
+  const isDoctorWalletEncryptionConfigured = () => {
+    const secret = resolveDoctorWalletEncryptionSecret();
+    return secret.length >= 32;
+  };
+  const canExposeAssistantWalletSecrets = () => {
+    return String(process.env.ALLOW_WALLET_SECRET_EXPOSURE || "false").trim().toLowerCase() === "true";
+  };
   const getDoctorWalletEncryptionKey = () => {
     const secret = resolveDoctorWalletEncryptionSecret();
-    if (!secret) {
-      throw new Error("DOCTORTRADE_WALLET_ENCRYPTION_KEY is required");
+    if (secret.length < 32) {
+      throw new Error("DOCTORTRADE_WALLET_ENCRYPTION_KEY must be set and at least 32 characters");
     }
     return createHash("sha256").update(secret, "utf8").digest();
   };
   const encryptDoctorPrivateKey = (privateKey: string) => {
     const trimmed = String(privateKey || "").trim();
     if (!trimmed) return "";
-    const secret = resolveDoctorWalletEncryptionSecret();
-    if (!secret) {
-      // Backward-compatible fallback: keep key usable even if encryption env is missing.
-      // Decrypt path already supports non-encrypted values.
-      logStructured("warn", "doctor.wallet.encryption_secret_missing_fallback_plaintext");
-      return trimmed;
+    if (!isDoctorWalletEncryptionConfigured()) {
+      throw new Error("doctor_wallet_encryption_not_configured");
     }
     const iv = randomBytes(12);
     const cipher = createCipheriv("aes-256-gcm", getDoctorWalletEncryptionKey(), iv);
@@ -925,7 +929,7 @@ export async function registerRoutes(
     const trimmed = String(value || "").trim();
     if (!trimmed) return "";
     if (!trimmed.startsWith("enc:v1:")) {
-      return trimmed;
+      return "";
     }
     const parts = trimmed.split(":");
     if (parts.length !== 5) return "";
@@ -8373,6 +8377,16 @@ export async function registerRoutes(
       };
 
       try {
+        if (!isDoctorWalletEncryptionConfigured()) {
+          logStructured("error", "doctor.connect_wallet.encryption_not_configured", {
+            attemptId,
+            durationMs: Math.max(0, Date.now() - startedAtMs),
+          });
+          return res.status(503).json({
+            message: "wallet_security_not_configured",
+            detail: "Wallet security is not configured. Please contact support.",
+          });
+        }
         const userId = getRequestUserId(req);
         const logConnect = (level: "info" | "warn" | "error", event: string, payload: Record<string, any> = {}) => {
           logStructured(level, event, {
@@ -9492,7 +9506,7 @@ export async function registerRoutes(
     addresses_by_chain: assistantRuntime.wallet.addresses_by_chain,
     private_keys_by_chain: includePrivate ? assistantRuntime.wallet.private_keys_by_chain : undefined,
     warning: "Never share your recovery phrase or private keys. Store offline.",
-    reveal_confirmation_phrase: "I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS",
+    reveal_confirmation_phrase: WALLET_SECRET_REVEAL_CONFIRMATION,
   });
 
   app.get("/api/ai/wallets/status", (_req, res) => {
@@ -9662,7 +9676,7 @@ export async function registerRoutes(
       chains: Object.keys(walletBundle.addresses_by_chain || {}),
     });
 
-    return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
+    return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(false) });
   });
 
   app.post("/api/ai/wallets/import", async (req, res) => {
@@ -9712,7 +9726,7 @@ export async function registerRoutes(
       chains: Object.keys(walletBundle.addresses_by_chain || {}),
     });
 
-    return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
+    return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(false) });
   });
 
   app.post("/api/ai/wallets/import-private-key", async (req, res) => {
@@ -9756,7 +9770,7 @@ export async function registerRoutes(
       chains: Object.keys(walletBundle.addresses_by_chain || {}),
     });
 
-    return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
+    return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(false) });
   });
 
   app.post("/api/ai/wallets/confirm-backup", async (req, res) => {
@@ -9784,6 +9798,19 @@ export async function registerRoutes(
     if (!ensureWalletExists()) {
       return res.status(400).json({ message: "wallet not found" });
     }
+    if (!canExposeAssistantWalletSecrets()) {
+      return res.status(403).json({
+        message: "wallet_secret_exposure_disabled",
+        detail: "Wallet secret reveal is disabled by server policy.",
+      });
+    }
+    const confirmation = String(req.body?.confirmation_phrase || "").trim();
+    if (confirmation !== WALLET_SECRET_REVEAL_CONFIRMATION) {
+      return res.status(400).json({
+        message: "confirmation_phrase_required",
+        detail: "Provide the exact confirmation phrase to reveal wallet secrets.",
+      });
+    }
     return res.json({ wallet: assistantWalletStatus(), bundle: assistantBundle(true) });
   });
 
@@ -9804,6 +9831,19 @@ export async function registerRoutes(
   });
 
   app.post("/api/ai/wallets/export-key", (req, res) => {
+    if (!canExposeAssistantWalletSecrets()) {
+      return res.status(403).json({
+        message: "wallet_secret_exposure_disabled",
+        detail: "Wallet key export is disabled by server policy.",
+      });
+    }
+    const confirmation = String(req.body?.confirmation_phrase || "").trim();
+    if (confirmation !== WALLET_SECRET_REVEAL_CONFIRMATION) {
+      return res.status(400).json({
+        message: "confirmation_phrase_required",
+        detail: "Provide the exact confirmation phrase to export wallet keys.",
+      });
+    }
     const chain = String(req.body?.chain || "").toLowerCase();
     if (chain !== "solana") {
       return res.status(400).json({ message: "unsupported chain" });
