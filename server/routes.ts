@@ -896,6 +896,8 @@ export async function registerRoutes(
       process.env.DOCTORTRADE_WALLET_ENCRYPTION_KEY
         || process.env.DOCTORTRADE_ENCRYPTION_KEY
         || process.env.APP_STATE_ENCRYPTION_KEY
+        || process.env.SESSION_SECRET
+        || process.env.JWT_SECRET
         || "",
     ).trim();
   };
@@ -929,7 +931,8 @@ export async function registerRoutes(
     const trimmed = String(value || "").trim();
     if (!trimmed) return "";
     if (!trimmed.startsWith("enc:v1:")) {
-      return "";
+      const allowLegacyRead = String(process.env.DOCTOR_ALLOW_LEGACY_PLAINTEXT_KEYS || "true").trim().toLowerCase() !== "false";
+      return allowLegacyRead ? trimmed : "";
     }
     const parts = trimmed.split(":");
     if (parts.length !== 5) return "";
