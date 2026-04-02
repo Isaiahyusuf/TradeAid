@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy } from "lucide-react";
 import { FaTelegramPlane } from "react-icons/fa";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorCreateAppWallet, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorResetLearning, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
+import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorResetLearning, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -71,7 +71,6 @@ export default function DoctorTrade() {
   const { toast } = useToast();
   const controlMutation = useDoctorControl();
   const configMutation = useDoctorConfig();
-  const createAppWalletMutation = useDoctorCreateAppWallet();
   const connectWalletMutation = useDoctorConnectWallet();
   const disconnectWalletMutation = useDoctorDisconnectWallet();
   const runMutation = useDoctorRunOnce();
@@ -438,7 +437,6 @@ export default function DoctorTrade() {
   const doctorSavingInProgress = Boolean(
     controlMutation.isPending
     || configMutation.isPending
-    || createAppWalletMutation.isPending
     || connectWalletMutation.isPending
     || disconnectWalletMutation.isPending
     || runMutation.isPending
@@ -448,8 +446,6 @@ export default function DoctorTrade() {
   );
   const doctorSavingMessage = connectWalletMutation.isPending
     ? "Connecting DoctorTrade wallet..."
-    : createAppWalletMutation.isPending
-      ? "Preparing wallet keys..."
     : disconnectWalletMutation.isPending
       ? "Disconnecting DoctorTrade wallet..."
       : controlMutation.isPending
@@ -711,21 +707,7 @@ export default function DoctorTrade() {
   };
 
   const ensureDoctorWalletConnected = async () => {
-    try {
-      return await connectWithRetries();
-    } catch (error) {
-      if (!isMissingAppWalletError(error)) {
-        throw error;
-      }
-
-      await createAppWalletMutation.mutateAsync();
-      const connectedAfterProvision = await connectWithRetries();
-      if (!connectedAfterProvision) {
-        throw new Error("Wallet is still syncing. Please retry in a few seconds.");
-      }
-
-      return true;
-    }
+    return await connectWithRetries();
   };
 
   const handleConnectWallet = () => {
@@ -793,129 +775,74 @@ export default function DoctorTrade() {
   };
 
   const handleToggleDoctor = () => {
+    if (controlMutation.isPending) {
+      return;
+    }
+
     const nextEnabled = !Boolean(viewData?.enabled);
     if (nextEnabled && !walletConnected) {
-      connectWalletMutation.mutate(
-        { use_existing_wallet: true },
-        {
-          onSuccess: (status) => {
-            const persistedConnected = isDoctorWalletConnected(
-              (status?.wallet as Record<string, any> | undefined) || null,
-              (status?.trade_controls as Record<string, any> | undefined) || null,
-            );
-            if (!persistedConnected) {
-              void (async () => {
-                try {
-                  const connected = await ensureDoctorWalletConnected();
-                  if (!connected) {
-                    promptWalletSetup();
-                    return;
-                  }
+      void (async () => {
+        try {
+          const connected = await ensureDoctorWalletConnected();
+          if (!connected) {
+            promptWalletSetup();
+            return;
+          }
 
-                  controlMutation.mutate(true, {
-                    onSuccess: (startStatus) => {
-                      if (!Boolean(startStatus?.enabled)) {
-                        toast({
-                          title: "DoctorTrade did not start",
-                          description: String(startStatus?.last_error || "Could not start after wallet connect."),
-                          variant: "destructive",
-                        });
-                        return;
-                      }
-                      toast({ title: "DoctorTrade started", description: "Wallet connected and autonomous trading is now active." });
-                      refetch();
-                    },
-                    onError: (error) => {
-                      toast({
-                        title: "DoctorTrade update failed",
-                        description: error instanceof Error ? error.message : "Could not update DoctorTrade state.",
-                        variant: "destructive",
-                      });
-                    },
-                  });
-                } catch (error) {
-                  toast({
-                    title: "Wallet connection failed",
-                    description: error instanceof Error ? error.message : "Could not connect wallet.",
-                    variant: "destructive",
-                  });
-                }
-              })();
-              return;
-            }
-            controlMutation.mutate(true, {
-              onSuccess: (startStatus) => {
-                if (!Boolean(startStatus?.enabled)) {
-                  toast({
-                    title: "DoctorTrade did not start",
-                    description: String(startStatus?.last_error || "Could not start after wallet connect."),
-                    variant: "destructive",
-                  });
-                  return;
-                }
-                toast({ title: "DoctorTrade started", description: "Wallet connected and autonomous trading is now active." });
-                refetch();
-              },
-              onError: (error) => {
+          toast({ title: "Wallet connected", description: "DoctorTrade linked to your app wallet." });
+          controlMutation.mutate(true, {
+            onSuccess: (startStatus) => {
+              if (!Boolean(startStatus?.enabled)) {
                 toast({
-                  title: "DoctorTrade update failed",
-                  description: error instanceof Error ? error.message : "Could not update DoctorTrade state.",
+                  title: "DoctorTrade did not start",
+                  description: String(startStatus?.last_error || "Could not start after wallet connect."),
                   variant: "destructive",
                 });
-              },
-            });
-          },
-          onError: (error) => {
-            const rawMessage = error instanceof Error ? error.message : "";
-            if (isAuthFailureMessage(rawMessage)) {
-              toast({
-                title: "Sign in required",
-                description: "Your session expired. Sign in again, then retry Connect Wallet.",
-                variant: "destructive",
-              });
-              return;
-            }
-
-            if (isMissingAppWalletError(error)) {
-              void (async () => {
-                try {
-                  const connected = await ensureDoctorWalletConnected();
-                  if (!connected) {
-                    promptWalletSetup();
-                    return;
-                  }
-                  toast({ title: "Wallet connected", description: "DoctorTrade linked to your app wallet." });
-                  controlMutation.mutate(true);
-                } catch (retryError) {
-                  toast({
-                    title: "Wallet connection failed",
-                    description: retryError instanceof Error ? retryError.message : "Could not connect wallet.",
-                    variant: "destructive",
-                  });
-                }
-              })();
-              return;
-            }
-
-            void (async () => {
-              if (isTransientConnectError(error)) {
-                const connectedAfterRetry = await recheckWalletConnection(25, 2000);
-                if (connectedAfterRetry) {
-                  toast({ title: "Wallet connected", description: "Connection was delayed but completed successfully." });
-                  controlMutation.mutate(true);
-                  return;
-                }
+                return;
               }
-
+              toast({ title: "DoctorTrade started", description: "Wallet connected and autonomous trading is now active." });
+              void refetch();
+            },
+            onError: (error) => {
               toast({
-                title: "Wallet connection failed",
-                description: rawMessage || "Could not connect wallet.",
+                title: "DoctorTrade update failed",
+                description: error instanceof Error ? error.message : "Could not update DoctorTrade state.",
                 variant: "destructive",
               });
-            })();
-          },
-        },
-      );
+            },
+          });
+        } catch (error) {
+          const rawMessage = error instanceof Error ? error.message : "";
+          if (isAuthFailureMessage(rawMessage)) {
+            toast({
+              title: "Sign in required",
+              description: "Your session expired. Sign in again, then retry Connect Wallet.",
+              variant: "destructive",
+            });
+            return;
+          }
+
+          if (isMissingAppWalletError(error)) {
+            promptWalletSetup();
+            return;
+          }
+
+          if (isTransientConnectError(error)) {
+            const connectedAfterRetry = await recheckWalletConnection(25, 2000);
+            if (connectedAfterRetry) {
+              toast({ title: "Wallet connected", description: "Connection was delayed but completed successfully." });
+              controlMutation.mutate(true);
+              return;
+            }
+          }
+
+          toast({
+            title: "Wallet connection failed",
+            description: rawMessage || "Could not connect wallet.",
+            variant: "destructive",
+          });
+        }
+      })();
       return;
     }
     controlMutation.mutate(nextEnabled, {
