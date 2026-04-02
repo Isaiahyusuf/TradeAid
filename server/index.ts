@@ -89,6 +89,26 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
+function safeStringifyForLog(value: unknown): string {
+  try {
+    const seen = new WeakSet<object>();
+    return JSON.stringify(value, (_key, val) => {
+      if (typeof val === "bigint") {
+        return val.toString();
+      }
+      if (val && typeof val === "object") {
+        if (seen.has(val as object)) {
+          return "[Circular]";
+        }
+        seen.add(val as object);
+      }
+      return val;
+    });
+  } catch {
+    return "[Unserializable JSON response]";
+  }
+}
+
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -103,12 +123,20 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
+      try {
+        let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+        if (capturedJsonResponse) {
+          logLine += ` :: ${safeStringifyForLog(capturedJsonResponse)}`;
+        }
 
-      log(logLine);
+        log(logLine);
+      } catch (error) {
+        console.error("[express.log] failed to format request log", {
+          method: req.method,
+          path,
+          message: String((error as Error)?.message || "unknown_error"),
+        });
+      }
     }
   });
 
