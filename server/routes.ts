@@ -5629,22 +5629,10 @@ export async function registerRoutes(
     const configuredTakeProfitMultiplier = Math.max(1.01, getDoctorEffectiveControlNumber("take_profit_multiplier", Number(doctorRuntime.controls.take_profit_multiplier || 2)));
     const configuredStopLossPct = Math.max(0.1, getDoctorEffectiveControlNumber("stop_loss_pct", Number(doctorRuntime.controls.stop_loss_pct || 0)));
     const configuredTrailingStopPct = Math.max(0.1, getDoctorEffectiveControlNumber("trailing_stop_pct", Number(doctorRuntime.controls.trailing_stop_pct || 0)));
-    const configuredMaxHoldMinutes = Math.max(1, getDoctorEffectiveControlNumber("max_hold_minutes", Number(doctorRuntime.controls.max_hold_minutes || 0)));
     const configuredLiveSellFractionPct = Math.max(1, Math.min(100, getDoctorEffectiveControlNumber("live_sell_fraction_pct", Number(doctorRuntime.controls.live_sell_fraction_pct || 100))));
-    const configuredMinMomentumProfitPct = Math.max(0, getDoctorEffectiveControlNumber("min_momentum_profit_pct", Number(doctorRuntime.controls.min_momentum_profit_pct || 0)));
-    const configuredStrongMoveThresholdPct = Math.max(1, getDoctorEffectiveControlNumber("strong_move_threshold_pct", Number(doctorRuntime.controls.strong_move_threshold_pct || 40)));
-    const configuredMaxTopHolderPct = Math.max(1, getDoctorEffectiveControlNumber("quality_max_top_holder_pct", Number(doctorRuntime.controls.quality_max_top_holder_pct || 24)));
     const takeProfitPct = Math.max(
       configuredMinProfitPct,
       (configuredTakeProfitMultiplier - 1) * 100,
-    );
-    const firstTakeProfitStagePct = Math.max(
-      configuredMinMomentumProfitPct,
-      Math.min(30, takeProfitPct * 0.5),
-    );
-    const secondTakeProfitStagePct = Math.max(
-      firstTakeProfitStagePct + 10,
-      Math.min(70, takeProfitPct * 0.8),
     );
 
     for (let positionIndex = 0; positionIndex < doctorRuntime.positions.length; positionIndex += 1) {
@@ -5657,10 +5645,6 @@ export async function registerRoutes(
       const holdMinutes = Math.max(0, (nowMs - new Date(String(position.opened_at || nowIso())).getTime()) / 60000);
       const pnlPct = entryPrice > 0 && currentPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0;
       const drawdownFromPeakPct = peakPrice > 0 && currentPrice > 0 ? ((peakPrice - currentPrice) / peakPrice) * 100 : 0;
-      const marketVolume5m = Number(market?.volume_5m || 0);
-      const marketHolders = Number(market?.holders_count || 0);
-      const marketScore = Number(market?.score || 0);
-      const topHolderPct = Number(market?.top_holder_pct || 0);
       const tpStage = Math.max(0, Math.trunc(Number((position as any).tp_stage || 0)));
       const buys30s = estimateBuys30s((market || {}) as Record<string, any>);
       const priceChange30sPct = estimatePriceChange30sPct((market || {}) as Record<string, any>);
@@ -5681,12 +5665,6 @@ export async function registerRoutes(
       } else if (isMomentumMode && pnlPct >= 200 && tpStage < 1) {
         sellReason = "take_profit_stage_1_partial";
         sellFractionPct = 40;
-      } else if (pnlPct >= secondTakeProfitStagePct && tpStage < 2) {
-        sellReason = "take_profit_stage_2_partial";
-        sellFractionPct = 50;
-      } else if (pnlPct >= firstTakeProfitStagePct && tpStage < 1) {
-        sellReason = "take_profit_stage_1_partial";
-        sellFractionPct = 40;
       } else if (pnlPct >= takeProfitPct) {
         sellReason = "take_profit_target_hit";
         sellFractionPct = configuredLiveSellFractionPct;
@@ -5697,26 +5675,6 @@ export async function registerRoutes(
         drawdownFromPeakPct >= configuredTrailingStopPct
       ) {
         sellReason = "trailing_stop_triggered";
-      } else if (
-        holdMinutes >= configuredMaxHoldMinutes
-      ) {
-        sellReason = "max_hold_reached";
-      } else if (
-        pnlPct >= configuredMinMomentumProfitPct &&
-        (
-          marketVolume5m <= 0 ||
-          marketScore < configuredStrongMoveThresholdPct * 0.7 ||
-          (marketHolders > 0 && marketHolders < 120) ||
-          (topHolderPct > 0 && topHolderPct > configuredMaxTopHolderPct)
-        )
-      ) {
-        sellReason = "momentum_or_holder_quality_drop";
-      } else if (
-        doctorRuntime.positions.length >= maxOpenPositions &&
-        positionIndex === doctorRuntime.positions.length - 1 &&
-        holdMinutes >= getDoctorPositionRotationMinutes()
-      ) {
-        sellReason = "position_rotation";
       }
 
       if (!sellReason) {
