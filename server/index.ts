@@ -4,6 +4,36 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { registerTradeAidTelegramWebhookRoute, startTradeAidTelegramBot } from "./services/telegram-tradeaid-bot";
 
+const MAX_DIAGNOSTIC_STACK = 4000;
+
+function formatProcessError(error: unknown) {
+  if (!error) {
+    return { message: "unknown_error", stack: "" };
+  }
+
+  if (error instanceof Error) {
+    return {
+      message: String(error.message || "unknown_error"),
+      stack: String(error.stack || "").slice(0, MAX_DIAGNOSTIC_STACK),
+    };
+  }
+
+  return {
+    message: String(error),
+    stack: "",
+  };
+}
+
+process.on("uncaughtException", (error) => {
+  const details = formatProcessError(error);
+  console.error("[process.uncaughtException]", details);
+});
+
+process.on("unhandledRejection", (reason) => {
+  const details = formatProcessError(reason);
+  console.error("[process.unhandledRejection]", details);
+});
+
 const app = express();
 const httpServer = createServer(app);
 
