@@ -1677,6 +1677,10 @@ export async function registerRoutes(
     return String(process.env.DOCTOR_UNIFIED_SIMPLE_MODE || "false").trim().toLowerCase() !== "false";
   };
 
+  const isDoctorSingleOpenPositionMode = () => {
+    return String(process.env.DOCTOR_SINGLE_OPEN_POSITION || "true").trim().toLowerCase() !== "false";
+  };
+
   const applyDoctorUnifiedControls = () => {
     if (!isDoctorUnifiedSimpleMode()) return;
     const userBuyAmountSol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
@@ -6319,6 +6323,10 @@ export async function registerRoutes(
         }
       }
 
+      if (isDoctorSingleOpenPositionMode() && doctorRuntime.positions.length >= 1) {
+        return { allowed: false, reason: "single_open_position_enforced" };
+      }
+
       if (doctorRuntime.positions.length >= maxOpenPositions) {
         return { allowed: false, reason: "max_open_positions_reached" };
       }
@@ -8910,7 +8918,10 @@ export async function registerRoutes(
       return res.json({ result: { executed: false, reason: "duplicate_buy_blocked" } });
     }
 
-    if (doctorRuntime.positions.length >= getDoctorEffectiveMaxOpenPositions()) {
+    const maxAllowedOpenPositions = isDoctorSingleOpenPositionMode()
+      ? 1
+      : getDoctorEffectiveMaxOpenPositions();
+    if (doctorRuntime.positions.length >= maxAllowedOpenPositions) {
       return res.json({ result: { executed: false, reason: "max_open_positions_reached" } });
     }
 
