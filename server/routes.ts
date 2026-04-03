@@ -5696,7 +5696,7 @@ export async function registerRoutes(
     let sellCount = 0;
     let pendingRiskExitLock = false;
     const updatedPositions: Array<Record<string, any>> = [];
-    const maxOpenPositions = Math.min(DOCTOR_MAX_ACTIVE_TRADES, getDoctorEffectiveMaxOpenPositions());
+    let maxOpenPositions = Math.min(DOCTOR_MAX_ACTIVE_TRADES, getDoctorEffectiveMaxOpenPositions());
     const activeSnipePreset = getDoctorActiveSnipePreset();
     const isSpeedMode = isDoctorSpeedModePreset(activeSnipePreset);
     const isMomentumMode = isDoctorMomentumTraderPreset(activeSnipePreset);
@@ -5892,7 +5892,7 @@ export async function registerRoutes(
     const maxTradesPerDay = Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("max_trades_per_day", Number(doctorRuntime.controls.max_trades_per_day || 1))));
     const maxTradesPerHour = Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("max_trades_per_hour", Number((doctorRuntime.controls as any).max_trades_per_hour || 12))));
     const cooldownMinutes = Math.max(0, Number(doctorRuntime.controls.cooldown_minutes_per_mint || 0));
-    const cooldownBetweenTradesSeconds = Math.max(DOCTOR_TRADE_COOLDOWN_SECONDS, Math.trunc(getDoctorEffectiveControlNumber("cooldown_between_trades_seconds", Number((doctorRuntime.controls as any).cooldown_between_trades_seconds || 0))));
+    let cooldownBetweenTradesSeconds = Math.max(DOCTOR_TRADE_COOLDOWN_SECONDS, Math.trunc(getDoctorEffectiveControlNumber("cooldown_between_trades_seconds", Number((doctorRuntime.controls as any).cooldown_between_trades_seconds || 0))));
     const routeRejectRetryMs = Math.max(10_000, Number(process.env.DOCTOR_ROUTE_REJECTED_RETRY_MS || 120_000));
     const feeBufferSol = Math.max(0, Number(doctorRuntime.controls.min_wallet_fee_buffer_sol || 0));
     let buyAmountSol = Math.max(0.1, getDoctorEffectiveControlNumber("buy_amount_sol", Number(doctorRuntime.controls.buy_amount_sol || 0.1)));
@@ -5944,6 +5944,22 @@ export async function registerRoutes(
       },
       last_trained_at: String(doctorLearningSnapshot.at || nowIso()),
     };
+    const targetWinRate = Math.max(0.6, Math.min(0.95, Number(process.env.DOCTOR_TARGET_WIN_RATE || 0.85)));
+    const minClosedTradesForAdaptiveTuning = Math.max(5, Math.trunc(Number(process.env.DOCTOR_MIN_CLOSED_TRADES_FOR_ADAPTIVE_TUNING || 8)));
+    const learningClosedTrades = Math.max(0, Number(doctorLearningSnapshot.closed_trades || 0));
+    const measuredWinRate = Math.max(0, Math.min(1, Number(doctorLearningSnapshot.win_rate || 0)));
+    const winRateDeficit = Math.max(0, targetWinRate - measuredWinRate);
+    const adaptiveStrictness = learningClosedTrades >= minClosedTradesForAdaptiveTuning
+      ? Math.min(1, winRateDeficit / 0.25)
+      : 0;
+    const adaptiveMinBuyRatioPct = Math.min(95, minBuyRatioPct + Math.trunc(adaptiveStrictness * 12));
+    const adaptiveHardMinVolume24hUsd = Math.trunc(hardMinVolume24hUsd * (1 + (adaptiveStrictness * 0.6)));
+    const adaptiveHardMinSafetyScore = Math.min(95, hardMinSafetyScore + Math.trunc(adaptiveStrictness * 8));
+    if (adaptiveStrictness > 0) {
+      maxOpenPositions = Math.max(1, Math.min(maxOpenPositions, 1));
+      cooldownBetweenTradesSeconds = Math.max(cooldownBetweenTradesSeconds, Math.trunc(cooldownBetweenTradesSeconds * (1 + adaptiveStrictness)));
+      buyAmountSol = Math.max(0.1, Number((buyAmountSol * (1 - (adaptiveStrictness * 0.35))).toFixed(4)));
+    }
     const minLiquiditySol = Math.max(0.1, getDoctorEffectiveControlNumber("min_liquidity_sol", 2));
     const maxLiquiditySol = Math.max(minLiquiditySol, getDoctorEffectiveControlNumber("max_liquidity_sol", 50));
     const requireLiquidityLock = Math.max(0, getDoctorEffectiveControlNumber("min_lock_hours", 24)) > 0;
@@ -5959,7 +5975,7 @@ export async function registerRoutes(
         const marketCapUsd = Number(token.market_cap_usd || 0);
         return marketCapUsd >= minMarketCapUsd && marketCapUsd <= effectiveMaxMarketCapUsd;
       })
-      .filter((token) => Number(token.volume_24h || 0) >= Math.max(1, getDoctorEffectiveControlNumber("min_volume_24h_usd", 12000)))
+      .filter((token) => Number(token.volume_24h || 0) >= Math.max(adaptiveHardMinVolume24hUsd, getDoctorEffectiveControlNumber("min_volume_24h_usd", 12000)))
       .filter((token) => Number(token.age_seconds || 0) >= Math.max(DOCTOR_MIN_WATCH_SECONDS, Math.trunc(getDoctorEffectiveControlNumber("min_token_age_minutes", 0)) * 60))
       .filter((token) => Number(token.age_seconds || 0) <= Math.min(maxTokenAgeSeconds, strictMaxTokenAgeSeconds))
       .filter((token) => {
@@ -5972,7 +5988,7 @@ export async function registerRoutes(
       .filter((token) => isLiquidityLockSatisfied(requireLiquidityLock, Boolean(token.liquidity_locked), Number(token.age_seconds || 0), String(token.launch_source || token.source || "unknown")))
       .filter((token) => {
         const buyRatioPct = Number(token.buy_ratio_pct || 0);
-        return buyRatioPct <= 0 || buyRatioPct >= minBuyRatioPct;
+        return buyRatioPct <= 0 || buyRatioPct >= adaptiveMinBuyRatioPct;
       })
       .filter((token) => {
         const holdersCount = Number(token.holders_count || 0);
@@ -6417,12 +6433,12 @@ export async function registerRoutes(
         }
 
         const candidateVolume24hUsd = Number(candidate.volume_24h || 0);
-        if (candidateVolume24hUsd < hardMinVolume24hUsd) {
+        if (candidateVolume24hUsd < adaptiveHardMinVolume24hUsd) {
           return { allowed: false, reason: "low_volume_hard_floor" };
         }
 
         const candidateSafetyScore = Number(candidate.score || 0);
-        const adaptiveSafetyFloor = Math.max(1, hardMinSafetyScore + Number(doctorLearningSnapshot.adaptive_confidence_delta || 0));
+        const adaptiveSafetyFloor = Math.max(1, adaptiveHardMinSafetyScore + Number(doctorLearningSnapshot.adaptive_confidence_delta || 0));
         if (candidateSafetyScore < adaptiveSafetyFloor) {
           return { allowed: false, reason: "low_safety_score" };
         }
