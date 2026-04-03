@@ -7881,7 +7881,10 @@ export async function registerRoutes(
         token_filter_min_liquidity: DOCTOR_MIN_LIQUIDITY_USD,
         token_filter_min_volume_5m: DOCTOR_MIN_VOLUME_5M_USD,
         token_filter_max_age_seconds: DOCTOR_MAX_TOKEN_AGE_SECONDS,
-        max_open_positions: DOCTOR_MAX_ACTIVE_TRADES,
+        max_open_positions: Math.min(
+          DOCTOR_MAX_ACTIVE_TRADES,
+          Math.max(1, Math.trunc(Number((doctorRuntime.controls as any).max_open_positions || DOCTOR_MAX_ACTIVE_TRADES))),
+        ),
         cooldown_between_trades_seconds: Math.max(
           DOCTOR_TRADE_COOLDOWN_SECONDS,
           Math.trunc(getDoctorEffectiveControlNumber("cooldown_between_trades_seconds", Number((doctorRuntime.controls as any).cooldown_between_trades_seconds || 0))),
@@ -7899,8 +7902,14 @@ export async function registerRoutes(
           getDoctorEffectiveControlNumber("min_token_age_minutes", Number(doctorRuntime.controls.min_token_age_minutes || 0)),
         ),
         take_profit_multiplier: Math.max(1.01, getDoctorEffectiveControlNumber("take_profit_multiplier", Number(doctorRuntime.controls.take_profit_multiplier || 2))),
-        min_profit_pct: DOCTOR_TAKE_PROFIT_PCT,
-        stop_loss_pct: DOCTOR_STOP_LOSS_PCT,
+        min_profit_pct: Math.max(
+          DOCTOR_TAKE_PROFIT_PCT,
+          Number((doctorRuntime.controls as any).min_profit_pct || DOCTOR_TAKE_PROFIT_PCT),
+        ),
+        stop_loss_pct: Math.max(
+          DOCTOR_STOP_LOSS_PCT,
+          Number((doctorRuntime.controls as any).stop_loss_pct || DOCTOR_STOP_LOSS_PCT),
+        ),
         trailing_stop_pct: Math.max(0.1, getDoctorEffectiveControlNumber("trailing_stop_pct", Number(doctorRuntime.controls.trailing_stop_pct || 0.1))),
         max_hold_minutes: Math.max(DOCTOR_MAX_HOLD_SECONDS / 60, getDoctorEffectiveControlNumber("max_hold_minutes", Number(doctorRuntime.controls.max_hold_minutes || 5))),
         position_rotation_minutes: Math.max(1, getDoctorEffectiveControlNumber("position_rotation_minutes", Number(doctorRuntime.controls.position_rotation_minutes || 1))),
