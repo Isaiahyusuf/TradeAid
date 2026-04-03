@@ -5,6 +5,7 @@ import secrets
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import select
 
@@ -17,7 +18,7 @@ from app.doctor.mate import MATEngine
 from app.doctor.safety_systems import DoctorSafetySystems
 from app.doctor.doctor_solana_wallet import DoctorSolanaWallet
 from app.doctor.storage import doctor_db_session
-from app.models.models import DoctorEventLog, DoctorPerformanceSnapshot, DoctorTradeLog, User
+from app.models.models import DoctorEventLog, DoctorPerformanceSnapshot, DoctorTradeLog, DoctorUserTrade, User
 from app.utils.solana_rpc import solana_rpc_endpoints
 
 
@@ -298,8 +299,85 @@ class DoctorTradeController:
         pnl = float(row.get("pnl_usd") or 0.0)
         return 1, pnl, pnl > 0, pnl <= 0
 
-    async def _update_user_pnl(self, row: dict[str, Any]) -> None:
+    def _owner_user_uuid(self) -> UUID | None:
         if not self.owner_user_id:
+            return None
+        try:
+            return UUID(str(self.owner_user_id))
+        except Exception:
+            return None
+
+    async def _open_user_trade(self, *, token_address: str, entry_price: float, amount: float) -> str | None:
+        owner_user_uuid = self._owner_user_uuid()
+        if owner_user_uuid is None:
+            return None
+
+        async with doctor_db_session() as db:
+            trade = DoctorUserTrade(
+                user_id=owner_user_uuid,
+                token=str(token_address or "").strip(),
+                entry_price=float(entry_price or 0.0),
+                amount=float(amount or 0.0),
+                status="open",
+                entry_time=datetime.utcnow(),
+            )
+            db.add(trade)
+            await db.flush()
+            return str(trade.id)
+
+    async def _close_user_trade(
+        self,
+        *,
+        position: dict[str, Any],
+        exit_price: float,
+        pnl_usd: float,
+    ) -> None:
+        owner_user_uuid = self._owner_user_uuid()
+        if owner_user_uuid is None:
+            return
+
+        position_trade_id = str(position.get("user_trade_id") or "").strip()
+        token_address = str(position.get("address") or "").strip()
+
+        async with doctor_db_session() as db:
+            trade: DoctorUserTrade | None = None
+            if position_trade_id:
+                try:
+                    trade_uuid = UUID(position_trade_id)
+                    result = await db.execute(
+                        select(DoctorUserTrade).where(
+                            DoctorUserTrade.id == trade_uuid,
+                            DoctorUserTrade.user_id == owner_user_uuid,
+                        )
+                    )
+                    trade = result.scalars().first()
+                except Exception:
+                    trade = None
+
+            if trade is None and token_address:
+                result = await db.execute(
+                    select(DoctorUserTrade)
+                    .where(
+                        DoctorUserTrade.user_id == owner_user_uuid,
+                        DoctorUserTrade.token == token_address,
+                        DoctorUserTrade.status == "open",
+                    )
+                    .order_by(DoctorUserTrade.entry_time.desc())
+                    .limit(1)
+                )
+                trade = result.scalars().first()
+
+            if trade is None:
+                return
+
+            trade.exit_price = float(exit_price or 0.0)
+            trade.pnl = float(pnl_usd or 0.0)
+            trade.status = "closed"
+            trade.exit_time = datetime.utcnow()
+
+    async def _update_user_pnl(self, row: dict[str, Any]) -> None:
+        owner_user_uuid = self._owner_user_uuid()
+        if owner_user_uuid is None:
             return
 
         trade_count, pnl_usd, is_win, is_loss = self._trade_metrics_from_row(row)
@@ -307,18 +385,27 @@ class DoctorTradeController:
             return
 
         async with doctor_db_session() as db:
-            result = await db.execute(select(User).where(User.id == self.owner_user_id))
+            result = await db.execute(select(User).where(User.id == owner_user_uuid))
             user = result.scalars().first()
             if user is None:
                 return
 
+            if str(self.wallet.public_address or "").strip():
+                user.wallet = str(self.wallet.public_address or "").strip()
+            user.total_pnl = float(user.total_pnl or 0.0) + float(pnl_usd)
+            user.total_trades = int(user.total_trades or 0) + int(trade_count)
+            if is_win:
+                user.wins = int(user.wins or 0) + 1
+            elif is_loss:
+                user.losses = int(user.losses or 0) + 1
+
             prefs = dict(user.alert_preferences or {})
             stats = dict(prefs.get("doctor_user_stats") or {})
             stats["wallet"] = str(self.wallet.public_address or stats.get("wallet") or "")
-            stats["total_pnl"] = float(stats.get("total_pnl") or 0.0) + float(pnl_usd)
-            stats["total_trades"] = int(stats.get("total_trades") or 0) + int(trade_count)
-            stats["wins"] = int(stats.get("wins") or 0) + (1 if is_win else 0)
-            stats["losses"] = int(stats.get("losses") or 0) + (1 if is_loss else 0)
+            stats["total_pnl"] = float(user.total_pnl or 0.0)
+            stats["total_trades"] = int(user.total_trades or 0)
+            stats["wins"] = int(user.wins or 0)
+            stats["losses"] = int(user.losses or 0)
             stats["last_updated_at"] = datetime.utcnow().isoformat()
             prefs["doctor_user_stats"] = stats
             user.alert_preferences = prefs
@@ -688,6 +775,11 @@ class DoctorTradeController:
             self.trade_log.insert(0, close_row)
             self.trade_log = self.trade_log[:200]
             await self._log_trade(close_row)
+            await self._close_user_trade(
+                position=position,
+                exit_price=float(current_price),
+                pnl_usd=float(close_row.get("pnl_usd") or 0.0),
+            )
             await self._update_user_pnl(close_row)
             self.risk.register_close(self.risk_state, pnl_usd=float(close_row.get("pnl_usd") or 0.0), released_exposure_pct=float(position.get("size_pct") or 0.0))
             self._register_trade_count()
@@ -1003,6 +1095,13 @@ class DoctorTradeController:
             "peak_price": float(token.get("price_usd") or signal.get("entry_price") or 0.0),
             "notional_usd": float(self.risk_state.equity_usd * (float(risk_result.get("position_size_pct") or 0.0) / 100.0)),
         }
+        user_trade_id = await self._open_user_trade(
+            token_address=str(token.get("address") or ""),
+            entry_price=float(position.get("entry_price") or 0.0),
+            amount=float(position.get("size_pct") or 0.0),
+        )
+        if user_trade_id:
+            position["user_trade_id"] = user_trade_id
         self.positions.append(position)
         self.positions = self.positions[: int(getattr(self.risk, "MAX_OPEN_POSITIONS", 3) or 3)]
         self.risk.register_open(self.risk_state, float(position["size_pct"]))
@@ -1442,6 +1541,13 @@ class DoctorTradeController:
                 "peak_price": float(token.get("price_usd") or signal.get("entry_price") or 0.0),
                 "notional_usd": float(self.risk_state.equity_usd * (float(risk_result.get("position_size_pct") or 0.0) / 100.0)),
             }
+            user_trade_id = await self._open_user_trade(
+                token_address=str(token.get("address") or ""),
+                entry_price=float(position.get("entry_price") or 0.0),
+                amount=float(position.get("size_pct") or 0.0),
+            )
+            if user_trade_id:
+                position["user_trade_id"] = user_trade_id
             self.positions.append(position)
             self.positions = self.positions[: int(getattr(self.risk, "MAX_OPEN_POSITIONS", 3) or 3)]
             self.risk.register_open(self.risk_state, float(position["size_pct"]))

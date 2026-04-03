@@ -56,6 +56,12 @@ async def _ensure_doctor_tables() -> None:
         return
     async with bind.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Keep legacy databases compatible with new per-user PnL columns.
+        await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet VARCHAR(128)")
+        await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN IF NOT EXISTS total_pnl DOUBLE PRECISION NOT NULL DEFAULT 0")
+        await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN IF NOT EXISTS total_trades INTEGER NOT NULL DEFAULT 0")
+        await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN IF NOT EXISTS wins INTEGER NOT NULL DEFAULT 0")
+        await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN IF NOT EXISTS losses INTEGER NOT NULL DEFAULT 0")
     _doctor_tables_initialized = True
 
 

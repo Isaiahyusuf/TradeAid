@@ -216,8 +216,33 @@ class User(Base):
     encrypted_api_key = Column(Text, nullable=True)
     alert_preferences = Column(JSON, nullable=True)
     telegram_chat_id = Column(String(64), nullable=True)
+    wallet = Column(String(128), nullable=True)
+    total_pnl = Column(Float, nullable=False, default=0.0)
+    total_trades = Column(Integer, nullable=False, default=0)
+    wins = Column(Integer, nullable=False, default=0)
+    losses = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class DoctorUserTrade(Base):
+    __tablename__ = "doctor_user_trades"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    token = Column(String(128), nullable=False, index=True)
+    entry_price = Column(Float, nullable=False)
+    exit_price = Column(Float, nullable=True)
+    amount = Column(Float, nullable=False, default=0.0)
+    pnl = Column(Float, nullable=False, default=0.0)
+    status = Column(String(16), nullable=False, default="open", index=True)
+    entry_time = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    exit_time = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_doctor_user_trades_user_status", "user_id", "status"),
+        Index("ix_doctor_user_trades_user_entry", "user_id", "entry_time"),
+    )
 
 
 class AssistantTrade(Base):
