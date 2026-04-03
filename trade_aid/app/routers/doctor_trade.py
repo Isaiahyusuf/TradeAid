@@ -7,7 +7,9 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import get_db
 from app.doctor.doctor_controller import DoctorTradeController
 from app.models.models import User
 from app.services.assistant_trading_service import get_wallet_chain_credentials
@@ -81,6 +83,8 @@ async def _get_user_doctor_controller(user: User) -> DoctorTradeController:
         if controller is None:
             controller = DoctorTradeController()
             controller.set_owner_user_id(user_id)
+            prefs = dict(user.alert_preferences or {})
+            controller.set_trading_mode(str(prefs.get("doctor_trading_mode") or "doctor"))
             try:
                 creds = get_wallet_chain_credentials(user, "solana")
                 private_key = str(creds.get("private_key") or "").strip()
@@ -94,6 +98,8 @@ async def _get_user_doctor_controller(user: User) -> DoctorTradeController:
             _user_doctor_controllers[user_id] = controller
         else:
             controller.set_owner_user_id(user_id)
+            prefs = dict(user.alert_preferences or {})
+            controller.set_trading_mode(str(prefs.get("doctor_trading_mode") or controller.trading_mode or "doctor"))
         return controller
 
 
@@ -102,6 +108,7 @@ class DoctorControlRequest(BaseModel):
 
 
 class DoctorConfigRequest(BaseModel):
+    trading_mode: str | None = None
     scan_interval_seconds: int | None = None
     kill_switch: bool | None = None
     buy_amount_sol: float | None = None
@@ -194,8 +201,24 @@ async def doctor_control(req: DoctorControlRequest, user: User = Depends(get_cur
 
 
 @router.post("/config")
-async def doctor_config(req: DoctorConfigRequest, user: User = Depends(get_current_user)) -> dict[str, Any]:
+async def doctor_config(
+    req: DoctorConfigRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
     controller = await _get_user_doctor_controller(user)
+    if req.trading_mode is not None:
+        normalized_mode = str(req.trading_mode or "doctor").strip().lower()
+        if normalized_mode not in {"doctor", "retardio"}:
+            raise HTTPException(status_code=400, detail="trading_mode must be doctor or retardio")
+        controller.set_trading_mode(normalized_mode)
+
+        prefs = dict(user.alert_preferences or {})
+        prefs["doctor_trading_mode"] = controller.trading_mode
+        user.alert_preferences = prefs
+        db.add(user)
+        await db.flush()
+
     if req.scan_interval_seconds is not None:
         controller.scan_interval_seconds = max(5, min(300, int(req.scan_interval_seconds)))
     if req.kill_switch is not None:

@@ -32,6 +32,12 @@ MAX_HOLD_TIME = 1800
 TAKE_PROFIT = 0.25
 STOP_LOSS = 0.10
 
+RETARDIO_SCORE_THRESHOLD = 70
+RETARDIO_MAX_TRADES_PER_HOUR = 2
+RETARDIO_MIN_HOLD_SECONDS = 30 * 60
+RETARDIO_TAKE_PROFIT_PCT = 25.0
+RETARDIO_STOP_LOSS_PCT = 10.0
+
 
 class DoctorTradeController:
     def __init__(self) -> None:
@@ -81,6 +87,8 @@ class DoctorTradeController:
         self._last_balance_sol: float = 0.0
         self._last_balance_checked_ts: float = 0.0
         self.owner_user_id: str | None = None
+        self.trading_mode: str = "doctor"
+        self.retardio_trade_open_timestamps: list[float] = []
 
         self.safety_systems = DoctorSafetySystems(
             api_error_threshold=int(getattr(self.settings, "DOCTOR_API_ERROR_PAUSE_THRESHOLD", 3) or 3),
@@ -197,6 +205,7 @@ class DoctorTradeController:
                 "price_history": [],
                 "liquidity_history": [],
                 "buy_sell_history": [],
+                "holder_history": [],
                 "last_updated_ts": now_ts,
             }
             self.watch_registry[address] = row
@@ -205,15 +214,18 @@ class DoctorTradeController:
         price = float(token.get("price_usd") or 0.0)
         liquidity = float(token.get("liquidity") or 0.0)
         buy_sell_ratio = float(token.get("buy_sell_ratio") or 0.0)
+        holder_count = float(token.get("holder_count") or 0.0)
 
         row["volume_history"].append(volume)
         row["price_history"].append(price)
         row["liquidity_history"].append(liquidity)
         row["buy_sell_history"].append(buy_sell_ratio)
+        row["holder_history"].append(holder_count)
         row["volume_history"] = row["volume_history"][-12:]
         row["price_history"] = row["price_history"][-12:]
         row["liquidity_history"] = row["liquidity_history"][-12:]
         row["buy_sell_history"] = row["buy_sell_history"][-12:]
+        row["holder_history"] = row["holder_history"][-12:]
         row["last_updated_ts"] = now_ts
 
         elapsed = now_ts - float(row.get("started_at") or now_ts)
@@ -247,8 +259,13 @@ class DoctorTradeController:
                 "price_history": list(row.get("price_history") or []),
                 "liquidity_history": list(row.get("liquidity_history") or []),
                 "buy_sell_history": list(row.get("buy_sell_history") or []),
+                "holder_history": list(row.get("holder_history") or []),
             },
         }
+
+    def set_trading_mode(self, mode: str) -> None:
+        normalized = str(mode or "doctor").strip().lower()
+        self.trading_mode = "retardio" if normalized == "retardio" else "doctor"
 
     def _should_enter(
         self,
@@ -530,6 +547,25 @@ class DoctorTradeController:
         self.wallet.private_key = ""
         self.wallet.public_address = ""
 
+    async def _refresh_wallet_balance(self, *, timeout_seconds: float = 4.0, retries: int = 1) -> tuple[float, bool]:
+        cached_balance = float(self._last_balance_sol or 0.0)
+        if not str(self.wallet.public_address or "").strip():
+            return cached_balance, True
+
+        for attempt in range(max(1, int(retries) + 1)):
+            try:
+                live_balance = await asyncio.wait_for(self.wallet.get_balance_sol(), timeout=timeout_seconds)
+                fresh = float(live_balance or 0.0)
+                self._last_balance_sol = fresh
+                self._last_balance_checked_ts = datetime.utcnow().timestamp()
+                return fresh, False
+            except Exception:
+                if attempt < int(retries):
+                    await asyncio.sleep(0.15 * (attempt + 1))
+                continue
+
+        return cached_balance, True
+
     def _build_live_readiness(self, *, balance_sol: float, balance_stale: bool) -> dict[str, Any]:
         mode = str(self.execution.mode or "paper").strip().lower()
         wallet_connected = bool(str(self.wallet.public_address or "").strip() and str(self.wallet.private_key or "").strip())
@@ -617,6 +653,277 @@ class DoctorTradeController:
     def _can_open_trade(self) -> bool:
         self._roll_trade_day()
         return self._trades_today < int(max(1, self.max_trades_per_day))
+
+    @staticmethod
+    def _retardio_has_steady_volume(volume_history: list[float]) -> bool:
+        if len(volume_history) < 4:
+            return False
+        window = [max(0.0, float(v or 0.0)) for v in volume_history[-4:]]
+        if any(value <= 0 for value in window):
+            return False
+        increasing_steps = sum(1 for prev, curr in zip(window, window[1:]) if curr >= prev)
+        baseline = sum(window[:-1]) / max(len(window[:-1]), 1)
+        latest = window[-1]
+        if baseline <= 0:
+            return False
+        is_spike = latest > (baseline * 2.2)
+        return increasing_steps >= 3 and not is_spike
+
+    @staticmethod
+    def _retardio_is_consolidating(price_history: list[float]) -> bool:
+        if len(price_history) < 5:
+            return False
+        window = [max(0.0, float(v or 0.0)) for v in price_history[-5:]]
+        low = min(window)
+        high = max(window)
+        if low <= 0:
+            return False
+        return ((high - low) / low) <= 0.06
+
+    @staticmethod
+    def _retardio_holder_growth_rate(token: dict[str, Any], holder_history: list[float]) -> float:
+        explicit = token.get("new_holders_rate")
+        if explicit is None:
+            explicit = token.get("holder_growth_rate")
+        if explicit is not None:
+            return float(explicit or 0.0)
+        if len(holder_history) < 3:
+            return 0.0
+        start = float(holder_history[-3] or 0.0)
+        end = float(holder_history[-1] or 0.0)
+        if start <= 0:
+            return 0.0
+        return (end - start) / start
+
+    @staticmethod
+    def _retardio_buy_sell_counts(token: dict[str, Any]) -> tuple[float, float]:
+        buys = float(token.get("buys_5m") or token.get("buys_1h") or token.get("buys") or 0.0)
+        sells = float(token.get("sells_5m") or token.get("sells_1h") or token.get("sells") or 0.0)
+        return buys, sells
+
+    def _retardio_anti_rug_filter(self, token: dict[str, Any]) -> tuple[bool, str | None]:
+        age_minutes = float(token.get("age_minutes") or 0.0)
+        if age_minutes < 5.0:
+            return False, "anti_rug_too_new"
+        liquidity = float(token.get("liquidity") or 0.0)
+        if liquidity < 5000.0:
+            return False, "anti_rug_low_liquidity"
+        if bool(token.get("honeypot_risk", False)):
+            return False, "anti_rug_honeypot_risk"
+        if bool(token.get("suspicious_contract", False)):
+            return False, "anti_rug_suspicious_contract"
+        return True, None
+
+    def _retardio_analyze_token(self, token: dict[str, Any], watch: dict[str, Any]) -> dict[str, Any]:
+        watch_meta = dict(watch.get("watch") or {})
+        volume_history = list(watch_meta.get("volume_history") or [])
+        price_history = list(watch_meta.get("price_history") or [])
+        holder_history = list(watch_meta.get("holder_history") or [])
+
+        score = 0
+        signals: dict[str, Any] = {}
+
+        steady_volume = self._retardio_has_steady_volume(volume_history)
+        if steady_volume:
+            score += 30
+        signals["steady_volume"] = steady_volume
+
+        liquidity = float(token.get("liquidity") or 0.0)
+        strong_liquidity = liquidity > 5000.0
+        if strong_liquidity:
+            score += 20
+        signals["strong_liquidity"] = strong_liquidity
+
+        buys, sells = self._retardio_buy_sell_counts(token)
+        buy_pressure = buys > sells
+        if buy_pressure:
+            score += 20
+        signals["buy_pressure"] = buy_pressure
+
+        holder_growth_rate = self._retardio_holder_growth_rate(token, holder_history)
+        holder_growth = holder_growth_rate > 0.0
+        if holder_growth:
+            score += 15
+        signals["holder_growth"] = holder_growth
+
+        consolidating = self._retardio_is_consolidating(price_history)
+        if consolidating:
+            score += 15
+        signals["consolidating"] = consolidating
+
+        momentum_positive = self._price_regime(price_history) != "DUMP"
+        signals["momentum_positive"] = momentum_positive
+
+        anti_rug_ok, anti_rug_reason = self._retardio_anti_rug_filter(token)
+        signals["anti_rug_ok"] = anti_rug_ok
+
+        decision = "BUY" if (score >= RETARDIO_SCORE_THRESHOLD and momentum_positive and anti_rug_ok) else "SKIP"
+        reason = "retardio_score_threshold_met" if decision == "BUY" else (anti_rug_reason or "retardio_waiting_high_quality_setup")
+
+        return {
+            "decision": decision,
+            "score": score,
+            "reason": reason,
+            "signals": signals,
+            "metrics": {
+                "liquidity": liquidity,
+                "buys": buys,
+                "sells": sells,
+                "holder_growth_rate": holder_growth_rate,
+            },
+        }
+
+    def _retardio_cleanup_trade_window(self) -> None:
+        now_ts = time.time()
+        self.retardio_trade_open_timestamps = [
+            ts for ts in self.retardio_trade_open_timestamps if (now_ts - float(ts or 0.0)) <= 3600.0
+        ]
+
+    async def _retardio_manage_open_trades(self) -> list[dict[str, Any]]:
+        actions: list[dict[str, Any]] = []
+        retardio_positions = [
+            row for row in list(self.positions) if str(row.get("strategy_mode") or "").strip().lower() == "retardio"
+        ]
+
+        for position in retardio_positions:
+            address = str(position.get("address") or "").strip()
+            if not address:
+                continue
+
+            entry_price = float(position.get("entry_price") or 0.0)
+            current_price = float(position.get("current_price") or entry_price or 0.0)
+            if entry_price <= 0 or current_price <= 0:
+                continue
+
+            pnl_pct = ((current_price - entry_price) / entry_price) * 100.0
+            opened_at_raw = str(position.get("opened_at") or "").strip()
+            held_seconds = 0.0
+            if opened_at_raw:
+                try:
+                    opened_at = datetime.fromisoformat(opened_at_raw)
+                    held_seconds = max(0.0, (datetime.utcnow() - opened_at).total_seconds())
+                except Exception:
+                    held_seconds = 0.0
+
+            volume_trend = self.analyze_volume(list((self.watch_registry.get(address.lower()) or {}).get("volume_history") or []))
+            momentum_fading = volume_trend == "WEAK" and pnl_pct > 5.0
+
+            exit_reason: str | None = None
+            if pnl_pct >= RETARDIO_TAKE_PROFIT_PCT:
+                exit_reason = "retardio_take_profit_hit"
+            elif pnl_pct <= -RETARDIO_STOP_LOSS_PCT:
+                exit_reason = "retardio_stop_loss_hit"
+            elif held_seconds >= RETARDIO_MIN_HOLD_SECONDS and momentum_fading:
+                exit_reason = "retardio_momentum_fading"
+            elif held_seconds >= RETARDIO_MIN_HOLD_SECONDS:
+                exit_reason = "retardio_timeout_30m"
+
+            if not exit_reason:
+                continue
+
+            result = await self.execute_direct_sell(contract_address=address, sell_fraction_pct=100.0)
+            actions.append(
+                {
+                    "token": position.get("symbol"),
+                    "address": address,
+                    "action": "SELL",
+                    "status": "executed" if result.get("executed") else "blocked",
+                    "reason": exit_reason if result.get("executed") else str(result.get("reason") or "direct_sell_failed"),
+                    "strategy_mode": "retardio",
+                }
+            )
+            self._register_journal(
+                {
+                    "token": position.get("symbol"),
+                    "address": address,
+                    "decision": "SELL" if result.get("executed") else "BLOCK",
+                    "reason": exit_reason if result.get("executed") else str(result.get("reason") or "direct_sell_failed"),
+                    "strategy_mode": "retardio",
+                }
+            )
+
+        return actions
+
+    async def _run_retardio_once(self, memes: list[dict[str, Any]], configured_buy_sol: float) -> dict[str, Any]:
+        actions: list[dict[str, Any]] = []
+        actions.extend(await self._retardio_manage_open_trades())
+        self._retardio_cleanup_trade_window()
+
+        if len(self.positions) > 0:
+            self._register_journal({"decision": "WAIT", "reason": "retardio_one_active_trade_rule", "strategy_mode": "retardio"})
+            return {"executed": True, "actions": actions, "tokens": memes, "positions": self.positions}
+
+        if len(self.retardio_trade_open_timestamps) >= RETARDIO_MAX_TRADES_PER_HOUR:
+            self._register_journal({"decision": "WAIT", "reason": "retardio_max_trades_per_hour_reached", "strategy_mode": "retardio"})
+            return {"executed": True, "actions": actions, "tokens": memes, "positions": self.positions}
+
+        ranked = sorted(
+            memes,
+            key=lambda row: float(row.get("volume_5m") or 0.0) * max(1.0, float(row.get("liquidity") or 0.0)),
+            reverse=True,
+        )
+
+        for token in ranked:
+            watch = self._watch_token(token)
+            if not bool(watch.get("ready")):
+                self._register_journal(
+                    {
+                        "token": token.get("symbol"),
+                        "address": token.get("address"),
+                        "decision": "WATCH",
+                        "reason": str(watch.get("reason") or "watch_phase_pending"),
+                        "strategy_mode": "retardio",
+                    }
+                )
+                continue
+
+            analysis = self._retardio_analyze_token(token, watch)
+            self._register_journal(
+                {
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "decision": analysis.get("decision"),
+                    "reason": analysis.get("reason"),
+                    "score": int(analysis.get("score") or 0),
+                    "signals": analysis.get("signals"),
+                    "strategy_mode": "retardio",
+                }
+            )
+            if str(analysis.get("decision") or "SKIP") != "BUY":
+                continue
+
+            result = await self.execute_direct_buy(
+                contract_address=str(token.get("address") or ""),
+                chain="solana",
+                decision_override={
+                    "strategy_mode": "retardio",
+                    "entry_reason": str(analysis.get("reason") or "retardio_score_threshold_met"),
+                    "signal": {
+                        "action": "BUY",
+                        "entry_price": float(token.get("price_usd") or 0.0),
+                        "confidence": max(70, min(99, int(analysis.get("score") or 0))),
+                    },
+                },
+            )
+
+            actions.append(
+                {
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "action": "BUY",
+                    "status": "executed" if result.get("executed") else "blocked",
+                    "reason": str(result.get("reason") or "retardio_entry_failed"),
+                    "strategy_mode": "retardio",
+                    "score": int(analysis.get("score") or 0),
+                    "buy_amount_sol": float(configured_buy_sol),
+                }
+            )
+
+            if result.get("executed"):
+                self.retardio_trade_open_timestamps.append(time.time())
+                break
+
+        return {"executed": True, "actions": actions, "tokens": memes, "positions": self.positions}
 
     def _compute_spread_pct(self, token: dict[str, Any]) -> float:
         spread_from_feed = float(token.get("spread_pct") or 0.0)
@@ -717,6 +1024,10 @@ class DoctorTradeController:
         remaining: list[dict[str, Any]] = []
 
         for position in self.positions:
+            if str(position.get("strategy_mode") or "").strip().lower() == "retardio":
+                remaining.append(position)
+                continue
+
             address = str(position.get("address") or "").strip()
             token = by_address.get(address)
             current_price = float((token or {}).get("price_usd") or position.get("current_price") or 0.0)
@@ -975,7 +1286,7 @@ class DoctorTradeController:
             return {"triggered": True, "reason": "honeypot_risk"}
         return {"triggered": False}
 
-    async def execute_direct_buy(self, contract_address: str, *, chain: str = "solana") -> dict[str, Any]:
+    async def execute_direct_buy(self, contract_address: str, *, chain: str = "solana", decision_override: dict[str, Any] | None = None) -> dict[str, Any]:
         normalized_chain = str(chain or "").strip().lower()
         if normalized_chain != "solana":
             return {"executed": False, "reason": "automatic_buy_only_supported_for_solana"}
@@ -990,21 +1301,15 @@ class DoctorTradeController:
         if self.kill_switch or bool(self.risk_state.paused):
             return {"executed": False, "reason": "doctortrade_paused"}
 
-        can_trade, trade_block_reason = self._user_can_trade()
-        if not can_trade:
-            return {"executed": False, "reason": str(trade_block_reason or "trade_guard_blocked")}
+        if not decision_override:
+            can_trade, trade_block_reason = self._user_can_trade()
+            if not can_trade:
+                return {"executed": False, "reason": str(trade_block_reason or "trade_guard_blocked")}
 
         configured_buy_sol = max(float(self.min_buy_amount_sol or 0.1), float(self.buy_amount_sol or 0.1))
         self.buy_amount_sol = configured_buy_sol
 
-        balance_sol = 0.0
-        balance_stale = True
-        try:
-            balance_sol = await self.wallet.get_balance_sol()
-            balance_stale = False
-        except Exception:
-            balance_sol = float(self._last_balance_sol or 0.0)
-            balance_stale = True
+        balance_sol, balance_stale = await self._refresh_wallet_balance(timeout_seconds=4.0, retries=1)
 
         if str(self.execution.mode or "").strip().lower() == "live":
             readiness = self._build_live_readiness(balance_sol=balance_sol, balance_stale=balance_stale)
@@ -1018,7 +1323,8 @@ class DoctorTradeController:
         if not token:
             return {"executed": False, "reason": "token_not_in_fresh_feed"}
 
-        self.strategy_mode = str(self.mate_last_decision.get("best_agent") or token.get("strategy_mode") or "trending")
+        strategy_mode = str((decision_override or {}).get("strategy_mode") or self.mate_last_decision.get("best_agent") or token.get("strategy_mode") or "trending")
+        self.strategy_mode = strategy_mode
 
         safety = self._safety_checks(token)
         if safety.get("triggered"):
@@ -1028,28 +1334,34 @@ class DoctorTradeController:
         if not quality_ok:
             return {"executed": False, "reason": str(quality_reason or "quality_gate_blocked")}
 
-        passes_filters, filter_reason = self._passes_filters(token)
-        if not passes_filters:
-            return {"executed": False, "reason": str(filter_reason or "pre_filter_blocked")}
+        if not decision_override:
+            passes_filters, filter_reason = self._passes_filters(token)
+            if not passes_filters:
+                return {"executed": False, "reason": str(filter_reason or "pre_filter_blocked")}
 
-        watch = self._watch_token(token)
-        if not bool(watch.get("ready")):
-            return {"executed": False, "reason": str(watch.get("reason") or "watch_phase_pending")}
+            watch = self._watch_token(token)
+            if not bool(watch.get("ready")):
+                return {"executed": False, "reason": str(watch.get("reason") or "watch_phase_pending")}
 
-        watch_meta = dict(watch.get("watch") or {})
-        should_enter, enter_reason, _volume_signal = self._should_enter(
-            price_data=list(watch_meta.get("price_history") or []),
-            volume_data=list(watch_meta.get("volume_history") or []),
-            liquidity_data=list(watch_meta.get("liquidity_history") or []),
-            buy_sell_data=list(watch_meta.get("buy_sell_history") or []),
-        )
-        if not should_enter:
-            return {"executed": False, "reason": enter_reason}
+            watch_meta = dict(watch.get("watch") or {})
+            should_enter, enter_reason, _volume_signal = self._should_enter(
+                price_data=list(watch_meta.get("price_history") or []),
+                volume_data=list(watch_meta.get("volume_history") or []),
+                liquidity_data=list(watch_meta.get("liquidity_history") or []),
+                buy_sell_data=list(watch_meta.get("buy_sell_history") or []),
+            )
+            if not should_enter:
+                return {"executed": False, "reason": enter_reason}
 
-        signal = self._mate_signal_for_token(token)
-        signal["action"] = "BUY"
-        signal["entry_price"] = float(signal.get("entry_price") or token.get("price_usd") or 0.0)
-        signal["confidence"] = max(int(signal.get("confidence") or 0), 70)
+            signal = self._mate_signal_for_token(token)
+            signal["action"] = "BUY"
+            signal["entry_price"] = float(signal.get("entry_price") or token.get("price_usd") or 0.0)
+            signal["confidence"] = max(int(signal.get("confidence") or 0), 70)
+        else:
+            signal = dict((decision_override or {}).get("signal") or {})
+            signal["action"] = "BUY"
+            signal["entry_price"] = float(signal.get("entry_price") or token.get("price_usd") or 0.0)
+            signal["confidence"] = max(70, min(99, int(signal.get("confidence") or 0)))
 
         risk_result = self.risk.validate(signal, self.risk_state)
         if not risk_result.get("approved"):
@@ -1140,7 +1452,7 @@ class DoctorTradeController:
         return {
             "executed": True,
             "mode": str(execution.get("mode") or self.execution.mode),
-            "reason": "direct_buy_executed",
+            "reason": str((decision_override or {}).get("entry_reason") or "direct_buy_executed"),
             "token": {
                 "symbol": token.get("symbol"),
                 "address": token.get("address"),
@@ -1225,18 +1537,13 @@ class DoctorTradeController:
             self.risk_state.cooldown_until = (datetime.utcnow() + timedelta(minutes=45)).isoformat()
             return {"executed": False, "reason": "max_consecutive_losses_reached"}
 
+        active_mode = str(self.trading_mode or "doctor").strip().lower()
+        self.trading_mode = "retardio" if active_mode == "retardio" else "doctor"
+
         configured_buy_sol = max(float(self.min_buy_amount_sol or 0.1), float(self.buy_amount_sol or 0.1))
         self.buy_amount_sol = configured_buy_sol
 
-        balance_sol = float(self._last_balance_sol or 0.0)
-        balance_stale = True
-        try:
-            balance_sol = await self.wallet.get_balance_sol()
-            self._last_balance_sol = float(balance_sol)
-            self._last_balance_checked_ts = datetime.utcnow().timestamp()
-            balance_stale = False
-        except Exception:
-            balance_stale = True
+        balance_sol, balance_stale = await self._refresh_wallet_balance(timeout_seconds=4.0, retries=1)
 
         if str(self.execution.mode or "").strip().lower() == "live":
             readiness = self._build_live_readiness(balance_sol=balance_sol, balance_stale=balance_stale)
@@ -1245,6 +1552,13 @@ class DoctorTradeController:
                 return {"executed": False, "reason": f"live_readiness_{live_blockers[0]}"}
 
         memes = await self.scanner.scan_all_sources(limit=18)
+        self.current_tokens = memes
+
+        if self.trading_mode == "retardio":
+            result = await self._run_retardio_once(memes, configured_buy_sol)
+            self.last_run_at = datetime.utcnow().isoformat()
+            return result
+
         try:
             await self._update_mate_state(memes)
         except Exception:
@@ -1258,7 +1572,6 @@ class DoctorTradeController:
                 contract_address=str(row.get("mint") or row.get("address") or "") or None,
                 extra=row,
             )
-        self.current_tokens = memes
         actions: list[dict[str, Any]] = []
         exit_actions = await self._process_position_exits(memes)
         if exit_actions:
@@ -1475,10 +1788,7 @@ class DoctorTradeController:
                 })
                 continue
 
-            try:
-                balance_sol = await self.wallet.get_balance_sol()
-            except Exception:
-                balance_sol = 0.0
+            balance_sol, _balance_stale = await self._refresh_wallet_balance(timeout_seconds=4.0, retries=0)
             if balance_sol < configured_buy_sol:
                 blocked = {
                     "token": token.get("symbol"),
@@ -1622,16 +1932,9 @@ class DoctorTradeController:
         if self.wallet.public_address:
             should_refresh = (now_ts - float(self._last_balance_checked_ts or 0.0)) >= refresh_interval_seconds
             if should_refresh:
-                try:
-                    live_balance = await asyncio.wait_for(self.wallet.get_balance_sol(), timeout=1.2)
-                    balance_sol = float(live_balance or 0.0)
-                    self._last_balance_sol = balance_sol
-                    self._last_balance_checked_ts = now_ts
-                    balance_stale = False
-                except Exception:
-                    balance_stale = True
+                balance_sol, balance_stale = await self._refresh_wallet_balance(timeout_seconds=4.0, retries=1)
             else:
-                balance_stale = False
+                balance_stale = False if float(self._last_balance_checked_ts or 0.0) > 0 else True
 
         execution = self._build_live_readiness(balance_sol=balance_sol, balance_stale=balance_stale)
         auto_trade_blockers = [
@@ -1650,6 +1953,7 @@ class DoctorTradeController:
 
         return {
             "owner_user_id": self.owner_user_id,
+            "trading_mode": self.trading_mode,
             "enabled": self.enabled,
             "kill_switch": self.kill_switch,
             "scan_interval_seconds": int(self.scan_interval_seconds),
@@ -1736,6 +2040,15 @@ class DoctorTradeController:
                 "quality_min_volume_spike_pct": float(self.quality_min_volume_spike_pct),
                 "quality_max_top_holder_pct": float(self.quality_max_top_holder_pct),
                 "wallet_connected": bool(str(self.wallet.public_address or "").strip() and str(self.wallet.private_key or "").strip()),
+                "trading_mode": self.trading_mode,
+                "retardio": {
+                    "enabled": self.trading_mode == "retardio",
+                    "score_threshold": int(RETARDIO_SCORE_THRESHOLD),
+                    "max_trades_per_hour": int(RETARDIO_MAX_TRADES_PER_HOUR),
+                    "min_hold_seconds": int(RETARDIO_MIN_HOLD_SECONDS),
+                    "take_profit_pct": float(RETARDIO_TAKE_PROFIT_PCT),
+                    "stop_loss_pct": float(RETARDIO_STOP_LOSS_PCT),
+                },
             },
             "active_tokens": self.current_tokens,
             "positions": self.positions,

@@ -54,6 +54,7 @@ export type DoctorDecisionJournalRow = {
 };
 
 export type DoctorStatus = {
+  trading_mode?: "doctor" | "retardio" | string;
   user_id?: string | null;
   api_target?: string | null;
   enabled: boolean;
@@ -75,6 +76,7 @@ export type DoctorStatus = {
   wallet: {
     address: string;
     balance_sol: number;
+    balance_stale?: boolean;
     separate_wallet_enforced: boolean;
     private_key_configured?: boolean;
     connection_status?: "connected" | "disconnected" | string;
@@ -120,6 +122,15 @@ export type DoctorStatus = {
     estimated_fee_sol?: number;
   }>;
   trade_controls?: {
+    trading_mode?: "doctor" | "retardio" | string;
+    retardio?: {
+      enabled?: boolean;
+      score_threshold?: number;
+      max_trades_per_hour?: number;
+      min_hold_seconds?: number;
+      take_profit_pct?: number;
+      stop_loss_pct?: number;
+    };
     max_trades_per_day: number;
     trades_today: number;
     min_buy_amount_sol: number;
@@ -270,6 +281,7 @@ export function useDoctorConfig() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: {
+      trading_mode?: "doctor" | "retardio";
       scan_interval_seconds?: number;
       kill_switch?: boolean;
       buy_amount_sol?: number;

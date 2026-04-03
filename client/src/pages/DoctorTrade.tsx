@@ -133,6 +133,7 @@ export default function DoctorTrade() {
   const directBuyMutation = useDoctorDirectBuy();
   const directSellMutation = useDoctorDirectSell();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [tradingModeInput, setTradingModeInput] = useState<"doctor" | "retardio">("doctor");
   const [doctorTab, setDoctorTab] = useState<"trading" | "engine" | "pnl">("trading");
   const [intervalInput, setIntervalInput] = useState("10");
   const [buyAmountInput, setBuyAmountInput] = useState("0.1");
@@ -205,6 +206,8 @@ export default function DoctorTrade() {
   const [autoBuyHandled, setAutoBuyHandled] = useState(false);
 
   const hydrateSettingsInputs = (controls: Record<string, any>) => {
+    const serverMode = String((viewData as any)?.trading_mode || controls.trading_mode || "doctor").toLowerCase();
+    setTradingModeInput(serverMode === "retardio" ? "retardio" : "doctor");
     setIntervalInput(String(controls.scan_interval_seconds ?? 10));
     setBuyAmountInput(String(controls.buy_amount_sol ?? 0.1));
     setMaxTradesInput(String(controls.max_trades_per_day ?? 12));
@@ -498,6 +501,8 @@ export default function DoctorTrade() {
     };
   }, [viewData?.last_run_at, viewData?.scan_interval_seconds]);
   const walletSolBalance = Number(viewData?.wallet?.balance_sol || 0);
+  const walletBalanceStale = Boolean((viewData?.wallet as any)?.balance_stale);
+  const walletSolLabel = walletConnected && walletBalanceStale ? "Syncing..." : fmtSol(walletSolBalance);
   const walletPrivateKeyConfigured = Boolean(viewData?.wallet?.private_key_configured);
   const doctorSavingInProgress = Boolean(
     controlMutation.isPending
@@ -625,6 +630,7 @@ export default function DoctorTrade() {
       {
         scan_interval_seconds: scanIntervalSeconds,
         buy_amount_sol: buyAmountSol,
+        trading_mode: tradingModeInput,
         max_trades_per_day: maxTradesPerDay,
         take_profit_multiplier: takeProfitMultiplier,
         min_profit_pct: minProfitPct,
@@ -674,6 +680,7 @@ export default function DoctorTrade() {
     configMutation.mutate(
       {
         buy_amount_sol: buyAmountSol,
+        trading_mode: tradingModeInput,
         take_profit_multiplier: takeProfitMultiplier,
         stop_loss_pct: stopLossPct,
       },
@@ -1059,7 +1066,7 @@ export default function DoctorTrade() {
             <span>{isLoading ? "Loading DoctorTrade..." : isFetching ? "Updating live data..." : "Live sync active"}</span>
             <span>Last sync: {lastSyncLabel}</span>
             <span>Last cycle: {doctorHeartbeat.secondsAgo !== null ? `${doctorHeartbeat.secondsAgo}s ago` : "-"}</span>
-            <span>Wallet SOL: {fmtSol(walletSolBalance)}</span>
+              <span>Wallet SOL: {walletSolLabel}</span>
             {doctorHeartbeat.stale && <Badge variant="outline" className="border-yellow-500/40 text-yellow-400">Cycle Delay</Badge>}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
@@ -1289,7 +1296,7 @@ export default function DoctorTrade() {
               </div>
               <div>
                 <p className="text-muted-foreground">SOL Balance</p>
-                <p className="font-medium">{fmtSol(walletSolBalance)}</p>
+                <p className="font-medium">{walletSolLabel}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Connection</p>
@@ -1339,6 +1346,38 @@ export default function DoctorTrade() {
 
           <div className="mb-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
             Core risk defaults stay protected. You can customize only Buy Amount, Take Profit, and Stop Loss.
+          </div>
+
+          <div className="mb-3 rounded-md border border-border/60 bg-background/50 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold">Trading Mode</p>
+              <Badge variant="outline" className={tradingModeInput === "retardio" ? "border-emerald-500/40 text-emerald-300" : "border-blue-500/40 text-blue-300"}>
+                {tradingModeInput === "retardio" ? "Retardio" : "Doctor"}
+              </Badge>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={tradingModeInput === "doctor" ? "default" : "outline"}
+                onClick={() => setTradingModeInput("doctor")}
+              >
+                Doctor Mode
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={tradingModeInput === "retardio" ? "default" : "outline"}
+                onClick={() => setTradingModeInput("retardio")}
+              >
+                Retardio Mode
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {tradingModeInput === "retardio"
+                ? "Retardio runs independently: selective entries, one active trade, max 2 entries per hour, and autonomous TP/SL management."
+                : "Doctor mode uses the existing fast DoctorTrade decision flow."}
+            </p>
           </div>
 
           {simpleMode && (
@@ -1680,7 +1719,8 @@ export default function DoctorTrade() {
                 <div className="flex justify-between"><span className="text-muted-foreground">Execution Mode</span><span>LIVE ONLY</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Live Capable</span><span>{viewData?.execution?.live_capable ? "Yes" : "No"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Network</span><span>Solana</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Wallet SOL</span><span>{fmtSol(walletSolBalance)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Trading Mode</span><span>{String(viewData?.trading_mode || "doctor").toUpperCase()}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Wallet SOL</span><span>{walletSolLabel}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Trades Today</span><span>{viewData?.trade_controls?.trades_today || 0}/{viewData?.trade_controls?.max_trades_per_day || 12}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Buy Amount</span><span>{(viewData?.trade_controls?.buy_amount_sol || 0.1).toFixed(3)} SOL</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Stop Loss</span><span>{(viewData?.trade_controls?.stop_loss_pct || 6).toFixed(1)}%</span></div>
