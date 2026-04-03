@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
+
+from sqlalchemy import select
 
 from app.config import get_settings
 from app.doctor.doctor_ai_meme_engine import DoctorAIMemeEngine
@@ -14,8 +17,19 @@ from app.doctor.mate import MATEngine
 from app.doctor.safety_systems import DoctorSafetySystems
 from app.doctor.doctor_solana_wallet import DoctorSolanaWallet
 from app.doctor.storage import doctor_db_session
-from app.models.models import DoctorEventLog, DoctorPerformanceSnapshot, DoctorTradeLog
+from app.models.models import DoctorEventLog, DoctorPerformanceSnapshot, DoctorTradeLog, User
 from app.utils.solana_rpc import solana_rpc_endpoints
+
+
+MIN_WATCH_TIME = 120
+MIN_LIQUIDITY = 5000.0
+MIN_VOLUME_5M = 10000.0
+MAX_AGE = 1800
+TRADE_COOLDOWN = 600
+MAX_ACTIVE_TRADES = 2
+MAX_HOLD_TIME = 1800
+TAKE_PROFIT = 0.25
+STOP_LOSS = 0.10
 
 
 class DoctorTradeController:
@@ -93,6 +107,221 @@ class DoctorTradeController:
         self.mate = MATEngine(symbol="SOL/USDT")
         self.mate_last_decision: dict[str, Any] = {}
         self.mate_enabled = True
+        self.watch_registry: dict[str, dict[str, Any]] = {}
+        self.user_last_trade_ts: float = 0.0
+
+    @staticmethod
+    def analyze_volume(volume_history: list[float]) -> str:
+        if len(volume_history) < 5:
+            return "INSUFFICIENT_DATA"
+
+        increasing = all(x < y for x, y in zip(volume_history, volume_history[1:]))
+        baseline = sum(volume_history[:-1]) / max(len(volume_history[:-1]), 1)
+        spike = volume_history[-1] > (baseline * 1.5)
+
+        if increasing:
+            return "UPTREND"
+        if spike:
+            return "SPIKE"
+        return "WEAK"
+
+    @staticmethod
+    def _price_regime(price_history: list[float]) -> str:
+        if len(price_history) < 5:
+            return "UNKNOWN"
+        window = price_history[-5:]
+        start = float(window[0] or 0.0)
+        end = float(window[-1] or 0.0)
+        if start <= 0:
+            return "UNKNOWN"
+        change = (end - start) / start
+        if change >= 0.015:
+            return "UPTREND"
+        if change <= -0.02:
+            return "DUMP"
+        return "SIDEWAYS"
+
+    @staticmethod
+    def _liquidity_is_stable(liquidity_history: list[float]) -> bool:
+        if len(liquidity_history) < 5:
+            return False
+        window = [max(0.0, float(v or 0.0)) for v in liquidity_history[-6:]]
+        avg = sum(window) / max(len(window), 1)
+        if avg <= 0:
+            return False
+        band = (max(window) - min(window)) / avg
+        return band <= 0.2
+
+    @staticmethod
+    def _just_pumped_1m(price_history: list[float]) -> bool:
+        if len(price_history) < 3:
+            return False
+        one_min_window = price_history[-3:]
+        low = min(one_min_window)
+        high = max(one_min_window)
+        if low <= 0:
+            return False
+        return ((high - low) / low) > 0.2
+
+    def _passes_filters(self, token: dict[str, Any]) -> tuple[bool, str | None]:
+        liquidity = float(token.get("liquidity") or 0.0)
+        if liquidity < MIN_LIQUIDITY:
+            return False, "below_min_liquidity"
+
+        volume_5m = float(token.get("volume_5m") or 0.0)
+        if volume_5m < MIN_VOLUME_5M:
+            return False, "below_min_volume_5m"
+
+        age_seconds = float(token.get("age_minutes") or 0.0) * 60.0
+        if age_seconds > MAX_AGE:
+            return False, "token_too_old"
+
+        return True, None
+
+    def _watch_token(self, token: dict[str, Any]) -> dict[str, Any]:
+        now_ts = time.time()
+        address = str(token.get("address") or "").strip().lower()
+        if not address:
+            return {"ready": False, "reason": "missing_token_address"}
+
+        for key, row in list(self.watch_registry.items()):
+            if (now_ts - float(row.get("last_updated_ts") or 0.0)) > 900:
+                self.watch_registry.pop(key, None)
+
+        row = self.watch_registry.get(address)
+        if row is None:
+            row = {
+                "started_at": now_ts,
+                "volume_history": [],
+                "price_history": [],
+                "liquidity_history": [],
+                "buy_sell_history": [],
+                "last_updated_ts": now_ts,
+            }
+            self.watch_registry[address] = row
+
+        volume = float(token.get("volume_5m") or 0.0)
+        price = float(token.get("price_usd") or 0.0)
+        liquidity = float(token.get("liquidity") or 0.0)
+        buy_sell_ratio = float(token.get("buy_sell_ratio") or 0.0)
+
+        row["volume_history"].append(volume)
+        row["price_history"].append(price)
+        row["liquidity_history"].append(liquidity)
+        row["buy_sell_history"].append(buy_sell_ratio)
+        row["volume_history"] = row["volume_history"][-12:]
+        row["price_history"] = row["price_history"][-12:]
+        row["liquidity_history"] = row["liquidity_history"][-12:]
+        row["buy_sell_history"] = row["buy_sell_history"][-12:]
+        row["last_updated_ts"] = now_ts
+
+        elapsed = now_ts - float(row.get("started_at") or now_ts)
+        volume_signal = self.analyze_volume(list(row.get("volume_history") or []))
+        price_regime = self._price_regime(list(row.get("price_history") or []))
+        liquidity_stable = self._liquidity_is_stable(list(row.get("liquidity_history") or []))
+        pressure = float((row.get("buy_sell_history") or [0.0])[-1] or 0.0)
+
+        if elapsed < MIN_WATCH_TIME:
+            return {
+                "ready": False,
+                "reason": "watch_in_progress",
+                "elapsed_seconds": round(elapsed, 2),
+                "watch": {
+                    "volume_signal": volume_signal,
+                    "price_movement": price_regime,
+                    "liquidity_stable": liquidity_stable,
+                    "buy_sell_pressure": pressure,
+                },
+            }
+
+        return {
+            "ready": True,
+            "elapsed_seconds": round(elapsed, 2),
+            "watch": {
+                "volume_signal": volume_signal,
+                "price_movement": price_regime,
+                "liquidity_stable": liquidity_stable,
+                "buy_sell_pressure": pressure,
+                "volume_history": list(row.get("volume_history") or []),
+                "price_history": list(row.get("price_history") or []),
+                "liquidity_history": list(row.get("liquidity_history") or []),
+                "buy_sell_history": list(row.get("buy_sell_history") or []),
+            },
+        }
+
+    def _should_enter(
+        self,
+        *,
+        price_data: list[float],
+        volume_data: list[float],
+        liquidity_data: list[float],
+        buy_sell_data: list[float],
+    ) -> tuple[bool, str, str]:
+        if len(price_data) < 5 or len(volume_data) < 5:
+            return False, "insufficient_watch_data", "INSUFFICIENT_DATA"
+
+        if self._just_pumped_1m(price_data):
+            return False, "just_pumped_over_20pct_last_minute", self.analyze_volume(volume_data)
+
+        volume_signal = self.analyze_volume(volume_data)
+        if volume_signal not in {"UPTREND", "SPIKE"}:
+            return False, "volume_not_strong", volume_signal
+
+        if not self._liquidity_is_stable(liquidity_data):
+            return False, "liquidity_unstable", volume_signal
+
+        current_price = float(price_data[-1] or 0.0)
+        recent_peak = max(price_data[-5:])
+        if current_price >= recent_peak:
+            return False, "no_pullback_entry", volume_signal
+
+        latest_pressure = float((buy_sell_data[-1] if buy_sell_data else 0.0) or 0.0)
+        if latest_pressure <= 1.0:
+            return False, "buy_pressure_not_dominant", volume_signal
+
+        return True, "entry_conditions_met", volume_signal
+
+    def _user_can_trade(self) -> tuple[bool, str | None]:
+        now_ts = time.time()
+        if self.user_last_trade_ts > 0 and (now_ts - self.user_last_trade_ts) < TRADE_COOLDOWN:
+            return False, "trade_cooldown_active"
+        if len(self.positions) >= MAX_ACTIVE_TRADES:
+            return False, "max_active_trades_reached"
+        return True, None
+
+    @staticmethod
+    def _trade_metrics_from_row(row: dict[str, Any]) -> tuple[int, float, bool, bool]:
+        action = str(row.get("action") or "").upper()
+        status = str(row.get("status") or "").lower()
+        if action not in {"SELL", "SELL_PARTIAL"} or status != "executed":
+            return 0, 0.0, False, False
+        pnl = float(row.get("pnl_usd") or 0.0)
+        return 1, pnl, pnl > 0, pnl <= 0
+
+    async def _update_user_pnl(self, row: dict[str, Any]) -> None:
+        if not self.owner_user_id:
+            return
+
+        trade_count, pnl_usd, is_win, is_loss = self._trade_metrics_from_row(row)
+        if trade_count <= 0:
+            return
+
+        async with doctor_db_session() as db:
+            result = await db.execute(select(User).where(User.id == self.owner_user_id))
+            user = result.scalars().first()
+            if user is None:
+                return
+
+            prefs = dict(user.alert_preferences or {})
+            stats = dict(prefs.get("doctor_user_stats") or {})
+            stats["wallet"] = str(self.wallet.public_address or stats.get("wallet") or "")
+            stats["total_pnl"] = float(stats.get("total_pnl") or 0.0) + float(pnl_usd)
+            stats["total_trades"] = int(stats.get("total_trades") or 0) + int(trade_count)
+            stats["wins"] = int(stats.get("wins") or 0) + (1 if is_win else 0)
+            stats["losses"] = int(stats.get("losses") or 0) + (1 if is_loss else 0)
+            stats["last_updated_at"] = datetime.utcnow().isoformat()
+            prefs["doctor_user_stats"] = stats
+            user.alert_preferences = prefs
 
     @staticmethod
     def _token_to_mate_feed(token: dict[str, Any]) -> dict[str, float]:
@@ -423,61 +652,14 @@ class DoctorTradeController:
                 except Exception:
                     held_minutes = 0.0
 
-            tp1_hit = pnl_pct >= 25.0 and not bool(position.get("tp1_taken", False))
-            tp2_hit = pnl_pct >= 50.0 and not bool(position.get("tp2_taken", False))
-            if tp1_hit or tp2_hit:
-                partial_release = 20.0 if tp1_hit else 30.0
-                reason = "partial_tp_25" if tp1_hit else "partial_tp_50"
-                position["tp1_taken"] = bool(position.get("tp1_taken", False) or tp1_hit)
-                position["tp2_taken"] = bool(position.get("tp2_taken", False) or tp2_hit)
-                position["size_pct"] = max(0.05, float(position.get("size_pct") or 0.0) * (1.0 - (partial_release / 100.0)))
-                partial_row = {
-                    "token": position.get("symbol"),
-                    "address": address,
-                    "action": "SELL_PARTIAL",
-                    "status": "executed",
-                    "reason": reason,
-                    "confidence": int(position.get("confidence") or 0),
-                    "liquidity": float((token or {}).get("liquidity") or position.get("liquidity") or 0.0),
-                    "volume_5m": float((token or {}).get("volume_5m") or 0.0),
-                    "entry_price": entry_price,
-                    "current_price": current_price,
-                    "size_pct": float(position.get("size_pct") or 0.0),
-                    "strategy_mode": str(position.get("strategy_mode") or self.strategy_mode),
-                    "timestamp": datetime.utcnow().isoformat(),
-                }
-                self.trade_log.insert(0, partial_row)
-                self.trade_log = self.trade_log[:200]
-                await self._log_trade(partial_row)
-                self.risk.register_close(self.risk_state, pnl_usd=0.0, released_exposure_pct=partial_release)
-                exits.append(partial_row)
-
-            take_profit_hit = current_price >= (entry_price * max(1.1, float(self.take_profit_multiplier or 2.0)))
-            min_profit_hit = pnl_pct >= float(self.min_profit_pct or 0.0)
-            quick_profit_hit = bool(self.early_entry_exit_mode) and pnl_pct >= float(self.fast_take_profit_pct or 0.0)
-            stop_loss_hit = current_price <= (entry_price * (1.0 - (float(self.stop_loss_pct or 0.0) / 100.0)))
-            dynamic_trailing_pct = float(self.trailing_stop_pct or 0.0)
-            if pnl_pct >= float(self.strong_move_threshold_pct or 40.0):
-                dynamic_trailing_pct = max(2.0, dynamic_trailing_pct * 0.5)
-            trailing_stop_hit = current_price <= (peak_price * (1.0 - (dynamic_trailing_pct / 100.0))) and pnl_pct > 0
-            if bool(self.early_entry_exit_mode):
-                time_stop_hit = held_minutes >= float(self.max_hold_minutes or 0.0)
-            else:
-                time_stop_hit = held_minutes >= float(self.max_hold_minutes or 0.0) and pnl_pct < float(self.min_momentum_profit_pct or 0.0)
-
+            elapsed_seconds = held_minutes * 60.0
             exit_reason = None
-            if quick_profit_hit:
-                exit_reason = "quick_profit_exit"
-            elif take_profit_hit:
-                exit_reason = "take_profit_2x"
-            elif min_profit_hit:
-                exit_reason = "profit_secured"
-            elif trailing_stop_hit:
-                exit_reason = "trailing_stop"
-            elif time_stop_hit:
-                exit_reason = "time_stop_no_momentum"
-            elif stop_loss_hit:
-                exit_reason = "stop_loss"
+            if pnl_pct >= (TAKE_PROFIT * 100.0):
+                exit_reason = "TP HIT"
+            elif pnl_pct <= -(STOP_LOSS * 100.0):
+                exit_reason = "SL HIT"
+            elif elapsed_seconds >= MAX_HOLD_TIME:
+                exit_reason = "TIME EXIT"
 
             if not exit_reason:
                 remaining.append(position)
@@ -506,6 +688,7 @@ class DoctorTradeController:
             self.trade_log.insert(0, close_row)
             self.trade_log = self.trade_log[:200]
             await self._log_trade(close_row)
+            await self._update_user_pnl(close_row)
             self.risk.register_close(self.risk_state, pnl_usd=float(close_row.get("pnl_usd") or 0.0), released_exposure_pct=float(position.get("size_pct") or 0.0))
             self._register_trade_count()
 
@@ -715,6 +898,10 @@ class DoctorTradeController:
         if self.kill_switch or bool(self.risk_state.paused):
             return {"executed": False, "reason": "doctortrade_paused"}
 
+        can_trade, trade_block_reason = self._user_can_trade()
+        if not can_trade:
+            return {"executed": False, "reason": str(trade_block_reason or "trade_guard_blocked")}
+
         configured_buy_sol = max(float(self.min_buy_amount_sol or 0.1), float(self.buy_amount_sol or 0.1))
         self.buy_amount_sol = configured_buy_sol
 
@@ -748,6 +935,24 @@ class DoctorTradeController:
         quality_ok, quality_reason = self._quality_gate(token)
         if not quality_ok:
             return {"executed": False, "reason": str(quality_reason or "quality_gate_blocked")}
+
+        passes_filters, filter_reason = self._passes_filters(token)
+        if not passes_filters:
+            return {"executed": False, "reason": str(filter_reason or "pre_filter_blocked")}
+
+        watch = self._watch_token(token)
+        if not bool(watch.get("ready")):
+            return {"executed": False, "reason": str(watch.get("reason") or "watch_phase_pending")}
+
+        watch_meta = dict(watch.get("watch") or {})
+        should_enter, enter_reason, _volume_signal = self._should_enter(
+            price_data=list(watch_meta.get("price_history") or []),
+            volume_data=list(watch_meta.get("volume_history") or []),
+            liquidity_data=list(watch_meta.get("liquidity_history") or []),
+            buy_sell_data=list(watch_meta.get("buy_sell_history") or []),
+        )
+        if not should_enter:
+            return {"executed": False, "reason": enter_reason}
 
         signal = self._mate_signal_for_token(token)
         signal["action"] = "BUY"
@@ -802,6 +1007,7 @@ class DoctorTradeController:
         self.positions = self.positions[: int(getattr(self.risk, "MAX_OPEN_POSITIONS", 3) or 3)]
         self.risk.register_open(self.risk_state, float(position["size_pct"]))
         self._register_trade_count()
+        self.user_last_trade_ts = time.time()
 
         trade_row = {
             "token": token.get("symbol"),
@@ -895,6 +1101,7 @@ class DoctorTradeController:
         self.trade_log.insert(0, row)
         self.trade_log = self.trade_log[:200]
         await self._log_trade(row)
+        await self._update_user_pnl(row)
 
         return {
             "executed": True,
@@ -1061,6 +1268,89 @@ class DoctorTradeController:
                 })
                 continue
 
+            can_trade, trade_block_reason = self._user_can_trade()
+            if not can_trade:
+                blocked = {
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "action": "BUY",
+                    "status": "blocked",
+                    "reason": str(trade_block_reason or "trade_guard_blocked"),
+                }
+                actions.append(blocked)
+                self._register_journal({
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "decision": "BLOCK",
+                    "reason": blocked["reason"],
+                    "confidence": int(signal.get("confidence") or 0),
+                })
+                continue
+
+            passes_filters, filter_reason = self._passes_filters(token)
+            if not passes_filters:
+                blocked_row = {
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "action": "BUY",
+                    "status": "blocked",
+                    "reason": filter_reason,
+                    "strategy_mode": self.strategy_mode,
+                }
+                actions.append(blocked_row)
+                self._register_journal({
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "decision": "BLOCK",
+                    "reason": filter_reason,
+                })
+                continue
+
+            watch = self._watch_token(token)
+            if not bool(watch.get("ready")):
+                blocked_row = {
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "action": "BUY",
+                    "status": "blocked",
+                    "reason": str(watch.get("reason") or "watch_phase_pending"),
+                    "strategy_mode": self.strategy_mode,
+                }
+                actions.append(blocked_row)
+                self._register_journal({
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "decision": "WATCH",
+                    "reason": blocked_row["reason"],
+                })
+                continue
+
+            watch_meta = dict(watch.get("watch") or {})
+            should_enter, enter_reason, volume_signal = self._should_enter(
+                price_data=list(watch_meta.get("price_history") or []),
+                volume_data=list(watch_meta.get("volume_history") or []),
+                liquidity_data=list(watch_meta.get("liquidity_history") or []),
+                buy_sell_data=list(watch_meta.get("buy_sell_history") or []),
+            )
+            if not should_enter:
+                blocked_row = {
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "action": "BUY",
+                    "status": "blocked",
+                    "reason": enter_reason,
+                    "strategy_mode": self.strategy_mode,
+                }
+                actions.append(blocked_row)
+                self._register_journal({
+                    "token": token.get("symbol"),
+                    "address": token.get("address"),
+                    "decision": "BLOCK",
+                    "reason": enter_reason,
+                    "volume_signal": volume_signal,
+                })
+                continue
+
             weighted_size_pct = self._weighted_position_size_pct(
                 token,
                 signal,
@@ -1156,6 +1446,7 @@ class DoctorTradeController:
             self.positions = self.positions[: int(getattr(self.risk, "MAX_OPEN_POSITIONS", 3) or 3)]
             self.risk.register_open(self.risk_state, float(position["size_pct"]))
             self._register_trade_count()
+            self.user_last_trade_ts = time.time()
 
             trade_row = {
                 "token": token.get("symbol"),
@@ -1310,6 +1601,15 @@ class DoctorTradeController:
             "trade_controls": {
                 "max_trades_per_day": int(self.max_trades_per_day),
                 "trades_today": int(self._trades_today),
+                "trade_cooldown_seconds": int(TRADE_COOLDOWN),
+                "max_active_trades": int(MAX_ACTIVE_TRADES),
+                "min_watch_time_seconds": int(MIN_WATCH_TIME),
+                "max_hold_seconds": int(MAX_HOLD_TIME),
+                "take_profit_pct_hard": float(TAKE_PROFIT * 100.0),
+                "stop_loss_pct_hard": float(STOP_LOSS * 100.0),
+                "token_filter_min_liquidity": float(MIN_LIQUIDITY),
+                "token_filter_min_volume_5m": float(MIN_VOLUME_5M),
+                "token_filter_max_age_seconds": int(MAX_AGE),
                 "sniper_mode_only": bool(self.sniper_mode_only),
                 "min_buy_amount_sol": float(self.min_buy_amount_sol),
                 "buy_amount_sol": float(self.buy_amount_sol),
