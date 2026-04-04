@@ -2112,14 +2112,9 @@ export async function registerRoutes(
   };
 
   const getDoctorEffectiveControlNumber = (key: string, fallbackValue: number) => {
-    if (isDoctorUnifiedSimpleMode()) {
-      const userTunableKeys = new Set(["buy_amount_sol", "take_profit_multiplier", "stop_loss_pct"]);
-      if (userTunableKeys.has(key)) {
-        const tunableRuntimeValue = Number((doctorRuntime.controls as Record<string, any>)[key]);
-        if (Number.isFinite(tunableRuntimeValue)) {
-          return tunableRuntimeValue;
-        }
-      }
+    const runtimeValue = Number((doctorRuntime.controls as Record<string, any>)[key]);
+    if (Number.isFinite(runtimeValue)) {
+      return runtimeValue;
     }
 
     const preset = getDoctorActiveSnipePreset();
@@ -2129,16 +2124,11 @@ export async function registerRoutes(
         return profileValue;
       }
     }
-
-    const runtimeValue = Number((doctorRuntime.controls as Record<string, any>)[key]);
-    if (Number.isFinite(runtimeValue)) {
-      return runtimeValue;
-    }
     return fallbackValue;
   };
 
   const getDoctorEffectiveMaxOpenPositions = () => {
-    return 1;
+    return Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("max_open_positions", Number(doctorRuntime.controls.max_open_positions || 3))));
   };
 
   const shouldForceDoctorCustomPreset = (
@@ -2459,19 +2449,21 @@ export async function registerRoutes(
     doctorRuntime.controls.max_token_age_seconds = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
     (doctorRuntime.controls as any).snipe_preset = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
     if (isDoctorSpeedModePreset()) {
-      (doctorRuntime.controls as any).buy_mode = "fixed";
-      doctorRuntime.controls.buy_amount_sol = 0.1;
-      doctorRuntime.controls.min_buy_amount_sol = 0.1;
-      (doctorRuntime.controls as any).ai_scoring_enabled = false;
-      (doctorRuntime.controls as any).ai_trade_filter = false;
-      (doctorRuntime.controls as any).ai_prediction_check = false;
+      const runtimeBuyAmount = Number(doctorRuntime.controls.buy_amount_sol || 0);
+      if (!Number.isFinite(runtimeBuyAmount) || runtimeBuyAmount <= 0) {
+        doctorRuntime.controls.buy_amount_sol = 0.1;
+        doctorRuntime.controls.min_buy_amount_sol = 0.1;
+      }
     }
     if (isDoctorMomentumTraderPreset()) {
-      doctorRuntime.controls.stop_loss_pct = Math.max(2, Number(doctorRuntime.controls.stop_loss_pct || 8));
-      (doctorRuntime.controls as any).minimum_ai_score = Math.max(1, Number((doctorRuntime.controls as any).minimum_ai_score || 65));
-      (doctorRuntime.controls as any).ai_scoring_enabled = typeof (doctorRuntime.controls as any).ai_scoring_enabled === "boolean"
-        ? Boolean((doctorRuntime.controls as any).ai_scoring_enabled)
-        : true;
+      const runtimeStopLossPct = Number(doctorRuntime.controls.stop_loss_pct || 0);
+      if (!Number.isFinite(runtimeStopLossPct) || runtimeStopLossPct <= 0) {
+        doctorRuntime.controls.stop_loss_pct = 8;
+      }
+      const runtimeMinScore = Number((doctorRuntime.controls as any).minimum_ai_score || 0);
+      if (!Number.isFinite(runtimeMinScore) || runtimeMinScore <= 0) {
+        (doctorRuntime.controls as any).minimum_ai_score = 65;
+      }
     }
     if (isDoctorDexTurboEnabled() && !isDoctorSpeedModePreset() && doctorRuntime.controls.max_token_age_seconds < 120) {
       doctorRuntime.controls.max_token_age_seconds = 120;
@@ -8632,19 +8624,21 @@ export async function registerRoutes(
     doctorRuntime.controls.min_buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     (doctorRuntime.controls as any).snipe_preset = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
     if (isDoctorSpeedModePreset()) {
-      (doctorRuntime.controls as any).buy_mode = "fixed";
-      doctorRuntime.controls.buy_amount_sol = 0.1;
-      doctorRuntime.controls.min_buy_amount_sol = 0.1;
-      (doctorRuntime.controls as any).ai_scoring_enabled = false;
-      (doctorRuntime.controls as any).ai_trade_filter = false;
-      (doctorRuntime.controls as any).ai_prediction_check = false;
+      const runtimeBuyAmount = Number(doctorRuntime.controls.buy_amount_sol || 0);
+      if (!Number.isFinite(runtimeBuyAmount) || runtimeBuyAmount <= 0) {
+        doctorRuntime.controls.buy_amount_sol = 0.1;
+        doctorRuntime.controls.min_buy_amount_sol = 0.1;
+      }
     }
     if (isDoctorMomentumTraderPreset()) {
-      doctorRuntime.controls.stop_loss_pct = Math.max(2, Number(doctorRuntime.controls.stop_loss_pct || 8));
-      (doctorRuntime.controls as any).minimum_ai_score = Math.max(1, Number((doctorRuntime.controls as any).minimum_ai_score || 65));
-      (doctorRuntime.controls as any).ai_scoring_enabled = typeof (doctorRuntime.controls as any).ai_scoring_enabled === "boolean"
-        ? Boolean((doctorRuntime.controls as any).ai_scoring_enabled)
-        : true;
+      const runtimeStopLossPct = Number(doctorRuntime.controls.stop_loss_pct || 0);
+      if (!Number.isFinite(runtimeStopLossPct) || runtimeStopLossPct <= 0) {
+        doctorRuntime.controls.stop_loss_pct = 8;
+      }
+      const runtimeMinScore = Number((doctorRuntime.controls as any).minimum_ai_score || 0);
+      if (!Number.isFinite(runtimeMinScore) || runtimeMinScore <= 0) {
+        (doctorRuntime.controls as any).minimum_ai_score = 65;
+      }
     }
     doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
     doctorRuntime.controls.min_token_age_minutes = Math.max(DOCTOR_MIN_WATCH_SECONDS / 60, Number(doctorRuntime.controls.min_token_age_minutes || 0));
