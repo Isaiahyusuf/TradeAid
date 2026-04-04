@@ -269,7 +269,7 @@ export default function WalletPage() {
   const solanaAddress = String(addressesByChain.solana || "").trim();
   const walletConnected = Boolean(wallet?.has_wallet && solanaAddress);
   const walletExists = Boolean(wallet?.has_wallet || solanaAddress);
-  const walletStatusSettling = !walletStatusFetched || !tradingStatusFetched || walletStatusQuery.isFetching || tradingStatusQuery.isFetching;
+  const walletStatusSettling = walletInitialLoading || !walletStatusFetched || !tradingStatusFetched || walletStatusQuery.isFetching || tradingStatusQuery.isFetching;
   const walletConnectedDisplayLabel = walletStatusReady
     ? (walletConnected ? "Private Key Connected" : "Private Key Not Connected")
     : "Checking Key...";
@@ -281,9 +281,11 @@ export default function WalletPage() {
   const walletBackupDisplayLabel = walletStatusReady
     ? (wallet?.backup_confirmed ? "Backup Confirmed" : "Backup Pending")
     : "Checking Backup...";
-  const shouldDeferPortfolioDisplay = walletPortfolioQuery.isFetching
+  const shouldDeferPortfolioDisplay = walletInitialLoading || (
+    walletPortfolioQuery.isFetching
     && Number(portfolio?.total_usd || 0) <= 0
-    && walletExists;
+    && walletExists
+  );
   const portfolioTotalDisplay = portfolioReady && !shouldDeferPortfolioDisplay
     ? `$${estimatedUsdBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : "...";
