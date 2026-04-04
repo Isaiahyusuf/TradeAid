@@ -223,6 +223,10 @@ export default function WalletPage() {
     walletPortfolioQuery.isLoading ||
     doctorStatusQuery.isLoading,
   );
+  const walletStatusFetched = Boolean((walletStatusQuery as any).isFetched) || Boolean(walletStatusQuery.data?.wallet);
+  const tradingStatusFetched = Boolean((tradingStatusQuery as any).isFetched) || Boolean(tradingStatusQuery.data?.trading);
+  const walletStatusReady = walletStatusFetched && tradingStatusFetched && Boolean(walletStatusQuery.data?.wallet);
+  const portfolioReady = Boolean((walletPortfolioQuery as any).isFetched) && Boolean(walletPortfolioQuery.data?.portfolio);
 
   const lastWalletSyncTs = Math.max(
     Number(tradingStatusQuery.dataUpdatedAt || 0),
@@ -265,6 +269,25 @@ export default function WalletPage() {
   const solanaAddress = String(addressesByChain.solana || "").trim();
   const walletConnected = Boolean(wallet?.has_wallet && solanaAddress);
   const walletExists = Boolean(wallet?.has_wallet || solanaAddress);
+  const walletStatusSettling = !walletStatusFetched || !tradingStatusFetched || walletStatusQuery.isFetching || tradingStatusQuery.isFetching;
+  const walletConnectedDisplayLabel = walletStatusReady
+    ? (walletConnected ? "Private Key Connected" : "Private Key Not Connected")
+    : "Checking Key...";
+  const walletExistsDisplayLabel = walletStatusSettling
+    ? "Checking Wallet..."
+    : walletStatusReady
+      ? (walletExists ? "Wallet Active" : "Wallet Not Created")
+      : "Wallet Status Pending";
+  const walletBackupDisplayLabel = walletStatusReady
+    ? (wallet?.backup_confirmed ? "Backup Confirmed" : "Backup Pending")
+    : "Checking Backup...";
+  const shouldDeferPortfolioDisplay = walletPortfolioQuery.isFetching
+    && Number(portfolio?.total_usd || 0) <= 0
+    && walletExists;
+  const portfolioTotalDisplay = portfolioReady && !shouldDeferPortfolioDisplay
+    ? `$${estimatedUsdBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : "...";
+  const portfolioUpdatedDisplay = portfolioReady && !shouldDeferPortfolioDisplay ? portfolioUpdatedAt : "Syncing...";
   const savingInProgress = Boolean(
     createWallet.isPending
     || importWallet.isPending
@@ -647,8 +670,8 @@ export default function WalletPage() {
             <Badge variant="outline" className="solana-badge">Master Recovery Phrase</Badge>
             <Badge variant="outline">Solana Account</Badge>
             <Badge variant="outline">Private Key Export</Badge>
-            <Badge variant={walletConnected ? "default" : "outline"} className={walletConnected ? "border-green-500/40 bg-green-500/15 text-green-300" : ""}>
-              {walletConnected ? "Private Key Connected" : "Private Key Not Connected"}
+            <Badge variant={walletStatusReady ? (walletConnected ? "default" : "outline") : "outline"} className={walletStatusReady && walletConnected ? "border-green-500/40 bg-green-500/15 text-green-300" : ""}>
+              {walletConnectedDisplayLabel}
             </Badge>
             <Badge variant="outline" className={walletSyncing ? "border-yellow-500/40 text-yellow-400" : "border-green-500/40 text-green-400"}>
               {walletInitialLoading ? "Loading..." : walletSyncing ? "Syncing..." : "Live Sync"}
@@ -665,17 +688,19 @@ export default function WalletPage() {
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Total Portfolio Balance</p>
-                <p className="text-4xl font-bold mt-1">${estimatedUsdBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <p className="text-4xl font-bold mt-1">{portfolioTotalDisplay}</p>
                 <p className="text-xs text-muted-foreground mt-1">Synced chains: {activeChainsCount}/{enabledChains.length}</p>
-                <p className="text-xs text-muted-foreground mt-1">Portfolio updated: {portfolioUpdatedAt}</p>
-                <p className="text-xs text-muted-foreground mt-1">DoctorTrade wallet: {walletConnected ? `Connected (${shortAddress(solanaAddress)})` : "Not connected"}</p>
+                <p className="text-xs text-muted-foreground mt-1">Portfolio updated: {portfolioUpdatedDisplay}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  DoctorTrade wallet: {walletStatusReady ? (walletConnected ? `Connected (${shortAddress(solanaAddress)})` : "Not connected") : "Checking wallet..."}
+                </p>
                 {usingDoctorWalletTokenFallback && (
                   <p className="text-xs text-amber-400 mt-1">Using DoctorTrade token snapshot while wallet indexing catches up.</p>
                 )}
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant={wallet?.has_wallet ? "default" : "outline"}>{wallet?.has_wallet ? "Wallet Active" : "Wallet Not Created"}</Badge>
-                <Badge variant={wallet?.backup_confirmed ? "default" : "outline"}>{wallet?.backup_confirmed ? "Backup Confirmed" : "Backup Pending"}</Badge>
+                <Badge variant={walletStatusReady ? (walletExists ? "default" : "outline") : "outline"}>{walletExistsDisplayLabel}</Badge>
+                <Badge variant={walletStatusReady ? (wallet?.backup_confirmed ? "default" : "outline") : "outline"}>{walletBackupDisplayLabel}</Badge>
               </div>
             </div>
 

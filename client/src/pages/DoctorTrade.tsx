@@ -442,6 +442,9 @@ export default function DoctorTrade() {
     (viewData?.wallet as Record<string, any> | undefined) || null,
     (viewData?.trade_controls as Record<string, any> | undefined) || null,
   );
+  const activeTradingMode = String(viewData?.trading_mode || tradingModeInput || "doctor").trim().toLowerCase();
+  const isRetardioActive = activeTradingMode === "retardio";
+  const isRetardioMode = tradingModeInput === "retardio";
   const autoSnipeReady = Boolean(
     viewData?.enabled &&
     walletConnected &&
@@ -470,7 +473,7 @@ export default function DoctorTrade() {
       ? "Auto-rotate off"
       : `Auto rotate after ${autoAgentTimeoutMinutes}m no-snipe`;
     const autoAgentLastRotateLabel = viewData?.auto_agent?.last_rotate_at
-      ? `Last rotate: ${fmtTs(String(viewData?.auto_agent?.last_rotate_at || ""))} (${String(viewData?.auto_agent?.last_from_preset || "-")} -> ${String(viewData?.auto_agent?.last_to_preset || "-")})`
+      ? `Last rotate: ${fmtTs(String(viewData?.auto_agent?.last_rotate_at || ""))}`
       : "Last rotate: -";
   const autoTradeBlockLabel = useMemo(() => {
     const reason = String(viewData?.auto_trade?.block_reason || "").trim().toLowerCase();
@@ -693,6 +696,30 @@ export default function DoctorTrade() {
           toast({
             title: "Save failed",
             description: error instanceof Error ? error.message : "Unable to save trading controls",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
+
+  const saveTradingModeOnly = () => {
+    configMutation.mutate(
+      { trading_mode: tradingModeInput },
+      {
+        onSuccess: () => {
+          toast({
+            title: "Trading mode saved",
+            description: tradingModeInput === "retardio"
+              ? "Retardio mode is now active."
+              : "Doctor mode is now active.",
+          });
+          void refetch();
+        },
+        onError: (error) => {
+          toast({
+            title: "Save failed",
+            description: error instanceof Error ? error.message : "Unable to save trading mode",
             variant: "destructive",
           });
         },
@@ -1115,11 +1142,17 @@ export default function DoctorTrade() {
             </div>
           </div>
           <p className="mt-3 text-xs text-muted-foreground">Strategy control now comes from MATE orchestrator scoring, not preset profiles.</p>
-          <div className="mt-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-muted-foreground">
-            <p>{autoAgentStatusLabel}</p>
-            <p className="mt-1">Idle since last successful snipe: {autoAgentIdleMinutes.toFixed(1)}m</p>
-            <p className="mt-1">{autoAgentLastRotateLabel}</p>
-          </div>
+          {!isRetardioActive ? (
+            <div className="mt-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-muted-foreground">
+              <p>{autoAgentStatusLabel}</p>
+              <p className="mt-1">Idle since last successful snipe: {autoAgentIdleMinutes.toFixed(1)}m</p>
+              <p className="mt-1">{autoAgentLastRotateLabel}</p>
+            </div>
+          ) : (
+            <div className="mt-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-muted-foreground">
+              <p>Retardio mode is active. Strategy profile and preset rotation are managed internally.</p>
+            </div>
+          )}
         </Card>
 
         <Card className="rounded-2xl border-cyan-500/20 bg-slate-900/70 p-3 backdrop-blur-md">
@@ -1344,9 +1377,17 @@ export default function DoctorTrade() {
             )}
           </div>
 
-          <div className="mb-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
-            Core risk defaults stay protected. You can customize only Buy Amount, Take Profit, and Stop Loss.
-          </div>
+          {isRetardioMode && (
+            <div className="mb-3 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs text-muted-foreground">
+              Retardio is an independent agent. DoctorTrade risk presets and strategy controls are hidden in this mode.
+            </div>
+          )}
+
+          {!isRetardioMode && (
+            <div className="mb-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+              Core risk defaults stay protected. You can customize only Buy Amount, Take Profit, and Stop Loss.
+            </div>
+          )}
 
           <div className="mb-3 rounded-md border border-border/60 bg-background/50 p-3 space-y-2">
             <div className="flex items-center justify-between gap-2">
@@ -1380,7 +1421,7 @@ export default function DoctorTrade() {
             </p>
           </div>
 
-          {simpleMode && (
+          {!isRetardioMode && simpleMode && (
             <div className="rounded-md border border-border/60 bg-background/50 p-3 space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
                 <div>
@@ -1404,7 +1445,7 @@ export default function DoctorTrade() {
             </div>
           )}
 
-          {!simpleMode && <>
+          {!isRetardioMode && !simpleMode && <>
           <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 items-end">
             <div>
               <p className="text-xs text-muted-foreground mb-1">Scan Interval (sec)</p>
@@ -1552,13 +1593,19 @@ export default function DoctorTrade() {
               </Button>
             </div>
           </div>
-          <div className="mt-3 flex justify-end sticky bottom-0 bg-card/95 backdrop-blur py-2 border-t border-border/40">
+          <div className="mt-3 flex justify-end border-t border-border/40 pt-3">
             <Button
               variant="outline"
-              onClick={saveRiskRules}
+              onClick={
+                isRetardioMode
+                  ? saveTradingModeOnly
+                  : (simpleMode ? saveBasicTradingControls : saveRiskRules)
+              }
               disabled={configMutation.isPending}
             >
-              Save Settings
+              {isRetardioMode
+                ? "Save Trading Mode"
+                : (simpleMode ? "Save Trading Controls" : "Save Settings")}
             </Button>
           </div>
           </>}
@@ -1721,12 +1768,18 @@ export default function DoctorTrade() {
                 <div className="flex justify-between"><span className="text-muted-foreground">Network</span><span>Solana</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Trading Mode</span><span>{String(viewData?.trading_mode || "doctor").toUpperCase()}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Wallet SOL</span><span>{walletSolLabel}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Trades Today</span><span>{viewData?.trade_controls?.trades_today || 0}/{viewData?.trade_controls?.max_trades_per_day || 12}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Buy Amount</span><span>{(viewData?.trade_controls?.buy_amount_sol || 0.1).toFixed(3)} SOL</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Stop Loss</span><span>{(viewData?.trade_controls?.stop_loss_pct || 6).toFixed(1)}%</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Target</span><span>{(viewData?.trade_controls?.take_profit_multiplier || 2).toFixed(2)}x</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Max Slippage</span><span>{(viewData?.trade_controls?.max_slippage_pct || 0).toFixed(1)}%</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Daily Loss Limit</span><span>${(viewData?.trade_controls?.daily_loss_limit_usd || 0).toFixed(0)}</span></div>
+                {!isRetardioActive ? (
+                  <>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Trades Today</span><span>{viewData?.trade_controls?.trades_today || 0}/{viewData?.trade_controls?.max_trades_per_day || 12}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Buy Amount</span><span>{(viewData?.trade_controls?.buy_amount_sol || 0.1).toFixed(3)} SOL</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Stop Loss</span><span>{(viewData?.trade_controls?.stop_loss_pct || 6).toFixed(1)}%</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Target</span><span>{(viewData?.trade_controls?.take_profit_multiplier || 2).toFixed(2)}x</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Max Slippage</span><span>{(viewData?.trade_controls?.max_slippage_pct || 0).toFixed(1)}%</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Daily Loss Limit</span><span>${(viewData?.trade_controls?.daily_loss_limit_usd || 0).toFixed(0)}</span></div>
+                  </>
+                ) : (
+                  <div className="flex justify-between"><span className="text-muted-foreground">Retardio Profile</span><span>Managed Internally</span></div>
+                )}
               </div>
             </Card>
 
