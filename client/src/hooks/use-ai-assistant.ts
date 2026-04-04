@@ -90,6 +90,37 @@ export type AssistantWalletTransaction = {
   created_at?: string | null;
 };
 
+export type AssistantProfitJarStatus = {
+  enabled: boolean;
+  allocation_pct: number;
+  reserve_sol: number;
+  min_transfer_sol: number;
+  wallet_address?: string;
+  wallet_created: boolean;
+  total_swept_usd: number;
+  total_swept_sol: number;
+  pending_count: number;
+  failed_count: number;
+  ledger_count: number;
+};
+
+export type AssistantProfitJarLedgerRow = {
+  id: string;
+  type: "sweep" | "withdraw" | string;
+  status: "queued" | "submitted" | "confirmed" | "failed" | string;
+  source_trade_id?: string | null;
+  source_side?: "buy" | "sell" | string | null;
+  source_token_mint?: string | null;
+  source_realized_profit_usd?: number;
+  transfer_amount_sol?: number;
+  transfer_amount_usd?: number;
+  tx_hash?: string | null;
+  explorer_url?: string | null;
+  error_message?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type AssistantContextOverview = {
   window_days: number;
   summary: {
@@ -190,6 +221,34 @@ export function useAssistantWalletTransactions(limit: number = 25, enabled = tru
     enabled: hasToken && enabled,
     retry: 1,
     refetchInterval: hasToken && enabled ? 4_000 : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useAssistantProfitJarStatus(enabled = true) {
+  const { hasToken, user } = useAuth();
+  const userScope = String(user?.user_id || "anonymous").trim();
+  return useQuery({
+    queryKey: ["ai-profit-jar-status", userScope],
+    queryFn: () => apiGet<{ profit_jar: AssistantProfitJarStatus }>("/api/ai/profit-jar/status"),
+    enabled: hasToken && enabled,
+    retry: 1,
+    refetchInterval: hasToken && enabled ? 4_000 : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useAssistantProfitJarLedger(limit = 50, enabled = true) {
+  const { hasToken, user } = useAuth();
+  const userScope = String(user?.user_id || "anonymous").trim();
+  return useQuery({
+    queryKey: ["ai-profit-jar-ledger", userScope, limit],
+    queryFn: () => apiGet<{ ledger: AssistantProfitJarLedgerRow[]; count: number }>(`/api/ai/profit-jar/ledger?limit=${limit}`),
+    enabled: hasToken && enabled,
+    retry: 1,
+    refetchInterval: hasToken && enabled ? 5_000 : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
@@ -297,6 +356,48 @@ export function useTransferAssistantWallet() {
       queryClient.invalidateQueries({ queryKey: ["ai-wallet-portfolio"] });
       queryClient.invalidateQueries({ queryKey: ["ai-wallet-transactions"] });
       queryClient.invalidateQueries({ queryKey: ["ai-context-overview"] });
+    },
+  });
+}
+
+export function useCreateAssistantProfitJarWallet() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload?: { overwrite?: boolean }) =>
+      apiPost<{ profit_jar: AssistantProfitJarStatus }>("/api/ai/profit-jar/wallet/create", payload || {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-profit-jar-status"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-profit-jar-ledger"] });
+    },
+  });
+}
+
+export function useUpdateAssistantProfitJarSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      enabled: boolean;
+      allocation_pct: number;
+      reserve_sol: number;
+      min_transfer_sol: number;
+    }) => apiPost<{ profit_jar: AssistantProfitJarStatus }>("/api/ai/profit-jar/settings", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-profit-jar-status"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-profit-jar-ledger"] });
+    },
+  });
+}
+
+export function useWithdrawAssistantProfitJar() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { recipient_address: string; amount_sol: number }) =>
+      apiPost<{ withdraw: { tx_hash: string; explorer_url: string; amount_sol: number }; profit_jar: AssistantProfitJarStatus }>("/api/ai/profit-jar/withdraw", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-profit-jar-status"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-profit-jar-ledger"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-portfolio"] });
     },
   });
 }

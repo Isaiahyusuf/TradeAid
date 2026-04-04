@@ -9283,6 +9283,16 @@ export async function registerRoutes(
     max_trades_per_day: 12,
     max_daily_loss_usd: 300,
   };
+  const assistantDefaultProfitJar = {
+    enabled: false,
+    allocation_pct: 20,
+    reserve_sol: 0.12,
+    min_transfer_sol: 0.01,
+    wallet_address: "",
+    wallet_private_key: "",
+    ledger: [] as Array<Record<string, any>>,
+    positions_by_mint: {} as Record<string, { quantity: number; cost_usd: number }>,
+  };
 
   const assistantRuntime = {
     wallet: {
@@ -9309,6 +9319,9 @@ export async function registerRoutes(
       last_revoked_at: null as string | null,
     },
     transactions: [] as Array<Record<string, any>>,
+    profit_jar: {
+      ...assistantDefaultProfitJar,
+    },
   };
 
   const assistantStateKey = "assistant.runtime.v1";
@@ -9356,6 +9369,14 @@ export async function registerRoutes(
     assistantRuntime.trading.last_revoked_at = null;
 
     assistantRuntime.transactions = [];
+    assistantRuntime.profit_jar.enabled = assistantDefaultProfitJar.enabled;
+    assistantRuntime.profit_jar.allocation_pct = assistantDefaultProfitJar.allocation_pct;
+    assistantRuntime.profit_jar.reserve_sol = assistantDefaultProfitJar.reserve_sol;
+    assistantRuntime.profit_jar.min_transfer_sol = assistantDefaultProfitJar.min_transfer_sol;
+    assistantRuntime.profit_jar.wallet_address = "";
+    assistantRuntime.profit_jar.wallet_private_key = "";
+    assistantRuntime.profit_jar.ledger = [];
+    assistantRuntime.profit_jar.positions_by_mint = {};
   };
 
   const persistAssistantRuntime = async (userIdOverride?: string) => {
@@ -9436,6 +9457,21 @@ export async function registerRoutes(
 
       if (Array.isArray(loaded.transactions)) {
         assistantRuntime.transactions = loaded.transactions.slice(0, 200);
+      }
+
+      const profitJar = loaded.profit_jar as Record<string, any> | undefined;
+      if (profitJar && typeof profitJar === "object") {
+        assistantRuntime.profit_jar.enabled = Boolean(profitJar.enabled);
+        assistantRuntime.profit_jar.allocation_pct = Math.max(1, Math.min(100, Number(profitJar.allocation_pct || assistantDefaultProfitJar.allocation_pct)));
+        assistantRuntime.profit_jar.reserve_sol = Math.max(0, Number(profitJar.reserve_sol || assistantDefaultProfitJar.reserve_sol));
+        assistantRuntime.profit_jar.min_transfer_sol = Math.max(0.000001, Number(profitJar.min_transfer_sol || assistantDefaultProfitJar.min_transfer_sol));
+        assistantRuntime.profit_jar.wallet_address = String(profitJar.wallet_address || "").trim();
+        assistantRuntime.profit_jar.wallet_private_key = String(profitJar.wallet_private_key || "").trim();
+        assistantRuntime.profit_jar.ledger = Array.isArray(profitJar.ledger) ? profitJar.ledger.slice(0, 500) : [];
+        assistantRuntime.profit_jar.positions_by_mint =
+          profitJar.positions_by_mint && typeof profitJar.positions_by_mint === "object"
+            ? profitJar.positions_by_mint as Record<string, { quantity: number; cost_usd: number }>
+            : {};
       }
 
       assistantRuntime.trading.wallets_by_chain = {
@@ -9966,6 +10002,244 @@ export async function registerRoutes(
     wallet_address: assistantRuntime.wallet.addresses_by_chain.solana || null,
   });
 
+  const assistantProfitJarStatus = () => {
+    const ledger = assistantRuntime.profit_jar.ledger || [];
+    const confirmedSweeps = ledger.filter((row) => String(row.type || "").toLowerCase() === "sweep" && String(row.status || "").toLowerCase() === "confirmed");
+    const totalSweptUsd = confirmedSweeps.reduce((sum, row) => sum + Number(row.transfer_amount_usd || 0), 0);
+    const totalSweptSol = confirmedSweeps.reduce((sum, row) => sum + Number(row.transfer_amount_sol || 0), 0);
+    const pendingCount = ledger.filter((row) => String(row.status || "").toLowerCase() === "queued" || String(row.status || "").toLowerCase() === "submitted").length;
+    const failedCount = ledger.filter((row) => String(row.status || "").toLowerCase() === "failed").length;
+    return {
+      enabled: assistantRuntime.profit_jar.enabled,
+      allocation_pct: assistantRuntime.profit_jar.allocation_pct,
+      reserve_sol: assistantRuntime.profit_jar.reserve_sol,
+      min_transfer_sol: assistantRuntime.profit_jar.min_transfer_sol,
+      wallet_address: assistantRuntime.profit_jar.wallet_address,
+      wallet_created: Boolean(assistantRuntime.profit_jar.wallet_address && assistantRuntime.profit_jar.wallet_private_key),
+      total_swept_usd: Number(totalSweptUsd.toFixed(4)),
+      total_swept_sol: Number(totalSweptSol.toFixed(9)),
+      pending_count: pendingCount,
+      failed_count: failedCount,
+      ledger_count: ledger.length,
+    };
+  };
+
+  const executeSolanaTransfer = async (params: {
+    fromAddress: string;
+    fromPrivateKey: string;
+    recipientAddress: string;
+    amountSol: number;
+  }) => {
+    const fromAddress = String(params.fromAddress || "").trim();
+    const fromPrivateKey = String(params.fromPrivateKey || "").trim();
+    const recipientAddress = String(params.recipientAddress || "").trim();
+    const amountSol = Number(params.amountSol || 0);
+
+    if (!validateAddressForChain("solana", fromAddress) || !validateAddressForChain("solana", recipientAddress)) {
+      throw new Error("invalid transfer address");
+    }
+    if (!Number.isFinite(amountSol) || amountSol <= 0) {
+      throw new Error("invalid transfer amount");
+    }
+
+    const secretKey = parseSolanaSecretKey(fromPrivateKey);
+    if (!secretKey) {
+      throw new Error("invalid private key");
+    }
+
+    const keypair = Keypair.fromSecretKey(secretKey);
+    if (keypair.publicKey.toBase58() !== fromAddress) {
+      throw new Error("wallet address/private key mismatch");
+    }
+
+    const connection = new Connection(getRpcUrlForChain("solana"), "confirmed");
+    const lamports = Math.max(1, Math.trunc(amountSol * 1_000_000_000));
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+    const transferTx = new Transaction({
+      feePayer: keypair.publicKey,
+      blockhash,
+      lastValidBlockHeight,
+    }).add(
+      SystemProgram.transfer({
+        fromPubkey: keypair.publicKey,
+        toPubkey: new PublicKey(recipientAddress),
+        lamports,
+      }),
+    );
+
+    transferTx.sign(keypair);
+    const txHash = await connection.sendRawTransaction(transferTx.serialize(), {
+      skipPreflight: false,
+      maxRetries: 3,
+    });
+
+    await connection.confirmTransaction({ signature: txHash, blockhash, lastValidBlockHeight }, "confirmed");
+    return {
+      txHash,
+      explorerUrl: chainExplorerTxUrl("solana", txHash),
+    };
+  };
+
+  const upsertProfitJarPosition = (tokenMint: string, side: "buy" | "sell", tokenQty: number, tradeNotionalUsd: number) => {
+    const mint = String(tokenMint || "").trim();
+    if (!mint || !Number.isFinite(tokenQty) || tokenQty <= 0) {
+      return { realizedProfitUsd: 0, soldQty: 0 };
+    }
+    const positions = assistantRuntime.profit_jar.positions_by_mint;
+    const existing = positions[mint] || { quantity: 0, cost_usd: 0 };
+    const quantity = Math.max(0, Number(existing.quantity || 0));
+    const costUsd = Math.max(0, Number(existing.cost_usd || 0));
+
+    if (side === "buy") {
+      positions[mint] = {
+        quantity: Number((quantity + tokenQty).toFixed(9)),
+        cost_usd: Number((costUsd + Math.max(0, tradeNotionalUsd)).toFixed(6)),
+      };
+      return { realizedProfitUsd: 0, soldQty: 0 };
+    }
+
+    const soldQty = Math.max(0, Math.min(tokenQty, quantity));
+    const avgCost = quantity > 0 ? costUsd / quantity : 0;
+    const costBasisUsd = soldQty * avgCost;
+    const realizedProfitUsd = Math.max(0, Number((Math.max(0, tradeNotionalUsd) - costBasisUsd).toFixed(6)));
+    const nextQty = Math.max(0, quantity - soldQty);
+    const nextCostUsd = Math.max(0, costUsd - costBasisUsd);
+    positions[mint] = {
+      quantity: Number(nextQty.toFixed(9)),
+      cost_usd: Number(nextCostUsd.toFixed(6)),
+    };
+    return { realizedProfitUsd, soldQty };
+  };
+
+  const maybeSweepProfitToJar = async (params: {
+    sourceTradeId: string;
+    tokenMint: string;
+    side: "buy" | "sell";
+    tokenQty: number;
+    tradeNotionalUsd: number;
+    mode: "paper" | "live";
+  }) => {
+    const side = params.side;
+    const tokenQty = Number(params.tokenQty || 0);
+    const tradeNotionalUsd = Number(params.tradeNotionalUsd || 0);
+    const sourceTradeId = String(params.sourceTradeId || "").trim();
+
+    const basis = upsertProfitJarPosition(params.tokenMint, side, tokenQty, tradeNotionalUsd);
+    if (side !== "sell" || basis.realizedProfitUsd <= 0) {
+      return null;
+    }
+
+    if (params.mode !== "live") {
+      return null;
+    }
+
+    const profitJar = assistantRuntime.profit_jar;
+    if (!profitJar.enabled || !profitJar.wallet_address || !profitJar.wallet_private_key) {
+      return null;
+    }
+
+    const alreadyProcessed = (profitJar.ledger || []).some((row) => String(row.source_trade_id || "") === sourceTradeId && String(row.type || "") === "sweep");
+    if (alreadyProcessed) {
+      return null;
+    }
+
+    const prices = await fetchChainPricesUsd();
+    const solPriceUsd = Number(prices.solana || 0);
+    if (!(solPriceUsd > 0)) {
+      return null;
+    }
+
+    const allocationPct = Math.max(1, Math.min(100, Number(profitJar.allocation_pct || 20)));
+    const intendedUsd = Number(((basis.realizedProfitUsd * allocationPct) / 100).toFixed(6));
+    let intendedSol = Number((intendedUsd / solPriceUsd).toFixed(9));
+    if (!(intendedSol > 0)) {
+      return null;
+    }
+
+    const senderAddress = String(assistantRuntime.wallet.addresses_by_chain.solana || "").trim();
+    const senderPk = String(assistantRuntime.wallet.private_keys_by_chain.solana || "").trim();
+    if (!senderAddress || !senderPk) {
+      return null;
+    }
+
+    const senderBalance = await fetchNativeBalance("solana", senderAddress);
+    if (senderBalance === null) {
+      return null;
+    }
+
+    const reserveSol = Math.max(0, Number(profitJar.reserve_sol || 0));
+    const maxAllowedSweep = Math.max(0, Number((senderBalance - reserveSol).toFixed(9)));
+    intendedSol = Math.min(intendedSol, maxAllowedSweep);
+    const minTransferSol = Math.max(0.000001, Number(profitJar.min_transfer_sol || 0.01));
+    if (intendedSol < minTransferSol) {
+      return null;
+    }
+
+    const ledgerRow: Record<string, any> = {
+      id: `jar_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      type: "sweep",
+      source_trade_id: sourceTradeId,
+      source_side: side,
+      source_token_mint: String(params.tokenMint || "").trim(),
+      source_trade_notional_usd: Number(tradeNotionalUsd.toFixed(6)),
+      source_realized_profit_usd: Number(basis.realizedProfitUsd.toFixed(6)),
+      allocation_pct: allocationPct,
+      transfer_amount_sol: Number(intendedSol.toFixed(9)),
+      transfer_amount_usd: Number((intendedSol * solPriceUsd).toFixed(6)),
+      status: "queued",
+      tx_hash: null,
+      explorer_url: null,
+      error_message: null,
+      created_at: nowIso(),
+      updated_at: nowIso(),
+    };
+
+    profitJar.ledger.unshift(ledgerRow);
+    profitJar.ledger = profitJar.ledger.slice(0, 500);
+
+    try {
+      ledgerRow.status = "submitted";
+      ledgerRow.updated_at = nowIso();
+      const transfer = await executeSolanaTransfer({
+        fromAddress: senderAddress,
+        fromPrivateKey: senderPk,
+        recipientAddress: String(profitJar.wallet_address || "").trim(),
+        amountSol: intendedSol,
+      });
+      ledgerRow.status = "confirmed";
+      ledgerRow.tx_hash = transfer.txHash;
+      ledgerRow.explorer_url = transfer.explorerUrl;
+      ledgerRow.updated_at = nowIso();
+
+      assistantRuntime.transactions.unshift({
+        id: `profit_sweep_${Date.now()}`,
+        chain: "solana",
+        side: "profit_sweep",
+        status: "confirmed",
+        contract_address: "SOL",
+        notional_usd: ledgerRow.transfer_amount_usd,
+        quantity: ledgerRow.transfer_amount_sol,
+        quantity_unit: "SOL",
+        asset: "SOL",
+        token_symbol: "SOL",
+        worth_sol: ledgerRow.transfer_amount_sol,
+        tx_hash: transfer.txHash,
+        explorer_url: transfer.explorerUrl,
+        from_address: senderAddress,
+        to_address: String(profitJar.wallet_address || "").trim(),
+        created_at: nowIso(),
+      });
+      assistantRuntime.transactions = assistantRuntime.transactions.slice(0, 200);
+    } catch (error) {
+      ledgerRow.status = "failed";
+      ledgerRow.error_message = error instanceof Error ? error.message : "profit sweep failed";
+      ledgerRow.updated_at = nowIso();
+    }
+
+    await persistAssistantRuntime();
+    return ledgerRow;
+  };
+
   const assistantBundle = (includePrivate = true) => ({
     mnemonic: assistantRuntime.wallet.mnemonic,
     addresses_by_chain: assistantRuntime.wallet.addresses_by_chain,
@@ -9976,6 +10250,121 @@ export async function registerRoutes(
 
   app.get("/api/ai/wallets/status", (_req, res) => {
     return res.json({ wallet: assistantWalletStatus() });
+  });
+
+  app.get("/api/ai/profit-jar/status", (_req, res) => {
+    return res.json({ profit_jar: assistantProfitJarStatus() });
+  });
+
+  app.post("/api/ai/profit-jar/wallet/create", async (req, res) => {
+    const overwrite = Boolean(req.body?.overwrite);
+    if (assistantRuntime.profit_jar.wallet_address && !overwrite) {
+      return res.status(400).json({ message: "profit jar wallet already exists" });
+    }
+    const mnemonic = generateMnemonic();
+    const walletBundle = buildAssistantWalletFromMnemonic(mnemonic);
+    assistantRuntime.profit_jar.wallet_address = String(walletBundle.addresses_by_chain.solana || "").trim();
+    assistantRuntime.profit_jar.wallet_private_key = String(walletBundle.private_keys_by_chain.solana || "").trim();
+    assistantRuntime.profit_jar.ledger = [];
+    await persistAssistantRuntime();
+    return res.json({
+      profit_jar: assistantProfitJarStatus(),
+    });
+  });
+
+  app.post("/api/ai/profit-jar/settings", async (req, res) => {
+    const enabled = Boolean(req.body?.enabled);
+    const allocationPct = Math.max(1, Math.min(100, Number(req.body?.allocation_pct ?? assistantRuntime.profit_jar.allocation_pct || 20)));
+    const reserveSol = Math.max(0, Number(req.body?.reserve_sol ?? assistantRuntime.profit_jar.reserve_sol || 0.12));
+    const minTransferSol = Math.max(0.000001, Number(req.body?.min_transfer_sol ?? assistantRuntime.profit_jar.min_transfer_sol || 0.01));
+
+    assistantRuntime.profit_jar.enabled = enabled;
+    assistantRuntime.profit_jar.allocation_pct = Number(allocationPct.toFixed(4));
+    assistantRuntime.profit_jar.reserve_sol = Number(reserveSol.toFixed(9));
+    assistantRuntime.profit_jar.min_transfer_sol = Number(minTransferSol.toFixed(9));
+    await persistAssistantRuntime();
+    return res.json({ profit_jar: assistantProfitJarStatus() });
+  });
+
+  app.get("/api/ai/profit-jar/ledger", (req, res) => {
+    const limitRaw = Number(req.query.limit || 50);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, Math.trunc(limitRaw))) : 50;
+    return res.json({
+      ledger: (assistantRuntime.profit_jar.ledger || []).slice(0, limit),
+      count: (assistantRuntime.profit_jar.ledger || []).length,
+    });
+  });
+
+  app.post("/api/ai/profit-jar/withdraw", async (req, res) => {
+    const recipientAddress = String(req.body?.recipient_address || "").trim();
+    const amountSol = Number(req.body?.amount_sol || 0);
+    const jarAddress = String(assistantRuntime.profit_jar.wallet_address || "").trim();
+    const jarPrivateKey = String(assistantRuntime.profit_jar.wallet_private_key || "").trim();
+
+    if (!jarAddress || !jarPrivateKey) {
+      return res.status(400).json({ message: "profit jar wallet not configured" });
+    }
+    if (!validateAddressForChain("solana", recipientAddress)) {
+      return res.status(400).json({ message: "invalid recipient address" });
+    }
+    if (!Number.isFinite(amountSol) || amountSol <= 0) {
+      return res.status(400).json({ message: "invalid amount" });
+    }
+
+    const jarBalance = await fetchNativeBalance("solana", jarAddress);
+    if (jarBalance === null) {
+      return res.status(503).json({ message: "unable to fetch profit jar balance" });
+    }
+    if (amountSol > jarBalance) {
+      return res.status(400).json({ message: "insufficient profit jar balance", available_balance_sol: jarBalance });
+    }
+
+    try {
+      const transfer = await executeSolanaTransfer({
+        fromAddress: jarAddress,
+        fromPrivateKey: jarPrivateKey,
+        recipientAddress,
+        amountSol,
+      });
+      const prices = await fetchChainPricesUsd();
+      const solPrice = Number(prices.solana || 0);
+      const ledgerRow = {
+        id: `jar_withdraw_${Date.now()}`,
+        type: "withdraw",
+        source_trade_id: null,
+        source_side: null,
+        source_token_mint: null,
+        source_trade_notional_usd: 0,
+        source_realized_profit_usd: 0,
+        allocation_pct: 0,
+        transfer_amount_sol: Number(amountSol.toFixed(9)),
+        transfer_amount_usd: Number((amountSol * solPrice).toFixed(6)),
+        status: "confirmed",
+        tx_hash: transfer.txHash,
+        explorer_url: transfer.explorerUrl,
+        error_message: null,
+        created_at: nowIso(),
+        updated_at: nowIso(),
+        user_initiated: true,
+        from_address: jarAddress,
+        to_address: recipientAddress,
+      };
+      assistantRuntime.profit_jar.ledger.unshift(ledgerRow);
+      assistantRuntime.profit_jar.ledger = assistantRuntime.profit_jar.ledger.slice(0, 500);
+      await persistAssistantRuntime();
+      return res.json({
+        withdraw: {
+          tx_hash: transfer.txHash,
+          explorer_url: transfer.explorerUrl,
+          amount_sol: Number(amountSol.toFixed(9)),
+        },
+        profit_jar: assistantProfitJarStatus(),
+      });
+    } catch (error) {
+      return res.status(502).json({
+        message: error instanceof Error ? error.message : "profit jar withdrawal failed",
+      });
+    }
   });
 
   app.get("/api/ai/trading/status", (_req, res) => {
@@ -10652,6 +11041,14 @@ export async function registerRoutes(
         };
         assistantRuntime.transactions.unshift(transaction);
         assistantRuntime.transactions = assistantRuntime.transactions.slice(0, 200);
+        await maybeSweepProfitToJar({
+          sourceTradeId: transaction.id,
+          tokenMint,
+          side,
+          tokenQty: Number(tokenQty || 0),
+          tradeNotionalUsd,
+          mode,
+        });
         await persistAssistantRuntime();
 
         return res.json({
@@ -10708,6 +11105,14 @@ export async function registerRoutes(
     };
     assistantRuntime.transactions.unshift(transaction);
     assistantRuntime.transactions = assistantRuntime.transactions.slice(0, 200);
+    await maybeSweepProfitToJar({
+      sourceTradeId: transaction.id,
+      tokenMint,
+      side,
+      tokenQty: Number(transaction.quantity || 0),
+      tradeNotionalUsd: Number(transaction.notional_usd || 0),
+      mode,
+    });
     await persistAssistantRuntime();
 
     return res.json({

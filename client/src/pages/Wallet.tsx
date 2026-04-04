@@ -18,6 +18,8 @@ import { useLocation } from "wouter";
 import { TokenAvatar } from "@/components/token/TokenAvatar";
 import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
 import {
+  useAssistantProfitJarLedger,
+  useAssistantProfitJarStatus,
   useAssistantWalletSwap,
   useAssistantWalletSwapQuote,
   useAssistantContextOverview,
@@ -33,7 +35,10 @@ import {
   useImportAssistantWalletPrivateKey,
   useRemoveAssistantWalletChain,
   useRevealAssistantWallet,
+  useCreateAssistantProfitJarWallet,
+  useUpdateAssistantProfitJarSettings,
   useTransferAssistantWallet,
+  useWithdrawAssistantProfitJar,
 } from "@/hooks/use-ai-assistant";
 import { useDoctorStatus } from "@/hooks/use-doctortrade";
 
@@ -58,6 +63,8 @@ export default function WalletPage() {
   const walletPortfolioQuery = useAssistantWalletPortfolio();
   const walletTransactionsQuery = useAssistantWalletTransactions(50, walletTab === "activity");
   const contextOverviewQuery = useAssistantContextOverview(30, walletTab === "activity");
+  const profitJarStatusQuery = useAssistantProfitJarStatus(true);
+  const profitJarLedgerQuery = useAssistantProfitJarLedger(walletTab === "assets" ? 20 : 50, walletTab === "assets");
   const doctorStatusQuery = useDoctorStatus();
 
   const createWallet = useCreateAssistantWallet();
@@ -70,6 +77,9 @@ export default function WalletPage() {
   const exportWalletKey = useExportAssistantWalletKey();
   const transferWallet = useTransferAssistantWallet();
   const walletSwap = useAssistantWalletSwap();
+  const createProfitJarWallet = useCreateAssistantProfitJarWallet();
+  const updateProfitJarSettings = useUpdateAssistantProfitJarSettings();
+  const withdrawProfitJar = useWithdrawAssistantProfitJar();
 
   const trading = tradingStatusQuery.data?.trading;
   const wallet = walletStatusQuery.data?.wallet;
@@ -99,6 +109,12 @@ export default function WalletPage() {
   const [swapTokenMint, setSwapTokenMint] = useState("");
   const [swapAmountSol, setSwapAmountSol] = useState("0.1");
   const [swapSellAmountTokens, setSwapSellAmountTokens] = useState("");
+  const [profitJarEnabled, setProfitJarEnabled] = useState(false);
+  const [profitJarAllocationPct, setProfitJarAllocationPct] = useState("20");
+  const [profitJarReserveSol, setProfitJarReserveSol] = useState("0.12");
+  const [profitJarMinTransferSol, setProfitJarMinTransferSol] = useState("0.01");
+  const [profitJarWithdrawAddress, setProfitJarWithdrawAddress] = useState("");
+  const [profitJarWithdrawAmountSol, setProfitJarWithdrawAmountSol] = useState("");
   const [hideBalance, setHideBalance] = useState(false);
   const swapMode = "live" as const;
 
@@ -227,6 +243,8 @@ export default function WalletPage() {
     walletPortfolioQuery.isFetching ||
     walletTransactionsQuery.isFetching ||
     contextOverviewQuery.isFetching ||
+    profitJarStatusQuery.isFetching ||
+    profitJarLedgerQuery.isFetching ||
     doctorStatusQuery.isFetching,
   );
 
@@ -247,6 +265,8 @@ export default function WalletPage() {
     Number(walletPortfolioQuery.dataUpdatedAt || 0),
     Number(walletTransactionsQuery.dataUpdatedAt || 0),
     Number(contextOverviewQuery.dataUpdatedAt || 0),
+    Number(profitJarStatusQuery.dataUpdatedAt || 0),
+    Number(profitJarLedgerQuery.dataUpdatedAt || 0),
     Number(doctorStatusQuery.dataUpdatedAt || 0),
   );
 
@@ -259,6 +279,8 @@ export default function WalletPage() {
       walletPortfolioQuery.refetch(),
       walletTransactionsQuery.refetch(),
       contextOverviewQuery.refetch(),
+      profitJarStatusQuery.refetch(),
+      profitJarLedgerQuery.refetch(),
       doctorStatusQuery.refetch(),
     ]);
   };
@@ -281,6 +303,17 @@ export default function WalletPage() {
   const selectedReceiveAddress = addressesByChain[receiveChain] || "";
   const solanaAddress = String(addressesByChain.solana || "").trim();
   const walletConnected = Boolean(wallet?.has_wallet && solanaAddress);
+  const profitJar = profitJarStatusQuery.data?.profit_jar;
+  const profitJarLedger = profitJarLedgerQuery.data?.ledger || [];
+
+  useEffect(() => {
+    if (!profitJar) return;
+    setProfitJarEnabled(Boolean(profitJar.enabled));
+    setProfitJarAllocationPct(String(Number(profitJar.allocation_pct || 20)));
+    setProfitJarReserveSol(String(Number(profitJar.reserve_sol || 0.12)));
+    setProfitJarMinTransferSol(String(Number(profitJar.min_transfer_sol || 0.01)));
+  }, [profitJar?.enabled, profitJar?.allocation_pct, profitJar?.reserve_sol, profitJar?.min_transfer_sol]);
+
   const walletExists = Boolean(wallet?.has_wallet || solanaAddress);
   const walletStatusSettling = walletInitialLoading || !walletStatusFetched || !tradingStatusFetched || walletStatusQuery.isFetching || tradingStatusQuery.isFetching;
   const walletConnectedDisplayLabel = walletConnected ? "Private Key Connected" : "Private Key Not Connected";
@@ -307,7 +340,10 @@ export default function WalletPage() {
     || deleteWallet.isPending
     || exportWalletKey.isPending
     || transferWallet.isPending
-    || walletSwap.isPending,
+    || walletSwap.isPending
+    || createProfitJarWallet.isPending
+    || updateProfitJarSettings.isPending
+    || withdrawProfitJar.isPending,
   );
   const savingMessage = importWalletPrivateKey.isPending
     ? "Connecting private key..."
@@ -319,6 +355,12 @@ export default function WalletPage() {
           ? "Sending transaction..."
           : walletSwap.isPending
             ? "Submitting swap..."
+            : withdrawProfitJar.isPending
+              ? "Withdrawing from Profit Jar..."
+              : createProfitJarWallet.isPending
+                ? "Creating Profit Jar wallet..."
+                : updateProfitJarSettings.isPending
+                  ? "Saving Profit Jar settings..."
             : deleteWallet.isPending
               ? "Deleting wallet..."
               : "Saving wallet settings...";
@@ -371,6 +413,73 @@ export default function WalletPage() {
   const handleOpenWalletSettings = (chainName: string) => {
     setSettingsChain(chainName as SupportedWalletChain);
     setWalletSettingsOpen(true);
+  };
+
+  const handleCreateProfitJarWallet = async (overwrite = false) => {
+    try {
+      await createProfitJarWallet.mutateAsync({ overwrite });
+      await refreshWalletViews();
+      toast({ title: "Profit Jar wallet ready", description: "Doctor can now auto-route realized profits into this wallet." });
+    } catch (error) {
+      toast({ title: "Profit Jar wallet failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
+  };
+
+  const handleSaveProfitJarSettings = async () => {
+    const allocation = Number(profitJarAllocationPct);
+    const reserve = Number(profitJarReserveSol);
+    const minTransfer = Number(profitJarMinTransferSol);
+
+    if (!Number.isFinite(allocation) || allocation < 1 || allocation > 100) {
+      toast({ title: "Invalid allocation", description: "Allocation must be between 1 and 100.", variant: "destructive" });
+      return;
+    }
+    if (!Number.isFinite(reserve) || reserve < 0) {
+      toast({ title: "Invalid reserve", description: "Reserve SOL must be zero or positive.", variant: "destructive" });
+      return;
+    }
+    if (!Number.isFinite(minTransfer) || minTransfer <= 0) {
+      toast({ title: "Invalid min transfer", description: "Minimum transfer SOL must be greater than zero.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      await updateProfitJarSettings.mutateAsync({
+        enabled: profitJarEnabled,
+        allocation_pct: allocation,
+        reserve_sol: reserve,
+        min_transfer_sol: minTransfer,
+      });
+      await refreshWalletViews();
+      toast({ title: "Profit Jar updated", description: "Auto-sweep settings saved." });
+    } catch (error) {
+      toast({ title: "Save failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
+  };
+
+  const handleProfitJarWithdraw = async () => {
+    const recipient = profitJarWithdrawAddress.trim();
+    const amountSol = Number(profitJarWithdrawAmountSol);
+    if (!recipient) {
+      toast({ title: "Recipient required", description: "Enter a recipient address.", variant: "destructive" });
+      return;
+    }
+    if (!Number.isFinite(amountSol) || amountSol <= 0) {
+      toast({ title: "Invalid amount", description: "Enter a valid SOL amount.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const result = await withdrawProfitJar.mutateAsync({ recipient_address: recipient, amount_sol: amountSol });
+      await refreshWalletViews();
+      setProfitJarWithdrawAmountSol("");
+      toast({ title: "Profit Jar withdrawal sent", description: `Tx: ${result.withdraw.tx_hash.slice(0, 10)}...` });
+      if (result.withdraw.explorer_url) {
+        window.open(result.withdraw.explorer_url, "_blank");
+      }
+    } catch (error) {
+      toast({ title: "Withdrawal failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
   };
 
   const handleSendSubmit = async () => {
@@ -739,6 +848,117 @@ export default function WalletPage() {
           </TabsList>
 
           <TabsContent value="assets" className="space-y-3">
+            <Card className="solana-card border-primary/20">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Shield className="w-4 h-4" />
+                  Profit Jar
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+                  <div className="rounded-md border border-border/60 p-2 bg-muted/20">
+                    <p className="text-muted-foreground">Status</p>
+                    <p className="font-semibold">{profitJar?.enabled ? "Enabled" : "Disabled"}</p>
+                  </div>
+                  <div className="rounded-md border border-border/60 p-2 bg-muted/20">
+                    <p className="text-muted-foreground">Wallet</p>
+                    <p className="font-semibold">{profitJar?.wallet_created ? "Created" : "Not created"}</p>
+                  </div>
+                  <div className="rounded-md border border-border/60 p-2 bg-muted/20">
+                    <p className="text-muted-foreground">Swept (USD)</p>
+                    <p className="font-semibold">{visibleValue(`$${Number(profitJar?.total_swept_usd || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)}</p>
+                  </div>
+                  <div className="rounded-md border border-border/60 p-2 bg-muted/20">
+                    <p className="text-muted-foreground">Swept (SOL)</p>
+                    <p className="font-semibold">{visibleValue(Number(profitJar?.total_swept_sol || 0).toLocaleString(undefined, { maximumFractionDigits: 9 }))}</p>
+                  </div>
+                  <div className="rounded-md border border-border/60 p-2 bg-muted/20">
+                    <p className="text-muted-foreground">Pending/Failed</p>
+                    <p className="font-semibold">{Number(profitJar?.pending_count || 0)} / {Number(profitJar?.failed_count || 0)}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-md border border-border/60 p-3 bg-muted/20 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button variant={profitJarEnabled ? "default" : "outline"} size="sm" onClick={() => setProfitJarEnabled((v) => !v)}>
+                      {profitJarEnabled ? "Auto-Sweep On" : "Auto-Sweep Off"}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => handleCreateProfitJarWallet(false)} disabled={createProfitJarWallet.isPending || Boolean(profitJar?.wallet_created)}>
+                      Create Jar Wallet
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => handleCreateProfitJarWallet(true)} disabled={createProfitJarWallet.isPending}>
+                      Rotate Jar Wallet
+                    </Button>
+                    {profitJar?.wallet_address && (
+                      <Button variant="outline" size="sm" onClick={() => copyText(String(profitJar.wallet_address || ""), "Profit Jar wallet address copied")}>Copy Jar Address</Button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <div>
+                      <Label>Allocation %</Label>
+                      <Input type="number" min={1} max={100} step="1" value={profitJarAllocationPct} onChange={(e) => setProfitJarAllocationPct(e.target.value)} />
+                    </div>
+                    <div>
+                      <Label>Main Wallet Reserve (SOL)</Label>
+                      <Input type="number" min={0} step="0.000001" value={profitJarReserveSol} onChange={(e) => setProfitJarReserveSol(e.target.value)} />
+                    </div>
+                    <div>
+                      <Label>Min Sweep (SOL)</Label>
+                      <Input type="number" min={0.000001} step="0.000001" value={profitJarMinTransferSol} onChange={(e) => setProfitJarMinTransferSol(e.target.value)} />
+                    </div>
+                  </div>
+
+                  <Button variant="outline" onClick={handleSaveProfitJarSettings} disabled={updateProfitJarSettings.isPending}>
+                    {updateProfitJarSettings.isPending ? "Saving..." : "Save Profit Jar Settings"}
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground">Doctor can only deposit via auto-sweep from realized profits. Users can withdraw manually from this panel.</p>
+                </div>
+
+                <div className="rounded-md border border-border/60 p-3 bg-muted/20 space-y-2">
+                  <p className="text-sm font-semibold">User Withdrawal</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div>
+                      <Label>Recipient Address</Label>
+                      <Input value={profitJarWithdrawAddress} onChange={(e) => setProfitJarWithdrawAddress(e.target.value)} placeholder="Destination Solana address" />
+                    </div>
+                    <div>
+                      <Label>Amount (SOL)</Label>
+                      <Input type="number" min={0.000001} step="0.000001" value={profitJarWithdrawAmountSol} onChange={(e) => setProfitJarWithdrawAmountSol(e.target.value)} />
+                    </div>
+                  </div>
+                  <Button onClick={handleProfitJarWithdraw} disabled={withdrawProfitJar.isPending || !profitJar?.wallet_created}>
+                    {withdrawProfitJar.isPending ? "Withdrawing..." : "Withdraw From Profit Jar"}
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold">Profit Jar Ledger</p>
+                  {profitJarLedger.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No Profit Jar entries yet.</p>
+                  ) : (
+                    profitJarLedger.slice(0, 8).map((row: any) => (
+                      <div key={String(row.id)} className="rounded-md border border-border/60 p-2 bg-muted/20 flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-xs uppercase font-semibold">{String(row.type || "entry")} · {String(row.status || "-")}</p>
+                          <p className="text-[11px] text-muted-foreground">{row.created_at ? new Date(row.created_at).toLocaleString() : "-"}</p>
+                          {row.error_message && <p className="text-[11px] text-red-400">{String(row.error_message)}</p>}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-xs font-semibold">{visibleValue(`${Number(row.transfer_amount_sol || 0).toLocaleString(undefined, { maximumFractionDigits: 9 })} SOL`)}</p>
+                          <p className="text-[11px] text-muted-foreground">{visibleValue(`$${Number(row.transfer_amount_usd || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)}</p>
+                          {row.explorer_url && (
+                            <Button size="sm" variant="outline" className="mt-1 h-7 px-2 text-[11px]" onClick={() => window.open(String(row.explorer_url), "_blank")}>View Tx</Button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
             <Card className="solana-card">
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2"><WalletIcon className="w-4 h-4" />Solana Wallet</CardTitle>
