@@ -116,7 +116,6 @@ export default function WalletPage() {
   const [swapTokenMint, setSwapTokenMint] = useState("");
   const [swapAmountSol, setSwapAmountSol] = useState("0.1");
   const [swapSellAmountTokens, setSwapSellAmountTokens] = useState("");
-  const [profitJarPrivateKeyInput, setProfitJarPrivateKeyInput] = useState("");
   const [profitJarWithdrawAddress, setProfitJarWithdrawAddress] = useState("");
   const [profitJarWithdrawAmountSol, setProfitJarWithdrawAmountSol] = useState("");
   const [hideBalance, setHideBalance] = useState(false);
@@ -499,26 +498,11 @@ export default function WalletPage() {
     }
   };
 
-  const handleImportProfitJarPrivateKey = async (overwrite = false) => {
-    const privateKey = profitJarPrivateKeyInput.trim();
-    if (!privateKey) {
-      toast({ title: "Private key required", description: "Paste the Profit Jar private key.", variant: "destructive" });
-      return;
-    }
-    try {
-      await importProfitJarWalletPrivateKey.mutateAsync({ private_key: privateKey, overwrite });
-      setProfitJarPrivateKeyInput("");
-      await refreshWalletViews();
-      toast({ title: "Profit Jar key imported", description: "Profit Jar wallet is now linked." });
-    } catch (error) {
-      toast({ title: "Import failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
-    }
-  };
-
-  const handleCopyProfitJarPrivateKey = async () => {
+  const handleExportProfitJarPrivateKey = async () => {
     try {
       const result = await exportProfitJarWalletKey.mutateAsync();
-      await copyText(String(result.wallet_key.private_key || ""), "Profit Jar private key copied");
+      await copyText(String(result.wallet_key.private_key || ""), "Profit Jar private key exported and copied");
+      toast({ title: "Profit Jar key exported", description: "Private key copied to clipboard. Store it securely offline." });
     } catch (error) {
       toast({ title: "Export failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
     }
@@ -1024,30 +1008,16 @@ export default function WalletPage() {
                     <Button size="sm" variant="outline" onClick={() => handleCreateProfitJarWallet(true)}>
                       Create New Wallet
                     </Button>
-                    <Button size="sm" variant="outline" onClick={handleCopyProfitJarPrivateKey} disabled={!profitJar?.wallet_created}>
-                      Copy Private Key
+                    <Button size="sm" variant="outline" onClick={handleExportProfitJarPrivateKey} disabled={!profitJar?.wallet_created}>
+                      Export Private Key
                     </Button>
                     <Button size="sm" variant="destructive" onClick={handleDeleteProfitJarWallet} disabled={!profitJar?.wallet_created}>
                       Delete Wallet
                     </Button>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Import Private Key</Label>
-                    <Textarea
-                      value={profitJarPrivateKeyInput}
-                      onChange={(e) => setProfitJarPrivateKeyInput(e.target.value)}
-                      className="min-h-[86px]"
-                      placeholder="Paste Profit Jar private key (base58, base64, or JSON array)"
-                    />
-                    <div className="flex items-center gap-2">
-                      <Button size="sm" variant="outline" onClick={() => handleImportProfitJarPrivateKey(false)}>
-                        Import Key
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => handleImportProfitJarPrivateKey(true)}>
-                        Import + Overwrite
-                      </Button>
-                    </div>
-                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Profit Jar is export-only here. Use Export Private Key to back up the wallet securely.
+                  </p>
                 </div>
 
                 <div className="rounded-md border border-border/60 p-3 bg-muted/20 space-y-2">
