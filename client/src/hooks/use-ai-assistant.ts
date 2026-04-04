@@ -97,6 +97,10 @@ export type AssistantProfitJarStatus = {
   min_transfer_sol: number;
   wallet_address?: string;
   wallet_created: boolean;
+  wallet_balance_sol?: number;
+  wallet_balance_usd?: number;
+  wallet_balance_state?: "ok" | "not_created" | "unavailable" | string;
+  wallet_balance_updated_at?: string;
   total_swept_usd: number;
   total_swept_sol: number;
   pending_count: number;

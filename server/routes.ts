@@ -10024,6 +10024,40 @@ export async function registerRoutes(
     };
   };
 
+  const assistantProfitJarStatusWithBalance = async () => {
+    const base = assistantProfitJarStatus();
+    const walletAddress = String(base.wallet_address || "").trim();
+    if (!walletAddress) {
+      return {
+        ...base,
+        wallet_balance_sol: 0,
+        wallet_balance_usd: 0,
+        wallet_balance_state: "not_created",
+      };
+    }
+
+    const jarBalanceSol = await fetchNativeBalance("solana", walletAddress);
+    if (jarBalanceSol === null) {
+      return {
+        ...base,
+        wallet_balance_sol: 0,
+        wallet_balance_usd: 0,
+        wallet_balance_state: "unavailable",
+      };
+    }
+
+    const prices = await fetchChainPricesUsd();
+    const solPriceUsd = Number(prices.solana || 0);
+    const jarBalanceUsd = solPriceUsd > 0 ? jarBalanceSol * solPriceUsd : 0;
+    return {
+      ...base,
+      wallet_balance_sol: Number(jarBalanceSol.toFixed(9)),
+      wallet_balance_usd: Number(jarBalanceUsd.toFixed(6)),
+      wallet_balance_state: "ok",
+      wallet_balance_updated_at: nowIso(),
+    };
+  };
+
   const executeSolanaTransfer = async (params: {
     fromAddress: string;
     fromPrivateKey: string;
@@ -10252,8 +10286,19 @@ export async function registerRoutes(
     return res.json({ wallet: assistantWalletStatus() });
   });
 
-  app.get("/api/ai/profit-jar/status", (_req, res) => {
-    return res.json({ profit_jar: assistantProfitJarStatus() });
+  app.get("/api/ai/profit-jar/status", async (_req, res) => {
+    try {
+      return res.json({ profit_jar: await assistantProfitJarStatusWithBalance() });
+    } catch {
+      return res.json({
+        profit_jar: {
+          ...assistantProfitJarStatus(),
+          wallet_balance_sol: 0,
+          wallet_balance_usd: 0,
+          wallet_balance_state: "unavailable",
+        },
+      });
+    }
   });
 
   app.post("/api/ai/profit-jar/wallet/create", async (req, res) => {

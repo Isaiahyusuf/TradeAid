@@ -233,6 +233,29 @@ export default function WalletPage() {
     return Math.max(0, Math.round(Math.max(displayedTokenValueUsd, recentNotional * 0.18) * 100) / 100);
   }, [portfolio?.total_usd, solanaSplTokens, usingDoctorWalletTokenFallback, context?.recent_trades]);
 
+  const heldTokensUsd = useMemo(() => {
+    return solanaSplTokens.reduce((sum, token) => sum + Number((token as any).value_usd || 0), 0);
+  }, [solanaSplTokens]);
+
+  const mainNativeUsd = useMemo(() => {
+    return enabledChains.reduce((sum, chainName) => {
+      const balance = Number(chainBalances[chainName] || 0);
+      const price = Number(chainPrices[chainName] || 0);
+      return sum + (balance * price);
+    }, 0);
+  }, [enabledChains, chainBalances, chainPrices]);
+
+  const mainWalletUsd = useMemo(() => {
+    const reportedTotal = Number(portfolio?.total_usd || 0);
+    const reconstructed = Math.max(0, mainNativeUsd + heldTokensUsd);
+    const fallbackEstimated = Math.max(0, Number(estimatedUsdBalance || 0));
+    return Math.max(reportedTotal, reconstructed, fallbackEstimated);
+  }, [portfolio?.total_usd, mainNativeUsd, heldTokensUsd, estimatedUsdBalance]);
+
+  const profitJarWalletUsd = Math.max(0, Number(profitJarStatusQuery.data?.profit_jar?.wallet_balance_usd || 0));
+  const profitJarWalletSol = Math.max(0, Number(profitJarStatusQuery.data?.profit_jar?.wallet_balance_sol || 0));
+  const overallWalletUsd = Math.max(0, mainWalletUsd + profitJarWalletUsd);
+
   const selectedSellTokenBalance = useMemo(() => {
     const mint = String(swapTokenMint || "").trim();
     if (!mint || swapSide !== "sell") return 0;
@@ -320,8 +343,8 @@ export default function WalletPage() {
     && walletExists
   );
   const portfolioTotalDisplay = portfolioReady && !shouldDeferPortfolioDisplay
-    ? `$${estimatedUsdBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-    : `$${estimatedUsdBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    ? `$${overallWalletUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : `$${overallWalletUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const portfolioUpdatedDisplay = portfolioReady && !shouldDeferPortfolioDisplay ? portfolioUpdatedAt : (lastWalletSyncLabel === "-" ? portfolioUpdatedAt : lastWalletSyncLabel);
   const maskedBalance = "••••••";
   const visibleValue = (value: string) => (hideBalance ? maskedBalance : value);
@@ -841,6 +864,21 @@ export default function WalletPage() {
                 <p className="text-xs text-muted-foreground mt-1">
                   DoctorTrade wallet: {walletConnected ? `Connected (${shortAddress(solanaAddress)})` : "Not connected"}
                 </p>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                  <div className="rounded-md border border-border/60 bg-muted/20 p-2">
+                    <p className="text-muted-foreground">Main Wallet</p>
+                    <p className="font-semibold">{visibleValue(`$${mainWalletUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)}</p>
+                  </div>
+                  <div className="rounded-md border border-border/60 bg-muted/20 p-2">
+                    <p className="text-muted-foreground">Held Tokens</p>
+                    <p className="font-semibold">{visibleValue(`$${heldTokensUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)}</p>
+                  </div>
+                  <div className="rounded-md border border-border/60 bg-muted/20 p-2">
+                    <p className="text-muted-foreground">Profit Jar Wallet</p>
+                    <p className="font-semibold">{visibleValue(`$${profitJarWalletUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)}</p>
+                    <p className="text-[11px] text-muted-foreground">{visibleValue(`${profitJarWalletSol.toLocaleString(undefined, { maximumFractionDigits: 9 })} SOL`)}</p>
+                  </div>
+                </div>
                 {usingDoctorWalletTokenFallback && (
                   <p className="text-xs text-amber-400 mt-1">Using DoctorTrade token snapshot while wallet indexing catches up.</p>
                 )}
