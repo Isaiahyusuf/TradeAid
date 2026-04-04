@@ -35,10 +35,7 @@ import {
   useImportAssistantWalletPrivateKey,
   useRemoveAssistantWalletChain,
   useRevealAssistantWallet,
-  useCreateAssistantProfitJarWallet,
-  useUpdateAssistantProfitJarSettings,
   useTransferAssistantWallet,
-  useWithdrawAssistantProfitJar,
 } from "@/hooks/use-ai-assistant";
 import { useDoctorStatus } from "@/hooks/use-doctortrade";
 
@@ -77,9 +74,6 @@ export default function WalletPage() {
   const exportWalletKey = useExportAssistantWalletKey();
   const transferWallet = useTransferAssistantWallet();
   const walletSwap = useAssistantWalletSwap();
-  const createProfitJarWallet = useCreateAssistantProfitJarWallet();
-  const updateProfitJarSettings = useUpdateAssistantProfitJarSettings();
-  const withdrawProfitJar = useWithdrawAssistantProfitJar();
 
   const trading = tradingStatusQuery.data?.trading;
   const wallet = walletStatusQuery.data?.wallet;
@@ -109,12 +103,6 @@ export default function WalletPage() {
   const [swapTokenMint, setSwapTokenMint] = useState("");
   const [swapAmountSol, setSwapAmountSol] = useState("0.1");
   const [swapSellAmountTokens, setSwapSellAmountTokens] = useState("");
-  const [profitJarEnabled, setProfitJarEnabled] = useState(false);
-  const [profitJarAllocationPct, setProfitJarAllocationPct] = useState("20");
-  const [profitJarReserveSol, setProfitJarReserveSol] = useState("0.12");
-  const [profitJarMinTransferSol, setProfitJarMinTransferSol] = useState("0.01");
-  const [profitJarWithdrawAddress, setProfitJarWithdrawAddress] = useState("");
-  const [profitJarWithdrawAmountSol, setProfitJarWithdrawAmountSol] = useState("");
   const [hideBalance, setHideBalance] = useState(false);
   const swapMode = "live" as const;
 
@@ -306,14 +294,6 @@ export default function WalletPage() {
   const profitJar = profitJarStatusQuery.data?.profit_jar;
   const profitJarLedger = profitJarLedgerQuery.data?.ledger || [];
 
-  useEffect(() => {
-    if (!profitJar) return;
-    setProfitJarEnabled(Boolean(profitJar.enabled));
-    setProfitJarAllocationPct(String(Number(profitJar.allocation_pct || 20)));
-    setProfitJarReserveSol(String(Number(profitJar.reserve_sol || 0.12)));
-    setProfitJarMinTransferSol(String(Number(profitJar.min_transfer_sol || 0.01)));
-  }, [profitJar?.enabled, profitJar?.allocation_pct, profitJar?.reserve_sol, profitJar?.min_transfer_sol]);
-
   const walletExists = Boolean(wallet?.has_wallet || solanaAddress);
   const walletStatusSettling = walletInitialLoading || !walletStatusFetched || !tradingStatusFetched || walletStatusQuery.isFetching || tradingStatusQuery.isFetching;
   const walletConnectedDisplayLabel = walletConnected ? "Private Key Connected" : "Private Key Not Connected";
@@ -340,10 +320,7 @@ export default function WalletPage() {
     || deleteWallet.isPending
     || exportWalletKey.isPending
     || transferWallet.isPending
-    || walletSwap.isPending
-    || createProfitJarWallet.isPending
-    || updateProfitJarSettings.isPending
-    || withdrawProfitJar.isPending,
+    || walletSwap.isPending,
   );
   const savingMessage = importWalletPrivateKey.isPending
     ? "Connecting private key..."
@@ -355,12 +332,6 @@ export default function WalletPage() {
           ? "Sending transaction..."
           : walletSwap.isPending
             ? "Submitting swap..."
-            : withdrawProfitJar.isPending
-              ? "Withdrawing from Profit Jar..."
-              : createProfitJarWallet.isPending
-                ? "Creating Profit Jar wallet..."
-                : updateProfitJarSettings.isPending
-                  ? "Saving Profit Jar settings..."
             : deleteWallet.isPending
               ? "Deleting wallet..."
               : "Saving wallet settings...";
@@ -413,73 +384,6 @@ export default function WalletPage() {
   const handleOpenWalletSettings = (chainName: string) => {
     setSettingsChain(chainName as SupportedWalletChain);
     setWalletSettingsOpen(true);
-  };
-
-  const handleCreateProfitJarWallet = async (overwrite = false) => {
-    try {
-      await createProfitJarWallet.mutateAsync({ overwrite });
-      await refreshWalletViews();
-      toast({ title: "Profit Jar wallet ready", description: "Doctor can now auto-route realized profits into this wallet." });
-    } catch (error) {
-      toast({ title: "Profit Jar wallet failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
-    }
-  };
-
-  const handleSaveProfitJarSettings = async () => {
-    const allocation = Number(profitJarAllocationPct);
-    const reserve = Number(profitJarReserveSol);
-    const minTransfer = Number(profitJarMinTransferSol);
-
-    if (!Number.isFinite(allocation) || allocation < 1 || allocation > 100) {
-      toast({ title: "Invalid allocation", description: "Allocation must be between 1 and 100.", variant: "destructive" });
-      return;
-    }
-    if (!Number.isFinite(reserve) || reserve < 0) {
-      toast({ title: "Invalid reserve", description: "Reserve SOL must be zero or positive.", variant: "destructive" });
-      return;
-    }
-    if (!Number.isFinite(minTransfer) || minTransfer <= 0) {
-      toast({ title: "Invalid min transfer", description: "Minimum transfer SOL must be greater than zero.", variant: "destructive" });
-      return;
-    }
-
-    try {
-      await updateProfitJarSettings.mutateAsync({
-        enabled: profitJarEnabled,
-        allocation_pct: allocation,
-        reserve_sol: reserve,
-        min_transfer_sol: minTransfer,
-      });
-      await refreshWalletViews();
-      toast({ title: "Profit Jar updated", description: "Auto-sweep settings saved." });
-    } catch (error) {
-      toast({ title: "Save failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
-    }
-  };
-
-  const handleProfitJarWithdraw = async () => {
-    const recipient = profitJarWithdrawAddress.trim();
-    const amountSol = Number(profitJarWithdrawAmountSol);
-    if (!recipient) {
-      toast({ title: "Recipient required", description: "Enter a recipient address.", variant: "destructive" });
-      return;
-    }
-    if (!Number.isFinite(amountSol) || amountSol <= 0) {
-      toast({ title: "Invalid amount", description: "Enter a valid SOL amount.", variant: "destructive" });
-      return;
-    }
-
-    try {
-      const result = await withdrawProfitJar.mutateAsync({ recipient_address: recipient, amount_sol: amountSol });
-      await refreshWalletViews();
-      setProfitJarWithdrawAmountSol("");
-      toast({ title: "Profit Jar withdrawal sent", description: `Tx: ${result.withdraw.tx_hash.slice(0, 10)}...` });
-      if (result.withdraw.explorer_url) {
-        window.open(result.withdraw.explorer_url, "_blank");
-      }
-    } catch (error) {
-      toast({ title: "Withdrawal failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
-    }
   };
 
   const handleSendSubmit = async () => {
@@ -880,57 +784,29 @@ export default function WalletPage() {
                 </div>
 
                 <div className="rounded-md border border-border/60 p-3 bg-muted/20 space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button variant={profitJarEnabled ? "default" : "outline"} size="sm" onClick={() => setProfitJarEnabled((v) => !v)}>
-                      {profitJarEnabled ? "Auto-Sweep On" : "Auto-Sweep Off"}
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleCreateProfitJarWallet(false)} disabled={createProfitJarWallet.isPending || Boolean(profitJar?.wallet_created)}>
-                      Create Jar Wallet
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleCreateProfitJarWallet(true)} disabled={createProfitJarWallet.isPending}>
-                      Rotate Jar Wallet
-                    </Button>
-                    {profitJar?.wallet_address && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                    <div className="rounded-md border border-border/60 p-2 bg-background/30">
+                      <p className="text-muted-foreground">Allocation Policy</p>
+                      <p className="font-semibold">{Number(profitJar?.allocation_pct || 0)}%</p>
+                    </div>
+                    <div className="rounded-md border border-border/60 p-2 bg-background/30">
+                      <p className="text-muted-foreground">Wallet Reserve</p>
+                      <p className="font-semibold">{Number(profitJar?.reserve_sol || 0).toLocaleString(undefined, { maximumFractionDigits: 9 })} SOL</p>
+                    </div>
+                    <div className="rounded-md border border-border/60 p-2 bg-background/30">
+                      <p className="text-muted-foreground">Minimum Sweep</p>
+                      <p className="font-semibold">{Number(profitJar?.min_transfer_sol || 0).toLocaleString(undefined, { maximumFractionDigits: 9 })} SOL</p>
+                    </div>
+                  </div>
+                  {profitJar?.wallet_address ? (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-[11px] text-muted-foreground">Jar address: {shortAddress(String(profitJar.wallet_address || ""))}</p>
                       <Button variant="outline" size="sm" onClick={() => copyText(String(profitJar.wallet_address || ""), "Profit Jar wallet address copied")}>Copy Jar Address</Button>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                    <div>
-                      <Label>Allocation %</Label>
-                      <Input type="number" min={1} max={100} step="1" value={profitJarAllocationPct} onChange={(e) => setProfitJarAllocationPct(e.target.value)} />
                     </div>
-                    <div>
-                      <Label>Main Wallet Reserve (SOL)</Label>
-                      <Input type="number" min={0} step="0.000001" value={profitJarReserveSol} onChange={(e) => setProfitJarReserveSol(e.target.value)} />
-                    </div>
-                    <div>
-                      <Label>Min Sweep (SOL)</Label>
-                      <Input type="number" min={0.000001} step="0.000001" value={profitJarMinTransferSol} onChange={(e) => setProfitJarMinTransferSol(e.target.value)} />
-                    </div>
-                  </div>
-
-                  <Button variant="outline" onClick={handleSaveProfitJarSettings} disabled={updateProfitJarSettings.isPending}>
-                    {updateProfitJarSettings.isPending ? "Saving..." : "Save Profit Jar Settings"}
-                  </Button>
-                  <p className="text-[11px] text-muted-foreground">Doctor can only deposit via auto-sweep from realized profits. Users can withdraw manually from this panel.</p>
-                </div>
-
-                <div className="rounded-md border border-border/60 p-3 bg-muted/20 space-y-2">
-                  <p className="text-sm font-semibold">User Withdrawal</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    <div>
-                      <Label>Recipient Address</Label>
-                      <Input value={profitJarWithdrawAddress} onChange={(e) => setProfitJarWithdrawAddress(e.target.value)} placeholder="Destination Solana address" />
-                    </div>
-                    <div>
-                      <Label>Amount (SOL)</Label>
-                      <Input type="number" min={0.000001} step="0.000001" value={profitJarWithdrawAmountSol} onChange={(e) => setProfitJarWithdrawAmountSol(e.target.value)} />
-                    </div>
-                  </div>
-                  <Button onClick={handleProfitJarWithdraw} disabled={withdrawProfitJar.isPending || !profitJar?.wallet_created}>
-                    {withdrawProfitJar.isPending ? "Withdrawing..." : "Withdraw From Profit Jar"}
-                  </Button>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">Profit Jar wallet is created automatically on first realized profitable close.</p>
+                  )}
+                  <p className="text-[11px] text-muted-foreground">App-managed mode: DoctorTrade computes realized profit at close and auto-sends to Profit Jar. User transfers to/from Jar are disabled.</p>
                 </div>
 
                 <div className="space-y-2">

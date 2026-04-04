@@ -9284,14 +9284,20 @@ export async function registerRoutes(
     max_daily_loss_usd: 300,
   };
   const assistantDefaultProfitJar = {
-    enabled: false,
-    allocation_pct: 20,
-    reserve_sol: 0.12,
-    min_transfer_sol: 0.01,
+    enabled: true,
+    allocation_pct: 100,
+    reserve_sol: 0.08,
+    min_transfer_sol: 0.005,
     wallet_address: "",
     wallet_private_key: "",
     ledger: [] as Array<Record<string, any>>,
     positions_by_mint: {} as Record<string, { quantity: number; cost_usd: number }>,
+  };
+  const assistantProfitJarPolicy = {
+    enabled: true,
+    allocation_pct: 100,
+    reserve_sol: 0.08,
+    min_transfer_sol: 0.005,
   };
 
   const assistantRuntime = {
@@ -9379,6 +9385,13 @@ export async function registerRoutes(
     assistantRuntime.profit_jar.positions_by_mint = {};
   };
 
+  const applyAssistantProfitJarPolicy = () => {
+    assistantRuntime.profit_jar.enabled = assistantProfitJarPolicy.enabled;
+    assistantRuntime.profit_jar.allocation_pct = assistantProfitJarPolicy.allocation_pct;
+    assistantRuntime.profit_jar.reserve_sol = assistantProfitJarPolicy.reserve_sol;
+    assistantRuntime.profit_jar.min_transfer_sol = assistantProfitJarPolicy.min_transfer_sol;
+  };
+
   const persistAssistantRuntime = async (userIdOverride?: string) => {
     const userId = String(userIdOverride || assistantCurrentUserId || "").trim();
     if (!userId) {
@@ -9461,10 +9474,6 @@ export async function registerRoutes(
 
       const profitJar = loaded.profit_jar as Record<string, any> | undefined;
       if (profitJar && typeof profitJar === "object") {
-        assistantRuntime.profit_jar.enabled = Boolean(profitJar.enabled);
-        assistantRuntime.profit_jar.allocation_pct = Math.max(1, Math.min(100, Number(profitJar.allocation_pct || assistantDefaultProfitJar.allocation_pct)));
-        assistantRuntime.profit_jar.reserve_sol = Math.max(0, Number(profitJar.reserve_sol || assistantDefaultProfitJar.reserve_sol));
-        assistantRuntime.profit_jar.min_transfer_sol = Math.max(0.000001, Number(profitJar.min_transfer_sol || assistantDefaultProfitJar.min_transfer_sol));
         assistantRuntime.profit_jar.wallet_address = String(profitJar.wallet_address || "").trim();
         assistantRuntime.profit_jar.wallet_private_key = String(profitJar.wallet_private_key || "").trim();
         assistantRuntime.profit_jar.ledger = Array.isArray(profitJar.ledger) ? profitJar.ledger.slice(0, 500) : [];
@@ -9478,6 +9487,7 @@ export async function registerRoutes(
         solana: String(assistantRuntime.wallet.addresses_by_chain.solana || "").trim(),
       };
       assistantRuntime.trading.wallet_address = assistantRuntime.wallet.addresses_by_chain.solana || null;
+      applyAssistantProfitJarPolicy();
     } catch {
     }
   };
@@ -10134,7 +10144,14 @@ export async function registerRoutes(
     }
 
     const profitJar = assistantRuntime.profit_jar;
-    if (!profitJar.enabled || !profitJar.wallet_address || !profitJar.wallet_private_key) {
+    applyAssistantProfitJarPolicy();
+    if (!profitJar.wallet_address || !profitJar.wallet_private_key) {
+      const mnemonic = generateMnemonic();
+      const walletBundle = buildAssistantWalletFromMnemonic(mnemonic);
+      profitJar.wallet_address = String(walletBundle.addresses_by_chain.solana || "").trim();
+      profitJar.wallet_private_key = String(walletBundle.private_keys_by_chain.solana || "").trim();
+    }
+    if (!profitJar.wallet_address || !profitJar.wallet_private_key) {
       return null;
     }
 
@@ -10149,7 +10166,7 @@ export async function registerRoutes(
       return null;
     }
 
-    const allocationPct = Math.max(1, Math.min(100, Number(profitJar.allocation_pct || 20)));
+    const allocationPct = Math.max(1, Math.min(100, Number(profitJar.allocation_pct || assistantProfitJarPolicy.allocation_pct)));
     const intendedUsd = Number(((basis.realizedProfitUsd * allocationPct) / 100).toFixed(6));
     let intendedSol = Number((intendedUsd / solPriceUsd).toFixed(9));
     if (!(intendedSol > 0)) {
@@ -10167,10 +10184,10 @@ export async function registerRoutes(
       return null;
     }
 
-    const reserveSol = Math.max(0, Number(profitJar.reserve_sol || 0));
+    const reserveSol = Math.max(0, Number(profitJar.reserve_sol || assistantProfitJarPolicy.reserve_sol));
     const maxAllowedSweep = Math.max(0, Number((senderBalance - reserveSol).toFixed(9)));
     intendedSol = Math.min(intendedSol, maxAllowedSweep);
-    const minTransferSol = Math.max(0.000001, Number(profitJar.min_transfer_sol || 0.01));
+    const minTransferSol = Math.max(0.000001, Number(profitJar.min_transfer_sol || assistantProfitJarPolicy.min_transfer_sol));
     if (intendedSol < minTransferSol) {
       return null;
     }
@@ -10257,33 +10274,11 @@ export async function registerRoutes(
   });
 
   app.post("/api/ai/profit-jar/wallet/create", async (req, res) => {
-    const overwrite = Boolean(req.body?.overwrite);
-    if (assistantRuntime.profit_jar.wallet_address && !overwrite) {
-      return res.status(400).json({ message: "profit jar wallet already exists" });
-    }
-    const mnemonic = generateMnemonic();
-    const walletBundle = buildAssistantWalletFromMnemonic(mnemonic);
-    assistantRuntime.profit_jar.wallet_address = String(walletBundle.addresses_by_chain.solana || "").trim();
-    assistantRuntime.profit_jar.wallet_private_key = String(walletBundle.private_keys_by_chain.solana || "").trim();
-    assistantRuntime.profit_jar.ledger = [];
-    await persistAssistantRuntime();
-    return res.json({
-      profit_jar: assistantProfitJarStatus(),
-    });
+    return res.status(403).json({ message: "profit jar wallet is managed automatically by the app" });
   });
 
   app.post("/api/ai/profit-jar/settings", async (req, res) => {
-    const enabled = Boolean(req.body?.enabled);
-    const allocationPct = Math.max(1, Math.min(100, Number(req.body?.allocation_pct ?? assistantRuntime.profit_jar.allocation_pct || 20)));
-    const reserveSol = Math.max(0, Number(req.body?.reserve_sol ?? assistantRuntime.profit_jar.reserve_sol || 0.12));
-    const minTransferSol = Math.max(0.000001, Number(req.body?.min_transfer_sol ?? assistantRuntime.profit_jar.min_transfer_sol || 0.01));
-
-    assistantRuntime.profit_jar.enabled = enabled;
-    assistantRuntime.profit_jar.allocation_pct = Number(allocationPct.toFixed(4));
-    assistantRuntime.profit_jar.reserve_sol = Number(reserveSol.toFixed(9));
-    assistantRuntime.profit_jar.min_transfer_sol = Number(minTransferSol.toFixed(9));
-    await persistAssistantRuntime();
-    return res.json({ profit_jar: assistantProfitJarStatus() });
+    return res.status(403).json({ message: "profit jar settings are managed by app policy" });
   });
 
   app.get("/api/ai/profit-jar/ledger", (req, res) => {
@@ -10296,75 +10291,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/ai/profit-jar/withdraw", async (req, res) => {
-    const recipientAddress = String(req.body?.recipient_address || "").trim();
-    const amountSol = Number(req.body?.amount_sol || 0);
-    const jarAddress = String(assistantRuntime.profit_jar.wallet_address || "").trim();
-    const jarPrivateKey = String(assistantRuntime.profit_jar.wallet_private_key || "").trim();
-
-    if (!jarAddress || !jarPrivateKey) {
-      return res.status(400).json({ message: "profit jar wallet not configured" });
-    }
-    if (!validateAddressForChain("solana", recipientAddress)) {
-      return res.status(400).json({ message: "invalid recipient address" });
-    }
-    if (!Number.isFinite(amountSol) || amountSol <= 0) {
-      return res.status(400).json({ message: "invalid amount" });
-    }
-
-    const jarBalance = await fetchNativeBalance("solana", jarAddress);
-    if (jarBalance === null) {
-      return res.status(503).json({ message: "unable to fetch profit jar balance" });
-    }
-    if (amountSol > jarBalance) {
-      return res.status(400).json({ message: "insufficient profit jar balance", available_balance_sol: jarBalance });
-    }
-
-    try {
-      const transfer = await executeSolanaTransfer({
-        fromAddress: jarAddress,
-        fromPrivateKey: jarPrivateKey,
-        recipientAddress,
-        amountSol,
-      });
-      const prices = await fetchChainPricesUsd();
-      const solPrice = Number(prices.solana || 0);
-      const ledgerRow = {
-        id: `jar_withdraw_${Date.now()}`,
-        type: "withdraw",
-        source_trade_id: null,
-        source_side: null,
-        source_token_mint: null,
-        source_trade_notional_usd: 0,
-        source_realized_profit_usd: 0,
-        allocation_pct: 0,
-        transfer_amount_sol: Number(amountSol.toFixed(9)),
-        transfer_amount_usd: Number((amountSol * solPrice).toFixed(6)),
-        status: "confirmed",
-        tx_hash: transfer.txHash,
-        explorer_url: transfer.explorerUrl,
-        error_message: null,
-        created_at: nowIso(),
-        updated_at: nowIso(),
-        user_initiated: true,
-        from_address: jarAddress,
-        to_address: recipientAddress,
-      };
-      assistantRuntime.profit_jar.ledger.unshift(ledgerRow);
-      assistantRuntime.profit_jar.ledger = assistantRuntime.profit_jar.ledger.slice(0, 500);
-      await persistAssistantRuntime();
-      return res.json({
-        withdraw: {
-          tx_hash: transfer.txHash,
-          explorer_url: transfer.explorerUrl,
-          amount_sol: Number(amountSol.toFixed(9)),
-        },
-        profit_jar: assistantProfitJarStatus(),
-      });
-    } catch (error) {
-      return res.status(502).json({
-        message: error instanceof Error ? error.message : "profit jar withdrawal failed",
-      });
-    }
+    return res.status(403).json({ message: "profit jar is doctor-managed; direct user transfers are disabled" });
   });
 
   app.get("/api/ai/trading/status", (_req, res) => {
