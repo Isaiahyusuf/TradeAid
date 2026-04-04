@@ -372,6 +372,37 @@ export function useCreateAssistantProfitJarWallet() {
   });
 }
 
+export function useImportAssistantProfitJarWalletPrivateKey() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { private_key: string; overwrite?: boolean }) =>
+      apiPost<{ profit_jar: AssistantProfitJarStatus }>("/api/ai/profit-jar/wallet/import-private-key", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-profit-jar-status"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-profit-jar-ledger"] });
+    },
+  });
+}
+
+export function useExportAssistantProfitJarWalletKey() {
+  return useMutation({
+    mutationFn: async () =>
+      apiPost<{ wallet_key: AssistantWalletKeyExport }>("/api/ai/profit-jar/wallet/export-key", {}),
+  });
+}
+
+export function useDeleteAssistantProfitJarWallet() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () =>
+      apiPost<{ ok: boolean; message: string; profit_jar: AssistantProfitJarStatus }>("/api/ai/profit-jar/wallet/delete", {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-profit-jar-status"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-profit-jar-ledger"] });
+    },
+  });
+}
+
 export function useUpdateAssistantProfitJarSettings() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -18,8 +18,13 @@ import { useLocation } from "wouter";
 import { TokenAvatar } from "@/components/token/TokenAvatar";
 import { SettingsMenuCard } from "@/components/settings/SettingsMenuCard";
 import {
+  useCreateAssistantProfitJarWallet,
+  useDeleteAssistantProfitJarWallet,
+  useExportAssistantProfitJarWalletKey,
+  useImportAssistantProfitJarWalletPrivateKey,
   useAssistantProfitJarLedger,
   useAssistantProfitJarStatus,
+  useUpdateAssistantProfitJarSettings,
   useAssistantWalletSwap,
   useAssistantWalletSwapQuote,
   useAssistantContextOverview,
@@ -76,6 +81,11 @@ export default function WalletPage() {
   const transferWallet = useTransferAssistantWallet();
   const walletSwap = useAssistantWalletSwap();
   const withdrawProfitJar = useWithdrawAssistantProfitJar();
+  const createProfitJarWallet = useCreateAssistantProfitJarWallet();
+  const importProfitJarWalletPrivateKey = useImportAssistantProfitJarWalletPrivateKey();
+  const exportProfitJarWalletKey = useExportAssistantProfitJarWalletKey();
+  const deleteProfitJarWallet = useDeleteAssistantProfitJarWallet();
+  const updateProfitJarSettings = useUpdateAssistantProfitJarSettings();
 
   const trading = tradingStatusQuery.data?.trading;
   const wallet = walletStatusQuery.data?.wallet;
@@ -105,6 +115,7 @@ export default function WalletPage() {
   const [swapTokenMint, setSwapTokenMint] = useState("");
   const [swapAmountSol, setSwapAmountSol] = useState("0.1");
   const [swapSellAmountTokens, setSwapSellAmountTokens] = useState("");
+  const [profitJarPrivateKeyInput, setProfitJarPrivateKeyInput] = useState("");
   const [profitJarWithdrawAddress, setProfitJarWithdrawAddress] = useState("");
   const [profitJarWithdrawAmountSol, setProfitJarWithdrawAmountSol] = useState("");
   const [hideBalance, setHideBalance] = useState(false);
@@ -325,7 +336,12 @@ export default function WalletPage() {
     || exportWalletKey.isPending
     || transferWallet.isPending
     || walletSwap.isPending
-    || withdrawProfitJar.isPending,
+    || withdrawProfitJar.isPending
+    || createProfitJarWallet.isPending
+    || importProfitJarWalletPrivateKey.isPending
+    || exportProfitJarWalletKey.isPending
+    || deleteProfitJarWallet.isPending
+    || updateProfitJarSettings.isPending,
   );
   const savingMessage = importWalletPrivateKey.isPending
     ? "Connecting private key..."
@@ -339,6 +355,16 @@ export default function WalletPage() {
             ? "Submitting swap..."
             : withdrawProfitJar.isPending
               ? "Withdrawing from Profit Jar..."
+            : createProfitJarWallet.isPending
+              ? "Creating Profit Jar wallet..."
+              : importProfitJarWalletPrivateKey.isPending
+                ? "Importing Profit Jar private key..."
+                : exportProfitJarWalletKey.isPending
+                  ? "Exporting Profit Jar private key..."
+                  : deleteProfitJarWallet.isPending
+                    ? "Deleting Profit Jar wallet..."
+                    : updateProfitJarSettings.isPending
+                      ? "Updating Profit Jar settings..."
             : deleteWallet.isPending
               ? "Deleting wallet..."
               : "Saving wallet settings...";
@@ -391,6 +417,69 @@ export default function WalletPage() {
   const handleOpenWalletSettings = (chainName: string) => {
     setSettingsChain(chainName as SupportedWalletChain);
     setWalletSettingsOpen(true);
+  };
+
+  const handleToggleProfitJarEnabled = async () => {
+    const nextEnabled = !Boolean(profitJar?.enabled);
+    try {
+      await updateProfitJarSettings.mutateAsync({
+        enabled: nextEnabled,
+        allocation_pct: Number(profitJar?.allocation_pct || 100),
+        reserve_sol: Number(profitJar?.reserve_sol || 0.08),
+        min_transfer_sol: Number(profitJar?.min_transfer_sol || 0.005),
+      });
+      await refreshWalletViews();
+      toast({ title: "Profit Jar updated", description: nextEnabled ? "Profit Jar enabled." : "Profit Jar disabled." });
+    } catch (error) {
+      toast({ title: "Update failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
+  };
+
+  const handleCreateProfitJarWallet = async (overwrite = false) => {
+    try {
+      await createProfitJarWallet.mutateAsync({ overwrite });
+      await refreshWalletViews();
+      toast({ title: "Profit Jar wallet ready", description: overwrite ? "Profit Jar wallet replaced." : "Profit Jar wallet created." });
+    } catch (error) {
+      toast({ title: "Create failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
+  };
+
+  const handleImportProfitJarPrivateKey = async (overwrite = false) => {
+    const privateKey = profitJarPrivateKeyInput.trim();
+    if (!privateKey) {
+      toast({ title: "Private key required", description: "Paste the Profit Jar private key.", variant: "destructive" });
+      return;
+    }
+    try {
+      await importProfitJarWalletPrivateKey.mutateAsync({ private_key: privateKey, overwrite });
+      setProfitJarPrivateKeyInput("");
+      await refreshWalletViews();
+      toast({ title: "Profit Jar key imported", description: "Profit Jar wallet is now linked." });
+    } catch (error) {
+      toast({ title: "Import failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
+  };
+
+  const handleCopyProfitJarPrivateKey = async () => {
+    try {
+      const result = await exportProfitJarWalletKey.mutateAsync();
+      await copyText(String(result.wallet_key.private_key || ""), "Profit Jar private key copied");
+    } catch (error) {
+      toast({ title: "Export failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteProfitJarWallet = async () => {
+    const confirmed = window.confirm("Delete Profit Jar wallet from app state? You must re-create or import to continue using it.");
+    if (!confirmed) return;
+    try {
+      await deleteProfitJarWallet.mutateAsync();
+      await refreshWalletViews();
+      toast({ title: "Profit Jar wallet deleted", description: "You can create or import a new wallet." });
+    } catch (error) {
+      toast({ title: "Delete failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
   };
 
   const handleProfitJarWithdraw = async () => {
@@ -836,9 +925,47 @@ export default function WalletPage() {
                       <Button variant="outline" size="sm" onClick={() => copyText(String(profitJar.wallet_address || ""), "Profit Jar wallet address copied")}>Copy Jar Address</Button>
                     </div>
                   ) : (
-                    <p className="text-[11px] text-muted-foreground">Profit Jar wallet is created automatically on first realized profitable close.</p>
+                    <p className="text-[11px] text-muted-foreground">No Profit Jar wallet configured yet. Create or import one below.</p>
                   )}
-                  <p className="text-[11px] text-muted-foreground">App-managed mode: DoctorTrade computes realized profit at close and auto-sends to Profit Jar. Users can only withdraw profits from Jar.</p>
+                  <p className="text-[11px] text-muted-foreground">DoctorTrade computes realized profit at close and auto-sends to Profit Jar when enabled.</p>
+                </div>
+
+                <div className="rounded-md border border-border/60 p-3 bg-muted/20 space-y-3">
+                  <p className="text-sm font-semibold">Profit Jar Controls</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button size="sm" variant={profitJar?.enabled ? "default" : "outline"} onClick={handleToggleProfitJarEnabled}>
+                      {profitJar?.enabled ? "Disable Profit Jar" : "Enable Profit Jar"}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => handleCreateProfitJarWallet(false)} disabled={Boolean(profitJar?.wallet_created)}>
+                      Create Jar Wallet
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => handleCreateProfitJarWallet(true)}>
+                      Create New Wallet
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={handleCopyProfitJarPrivateKey} disabled={!profitJar?.wallet_created}>
+                      Copy Private Key
+                    </Button>
+                    <Button size="sm" variant="destructive" onClick={handleDeleteProfitJarWallet} disabled={!profitJar?.wallet_created}>
+                      Delete Wallet
+                    </Button>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Import Private Key</Label>
+                    <Textarea
+                      value={profitJarPrivateKeyInput}
+                      onChange={(e) => setProfitJarPrivateKeyInput(e.target.value)}
+                      className="min-h-[86px]"
+                      placeholder="Paste Profit Jar private key (base58, base64, or JSON array)"
+                    />
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="outline" onClick={() => handleImportProfitJarPrivateKey(false)}>
+                        Import Key
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => handleImportProfitJarPrivateKey(true)}>
+                        Import + Overwrite
+                      </Button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="rounded-md border border-border/60 p-3 bg-muted/20 space-y-2">
