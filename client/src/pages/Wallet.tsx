@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDownLeft, ArrowUpRight, CheckCircle2, Copy, History, KeyRound, Loader2, Settings2, Shield, Trash2, Wallet as WalletIcon } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, CheckCircle2, Copy, Eye, EyeOff, History, KeyRound, Loader2, Settings2, Shield, Trash2, Wallet as WalletIcon } from "lucide-react";
 
 import { Layout } from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,6 +38,7 @@ import {
 import { useDoctorStatus } from "@/hooks/use-doctortrade";
 
 type SupportedWalletChain = (typeof SUPPORTED_CHAINS)[number];
+const WALLET_BALANCE_HIDDEN_KEY = "tradeaid-wallet-balance-hidden-v1";
 
 export default function WalletPage() {
   const queryClient = useQueryClient();
@@ -98,6 +99,7 @@ export default function WalletPage() {
   const [swapTokenMint, setSwapTokenMint] = useState("");
   const [swapAmountSol, setSwapAmountSol] = useState("0.1");
   const [swapSellAmountTokens, setSwapSellAmountTokens] = useState("");
+  const [hideBalance, setHideBalance] = useState(false);
   const swapMode = "live" as const;
 
   const [exportedKey, setExportedKey] = useState<{ chain: string; address: string; private_key: string; warning: string } | null>(null);
@@ -110,6 +112,17 @@ export default function WalletPage() {
       setSecuritySetupOpen(true);
     }
   }, [walletAction, location]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem(WALLET_BALANCE_HIDDEN_KEY);
+    setHideBalance(saved === "1");
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(WALLET_BALANCE_HIDDEN_KEY, hideBalance ? "1" : "0");
+  }, [hideBalance]);
 
   useEffect(() => {
     if (walletAction !== "swap") return;
@@ -270,17 +283,9 @@ export default function WalletPage() {
   const walletConnected = Boolean(wallet?.has_wallet && solanaAddress);
   const walletExists = Boolean(wallet?.has_wallet || solanaAddress);
   const walletStatusSettling = walletInitialLoading || !walletStatusFetched || !tradingStatusFetched || walletStatusQuery.isFetching || tradingStatusQuery.isFetching;
-  const walletConnectedDisplayLabel = walletStatusReady
-    ? (walletConnected ? "Private Key Connected" : "Private Key Not Connected")
-    : "Checking Key...";
-  const walletExistsDisplayLabel = walletStatusSettling
-    ? "Checking Wallet..."
-    : walletStatusReady
-      ? (walletExists ? "Wallet Active" : "Wallet Not Created")
-      : "Wallet Status Pending";
-  const walletBackupDisplayLabel = walletStatusReady
-    ? (wallet?.backup_confirmed ? "Backup Confirmed" : "Backup Pending")
-    : "Checking Backup...";
+  const walletConnectedDisplayLabel = walletConnected ? "Private Key Connected" : "Private Key Not Connected";
+  const walletExistsDisplayLabel = walletExists ? "Wallet Active" : "Wallet Not Created";
+  const walletBackupDisplayLabel = wallet?.backup_confirmed ? "Backup Confirmed" : "Backup Pending";
   const shouldDeferPortfolioDisplay = walletInitialLoading || (
     walletPortfolioQuery.isFetching
     && Number(portfolio?.total_usd || 0) <= 0
@@ -288,8 +293,10 @@ export default function WalletPage() {
   );
   const portfolioTotalDisplay = portfolioReady && !shouldDeferPortfolioDisplay
     ? `$${estimatedUsdBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-    : "...";
-  const portfolioUpdatedDisplay = portfolioReady && !shouldDeferPortfolioDisplay ? portfolioUpdatedAt : "Syncing...";
+    : `$${estimatedUsdBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const portfolioUpdatedDisplay = portfolioReady && !shouldDeferPortfolioDisplay ? portfolioUpdatedAt : (lastWalletSyncLabel === "-" ? portfolioUpdatedAt : lastWalletSyncLabel);
+  const maskedBalance = "••••••";
+  const visibleValue = (value: string) => (hideBalance ? maskedBalance : value);
   const savingInProgress = Boolean(
     createWallet.isPending
     || importWallet.isPending
@@ -676,8 +683,12 @@ export default function WalletPage() {
               {walletConnectedDisplayLabel}
             </Badge>
             <Badge variant="outline" className={walletSyncing ? "border-yellow-500/40 text-yellow-400" : "border-green-500/40 text-green-400"}>
-              {walletInitialLoading ? "Loading..." : walletSyncing ? "Syncing..." : "Live Sync"}
+              Live Sync
             </Badge>
+            <Button variant="outline" size="sm" onClick={() => setHideBalance((prev) => !prev)}>
+              {hideBalance ? <Eye className="w-4 h-4 mr-1" /> : <EyeOff className="w-4 h-4 mr-1" />}
+              {hideBalance ? "Show Balance" : "Hide Balance"}
+            </Button>
             <Button variant="outline" size="sm" onClick={refreshWalletViews} disabled={walletSyncing}>
               {walletSyncing ? "Refreshing..." : "Refresh"}
             </Button>
@@ -690,11 +701,11 @@ export default function WalletPage() {
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Total Portfolio Balance</p>
-                <p className="text-4xl font-bold mt-1">{portfolioTotalDisplay}</p>
+                <p className="text-4xl font-bold mt-1">{visibleValue(portfolioTotalDisplay)}</p>
                 <p className="text-xs text-muted-foreground mt-1">Synced chains: {activeChainsCount}/{enabledChains.length}</p>
                 <p className="text-xs text-muted-foreground mt-1">Portfolio updated: {portfolioUpdatedDisplay}</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  DoctorTrade wallet: {walletStatusReady ? (walletConnected ? `Connected (${shortAddress(solanaAddress)})` : "Not connected") : "Checking wallet..."}
+                  DoctorTrade wallet: {walletConnected ? `Connected (${shortAddress(solanaAddress)})` : "Not connected"}
                 </p>
                 {usingDoctorWalletTokenFallback && (
                   <p className="text-xs text-amber-400 mt-1">Using DoctorTrade token snapshot while wallet indexing catches up.</p>
@@ -756,8 +767,8 @@ export default function WalletPage() {
                           <p className="text-xs text-muted-foreground mt-1">Data: {dataStatus === "ok" ? "Live" : dataStatus === "rpc_unavailable" ? "RPC unavailable" : dataStatus === "rpc_not_configured" ? "RPC not configured" : dataStatus === "invalid_address" ? "Invalid address" : dataStatus === "unsupported" ? "Balance not integrated" : "No wallet"}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-semibold">{balance.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 6 })} {portfolioChains[chainName]?.native_symbol || ""}</p>
-                          <p className="text-xs text-muted-foreground">$ {chainUsdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                          <p className="text-sm font-semibold">{visibleValue(`${balance.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 6 })} ${portfolioChains[chainName]?.native_symbol || ""}`)}</p>
+                          <p className="text-xs text-muted-foreground">{visibleValue(`$ ${chainUsdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)}</p>
                         </div>
                       </div>
 
@@ -815,9 +826,9 @@ export default function WalletPage() {
                           </div>
                         </div>
                         <div className="text-right shrink-0">
-                          <p className="text-sm font-semibold">{tokenAmount.toLocaleString(undefined, { maximumFractionDigits: 9 })}</p>
-                          <p className="text-[11px] text-muted-foreground">{tokenPriceUsd > 0 ? `$${tokenPriceUsd.toLocaleString(undefined, { minimumFractionDigits: 6, maximumFractionDigits: 9 })}` : "Price unavailable"}</p>
-                          <p className="text-xs text-muted-foreground">$ {tokenValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                          <p className="text-sm font-semibold">{visibleValue(tokenAmount.toLocaleString(undefined, { maximumFractionDigits: 9 }))}</p>
+                          <p className="text-[11px] text-muted-foreground">{hideBalance ? maskedBalance : (tokenPriceUsd > 0 ? `$${tokenPriceUsd.toLocaleString(undefined, { minimumFractionDigits: 6, maximumFractionDigits: 9 })}` : "Price unavailable")}</p>
+                          <p className="text-xs text-muted-foreground">{visibleValue(`$ ${tokenValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)}</p>
                           <Button
                             size="sm"
                             variant="outline"
@@ -854,9 +865,9 @@ export default function WalletPage() {
                         {trade.tx_hash && <p className="text-xs text-muted-foreground break-all">Tx: {shortAddress(trade.tx_hash)}</p>}
                       </div>
                       <div className="text-right space-y-1">
-                        <p className="text-sm font-semibold">{Number(trade.quantity || 0).toLocaleString(undefined, { maximumFractionDigits: 9 })} {trade.quantity_unit || trade.asset || ""}</p>
-                        <p className="text-xs text-muted-foreground">Worth: {Number(trade.worth_sol || 0).toLocaleString(undefined, { maximumFractionDigits: 9 })} SOL</p>
-                        <p className="text-xs text-muted-foreground">{Number(trade.notional_usd || 0) > 0 ? `$${Number(trade.notional_usd || 0).toLocaleString()}` : "On-chain activity"}</p>
+                        <p className="text-sm font-semibold">{visibleValue(`${Number(trade.quantity || 0).toLocaleString(undefined, { maximumFractionDigits: 9 })} ${trade.quantity_unit || trade.asset || ""}`)}</p>
+                        <p className="text-xs text-muted-foreground">{visibleValue(`Worth: ${Number(trade.worth_sol || 0).toLocaleString(undefined, { maximumFractionDigits: 9 })} SOL`)}</p>
+                        <p className="text-xs text-muted-foreground">{hideBalance ? maskedBalance : (Number(trade.notional_usd || 0) > 0 ? `$${Number(trade.notional_usd || 0).toLocaleString()}` : "On-chain activity")}</p>
                         <p className="text-xs text-muted-foreground">{trade.status}</p>
                         {trade.explorer_url && (
                           <Button size="sm" variant="outline" onClick={() => window.open(trade.explorer_url, "_blank")}>View Tx</Button>
