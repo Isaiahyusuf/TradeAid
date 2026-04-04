@@ -99,6 +99,7 @@ export default function WalletPage() {
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [walletSettingsOpen, setWalletSettingsOpen] = useState(false);
+  const [profitJarSettingsOpen, setProfitJarSettingsOpen] = useState(false);
   const [securitySetupOpen, setSecuritySetupOpen] = useState(false);
   const [securityBackupOpen, setSecurityBackupOpen] = useState(false);
   const [securityRecoveryOpen, setSecurityRecoveryOpen] = useState(false);
@@ -119,6 +120,7 @@ export default function WalletPage() {
   const [profitJarWithdrawAddress, setProfitJarWithdrawAddress] = useState("");
   const [profitJarWithdrawAmountSol, setProfitJarWithdrawAmountSol] = useState("");
   const [hideBalance, setHideBalance] = useState(false);
+  const [profitJarNowTs, setProfitJarNowTs] = useState(() => Date.now());
   const swapMode = "live" as const;
 
   const [exportedKey, setExportedKey] = useState<{ chain: string; address: string; private_key: string; warning: string } | null>(null);
@@ -155,6 +157,13 @@ export default function WalletPage() {
       setSwapAmountSol(prefillSwapAmountSol);
     }
   }, [walletAction, prefillSwapTokenMint, prefillSwapAmountSol, prefillSwapSide]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setProfitJarNowTs(Date.now());
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const addressesByChain = useMemo(() => {
     const incoming = trading?.wallets_by_chain || wallet?.addresses_by_chain || {};
@@ -331,6 +340,23 @@ export default function WalletPage() {
   const walletConnected = Boolean(wallet?.has_wallet && solanaAddress);
   const profitJar = profitJarStatusQuery.data?.profit_jar;
   const profitJarLedger = profitJarLedgerQuery.data?.ledger || [];
+  const profitJar24hInflow = useMemo(() => {
+    const cutoffMs = profitJarNowTs - (24 * 60 * 60 * 1000);
+    const rows = profitJarLedger.filter((row: any) => {
+      const rowType = String(row?.type || "").toLowerCase();
+      const rowStatus = String(row?.status || "").toLowerCase();
+      if (rowType !== "sweep" || rowStatus !== "confirmed") return false;
+      const createdAtMs = new Date(String(row?.created_at || "")).getTime();
+      return Number.isFinite(createdAtMs) && createdAtMs >= cutoffMs;
+    });
+    const usd = rows.reduce((sum: number, row: any) => sum + Number(row?.transfer_amount_usd || 0), 0);
+    const sol = rows.reduce((sum: number, row: any) => sum + Number(row?.transfer_amount_sol || 0), 0);
+    return {
+      count: rows.length,
+      usd: Math.max(0, usd),
+      sol: Math.max(0, sol),
+    };
+  }, [profitJarLedger, profitJarNowTs]);
 
   const walletExists = Boolean(wallet?.has_wallet || solanaAddress);
   const walletStatusSettling = walletInitialLoading || !walletStatusFetched || !tradingStatusFetched || walletStatusQuery.isFetching || tradingStatusQuery.isFetching;
@@ -345,6 +371,11 @@ export default function WalletPage() {
   const portfolioTotalDisplay = portfolioReady && !shouldDeferPortfolioDisplay
     ? `$${overallWalletUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : `$${overallWalletUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const solPriceUsd = Number(chainPrices.solana || 0);
+  const jarReserveUsd = Math.max(0, Number(profitJar?.reserve_sol || 0) * solPriceUsd);
+  const jarMinSweepUsd = Math.max(0, Number(profitJar?.min_transfer_sol || 0) * solPriceUsd);
+  const profitJar24hGoalUsd = Math.max(25, Number((jarReserveUsd + Math.max(5, jarMinSweepUsd * 10)).toFixed(2)));
+  const profitJar24hProgressPct = Math.max(0, Math.min(100, (profitJar24hInflow.usd / profitJar24hGoalUsd) * 100));
   const portfolioUpdatedDisplay = portfolioReady && !shouldDeferPortfolioDisplay ? portfolioUpdatedAt : (lastWalletSyncLabel === "-" ? portfolioUpdatedAt : lastWalletSyncLabel);
   const maskedBalance = "••••••";
   const visibleValue = (value: string) => (hideBalance ? maskedBalance : value);
@@ -911,14 +942,27 @@ export default function WalletPage() {
           </TabsList>
 
           <TabsContent value="assets" className="space-y-3">
-            <Card className="solana-card border-primary/20">
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Shield className="w-4 h-4" />
-                  Profit Jar
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
+            <SettingsMenuCard
+              title="Profit Jar Settings"
+              description="Manage Profit Jar wallet, controls, and 24h inflow progress."
+              open={profitJarSettingsOpen}
+              onToggle={() => setProfitJarSettingsOpen((prev) => !prev)}
+            >
+              <div className="space-y-3">
+                <div className="rounded-md border border-border/60 p-3 bg-muted/20 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold">24h Profit Inflow</p>
+                    <Badge variant="outline">Resets every 24h</Badge>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                    <div className="h-full bg-primary transition-all duration-500" style={{ width: `${profitJar24hProgressPct.toFixed(2)}%` }} />
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{visibleValue(`$${profitJar24hInflow.usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)} / {visibleValue(`$${profitJar24hGoalUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)}</span>
+                    <span>{visibleValue(`${profitJar24hInflow.sol.toLocaleString(undefined, { maximumFractionDigits: 9 })} SOL`)} · {profitJar24hInflow.count} sweep{profitJar24hInflow.count === 1 ? "" : "s"}</span>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
                   <div className="rounded-md border border-border/60 p-2 bg-muted/20">
                     <p className="text-muted-foreground">Status</p>
@@ -1046,8 +1090,8 @@ export default function WalletPage() {
                     ))
                   )}
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </SettingsMenuCard>
 
             <Card className="solana-card">
               <CardHeader>
