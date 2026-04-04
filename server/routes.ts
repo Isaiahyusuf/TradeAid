@@ -5681,6 +5681,80 @@ export async function registerRoutes(
       doctorRuntime.decisionJournal = doctorRuntime.decisionJournal.slice(0, 80);
     }
 
+    if (doctorRuntime.execution.mode === "live") {
+      const liveWalletAddress = String(doctorRuntime.wallet.address || "").trim();
+      if (liveWalletAddress) {
+        const walletTokens = await getDoctorLiveWalletTokenSnapshots(liveWalletAddress, 40).catch(() => [] as Array<Record<string, any>>);
+        const trackedMints = new Set(
+          doctorRuntime.positions
+            .map((position) => String((position as any).address || "").trim().toLowerCase())
+            .filter(Boolean),
+        );
+        const configuredStopLossPct = Math.max(
+          DOCTOR_STOP_LOSS_PCT,
+          Number(doctorRuntime.controls.stop_loss_pct || DOCTOR_STOP_LOSS_PCT),
+        );
+
+        for (const walletToken of walletTokens) {
+          const mint = String((walletToken as any).mint || "").trim();
+          if (!mint) continue;
+          const mintKey = mint.toLowerCase();
+          if (trackedMints.has(mintKey)) continue;
+          if (mint === SOL_MINT || mint === BONK_MINT) continue;
+
+          const tokenAmount = Math.max(0, Number((walletToken as any).ui_amount || 0));
+          if (!Number.isFinite(tokenAmount) || tokenAmount <= 0) continue;
+
+          const market = await resolveDoctorPositionMarketSnapshot(mint, tokenMap.get(mint) || null);
+          const currentPrice = resolveCurrentPriceUsd(market || {}, 0);
+          if (!Number.isFinite(currentPrice) || currentPrice <= 0) continue;
+
+          const entryNotionalUsd = Number((tokenAmount * currentPrice).toFixed(6));
+          if (entryNotionalUsd <= 0.01) continue;
+
+          doctorRuntime.positions.unshift({
+            symbol: String((market as any)?.symbol || (market as any)?.name || mint.slice(0, 6) || "TOKEN"),
+            address: mint,
+            entry_price: currentPrice,
+            current_price: currentPrice,
+            peak_price: currentPrice,
+            liquidity: Number((market as any)?.liquidity || 0),
+            confidence: Number((market as any)?.score || 0),
+            size_pct: 100,
+            risk_status: String((market as any)?.risk_level || "MEDIUM"),
+            trailing_stop_pct: Number(doctorRuntime.controls.trailing_stop_pct || 10),
+            tp_stage: 0,
+            amount_sol: tokenAmount,
+            amount_raw: String((walletToken as any).amount_raw || "0"),
+            token_decimals: Math.max(0, Number((walletToken as any).decimals || 0)),
+            entry_notional_usd: entryNotionalUsd,
+            notional_usd: entryNotionalUsd,
+            stop_loss_pct: configuredStopLossPct,
+            execution_mode: "live",
+            base_mint: getDoctorTradeBaseAssetMint(),
+            opened_at: nowIso(),
+            source: "wallet_reconciled",
+            reconciled_from_wallet: true,
+          });
+          trackedMints.add(mintKey);
+
+          doctorRuntime.decisionJournal.unshift({
+            token: String((market as any)?.symbol || mint.slice(0, 6) || "TOKEN"),
+            address: mint,
+            decision: "adopt",
+            reason: "wallet_position_reconciled",
+            confidence: Number((market as any)?.score || 0),
+            size_pct: 100,
+            strategy_mode: "autonomous",
+            timestamp: nowIso(),
+          });
+        }
+
+        doctorRuntime.positions = doctorRuntime.positions.slice(0, 30);
+        doctorRuntime.decisionJournal = doctorRuntime.decisionJournal.slice(0, 80);
+      }
+    }
+
     const { dailyRealizedPnlUsd, consecutiveLosses } = computeDoctorRiskMetrics(nowMs);
 
     await maybeRotateDoctorAgentForNoSnipes(scopedUserId, nowMs);
