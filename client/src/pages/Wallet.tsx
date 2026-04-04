@@ -823,8 +823,8 @@ export default function WalletPage() {
               {hideBalance ? <Eye className="w-4 h-4 mr-1" /> : <EyeOff className="w-4 h-4 mr-1" />}
               {hideBalance ? "Show Balance" : "Hide Balance"}
             </Button>
-            <Button variant="outline" size="sm" onClick={refreshWalletViews} disabled={walletSyncing}>
-              {walletSyncing ? "Refreshing..." : "Refresh"}
+            <Button variant="outline" size="sm" onClick={refreshWalletViews}>
+              Refresh
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">Last sync: {lastWalletSyncLabel}</p>
@@ -912,11 +912,11 @@ export default function WalletPage() {
                     </div>
                     <div className="rounded-md border border-border/60 p-2 bg-background/30">
                       <p className="text-muted-foreground">Wallet Reserve</p>
-                      <p className="font-semibold">{Number(profitJar?.reserve_sol || 0).toLocaleString(undefined, { maximumFractionDigits: 9 })} SOL</p>
+                      <p className="font-semibold">{visibleValue(`${Number(profitJar?.reserve_sol || 0).toLocaleString(undefined, { maximumFractionDigits: 9 })} SOL`)}</p>
                     </div>
                     <div className="rounded-md border border-border/60 p-2 bg-background/30">
                       <p className="text-muted-foreground">Minimum Sweep</p>
-                      <p className="font-semibold">{Number(profitJar?.min_transfer_sol || 0).toLocaleString(undefined, { maximumFractionDigits: 9 })} SOL</p>
+                      <p className="font-semibold">{visibleValue(`${Number(profitJar?.min_transfer_sol || 0).toLocaleString(undefined, { maximumFractionDigits: 9 })} SOL`)}</p>
                     </div>
                   </div>
                   {profitJar?.wallet_address ? (
@@ -1371,7 +1371,7 @@ export default function WalletPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label>Amount ({String(solanaSplTokens.find((t) => String(t.mint || "").trim() === String(swapTokenMint || "").trim())?.symbol || "TOKEN")})</Label>
-                    <span className="text-[11px] text-muted-foreground">Balance: {selectedSellTokenBalance.toLocaleString(undefined, { maximumFractionDigits: 9 })}</span>
+                    <span className="text-[11px] text-muted-foreground">Balance: {visibleValue(selectedSellTokenBalance.toLocaleString(undefined, { maximumFractionDigits: 9 }))}</span>
                   </div>
                   <Input type="number" min={0.000000001} step="0.000000001" value={swapSellAmountTokens} onChange={(e) => setSwapSellAmountTokens(e.target.value)} />
                   <div className="grid grid-cols-4 gap-2">
