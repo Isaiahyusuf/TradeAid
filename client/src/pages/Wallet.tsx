@@ -36,6 +36,7 @@ import {
   useRemoveAssistantWalletChain,
   useRevealAssistantWallet,
   useTransferAssistantWallet,
+  useWithdrawAssistantProfitJar,
 } from "@/hooks/use-ai-assistant";
 import { useDoctorStatus } from "@/hooks/use-doctortrade";
 
@@ -74,6 +75,7 @@ export default function WalletPage() {
   const exportWalletKey = useExportAssistantWalletKey();
   const transferWallet = useTransferAssistantWallet();
   const walletSwap = useAssistantWalletSwap();
+  const withdrawProfitJar = useWithdrawAssistantProfitJar();
 
   const trading = tradingStatusQuery.data?.trading;
   const wallet = walletStatusQuery.data?.wallet;
@@ -103,6 +105,8 @@ export default function WalletPage() {
   const [swapTokenMint, setSwapTokenMint] = useState("");
   const [swapAmountSol, setSwapAmountSol] = useState("0.1");
   const [swapSellAmountTokens, setSwapSellAmountTokens] = useState("");
+  const [profitJarWithdrawAddress, setProfitJarWithdrawAddress] = useState("");
+  const [profitJarWithdrawAmountSol, setProfitJarWithdrawAmountSol] = useState("");
   const [hideBalance, setHideBalance] = useState(false);
   const swapMode = "live" as const;
 
@@ -320,7 +324,8 @@ export default function WalletPage() {
     || deleteWallet.isPending
     || exportWalletKey.isPending
     || transferWallet.isPending
-    || walletSwap.isPending,
+    || walletSwap.isPending
+    || withdrawProfitJar.isPending,
   );
   const savingMessage = importWalletPrivateKey.isPending
     ? "Connecting private key..."
@@ -332,6 +337,8 @@ export default function WalletPage() {
           ? "Sending transaction..."
           : walletSwap.isPending
             ? "Submitting swap..."
+            : withdrawProfitJar.isPending
+              ? "Withdrawing from Profit Jar..."
             : deleteWallet.isPending
               ? "Deleting wallet..."
               : "Saving wallet settings...";
@@ -384,6 +391,31 @@ export default function WalletPage() {
   const handleOpenWalletSettings = (chainName: string) => {
     setSettingsChain(chainName as SupportedWalletChain);
     setWalletSettingsOpen(true);
+  };
+
+  const handleProfitJarWithdraw = async () => {
+    const recipient = profitJarWithdrawAddress.trim();
+    const amountSol = Number(profitJarWithdrawAmountSol);
+    if (!recipient) {
+      toast({ title: "Recipient required", description: "Enter a recipient address.", variant: "destructive" });
+      return;
+    }
+    if (!Number.isFinite(amountSol) || amountSol <= 0) {
+      toast({ title: "Invalid amount", description: "Enter a valid SOL amount.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const result = await withdrawProfitJar.mutateAsync({ recipient_address: recipient, amount_sol: amountSol });
+      await refreshWalletViews();
+      setProfitJarWithdrawAmountSol("");
+      toast({ title: "Profit Jar withdrawal sent", description: `Tx: ${result.withdraw.tx_hash.slice(0, 10)}...` });
+      if (result.withdraw.explorer_url) {
+        window.open(result.withdraw.explorer_url, "_blank");
+      }
+    } catch (error) {
+      toast({ title: "Withdrawal failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
   };
 
   const handleSendSubmit = async () => {
@@ -806,7 +838,24 @@ export default function WalletPage() {
                   ) : (
                     <p className="text-[11px] text-muted-foreground">Profit Jar wallet is created automatically on first realized profitable close.</p>
                   )}
-                  <p className="text-[11px] text-muted-foreground">App-managed mode: DoctorTrade computes realized profit at close and auto-sends to Profit Jar. User transfers to/from Jar are disabled.</p>
+                  <p className="text-[11px] text-muted-foreground">App-managed mode: DoctorTrade computes realized profit at close and auto-sends to Profit Jar. Users can only withdraw profits from Jar.</p>
+                </div>
+
+                <div className="rounded-md border border-border/60 p-3 bg-muted/20 space-y-2">
+                  <p className="text-sm font-semibold">Withdraw Profits</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div>
+                      <Label>Recipient Address</Label>
+                      <Input value={profitJarWithdrawAddress} onChange={(e) => setProfitJarWithdrawAddress(e.target.value)} placeholder="Destination Solana address" />
+                    </div>
+                    <div>
+                      <Label>Amount (SOL)</Label>
+                      <Input type="number" min={0.000001} step="0.000001" value={profitJarWithdrawAmountSol} onChange={(e) => setProfitJarWithdrawAmountSol(e.target.value)} />
+                    </div>
+                  </div>
+                  <Button onClick={handleProfitJarWithdraw} disabled={withdrawProfitJar.isPending || !profitJar?.wallet_created}>
+                    {withdrawProfitJar.isPending ? "Withdrawing..." : "Withdraw From Profit Jar"}
+                  </Button>
                 </div>
 
                 <div className="space-y-2">

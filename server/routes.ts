@@ -10291,7 +10291,75 @@ export async function registerRoutes(
   });
 
   app.post("/api/ai/profit-jar/withdraw", async (req, res) => {
-    return res.status(403).json({ message: "profit jar is doctor-managed; direct user transfers are disabled" });
+    const recipientAddress = String(req.body?.recipient_address || "").trim();
+    const amountSol = Number(req.body?.amount_sol || 0);
+    const jarAddress = String(assistantRuntime.profit_jar.wallet_address || "").trim();
+    const jarPrivateKey = String(assistantRuntime.profit_jar.wallet_private_key || "").trim();
+
+    if (!jarAddress || !jarPrivateKey) {
+      return res.status(400).json({ message: "profit jar wallet not configured" });
+    }
+    if (!validateAddressForChain("solana", recipientAddress)) {
+      return res.status(400).json({ message: "invalid recipient address" });
+    }
+    if (!Number.isFinite(amountSol) || amountSol <= 0) {
+      return res.status(400).json({ message: "invalid amount" });
+    }
+
+    const jarBalance = await fetchNativeBalance("solana", jarAddress);
+    if (jarBalance === null) {
+      return res.status(503).json({ message: "unable to fetch profit jar balance" });
+    }
+    if (amountSol > jarBalance) {
+      return res.status(400).json({ message: "insufficient profit jar balance", available_balance_sol: jarBalance });
+    }
+
+    try {
+      const transfer = await executeSolanaTransfer({
+        fromAddress: jarAddress,
+        fromPrivateKey: jarPrivateKey,
+        recipientAddress,
+        amountSol,
+      });
+      const prices = await fetchChainPricesUsd();
+      const solPrice = Number(prices.solana || 0);
+      const ledgerRow = {
+        id: `jar_withdraw_${Date.now()}`,
+        type: "withdraw",
+        source_trade_id: null,
+        source_side: null,
+        source_token_mint: null,
+        source_trade_notional_usd: 0,
+        source_realized_profit_usd: 0,
+        allocation_pct: 0,
+        transfer_amount_sol: Number(amountSol.toFixed(9)),
+        transfer_amount_usd: Number((amountSol * solPrice).toFixed(6)),
+        status: "confirmed",
+        tx_hash: transfer.txHash,
+        explorer_url: transfer.explorerUrl,
+        error_message: null,
+        created_at: nowIso(),
+        updated_at: nowIso(),
+        user_initiated: true,
+        from_address: jarAddress,
+        to_address: recipientAddress,
+      };
+      assistantRuntime.profit_jar.ledger.unshift(ledgerRow);
+      assistantRuntime.profit_jar.ledger = assistantRuntime.profit_jar.ledger.slice(0, 500);
+      await persistAssistantRuntime();
+      return res.json({
+        withdraw: {
+          tx_hash: transfer.txHash,
+          explorer_url: transfer.explorerUrl,
+          amount_sol: Number(amountSol.toFixed(9)),
+        },
+        profit_jar: assistantProfitJarStatus(),
+      });
+    } catch (error) {
+      return res.status(502).json({
+        message: error instanceof Error ? error.message : "profit jar withdrawal failed",
+      });
+    }
   });
 
   app.get("/api/ai/trading/status", (_req, res) => {
