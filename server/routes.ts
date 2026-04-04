@@ -10328,9 +10328,12 @@ export async function registerRoutes(
 
   app.post("/api/ai/profit-jar/settings", async (req, res) => {
     const enabled = Boolean(req.body?.enabled);
-    const allocationPct = Math.max(1, Math.min(100, Number(req.body?.allocation_pct ?? assistantRuntime.profit_jar.allocation_pct || assistantDefaultProfitJar.allocation_pct)));
-    const reserveSol = Math.max(0, Number(req.body?.reserve_sol ?? assistantRuntime.profit_jar.reserve_sol || assistantDefaultProfitJar.reserve_sol));
-    const minTransferSol = Math.max(0.000001, Number(req.body?.min_transfer_sol ?? assistantRuntime.profit_jar.min_transfer_sol || assistantDefaultProfitJar.min_transfer_sol));
+    const allocationPctRaw = req.body?.allocation_pct ?? assistantRuntime.profit_jar.allocation_pct ?? assistantDefaultProfitJar.allocation_pct;
+    const reserveSolRaw = req.body?.reserve_sol ?? assistantRuntime.profit_jar.reserve_sol ?? assistantDefaultProfitJar.reserve_sol;
+    const minTransferSolRaw = req.body?.min_transfer_sol ?? assistantRuntime.profit_jar.min_transfer_sol ?? assistantDefaultProfitJar.min_transfer_sol;
+    const allocationPct = Math.max(1, Math.min(100, Number(allocationPctRaw)));
+    const reserveSol = Math.max(0, Number(reserveSolRaw));
+    const minTransferSol = Math.max(0.000001, Number(minTransferSolRaw));
 
     assistantRuntime.profit_jar.enabled = enabled;
     assistantRuntime.profit_jar.allocation_pct = Number(allocationPct.toFixed(4));
