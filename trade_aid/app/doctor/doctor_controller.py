@@ -628,6 +628,39 @@ class DoctorTradeController:
         self.owner_user_id = str(user_id or "").strip() or None
 
     @staticmethod
+    def _has_non_zero_volume(token: dict[str, Any]) -> bool:
+        return (
+            float(token.get("volume_5m") or 0.0) > 0.0
+            or float(token.get("volume_1h") or 0.0) > 0.0
+            or float(token.get("volume_24h") or 0.0) > 0.0
+        )
+
+    @staticmethod
+    def _buy_volume_share(token: dict[str, Any]) -> float:
+        buys = max(0.0, float(token.get("buys_5m") or token.get("buys_1h") or token.get("buys") or 0.0))
+        sells = max(0.0, float(token.get("sells_5m") or token.get("sells_1h") or token.get("sells") or 0.0))
+        total = buys + sells
+        if total > 0:
+            return buys / total
+
+        ratio = max(0.0, float(token.get("buy_sell_ratio") or 0.0))
+        if ratio <= 0:
+            return 0.0
+        return ratio / (1.0 + ratio)
+
+    def _passes_buy_volume_share(self, token: dict[str, Any], *, min_share: float = 0.55) -> bool:
+        return self._buy_volume_share(token) >= float(min_share)
+
+    def _sanitize_active_tokens(self, tokens: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            token
+            for token in (tokens or [])
+            if float(token.get("liquidity") or 0.0) > 0.0
+            and self._has_non_zero_volume(token)
+            and self._passes_buy_volume_share(token, min_share=0.55)
+        ]
+
+    @staticmethod
     def _parse_iso_datetime(value: Any) -> datetime | None:
         raw = str(value or "").strip()
         if not raw:
@@ -987,6 +1020,9 @@ class DoctorTradeController:
         if liquidity < float(self.min_liquidity_usd or 0.0):
             return False, "below_min_liquidity"
 
+        if not self._passes_buy_volume_share(token, min_share=0.55):
+            return False, "buy_volume_share_below_55pct"
+
         slippage_pct = float(token.get("estimated_slippage_pct") or 0.0)
         if slippage_pct > float(self.max_slippage_pct or 100.0):
             return False, "slippage_above_limit"
@@ -1041,6 +1077,13 @@ class DoctorTradeController:
             position["current_price"] = current_price
 
             pnl_pct = ((current_price - entry_price) / entry_price) * 100.0
+            stop_loss_price = float(position.get("stop_loss") or 0.0)
+            if stop_loss_price <= 0 and entry_price > 0:
+                stop_loss_price = entry_price * (1.0 - (float(self.stop_loss_pct) / 100.0))
+            take_profit_price = float(position.get("take_profit") or 0.0)
+            if take_profit_price <= 0 and entry_price > 0:
+                take_profit_price = entry_price * float(self.take_profit_multiplier)
+
             opened_at = str(position.get("opened_at") or "").strip()
             held_minutes = 0.0
             if opened_at:
@@ -1052,7 +1095,11 @@ class DoctorTradeController:
 
             elapsed_seconds = held_minutes * 60.0
             exit_reason = None
-            if pnl_pct >= (TAKE_PROFIT * 100.0):
+            if take_profit_price > 0 and current_price >= take_profit_price:
+                exit_reason = "TP HIT"
+            elif stop_loss_price > 0 and current_price <= stop_loss_price:
+                exit_reason = "SL HIT"
+            elif pnl_pct >= (TAKE_PROFIT * 100.0):
                 exit_reason = "TP HIT"
             elif pnl_pct <= -(STOP_LOSS * 100.0):
                 exit_reason = "SL HIT"
@@ -1317,7 +1364,7 @@ class DoctorTradeController:
             if live_blockers:
                 return {"executed": False, "reason": f"live_readiness_{live_blockers[0]}"}
 
-        memes = await self.scanner.scan_all_sources(limit=40)
+        memes = self._sanitize_active_tokens(await self.scanner.scan_all_sources(limit=40))
         self.current_tokens = memes
         token = next((row for row in memes if str(row.get("address") or "").strip().lower() == target_address.lower()), None)
         if not token:
@@ -1551,7 +1598,7 @@ class DoctorTradeController:
             if live_blockers:
                 return {"executed": False, "reason": f"live_readiness_{live_blockers[0]}"}
 
-        memes = await self.scanner.scan_all_sources(limit=18)
+        memes = self._sanitize_active_tokens(await self.scanner.scan_all_sources(limit=18))
         self.current_tokens = memes
 
         if self.trading_mode == "retardio":
@@ -2050,7 +2097,7 @@ class DoctorTradeController:
                     "stop_loss_pct": float(RETARDIO_STOP_LOSS_PCT),
                 },
             },
-            "active_tokens": self.current_tokens,
+            "active_tokens": self._sanitize_active_tokens(self.current_tokens),
             "positions": self.positions,
             "recent_trades": self.trade_log[:30],
             "decision_journal": self.decision_journal[:40],
