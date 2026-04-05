@@ -2022,9 +2022,9 @@ export async function registerRoutes(
       strong_move_threshold_pct: 1,
       min_liquidity_usd: 2500,
       max_liquidity_usd: 250000,
-      min_market_cap_usd: 6000,
-      max_market_cap_usd: 100000,
-      min_volume_24h_usd: 1,
+      min_market_cap_usd: 5000,
+      max_market_cap_usd: 10000,
+      min_volume_24h_usd: 8000,
       min_token_age_minutes: 0,
       max_token_age_minutes: 2,
       max_token_age_seconds: 90,
@@ -2033,7 +2033,7 @@ export async function registerRoutes(
       min_buys_5m: 8,
       max_sells_5m: 50,
       min_unique_buyers: 1,
-      min_buy_ratio_pct: 1,
+      min_buy_ratio_pct: 55,
       quality_max_top_holder_pct: 25,
       max_dev_wallet_pct: 8,
       ai_min_signals_required: 1,
@@ -5790,6 +5790,16 @@ export async function registerRoutes(
       const peakPrice = Math.max(Number(position.peak_price || entryPrice || currentPrice || 0), currentPrice || 0);
       const holdMinutes = Math.max(0, (nowMs - new Date(String(position.opened_at || nowIso())).getTime()) / 60000);
       const pnlPct = entryPrice > 0 && currentPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0;
+      const positionTakeProfitMultiplier = Math.max(1.01, Number((position as any).take_profit_multiplier || configuredTakeProfitMultiplier));
+      const positionMinProfitPct = Math.max(0.1, Number((position as any).min_profit_pct || configuredMinProfitPct));
+      const positionTakeProfitPct = Math.max(
+        DOCTOR_TAKE_PROFIT_PCT,
+        positionMinProfitPct,
+        (positionTakeProfitMultiplier - 1) * 100,
+      );
+      const positionTrailingActivationPct = Math.max(5, positionTakeProfitPct);
+      const positionStopLossPct = Math.max(DOCTOR_STOP_LOSS_PCT, Number((position as any).stop_loss_pct || configuredStopLossPct));
+      const positionTrailingStopPct = Math.max(0.1, Number((position as any).trailing_stop_pct || configuredTrailingStopPct));
       const drawdownFromPeakPct = peakPrice > 0 && currentPrice > 0 ? ((peakPrice - currentPrice) / peakPrice) * 100 : 0;
       const tpStage = Math.max(0, Math.trunc(Number((position as any).tp_stage || 0)));
       const buys30s = estimateBuys30s((market || {}) as Record<string, any>);
@@ -5811,14 +5821,14 @@ export async function registerRoutes(
       } else if (isMomentumMode && pnlPct >= 200 && tpStage < 1) {
         sellReason = "take_profit_stage_1_partial";
         sellFractionPct = 40;
-      } else if (pnlPct >= takeProfitPct) {
+      } else if (pnlPct >= positionTakeProfitPct) {
         sellReason = "take_profit_target_hit";
         sellFractionPct = configuredLiveSellFractionPct;
-      } else if (pnlPct <= -configuredStopLossPct) {
+      } else if (pnlPct <= -positionStopLossPct) {
         sellReason = "stop_loss_hit";
       } else if (
-        pnlPct >= trailingActivationPct &&
-        drawdownFromPeakPct >= configuredTrailingStopPct
+        pnlPct >= positionTrailingActivationPct &&
+        drawdownFromPeakPct >= positionTrailingStopPct
       ) {
         sellReason = "trailing_stop_triggered";
       } else if (holdMinutes >= configuredMaxHoldMinutes) {
@@ -6629,11 +6639,12 @@ export async function registerRoutes(
         const mintAuthorityDisabled = Boolean(candidateAny.mint_authority_disabled ?? candidateAny.mintAuthorityDisabled ?? candidateAny.isMintAuthorityDisabled);
         const freezeAuthorityDisabled = Boolean(candidateAny.freeze_authority_disabled ?? candidateAny.freezeAuthorityDisabled ?? candidateAny.isFreezeAuthorityDisabled);
 
-        if (candidateAgeSeconds > 240) return { allowed: false, reason: "speed_age_window_failed" };
+        if (candidateAgeSeconds > 300) return { allowed: false, reason: "speed_age_window_failed" };
         if (candidateLiquiditySol > 0 && candidateLiquiditySol < 5) return { allowed: false, reason: "speed_min_liquidity_sol_failed" };
-        if (candidateMarketCapUsd < 3000 || candidateMarketCapUsd > 250000) return { allowed: false, reason: "speed_market_cap_window_failed" };
-        if (candidateVolume1mUsd < 400) return { allowed: false, reason: "speed_volume_1m_failed" };
-        if (candidateBuys1m < 2) return { allowed: false, reason: "speed_buys_60s_failed" };
+        if (candidateMarketCapUsd < 5000 || candidateMarketCapUsd > 10000) return { allowed: false, reason: "speed_market_cap_window_failed" };
+        if (candidateVolume1mUsd < 1200) return { allowed: false, reason: "speed_volume_1m_failed" };
+        if (candidateBuys1m < 6) return { allowed: false, reason: "speed_buys_60s_failed" };
+        if (Number(candidateAny.buy_ratio_pct || 0) > 0 && Number(candidateAny.buy_ratio_pct || 0) < 55) return { allowed: false, reason: "speed_buy_ratio_failed" };
         if (mintAuthoritySignalPresent && !mintAuthorityDisabled) return { allowed: false, reason: "speed_mint_authority_enabled" };
         if (freezeAuthoritySignalPresent && !freezeAuthorityDisabled) return { allowed: false, reason: "speed_freeze_authority_enabled" };
         if (candidateTopHolderPct > 35) return { allowed: false, reason: "speed_top_holder_pct_failed" };
@@ -7390,6 +7401,9 @@ export async function registerRoutes(
           mint: String(buyCandidate.address || ""),
         };
       } else {
+      const stopLossPctAtEntry = Math.max(DOCTOR_STOP_LOSS_PCT, getDoctorEffectiveControlNumber("stop_loss_pct", Number(doctorRuntime.controls.stop_loss_pct || DOCTOR_STOP_LOSS_PCT)));
+      const takeProfitMultiplierAtEntry = Math.max(1.01, getDoctorEffectiveControlNumber("take_profit_multiplier", Number(doctorRuntime.controls.take_profit_multiplier || 2)));
+      const minProfitPctAtEntry = Math.max(0.1, getDoctorEffectiveControlNumber("min_profit_pct", Number(doctorRuntime.controls.min_profit_pct || 0.1)));
       const position = {
         symbol: String(buyCandidate.symbol || "UNKNOWN"),
         address: String(buyCandidate.address || ""),
@@ -7400,7 +7414,10 @@ export async function registerRoutes(
         confidence: Number(buyCandidate.score || 0),
         size_pct: 100,
         risk_status: String(buyCandidate.risk_level || "MEDIUM"),
-        trailing_stop_pct: Number(doctorRuntime.controls.trailing_stop_pct || 10),
+        take_profit_multiplier: takeProfitMultiplierAtEntry,
+        min_profit_pct: minProfitPctAtEntry,
+        stop_loss_pct: stopLossPctAtEntry,
+        trailing_stop_pct: Math.max(0.1, getDoctorEffectiveControlNumber("trailing_stop_pct", Number(doctorRuntime.controls.trailing_stop_pct || 10))),
         tp_stage: 0,
         amount_sol: buyAmountSol,
         execution_mode: doctorRuntime.execution.mode,
@@ -7772,8 +7789,27 @@ export async function registerRoutes(
       .map((row) => Number((row as any)?.confidence || 0))
       .find((value) => Number.isFinite(value) && value > 0) || 0;
     const latestDecisionConfidence = Number((doctorRuntime.lastDecision as any)?.confidence || 0);
-    const displayMaxTokenAgeSeconds = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 90));
-    const displayActiveTokens = activeTokens.filter((token) => isDoctorLaunchCandidateAllowed(token as Record<string, any>, displayMaxTokenAgeSeconds));
+    const displayMaxTokenAgeSecondsRaw = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 90));
+    const displayMaxTokenAgeSeconds = Math.min(300, displayMaxTokenAgeSecondsRaw);
+    const displayMinMarketCapUsd = Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 5000));
+    const displayMaxMarketCapUsd = Math.min(10000, Math.max(displayMinMarketCapUsd, Number(doctorRuntime.controls.max_market_cap_usd || 10000)));
+    const displayMinVolume24hUsd = Math.max(1000, Number(doctorRuntime.controls.min_volume_24h_usd || 8000));
+    const displayMinBuyRatioPct = Math.max(55, Number(doctorRuntime.controls.min_buy_ratio_pct || 55));
+    const displayMinBuys5m = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_buys_5m || 3)));
+    const displayMaxSells5m = Math.max(0, Math.trunc(Number(doctorRuntime.controls.max_sells_5m || 50)));
+    const displayActiveTokens = activeTokens
+      .filter((token) => isDoctorLaunchCandidateAllowed(token as Record<string, any>, displayMaxTokenAgeSeconds))
+      .filter((token) => {
+        const marketCapUsd = Number((token as any).market_cap_usd || (token as any).market_cap || 0);
+        return marketCapUsd >= displayMinMarketCapUsd && marketCapUsd <= displayMaxMarketCapUsd;
+      })
+      .filter((token) => Number((token as any).volume_24h || 0) >= displayMinVolume24hUsd)
+      .filter((token) => {
+        const buyRatioPct = Number((token as any).buy_ratio_pct || 0);
+        return buyRatioPct <= 0 || buyRatioPct >= displayMinBuyRatioPct;
+      })
+      .filter((token) => Number((token as any).buys_5m || 0) >= displayMinBuys5m)
+      .filter((token) => Number((token as any).sells_5m || 0) <= displayMaxSells5m);
 
     const topTokenConfidence = displayActiveTokens
       .slice(0, 5)
@@ -9133,6 +9169,9 @@ export async function registerRoutes(
     }
 
     const now = new Date().toISOString();
+    const stopLossPctAtEntry = Math.max(DOCTOR_STOP_LOSS_PCT, getDoctorEffectiveControlNumber("stop_loss_pct", Number(doctorRuntime.controls.stop_loss_pct || DOCTOR_STOP_LOSS_PCT)));
+    const takeProfitMultiplierAtEntry = Math.max(1.01, getDoctorEffectiveControlNumber("take_profit_multiplier", Number(doctorRuntime.controls.take_profit_multiplier || 2)));
+    const minProfitPctAtEntry = Math.max(0.1, getDoctorEffectiveControlNumber("min_profit_pct", Number(doctorRuntime.controls.min_profit_pct || 0.1)));
     const position = {
       symbol,
       address: contractAddress,
@@ -9143,7 +9182,10 @@ export async function registerRoutes(
       confidence: Number((candidate as any)?.score || 70),
       size_pct: 100,
       risk_status: String((candidate as any)?.risk_level || "MEDIUM"),
-      trailing_stop_pct: Number(doctorRuntime.controls.trailing_stop_pct || 10),
+      take_profit_multiplier: takeProfitMultiplierAtEntry,
+      min_profit_pct: minProfitPctAtEntry,
+      stop_loss_pct: stopLossPctAtEntry,
+      trailing_stop_pct: Math.max(0.1, getDoctorEffectiveControlNumber("trailing_stop_pct", Number(doctorRuntime.controls.trailing_stop_pct || 10))),
       amount_sol: buyAmount,
       execution_mode: doctorRuntime.execution.mode,
       base_mint: String((candidate as any)?.base_mint || getDoctorTradeBaseAssetMint()),
