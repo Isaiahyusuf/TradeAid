@@ -786,6 +786,7 @@ export async function registerRoutes(
     },
     controls: {
       snipe_preset: "insider",
+      market_cap_option: "10k",
       buy_mode: "dynamic",
       max_trades_per_hour: 12,
       trades_today: 0,
@@ -1671,6 +1672,19 @@ export async function registerRoutes(
     if (preset === "in_out_2x" || preset === "inout2x" || preset === "in_and_out_2x") return "in_out_2x" as const;
     if (preset === "custom") return "custom" as const;
     return "insider" as const;
+  };
+
+  const normalizeDoctorMarketCapOption = (value: unknown) => {
+    const option = String(value || "").trim().toLowerCase();
+    if (option === "15k" || option === "20k" || option === "30k") return option as const;
+    return "10k" as const;
+  };
+
+  const resolveDoctorMarketCapUpperBound = (option: "10k" | "15k" | "20k" | "30k") => {
+    if (option === "15k") return 15000;
+    if (option === "20k") return 20000;
+    if (option === "30k") return 30000;
+    return 10000;
   };
 
   const getDoctorActiveSnipePreset = () => {
@@ -7791,8 +7805,10 @@ export async function registerRoutes(
     const latestDecisionConfidence = Number((doctorRuntime.lastDecision as any)?.confidence || 0);
     const displayMaxTokenAgeSecondsRaw = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 90));
     const displayMaxTokenAgeSeconds = Math.min(300, displayMaxTokenAgeSecondsRaw);
+    const displayMarketCapOption = normalizeDoctorMarketCapOption((doctorRuntime.controls as any).market_cap_option);
+    const displayMarketCapOptionMax = resolveDoctorMarketCapUpperBound(displayMarketCapOption);
     const displayMinMarketCapUsd = Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 5000));
-    const displayMaxMarketCapUsd = Math.min(10000, Math.max(displayMinMarketCapUsd, Number(doctorRuntime.controls.max_market_cap_usd || 10000)));
+    const displayMaxMarketCapUsd = Math.min(displayMarketCapOptionMax, Math.max(displayMinMarketCapUsd, Number(doctorRuntime.controls.max_market_cap_usd || displayMarketCapOptionMax)));
     const displayMinVolume24hUsd = Math.max(1000, Number(doctorRuntime.controls.min_volume_24h_usd || 8000));
     const displayMinBuyRatioPct = Math.max(55, Number(doctorRuntime.controls.min_buy_ratio_pct || 55));
     const displayMinBuys5m = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_buys_5m || 3)));
@@ -8639,6 +8655,17 @@ export async function registerRoutes(
       doctorRuntime.scanIntervalSeconds = Math.max(1, Math.trunc(Number(payload.scan_interval_seconds)));
     }
 
+    if (typeof payload.market_cap_option === "string") {
+      const marketCapOption = normalizeDoctorMarketCapOption(payload.market_cap_option);
+      (doctorRuntime.controls as any).market_cap_option = marketCapOption;
+      const optionMaxMarketCapUsd = resolveDoctorMarketCapUpperBound(marketCapOption);
+      doctorRuntime.controls.min_market_cap_usd = Math.min(
+        Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 5000)),
+        optionMaxMarketCapUsd,
+      );
+      doctorRuntime.controls.max_market_cap_usd = optionMaxMarketCapUsd;
+    }
+
     const numericKeys = [
       "buy_amount_sol",
       "max_trades_per_hour",
@@ -8714,6 +8741,18 @@ export async function registerRoutes(
     }
     if (typeof payload.ml_learning_enabled === "boolean") {
       (doctorRuntime.controls as any).ml_learning_enabled = payload.ml_learning_enabled;
+    }
+
+    // Keep market-cap ceiling aligned to selected option unless caller explicitly opts out.
+    const activeMarketCapOption = normalizeDoctorMarketCapOption((doctorRuntime.controls as any).market_cap_option);
+    (doctorRuntime.controls as any).market_cap_option = activeMarketCapOption;
+    if (String(payload.lock_market_cap_option || "true").trim().toLowerCase() !== "false") {
+      const optionMaxMarketCapUsd = resolveDoctorMarketCapUpperBound(activeMarketCapOption);
+      doctorRuntime.controls.min_market_cap_usd = Math.min(
+        Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 5000)),
+        optionMaxMarketCapUsd,
+      );
+      doctorRuntime.controls.max_market_cap_usd = optionMaxMarketCapUsd;
     }
 
     const presetAfterPayload = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
