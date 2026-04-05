@@ -65,6 +65,7 @@ class DoctorTradeController:
         self.strong_move_threshold_pct = 15.0
         self.max_hold_minutes = 25
         self.min_momentum_profit_pct = 1.0
+        self.max_market_cap_usd = 10000.0
         self.quality_min_volume_spike_pct = 0.0
         self.quality_max_top_holder_pct = 65.0
         self.early_entry_exit_mode = True
@@ -651,6 +652,12 @@ class DoctorTradeController:
     def _passes_buy_volume_share(self, token: dict[str, Any], *, min_share: float = 0.55) -> bool:
         return self._buy_volume_share(token) >= float(min_share)
 
+    def _passes_market_cap(self, token: dict[str, Any]) -> bool:
+        market_cap = float(token.get("market_cap") or token.get("market_cap_usd") or token.get("marketCap") or 0.0)
+        if market_cap <= 0:
+            return True
+        return market_cap <= float(self.max_market_cap_usd or 10000.0)
+
     def _sanitize_active_tokens(self, tokens: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [
             token
@@ -658,6 +665,7 @@ class DoctorTradeController:
             if float(token.get("liquidity") or 0.0) > 0.0
             and self._has_non_zero_volume(token)
             and self._passes_buy_volume_share(token, min_share=0.55)
+            and self._passes_market_cap(token)
         ]
 
     @staticmethod
@@ -1022,6 +1030,9 @@ class DoctorTradeController:
 
         if not self._passes_buy_volume_share(token, min_share=0.55):
             return False, "buy_volume_share_below_55pct"
+
+        if not self._passes_market_cap(token):
+            return False, "market_cap_above_10k"
 
         slippage_pct = float(token.get("estimated_slippage_pct") or 0.0)
         if slippage_pct > float(self.max_slippage_pct or 100.0):
@@ -2082,6 +2093,7 @@ class DoctorTradeController:
                 "strong_move_threshold_pct": float(self.strong_move_threshold_pct),
                 "max_hold_minutes": int(self.max_hold_minutes),
                 "min_momentum_profit_pct": float(self.min_momentum_profit_pct),
+                "max_market_cap_usd": float(self.max_market_cap_usd),
                 "early_entry_exit_mode": bool(self.early_entry_exit_mode),
                 "fast_take_profit_pct": float(self.fast_take_profit_pct),
                 "quality_min_volume_spike_pct": float(self.quality_min_volume_spike_pct),
