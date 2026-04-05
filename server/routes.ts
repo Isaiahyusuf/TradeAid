@@ -2344,6 +2344,12 @@ export async function registerRoutes(
           }
           continue;
         }
+        if (key === "market_cap_option") {
+          if (typeof controls[key] === "string") {
+            (doctorRuntime.controls as any)[key] = normalizeDoctorMarketCapOption(controls[key]);
+          }
+          continue;
+        }
         if (booleanControlKeys.has(String(key))) {
           if (typeof controls[key] === "boolean") {
             (doctorRuntime.controls as any)[key] = controls[key];
