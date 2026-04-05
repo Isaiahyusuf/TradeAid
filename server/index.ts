@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { WebSocketServer, WebSocket } from "ws";
 import { registerTradeAidTelegramWebhookRoute, startTradeAidTelegramBot } from "./services/telegram-tradeaid-bot";
 
 const MAX_DIAGNOSTIC_STACK = 4000;
@@ -36,6 +37,67 @@ process.on("unhandledRejection", (reason) => {
 
 const app = express();
 const httpServer = createServer(app);
+const alertsWss = new WebSocketServer({ noServer: true });
+const alertsClients = new Set<WebSocket>();
+
+alertsWss.on("connection", (socket) => {
+  alertsClients.add(socket);
+
+  try {
+    socket.send(JSON.stringify({
+      type: "connected",
+      channel: "alerts",
+      ts: new Date().toISOString(),
+    }));
+  } catch {
+    // Ignore transient socket send failures on connect.
+  }
+
+  socket.on("close", () => {
+    alertsClients.delete(socket);
+  });
+
+  socket.on("error", () => {
+    alertsClients.delete(socket);
+  });
+});
+
+httpServer.on("upgrade", (req, socket, head) => {
+  const rawUrl = String(req.url || "");
+  let pathname = rawUrl;
+  try {
+    pathname = new URL(rawUrl, `http://${String(req.headers.host || "localhost")}`).pathname;
+  } catch {
+    // Keep raw pathname fallback.
+  }
+
+  if (pathname !== "/ws/alerts" && pathname !== "/ws/alerts/") {
+    socket.destroy();
+    return;
+  }
+
+  alertsWss.handleUpgrade(req, socket, head, (ws) => {
+    alertsWss.emit("connection", ws, req);
+  });
+});
+
+const alertsHeartbeatInterval = setInterval(() => {
+  const payload = JSON.stringify({
+    type: "heartbeat",
+    channel: "alerts",
+    ts: new Date().toISOString(),
+  });
+
+  alertsClients.forEach((client) => {
+    if (client.readyState !== client.OPEN) return;
+    try {
+      client.send(payload);
+    } catch {
+      // Ignore send failure and let close/error cleanup run.
+    }
+  });
+}, 30_000);
+alertsHeartbeatInterval.unref();
 
 const allowedOrigins = new Set<string>();
 
