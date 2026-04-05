@@ -60,7 +60,7 @@ let multichainSchedulerTickCount = 0;
 const DOCTOR_MIN_WATCH_SECONDS = 120;
 const DOCTOR_MIN_LIQUIDITY_USD = 5000;
 const DOCTOR_MIN_VOLUME_5M_USD = 10000;
-const DOCTOR_MAX_TOKEN_AGE_SECONDS = 1800;
+const DOCTOR_MAX_TOKEN_AGE_SECONDS = 300;
 const DOCTOR_TRADE_COOLDOWN_SECONDS = 600;
 const DOCTOR_MAX_ACTIVE_TRADES = 2;
 const DOCTOR_MAX_HOLD_SECONDS = 1800;
@@ -787,7 +787,6 @@ export async function registerRoutes(
     controls: {
       snipe_preset: "insider",
       buy_mode: "dynamic",
-      max_trades_per_day: 20,
       max_trades_per_hour: 12,
       trades_today: 0,
       max_open_positions: DOCTOR_MAX_ACTIVE_TRADES,
@@ -804,7 +803,7 @@ export async function registerRoutes(
       max_liquidity_sol: 500,
       min_buys_5m: 1,
       max_sells_5m: 50,
-      max_token_age_seconds: DOCTOR_MAX_TOKEN_AGE_SECONDS,
+      max_token_age_seconds: Math.min(300, DOCTOR_MAX_TOKEN_AGE_SECONDS),
       live_sell_fraction_pct: 100,
       max_sell_notional_usd: 300,
       max_wallet_allocation_pct: 10,
@@ -2446,7 +2445,10 @@ export async function registerRoutes(
     doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
     doctorRuntime.controls.min_token_age_minutes = Math.max(0, Number(doctorRuntime.controls.min_token_age_minutes || 0));
     doctorRuntime.controls.max_token_age_minutes = Math.min(20, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
-    doctorRuntime.controls.max_token_age_seconds = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
+    doctorRuntime.controls.max_token_age_seconds = Math.min(
+      300,
+      Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240)),
+    );
     (doctorRuntime.controls as any).snipe_preset = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
     if (isDoctorSpeedModePreset()) {
       const runtimeBuyAmount = Number(doctorRuntime.controls.buy_amount_sol || 0);
