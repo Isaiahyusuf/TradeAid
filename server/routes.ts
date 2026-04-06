@@ -2461,6 +2461,7 @@ export async function registerRoutes(
     doctorRuntime.lastRunAt = typeof loaded.lastRunAt === "string" ? loaded.lastRunAt : null;
     doctorRuntime.lastError = typeof loaded.lastError === "string" ? loaded.lastError : null;
 
+    doctorRuntime.controls.max_trades_per_day = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_trades_per_day || 12)));
     doctorRuntime.controls.buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     doctorRuntime.controls.min_buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
@@ -8027,6 +8028,7 @@ export async function registerRoutes(
       },
       trade_controls: {
         ...doctorRuntime.controls,
+        max_trades_per_day: maxTradesPerDay,
         min_watch_time_seconds: DOCTOR_MIN_WATCH_SECONDS,
         max_hold_seconds: DOCTOR_MAX_HOLD_SECONDS,
         take_profit_pct_hard: DOCTOR_TAKE_PROFIT_PCT,
@@ -8785,6 +8787,7 @@ export async function registerRoutes(
       }
     }
 
+    doctorRuntime.controls.max_trades_per_day = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_trades_per_day || 12)));
     doctorRuntime.controls.max_open_positions = Math.min(
       DOCTOR_MAX_ACTIVE_TRADES,
       Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_open_positions || DOCTOR_MAX_ACTIVE_TRADES))),
