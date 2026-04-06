@@ -6015,6 +6015,11 @@ export async function registerRoutes(
     const strictMaxTokenAgeSeconds = isDoctorDexTurboEnabled() && !isSpeedMode
       ? Math.max(120, strictMaxTokenAgeSecondsRaw)
       : strictMaxTokenAgeSecondsRaw;
+    const maxHistoricalTokenAgeDays = Math.max(
+      1,
+      Math.trunc(Number(process.env.DOCTOR_MAX_HISTORICAL_TOKEN_AGE_DAYS || 30)),
+    );
+    const maxHistoricalTokenAgeSeconds = maxHistoricalTokenAgeDays * 24 * 60 * 60;
     const maxDevWalletPct = Math.max(0, getDoctorEffectiveControlNumber("max_dev_wallet_pct", 3));
     const minUniqueBuyers = Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("min_unique_buyers", 40)));
     const bootstrapRelaxation = getDoctorBootstrapRelaxation();
@@ -6486,6 +6491,33 @@ export async function registerRoutes(
 
       if (String(candidate.chain || "solana").toLowerCase() !== "solana") {
         return { allowed: false, reason: "chain_not_solana" };
+      }
+
+      const candidateMint = String(candidate.address || candidate.mint || "").trim();
+      let earliestKnownCreatedAtMs = new Date(String(candidate.created_at || "")).getTime();
+      if (!Number.isFinite(earliestKnownCreatedAtMs) || earliestKnownCreatedAtMs <= 0) {
+        earliestKnownCreatedAtMs = 0;
+      }
+      if (candidateMint) {
+        try {
+          const scanned = await storage.getScannedTokenByAddress(candidateMint);
+          const scannedCreatedAtMs = new Date(String((scanned as any)?.createdAt || "")).getTime();
+          if (Number.isFinite(scannedCreatedAtMs) && scannedCreatedAtMs > 0) {
+            earliestKnownCreatedAtMs = earliestKnownCreatedAtMs > 0
+              ? Math.min(earliestKnownCreatedAtMs, scannedCreatedAtMs)
+              : scannedCreatedAtMs;
+          }
+        } catch {
+        }
+      }
+      if (earliestKnownCreatedAtMs > 0) {
+        const historicalAgeSeconds = Math.max(0, Math.trunc((nowMs - earliestKnownCreatedAtMs) / 1000));
+        if (historicalAgeSeconds > maxHistoricalTokenAgeSeconds) {
+          return {
+            allowed: false,
+            reason: "token_historical_age_too_old",
+          };
+        }
       }
 
       if (requiresLiveWallet) {
