@@ -8436,7 +8436,10 @@ export async function registerRoutes(
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
     res.setHeader("Surrogate-Control", "no-store");
-    await loadDoctorRuntimeForUser(userId);
+    const runtimeAlreadyScopedToUser = String(doctorActiveUserId || doctorRuntime.ownerUserId || "").trim() === String(userId || "").trim();
+    if (!runtimeAlreadyScopedToUser) {
+      await loadDoctorRuntimeForUser(userId);
+    }
     const enabledBeforeStatus = Boolean(doctorRuntime.enabled);
     const presetBeforeStatus = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
     const maxTradesPerDayBeforeStatus = Number((doctorRuntime.controls as any).max_trades_per_day);
