@@ -1000,7 +1000,7 @@ export default function DoctorTrade() {
             <Badge variant="outline">Independent Engine</Badge>
             <Badge variant="outline">Runs Server-Side</Badge>
             <Badge variant="outline" className="border-green-500/40 text-green-400">Trade Mode LIVE ONLY</Badge>
-            <Badge variant="outline" className="border-accent/30 text-accent">Risk Locked</Badge>
+            <Badge variant="outline" className="border-accent/30 text-accent">User Configurable</Badge>
             <Badge variant="outline" className={walletConnected ? "border-green-500/40 text-green-400" : "border-yellow-500/40 text-yellow-400"}>
               {walletConnected ? "Wallet Connected" : "Wallet Not Connected"}
             </Badge>
@@ -1385,7 +1385,7 @@ export default function DoctorTrade() {
 
           {!isRetardioMode && (
             <div className="mb-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
-              Core risk defaults stay protected. You can customize only Buy Amount, Take Profit, and Stop Loss.
+              All Doctor mode settings are editable. Guardrails may block new trades, but configuration remains user controlled.
             </div>
           )}
 

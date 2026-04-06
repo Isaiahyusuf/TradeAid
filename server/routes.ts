@@ -61,6 +61,7 @@ const DOCTOR_MIN_WATCH_SECONDS = 120;
 const DOCTOR_MIN_LIQUIDITY_USD = 5000;
 const DOCTOR_MIN_VOLUME_5M_USD = 10000;
 const DOCTOR_MAX_TOKEN_AGE_SECONDS = 300;
+const DOCTOR_MAX_TOKEN_AGE_MINUTES = 240;
 const DOCTOR_TRADE_COOLDOWN_SECONDS = 600;
 const DOCTOR_MAX_ACTIVE_TRADES = 2;
 const DOCTOR_MAX_HOLD_SECONDS = 1800;
@@ -2464,7 +2465,10 @@ export async function registerRoutes(
     doctorRuntime.controls.min_buy_amount_sol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
     doctorRuntime.controls.min_token_age_minutes = Math.max(0, Number(doctorRuntime.controls.min_token_age_minutes || 0));
-    doctorRuntime.controls.max_token_age_minutes = Math.min(40, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)));
+    doctorRuntime.controls.max_token_age_minutes = Math.min(
+      DOCTOR_MAX_TOKEN_AGE_MINUTES,
+      Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 10)),
+    );
     doctorRuntime.controls.max_token_age_seconds = Math.min(
       2400,
       Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240)),
@@ -5998,7 +6002,10 @@ export async function registerRoutes(
     const feeBufferSol = Math.max(0, Number(doctorRuntime.controls.min_wallet_fee_buffer_sol || 0));
     let buyAmountSol = Math.max(0.1, getDoctorEffectiveControlNumber("buy_amount_sol", Number(doctorRuntime.controls.buy_amount_sol || 0.1)));
     const maxLiquidityUsd = Math.max(1, getDoctorEffectiveControlNumber("max_liquidity_usd", 500000));
-    const maxTokenAgeSeconds = Math.max(DOCTOR_MIN_WATCH_SECONDS, Math.min(40, Math.trunc(getDoctorEffectiveControlNumber("max_token_age_minutes", 40))) * 60);
+    const maxTokenAgeSeconds = Math.max(
+      DOCTOR_MIN_WATCH_SECONDS,
+      Math.min(DOCTOR_MAX_TOKEN_AGE_MINUTES, Math.trunc(getDoctorEffectiveControlNumber("max_token_age_minutes", 40))) * 60,
+    );
     const strictMaxTokenAgeSecondsRaw = Math.max(DOCTOR_MAX_TOKEN_AGE_SECONDS, getDoctorEffectiveControlNumber("max_token_age_seconds", 240));
     const strictMaxTokenAgeSeconds = isDoctorDexTurboEnabled() && !isSpeedMode
       ? Math.max(120, strictMaxTokenAgeSecondsRaw)
@@ -6732,7 +6739,10 @@ export async function registerRoutes(
       const maxEarlySpikePct = Math.max(50, getDoctorEffectiveControlNumber("max_early_spike_pct", 200));
       const volumeSpikeMinPct = Math.max(1, getDoctorEffectiveControlNumber("quality_min_volume_spike_pct", 12));
       const minTokenAgeSeconds = Math.max(0, Math.trunc(getDoctorEffectiveControlNumber("min_token_age_minutes", 0))) * 60;
-      const maxTokenAgeSeconds = Math.max(minTokenAgeSeconds, Math.min(40, Math.trunc(getDoctorEffectiveControlNumber("max_token_age_minutes", 40))) * 60);
+      const maxTokenAgeSeconds = Math.max(
+        minTokenAgeSeconds,
+        Math.min(DOCTOR_MAX_TOKEN_AGE_MINUTES, Math.trunc(getDoctorEffectiveControlNumber("max_token_age_minutes", 40))) * 60,
+      );
       const strictMaxTokenAgeSecondsRaw = Math.max(30, getDoctorEffectiveControlNumber("max_token_age_seconds", 240));
       const strictMaxTokenAgeSeconds = isDoctorDexTurboEnabled()
         ? Math.max(120, strictMaxTokenAgeSecondsRaw)
@@ -8802,7 +8812,10 @@ export async function registerRoutes(
     }
     doctorRuntime.controls.strategy_window_minutes = Math.min(5, Math.max(3, Number(doctorRuntime.controls.strategy_window_minutes || 5)));
     doctorRuntime.controls.min_token_age_minutes = Math.max(DOCTOR_MIN_WATCH_SECONDS / 60, Number(doctorRuntime.controls.min_token_age_minutes || 0));
-    doctorRuntime.controls.max_token_age_minutes = Math.min(40, Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 40)));
+    doctorRuntime.controls.max_token_age_minutes = Math.min(
+      DOCTOR_MAX_TOKEN_AGE_MINUTES,
+      Math.max(Number(doctorRuntime.controls.min_token_age_minutes || 0), Number(doctorRuntime.controls.max_token_age_minutes || 40)),
+    );
     doctorRuntime.controls.max_token_age_seconds = Math.max(DOCTOR_MAX_TOKEN_AGE_SECONDS, Number(doctorRuntime.controls.max_token_age_seconds || DOCTOR_MAX_TOKEN_AGE_SECONDS));
     (doctorRuntime.controls as any).ml_learning_enabled = Boolean((doctorRuntime.controls as any).ml_learning_enabled ?? true);
     (doctorRuntime.controls as any).ml_min_closed_trades = Math.max(3, Math.trunc(Number((doctorRuntime.controls as any).ml_min_closed_trades || 8)));
