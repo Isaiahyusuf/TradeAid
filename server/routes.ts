@@ -8849,6 +8849,9 @@ export async function registerRoutes(
     if (Number.isFinite(Number(payload.stop_loss_pct))) {
       doctorRuntime.controls.stop_loss_pct = Math.max(2, Number(payload.stop_loss_pct));
     }
+    if (Number.isFinite(Number(payload.max_trades_per_day))) {
+      doctorRuntime.controls.max_trades_per_day = Math.max(1, Math.trunc(Number(payload.max_trades_per_day)));
+    }
     if (Number.isFinite(Number((doctorRuntime.controls as any).max_slippage_pct))) {
       (doctorRuntime.controls as any).max_slippage_pct = Math.max(
         0.1,
