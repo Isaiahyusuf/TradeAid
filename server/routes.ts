@@ -8440,9 +8440,13 @@ export async function registerRoutes(
     await loadDoctorRuntimeForUser(userId);
     const enabledBeforeStatus = Boolean(doctorRuntime.enabled);
     const presetBeforeStatus = normalizeDoctorSnipePreset((doctorRuntime.controls as any).snipe_preset);
+    const maxTradesPerDayBeforeStatus = Number((doctorRuntime.controls as any).max_trades_per_day);
     await syncDoctorWalletFromAssistantRuntime(userId);
     doctorRuntime.enabled = enabledBeforeStatus;
     (doctorRuntime.controls as any).snipe_preset = presetBeforeStatus;
+    if (Number.isFinite(maxTradesPerDayBeforeStatus)) {
+      (doctorRuntime.controls as any).max_trades_per_day = Math.max(1, Math.trunc(maxTradesPerDayBeforeStatus));
+    }
     await ensureDoctorLiveExecutionModeIfCapable(userId, { persistRuntime: true });
 
     // If scheduler is active but enabled drifted false, repair the runtime flag so
