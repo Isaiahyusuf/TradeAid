@@ -6015,10 +6015,15 @@ export async function registerRoutes(
     const strictMaxTokenAgeSeconds = isDoctorDexTurboEnabled() && !isSpeedMode
       ? Math.max(120, strictMaxTokenAgeSecondsRaw)
       : strictMaxTokenAgeSecondsRaw;
-    const maxHistoricalTokenAgeDays = Math.max(
+    const hardMaxHistoricalTokenAgeDays = Math.max(
       1,
-      Math.trunc(Number(process.env.DOCTOR_MAX_HISTORICAL_TOKEN_AGE_DAYS || 30)),
+      Math.trunc(Number(process.env.DOCTOR_HARD_MAX_HISTORICAL_TOKEN_AGE_DAYS || 3)),
     );
+    const configuredHistoricalTokenAgeDays = Math.max(
+      1,
+      Math.trunc(Number(process.env.DOCTOR_MAX_HISTORICAL_TOKEN_AGE_DAYS || 3)),
+    );
+    const maxHistoricalTokenAgeDays = Math.min(hardMaxHistoricalTokenAgeDays, configuredHistoricalTokenAgeDays);
     const maxHistoricalTokenAgeSeconds = maxHistoricalTokenAgeDays * 24 * 60 * 60;
     const maxDevWalletPct = Math.max(0, getDoctorEffectiveControlNumber("max_dev_wallet_pct", 3));
     const minUniqueBuyers = Math.max(1, Math.trunc(getDoctorEffectiveControlNumber("min_unique_buyers", 40)));
