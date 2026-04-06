@@ -8,6 +8,7 @@ import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { authStorage } from "./storage";
 import { getSessionUserId, readBearerToken } from "./tokenSession";
+import { ensureLoginAuditTable, recordLoginAudit } from "./loginAudit";
 
 const getOidcConfig = memoize(
   async () => {
@@ -76,6 +77,7 @@ export async function setupAuth(app: Express) {
   app.use(getSession());
   app.use(passport.initialize());
   app.use(passport.session());
+  await ensureLoginAuditTable().catch(() => undefined);
 
   // Skip Replit Auth if not in Replit environment
   if (!process.env.REPL_ID) {
@@ -91,7 +93,16 @@ export async function setupAuth(app: Express) {
   ) => {
     const user = {};
     updateUserSession(user, tokens);
-    await upsertUser(tokens.claims());
+    const claims = tokens.claims();
+    await upsertUser(claims);
+    await recordLoginAudit({
+      userId: String(claims?.sub || "").trim() || null,
+      username: String(claims?.preferred_username || claims?.name || "").trim() || null,
+      email: String(claims?.email || "").trim() || null,
+      method: "oidc",
+      source: "/api/callback",
+      success: true,
+    }).catch(() => undefined);
     verified(null, user);
   };
 

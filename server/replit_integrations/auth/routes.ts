@@ -3,6 +3,7 @@ import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "crypto";
 import { authStorage } from "./storage";
 import { isAuthenticated } from "./replitAuth";
 import { issueSessionTokens, readBearerToken, getSessionUserId, rotateRefreshToken, revokeAllSessionTokens } from "./tokenSession";
+import { ensureLoginAuditTable, recordLoginAudit, resolveClientIp } from "./loginAudit";
 import { db } from "../../db";
 import { sql } from "drizzle-orm";
 import { storage } from "../../storage";
@@ -309,6 +310,9 @@ export function registerAuthRoutes(app: Express): void {
   ensurePasswordHashTable().catch((error) => {
     console.error("[auth] failed to ensure password hash table", error);
   });
+  ensureLoginAuditTable().catch((error) => {
+    console.error("[auth] failed to ensure login audit table", error);
+  });
 
   runFreshUserResetIfConfigured().catch((error) => {
     console.error("[auth] failed to perform forced fresh-user reset", error);
@@ -370,6 +374,17 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       const tokens = issueSessionTokens(user.id);
+      await recordLoginAudit({
+        userId: user.id,
+        username: user.username || "",
+        email: user.email || "",
+        method: "password",
+        source: "/api/auth/login",
+        success: true,
+        clientIp: resolveClientIp(req),
+        userAgent: String(req.headers?.["user-agent"] || ""),
+        requestHost: String(req.headers?.host || req.hostname || ""),
+      });
       res.json({
         access_token: tokens.accessToken,
         refresh_token: tokens.refreshToken,
