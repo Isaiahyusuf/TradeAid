@@ -3963,7 +3963,10 @@ export async function registerRoutes(
         if (sells5m > maxSells5m) rejectReasons.push("excess_sells_5m");
         if (marketCapUsd < Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15000))) rejectReasons.push("low_market_cap");
         if (volume24h < Math.max(1, Number(doctorRuntime.controls.min_volume_24h_usd || 12000))) rejectReasons.push("low_volume_24h");
-        if (Number(token.dev_wallet_pct || 0) <= 0) rejectReasons.push("dev_commitment_missing");
+        // Pump listener payloads often do not include dev wallet signal; do not hard-reject unknown values.
+        if (Number(token.dev_wallet_pct || 0) > 0 && Number(token.dev_wallet_pct || 0) > Math.max(1, Number(doctorRuntime.controls.max_dev_wallet_pct || 8))) {
+          rejectReasons.push("dev_wallet_too_high");
+        }
         if (topHolderPct > 65) rejectReasons.push("holder_concentration_high");
         if (!liquidityLockPass) rejectReasons.push("liquidity_not_locked");
         const bootstrapRelaxation = getDoctorBootstrapRelaxation();
