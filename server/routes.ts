@@ -1700,12 +1700,16 @@ export async function registerRoutes(
     return String(process.env.DOCTOR_UNIFIED_SIMPLE_MODE || "false").trim().toLowerCase() !== "false";
   };
 
+  const isDoctorUnifiedControlLockEnabled = () => {
+    return String(process.env.DOCTOR_UNIFIED_CONTROL_LOCK || "false").trim().toLowerCase() === "true";
+  };
+
   const isDoctorSingleOpenPositionMode = () => {
     return String(process.env.DOCTOR_SINGLE_OPEN_POSITION || "true").trim().toLowerCase() !== "false";
   };
 
   const applyDoctorUnifiedControls = () => {
-    if (!isDoctorUnifiedSimpleMode()) return;
+    if (!isDoctorUnifiedSimpleMode() || !isDoctorUnifiedControlLockEnabled()) return;
     const userBuyAmountSol = Math.max(0.1, Number(doctorRuntime.controls.buy_amount_sol || 0.1));
     const userTakeProfitMultiplier = Math.max(1.1, Number(doctorRuntime.controls.take_profit_multiplier || 1.8));
     const userStopLossPct = Math.max(2, Number(doctorRuntime.controls.stop_loss_pct || 12));
