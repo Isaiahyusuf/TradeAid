@@ -1465,7 +1465,6 @@ export async function registerRoutes(
     }
 
     await setDoctorLivePrivateKeyForUser(normalizedUserId, privateKey);
-    await persistDoctorRuntime(normalizedUserId);
 
     return {
       synced: true,
