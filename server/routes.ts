@@ -6493,14 +6493,14 @@ export async function registerRoutes(
         return { allowed: false, reason: "chain_not_solana" };
       }
 
-      const candidateMint = String(candidate.address || candidate.mint || "").trim();
+      const candidateAddressForAgeCheck = String(candidate.address || candidate.mint || "").trim();
       let earliestKnownCreatedAtMs = new Date(String(candidate.created_at || "")).getTime();
       if (!Number.isFinite(earliestKnownCreatedAtMs) || earliestKnownCreatedAtMs <= 0) {
         earliestKnownCreatedAtMs = 0;
       }
-      if (candidateMint) {
+      if (candidateAddressForAgeCheck) {
         try {
-          const scanned = await storage.getScannedTokenByAddress(candidateMint);
+          const scanned = await storage.getScannedTokenByAddress(candidateAddressForAgeCheck);
           const scannedCreatedAtMs = new Date(String((scanned as any)?.createdAt || "")).getTime();
           if (Number.isFinite(scannedCreatedAtMs) && scannedCreatedAtMs > 0) {
             earliestKnownCreatedAtMs = earliestKnownCreatedAtMs > 0
