@@ -790,6 +790,7 @@ export async function registerRoutes(
       market_cap_option: "10k",
       buy_mode: "dynamic",
       max_trades_per_hour: 12,
+      max_trades_per_day: 12,
       trades_today: 0,
       max_open_positions: DOCTOR_MAX_ACTIVE_TRADES,
       strategy_window_minutes: 5,
