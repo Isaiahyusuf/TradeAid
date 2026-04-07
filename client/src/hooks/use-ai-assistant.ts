@@ -458,6 +458,32 @@ export function useAssistantWalletSwap() {
   });
 }
 
+export function useAssistantWalletBurn() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      token_mint: string;
+      amount_tokens?: number;
+      symbol?: string;
+      value_usd?: number;
+    }) => apiPost<{
+      burn: {
+        tx_hash: string;
+        explorer_url: string;
+        status: string;
+        token_mint: string;
+        amount_tokens: number;
+      };
+    }>("/api/ai/wallets/burn", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-portfolio"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-context-overview"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-wallet-status"] });
+    },
+  });
+}
+
 export function useAssistantWalletSwapQuote(
   params: {
     side: "buy" | "sell";

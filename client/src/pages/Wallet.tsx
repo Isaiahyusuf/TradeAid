@@ -26,6 +26,7 @@ import {
   useAssistantProfitJarStatus,
   useUpdateAssistantProfitJarSettings,
   useAssistantWalletSwap,
+  useAssistantWalletBurn,
   useAssistantWalletSwapQuote,
   useAssistantContextOverview,
   useAssistantWalletTransactions,
@@ -80,6 +81,7 @@ export default function WalletPage() {
   const exportWalletKey = useExportAssistantWalletKey();
   const transferWallet = useTransferAssistantWallet();
   const walletSwap = useAssistantWalletSwap();
+  const walletBurn = useAssistantWalletBurn();
   const withdrawProfitJar = useWithdrawAssistantProfitJar();
   const createProfitJarWallet = useCreateAssistantProfitJarWallet();
   const importProfitJarWalletPrivateKey = useImportAssistantProfitJarWalletPrivateKey();
@@ -389,6 +391,7 @@ export default function WalletPage() {
     || exportWalletKey.isPending
     || transferWallet.isPending
     || walletSwap.isPending
+    || walletBurn.isPending
     || withdrawProfitJar.isPending
     || createProfitJarWallet.isPending
     || importProfitJarWalletPrivateKey.isPending
@@ -406,6 +409,8 @@ export default function WalletPage() {
           ? "Sending transaction..."
           : walletSwap.isPending
             ? "Submitting swap..."
+            : walletBurn.isPending
+              ? "Burning token..."
             : withdrawProfitJar.isPending
               ? "Withdrawing from Profit Jar..."
             : createProfitJarWallet.isPending
@@ -642,6 +647,46 @@ export default function WalletPage() {
     setSwapTokenMint(mint);
     setSwapSellAmountTokens(amount.toString());
     setSwapOpen(true);
+  };
+
+  const handleBurnToken = async (token: { mint: string; symbol?: string; ui_amount?: number; value_usd?: number }) => {
+    if (!wallet?.has_wallet) {
+      toast({ title: "Create wallet first", description: "Generate or import your wallet before burning.", variant: "destructive" });
+      return;
+    }
+
+    const mint = String(token.mint || "").trim();
+    if (!mint) {
+      toast({ title: "Burn failed", description: "Token mint is missing.", variant: "destructive" });
+      return;
+    }
+
+    const amount = Number(token.ui_amount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast({ title: "No balance", description: "This token has no burnable balance.", variant: "destructive" });
+      return;
+    }
+
+    const symbol = String(token.symbol || "TOKEN").trim() || "TOKEN";
+    const confirmed = window.confirm(`Burn ${amount.toLocaleString(undefined, { maximumFractionDigits: 9 })} ${symbol}? This cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      const result = await walletBurn.mutateAsync({
+        token_mint: mint,
+        amount_tokens: amount,
+        symbol,
+        value_usd: Number(token.value_usd || 0),
+      });
+
+      await refreshWalletViews();
+      toast({ title: "Token burned", description: `Tx: ${result.burn.tx_hash.slice(0, 10)}...` });
+      if (result.burn.explorer_url) {
+        window.open(result.burn.explorer_url, "_blank");
+      }
+    } catch (error) {
+      toast({ title: "Burn failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
   };
 
   const applySellPercent = (percent: number) => {
@@ -1161,6 +1206,15 @@ export default function WalletPage() {
                             onClick={() => handleQuickSwapToSol(token)}
                           >
                             Swap to SOL
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="mt-2 h-7 px-2 text-[11px]"
+                            disabled={walletBurn.isPending || tokenAmount <= 0}
+                            onClick={() => handleBurnToken(token as any)}
+                          >
+                            Burn
                           </Button>
                         </div>
                       </div>

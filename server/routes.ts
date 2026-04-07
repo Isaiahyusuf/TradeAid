@@ -3,6 +3,7 @@ import type { Server } from "http";
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "crypto";
 import { resolve } from "path";
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, VersionedTransaction } from "@solana/web3.js";
+import { createBurnInstruction, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import bs58 from "bs58";
 import * as bip39 from "bip39";
 import { derivePath } from "ed25519-hd-key";
@@ -11211,6 +11212,180 @@ export async function registerRoutes(
         tx_hash: txHash,
         explorer_url: transaction.explorer_url,
         status: "confirmed",
+      },
+    });
+  });
+
+  app.post("/api/ai/wallets/burn", async (req, res) => {
+    if (!ensureAssistantRuntimeOwnership(req)) {
+      return res.status(403).json({ message: "wallet access denied for current user" });
+    }
+
+    if (!ensureWalletExists()) {
+      return res.status(400).json({ message: "wallet not found" });
+    }
+
+    const tokenMint = String(req.body?.token_mint || req.body?.mint || "").trim();
+    const amountTokensInput = Number(req.body?.amount_tokens || 0);
+    const symbol = String(req.body?.symbol || "TOKEN").trim() || "TOKEN";
+    const valueUsd = Number(req.body?.value_usd || 0);
+
+    if (!tokenMint || !validateAddressForChain("solana", tokenMint)) {
+      return res.status(400).json({ message: "invalid solana token mint" });
+    }
+
+    const walletAddress = String(assistantRuntime.wallet.addresses_by_chain.solana || "").trim();
+    const walletPrivateKey = String(assistantRuntime.wallet.private_keys_by_chain.solana || "").trim();
+    if (!walletAddress || !walletPrivateKey) {
+      return res.status(400).json({ message: "assistant solana wallet is not fully configured" });
+    }
+
+    const secretKey = parseSolanaSecretKey(walletPrivateKey);
+    if (!secretKey) {
+      return res.status(400).json({ message: "stored solana private key is invalid" });
+    }
+
+    const keypair = Keypair.fromSecretKey(secretKey);
+    if (keypair.publicKey.toBase58() !== walletAddress) {
+      return res.status(400).json({ message: "wallet address/private key mismatch" });
+    }
+
+    const connection = getSolanaConnection();
+    const ownerPk = new PublicKey(walletAddress);
+    const mintPk = new PublicKey(tokenMint);
+
+    const tokenAccounts = await connection.getParsedTokenAccountsByOwner(ownerPk, { mint: mintPk }, "confirmed");
+    const parsedAccounts = tokenAccounts.value
+      .map((entry) => {
+        const tokenAmount = (entry.account.data as any)?.parsed?.info?.tokenAmount;
+        const rawAmount = String(tokenAmount?.amount || "0");
+        const decimals = Math.max(0, Math.trunc(Number(tokenAmount?.decimals || 0)));
+        let raw = BigInt(0);
+        try {
+          raw = BigInt(rawAmount);
+        } catch {
+          raw = BigInt(0);
+        }
+        return {
+          pubkey: entry.pubkey,
+          raw,
+          decimals,
+        };
+      })
+      .filter((entry) => entry.raw > BigInt(0));
+
+    if (parsedAccounts.length === 0) {
+      return res.status(400).json({ message: "insufficient token balance for burn" });
+    }
+
+    const decimals = parsedAccounts[0].decimals;
+    const totalRaw = parsedAccounts.reduce((sum, entry) => sum + entry.raw, BigInt(0));
+
+    let requestedRaw = totalRaw;
+    if (Number.isFinite(amountTokensInput) && amountTokensInput > 0) {
+      const scaled = Math.floor(amountTokensInput * Math.pow(10, decimals));
+      if (!(scaled > 0)) {
+        return res.status(400).json({ message: "invalid burn amount" });
+      }
+      requestedRaw = BigInt(scaled);
+      if (requestedRaw > totalRaw) {
+        requestedRaw = totalRaw;
+      }
+    }
+
+    if (requestedRaw <= BigInt(0)) {
+      return res.status(400).json({ message: "invalid burn amount" });
+    }
+
+    let remainingRaw = requestedRaw;
+    const burnInstructions = [] as Array<ReturnType<typeof createBurnInstruction>>;
+
+    for (const entry of parsedAccounts) {
+      if (remainingRaw <= BigInt(0)) break;
+      const burnRaw = entry.raw >= remainingRaw ? remainingRaw : entry.raw;
+      if (burnRaw <= BigInt(0)) continue;
+
+      burnInstructions.push(
+        createBurnInstruction(
+          entry.pubkey,
+          mintPk,
+          keypair.publicKey,
+          burnRaw,
+          [],
+          TOKEN_PROGRAM_ID,
+        ),
+      );
+      remainingRaw -= burnRaw;
+    }
+
+    if (burnInstructions.length === 0 || remainingRaw > BigInt(0)) {
+      return res.status(400).json({ message: "unable to prepare burn transaction" });
+    }
+
+    let txHash = "";
+    try {
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+      const tx = new Transaction({
+        feePayer: keypair.publicKey,
+        blockhash,
+        lastValidBlockHeight,
+      });
+
+      for (const instruction of burnInstructions) {
+        tx.add(instruction);
+      }
+
+      tx.sign(keypair);
+      txHash = await connection.sendRawTransaction(tx.serialize(), {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+
+      await connection.confirmTransaction(
+        {
+          signature: txHash,
+          blockhash,
+          lastValidBlockHeight,
+        },
+        "confirmed",
+      );
+    } catch (error) {
+      return res.status(502).json({
+        message: error instanceof Error ? error.message : "token burn failed",
+      });
+    }
+
+    const burnedTokens = Number(requestedRaw.toString()) / Math.pow(10, decimals);
+    const transaction = {
+      id: `burn_${Date.now()}`,
+      chain: "solana",
+      side: "burn",
+      status: "confirmed",
+      contract_address: tokenMint,
+      notional_usd: Number.isFinite(valueUsd) ? Number(valueUsd.toFixed(2)) : 0,
+      quantity: Number(burnedTokens.toFixed(9)),
+      quantity_unit: symbol,
+      asset: symbol,
+      token_symbol: symbol,
+      worth_sol: 0,
+      tx_hash: txHash,
+      explorer_url: chainExplorerTxUrl("solana", txHash),
+      from_address: walletAddress,
+      to_address: tokenMint,
+      created_at: nowIso(),
+    };
+
+    assistantRuntime.transactions.unshift(transaction);
+    assistantRuntime.transactions = assistantRuntime.transactions.slice(0, 200);
+    await persistAssistantRuntime();
+
+    return res.json({
+      burn: {
+        tx_hash: txHash,
+        explorer_url: transaction.explorer_url,
+        status: "confirmed",
+        token_mint: tokenMint,
+        amount_tokens: Number(burnedTokens.toFixed(9)),
       },
     });
   });
