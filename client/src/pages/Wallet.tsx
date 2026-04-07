@@ -98,6 +98,7 @@ export default function WalletPage() {
 
   const [sendOpen, setSendOpen] = useState(false);
   const [swapOpen, setSwapOpen] = useState(false);
+  const [burnOpen, setBurnOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [walletSettingsOpen, setWalletSettingsOpen] = useState(false);
@@ -118,6 +119,8 @@ export default function WalletPage() {
   const [swapTokenMint, setSwapTokenMint] = useState("");
   const [swapAmountSol, setSwapAmountSol] = useState("0.1");
   const [swapSellAmountTokens, setSwapSellAmountTokens] = useState("");
+  const [burnTokenMint, setBurnTokenMint] = useState("");
+  const [burnAmountTokens, setBurnAmountTokens] = useState("");
   const [profitJarWithdrawAddress, setProfitJarWithdrawAddress] = useState("");
   const [profitJarWithdrawAmountSol, setProfitJarWithdrawAmountSol] = useState("");
   const [hideBalance, setHideBalance] = useState(false);
@@ -466,6 +469,14 @@ export default function WalletPage() {
     setSwapOpen(true);
   };
 
+  const handleOpenBurn = () => {
+    if (!wallet?.has_wallet) {
+      toast({ title: "Create wallet first", description: "Generate or import your wallet before burning.", variant: "destructive" });
+      return;
+    }
+    setBurnOpen(true);
+  };
+
   const handleOpenExportKey = (chainName: string) => {
     setExportChain(chainName as SupportedWalletChain);
     setExportedKey(null);
@@ -647,6 +658,47 @@ export default function WalletPage() {
     setSwapTokenMint(mint);
     setSwapSellAmountTokens(amount.toString());
     setSwapOpen(true);
+  };
+
+  const handleBurnSubmit = async () => {
+    const mint = String(burnTokenMint || "").trim();
+    const amount = Number(burnAmountTokens || 0);
+
+    if (!mint) {
+      toast({ title: "Burn failed", description: "Enter a token mint address.", variant: "destructive" });
+      return;
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast({ title: "Burn failed", description: "Enter a valid token amount.", variant: "destructive" });
+      return;
+    }
+
+    const token = solanaSplTokens.find((row) => String((row as any).mint || "").trim() === mint);
+    const symbol = String(token?.symbol || "TOKEN").trim() || "TOKEN";
+    const amountLabel = amount.toLocaleString(undefined, { maximumFractionDigits: 9 });
+    const confirmed = window.confirm(`Burn ${amountLabel} ${symbol}? This cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      const result = await walletBurn.mutateAsync({
+        token_mint: mint,
+        amount_tokens: amount,
+        symbol,
+        value_usd: Number(token?.value_usd || 0),
+      });
+
+      await refreshWalletViews();
+      toast({ title: "Token burned", description: `Tx: ${result.burn.tx_hash.slice(0, 10)}...` });
+      if (result.burn.explorer_url) {
+        window.open(result.burn.explorer_url, "_blank");
+      }
+
+      setBurnOpen(false);
+      setBurnTokenMint("");
+      setBurnAmountTokens("");
+    } catch (error) {
+      toast({ title: "Burn failed", description: error instanceof Error ? error.message : "Failed", variant: "destructive" });
+    }
   };
 
   const handleBurnToken = async (token: { mint: string; symbol?: string; ui_amount?: number; value_usd?: number }) => {
@@ -953,6 +1005,7 @@ export default function WalletPage() {
               <Button className="w-full" onClick={handleOpenSend}><ArrowUpRight className="w-4 h-4 mr-2" />Send</Button>
               <Button className="w-full" variant="secondary" onClick={handleOpenReceive}><ArrowDownLeft className="w-4 h-4 mr-2" />Receive</Button>
               <Button className="w-full" variant="secondary" onClick={handleOpenSwap}>Swap</Button>
+              <Button className="w-full" variant="destructive" onClick={handleOpenBurn}>Burn</Button>
               <Button className="w-full" variant="outline" onClick={() => handleCreateWallet(false)} disabled={createWallet.isPending}>
                 {createWallet.isPending ? "Creating..." : "Create"}
               </Button>
@@ -1523,6 +1576,40 @@ export default function WalletPage() {
             <SheetFooter className="mt-6">
               <Button variant="outline" onClick={() => setSwapOpen(false)}>Cancel</Button>
               <Button onClick={handleSwapSubmit} disabled={walletSwap.isPending}>{walletSwap.isPending ? "Swapping..." : "Swap"}</Button>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
+
+        <Sheet open={burnOpen} onOpenChange={setBurnOpen}>
+          <SheetContent side="right" className="w-full sm:max-w-md">
+            <SheetHeader>
+              <SheetTitle>Burn Tokens</SheetTitle>
+              <SheetDescription>Burn unwanted SPL tokens from your wallet permanently.</SheetDescription>
+            </SheetHeader>
+            <div className="space-y-3 py-4">
+              <div className="space-y-2">
+                <Label>Token Mint (CA)</Label>
+                <Input
+                  placeholder="Enter Solana token mint address"
+                  value={burnTokenMint}
+                  onChange={(e) => setBurnTokenMint(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Amount</Label>
+                <Input
+                  type="number"
+                  min={0.000000001}
+                  step="0.000000001"
+                  value={burnAmountTokens}
+                  onChange={(e) => setBurnAmountTokens(e.target.value)}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Tip: Copy token mint from Token Holdings and paste here. Burn is irreversible.</p>
+            </div>
+            <SheetFooter>
+              <Button variant="outline" onClick={() => setBurnOpen(false)}>Cancel</Button>
+              <Button variant="destructive" onClick={handleBurnSubmit} disabled={walletBurn.isPending}>{walletBurn.isPending ? "Burning..." : "Burn"}</Button>
             </SheetFooter>
           </SheetContent>
         </Sheet>
