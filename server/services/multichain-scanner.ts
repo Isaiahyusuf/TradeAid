@@ -202,6 +202,13 @@ export class MultichainLaunchpadScanner {
     logMultichainVerbose(`[Pipeline] Signature: ${signature}`);
   }
 
+  enqueuePrebondMint(mint: string, signature: string, source = "pumpfun_prebond_listener") {
+    const normalizedMint = String(mint || "").trim();
+    if (!normalizedMint) return;
+    const normalizedSignature = String(signature || `${source}:${normalizedMint}:${Date.now()}`).trim();
+    this.enqueueDetectedMint(normalizedMint, "", normalizedSignature, source);
+  }
+
   private startSupplementalLaunchListeners() {
     if (this.supplementalListenersStarted) return;
     this.supplementalListenersStarted = true;
@@ -774,7 +781,6 @@ export class MultichainLaunchpadScanner {
       logMultichainVerbose(`[Pipeline] Runtime initialized instance=${this.scannerInstanceId}`);
     }
     logMultichainVerbose("[Multichain] Starting multi-chain launchpad scan...");
-    this.startPumpFunListener();
     this.startSupplementalLaunchListeners();
 
     try {

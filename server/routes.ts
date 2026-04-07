@@ -30,6 +30,7 @@ import { buildPresetAdvisorResult } from "./services/preset_advisor_engine";
 import { askAiTradeAssistant } from "./services/ai_trade_chat_service";
 import { BONK_MINT, SOL_MINT, detectSupportedBaseMint, refreshRaydiumPools, startRaydiumPoolFetcher } from "./services/raydium-pools";
 import { fetchRaydiumQuote, fetchRaydiumSwapPayload, getDoctorTradeBaseAssetMint } from "./services/raydium-swap";
+import { startPumpFunPrebondListener } from "./services/pumpfun-prebond/listener";
 import OpenAI from "openai";
 import { sql } from "drizzle-orm";
 
@@ -12748,6 +12749,12 @@ export async function registerRoutes(
   }
   
   if (ENABLE_BACKGROUND_WORKERS) {
+    startPumpFunPrebondListener({
+      onDetected: (token) => {
+        multichainScanner.enqueuePrebondMint(token.mint, token.signature, token.source);
+      },
+    });
+
     // Start background token scanner (fresh pair detection)
     const scannerIntervalMs = Math.max(10_000, Number(process.env.BACKGROUND_SCANNER_INTERVAL_MS || 20_000));
     startBackgroundScanner(scannerIntervalMs);
