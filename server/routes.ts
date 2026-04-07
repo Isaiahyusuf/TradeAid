@@ -7789,6 +7789,13 @@ export async function registerRoutes(
         missingMintsForDbLookup.add(mint);
       }
     }
+    const sniperLogsForLookup = getDoctorSniperLogsForUser(statusUserId).slice(0, 120);
+    for (const row of sniperLogsForLookup) {
+      const mint = toMintKey((row as any)?.mint || (row as any)?.address || (row as any)?.token_address);
+      if (mint && !knownTokenDetailsByMint.has(mint)) {
+        missingMintsForDbLookup.add(mint);
+      }
+    }
     if (missingMintsForDbLookup.size > 0) {
       const lookups = Array.from(missingMintsForDbLookup).slice(0, 80);
       const rows = await Promise.all(
@@ -7820,6 +7827,54 @@ export async function registerRoutes(
         worth_usd: worthUsd,
       };
     });
+    const statusSniperLogs = getDoctorSniperLogsForUser(statusUserId)
+      .filter((row) => {
+        if (String((row as any)?.reason || "") !== "wallet_key_not_connected") {
+          return true;
+        }
+        if (!walletConnected) {
+          return true;
+        }
+        const connectedAtMs = new Date(String((walletSnapshot as any)?.connectedAt || "")).getTime();
+        if (!Number.isFinite(connectedAtMs) || connectedAtMs <= 0) {
+          return false;
+        }
+        const rowMs = new Date(String((row as any)?.at || "")).getTime();
+        return Number.isFinite(rowMs) && rowMs >= connectedAtMs;
+      })
+      .map((row) => {
+        const mint = String((row as any)?.mint || (row as any)?.address || (row as any)?.token_address || "").trim();
+        const details = knownTokenDetailsByMint.get(toMintKey(mint)) || {};
+
+        const symbolFromLog = String((row as any)?.symbol || "").trim();
+        const tokenFromLog = String((row as any)?.token || "").trim();
+        const nameFromLog = String((row as any)?.name || "").trim();
+        const detailsSymbol = String((details as any)?.symbol || "").trim();
+        const detailsName = String((details as any)?.name || "").trim();
+
+        const symbolFallback = detailsSymbol || detailsName || symbolFromLog || tokenFromLog || "UNKNOWN";
+        const tokenFallback = tokenFromLog || detailsSymbol || detailsName || symbolFromLog || "UNKNOWN";
+        const nameFallback = nameFromLog || detailsName || detailsSymbol || symbolFromLog || tokenFromLog || "Unknown";
+
+        const normalizedSymbol = !symbolFromLog || /^unknown$/i.test(symbolFromLog)
+          ? symbolFallback
+          : symbolFromLog;
+        const normalizedToken = !tokenFromLog || /^unknown$/i.test(tokenFromLog)
+          ? tokenFallback
+          : tokenFromLog;
+        const normalizedName = !nameFromLog || /^unknown$/i.test(nameFromLog)
+          ? nameFallback
+          : nameFromLog;
+
+        return {
+          ...row,
+          mint,
+          symbol: normalizedSymbol,
+          token: normalizedToken,
+          name: normalizedName,
+        };
+      })
+      .slice(0, 80);
     const requiresLiveWallet = isDoctorLiveOnlyMode() || doctorRuntime.execution.mode === "live";
     const maxTradesPerDay = Math.max(1, Math.trunc(Number(doctorRuntime.controls.max_trades_per_day || 1)));
     const maxOpenPositions = getDoctorEffectiveMaxOpenPositions();
@@ -8166,22 +8221,7 @@ export async function registerRoutes(
         tracked_tokens: Object.keys(lifecycleRuntime.statesByMint).length,
         updated_at: lifecycleRuntime.updatedAt,
       },
-      sniper_logs: getDoctorSniperLogsForUser(statusUserId)
-        .filter((row) => {
-          if (String((row as any)?.reason || "") !== "wallet_key_not_connected") {
-            return true;
-          }
-          if (!walletConnected) {
-            return true;
-          }
-          const connectedAtMs = new Date(String((walletSnapshot as any)?.connectedAt || "")).getTime();
-          if (!Number.isFinite(connectedAtMs) || connectedAtMs <= 0) {
-            return false;
-          }
-          const rowMs = new Date(String((row as any)?.at || "")).getTime();
-          return Number.isFinite(rowMs) && rowMs >= connectedAtMs;
-        })
-        .slice(0, 80),
+      sniper_logs: statusSniperLogs,
       discovery: {
         dexscreener_primary: true,
         poll_interval_seconds: Math.max(5, Math.trunc(Number(process.env.DOCTOR_DEX_POLL_SECONDS || 7))),
