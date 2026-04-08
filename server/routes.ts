@@ -3684,7 +3684,21 @@ export async function registerRoutes(
     const launchSource = normalizeLaunchSource(String(token.launch_source || token.source || "unknown"));
     if (launchSource !== "pumpfun") return false;
 
-    const ageSeconds = Math.max(0, Number(token.age_seconds || 0));
+    const explicitAgeSeconds = Math.max(0, Number(token.age_seconds || 0));
+    const createdAtCandidates = [
+      String((token as any).created_at || "").trim(),
+      String((token as any).first_seen_at || "").trim(),
+      String((token as any).pairCreatedAt || "").trim(),
+      String((token as any).createdAt || "").trim(),
+    ].filter(Boolean);
+    const createdAtMsList = createdAtCandidates
+      .map((value) => new Date(value).getTime())
+      .filter((value) => Number.isFinite(value) && value > 0);
+    const oldestKnownCreatedAtMs = createdAtMsList.length ? Math.min(...createdAtMsList) : 0;
+    const historicalAgeSeconds = oldestKnownCreatedAtMs > 0
+      ? Math.max(0, Math.trunc((Date.now() - oldestKnownCreatedAtMs) / 1000))
+      : 0;
+    const ageSeconds = Math.max(explicitAgeSeconds, historicalAgeSeconds);
     if (ageSeconds > Math.max(1, maxAgeSeconds)) return false;
 
     const lifecyclePhase = String((token as any).lifecycle_phase || "").trim().toLowerCase();
@@ -4012,6 +4026,12 @@ export async function registerRoutes(
 
   const getDoctorActiveTokens = async () => {
     const early = await getSolanaEarlyScoredTokens(120, 220);
+    const strictMaxTokenAgeSeconds = Math.max(30, Number(doctorRuntime.controls.max_token_age_seconds || 240));
+    const minMarketCapUsd = Math.max(1, Number(doctorRuntime.controls.min_market_cap_usd || 15_000));
+    const displayMarketCapOption = normalizeDoctorMarketCapOption((doctorRuntime.controls as any).market_cap_option);
+    const displayMarketCapOptionMax = resolveDoctorMarketCapUpperBound(displayMarketCapOption);
+    const maxMarketCapUsdControl = Math.max(minMarketCapUsd, Number(doctorRuntime.controls.max_market_cap_usd || displayMarketCapOptionMax));
+    const effectiveMaxMarketCapUsd = Math.min(displayMarketCapOptionMax, maxMarketCapUsdControl);
     const strictApproved = early
       .filter((token) => Boolean(token.eligible))
       .filter((token) => Number(token.liquidity_usd || 0) >= Number(doctorRuntime.controls.min_liquidity_usd || 0))
@@ -4109,7 +4129,106 @@ export async function registerRoutes(
       })
       .slice(0, Math.max(0, targetApproved - strictApproved.length));
 
-    return [...strictApproved, ...softApproved].slice(0, 40);
+    const merged = [...strictApproved, ...softApproved].slice(0, 40);
+    if (merged.length >= 8) {
+      return merged;
+    }
+
+    // Keep DoctorTrade populated with truly fresh tokens using live Dex pairs.
+    const dexPairsFallback = await (async () => {
+      try {
+        const fallbackLookbackHours = Math.max(1, Math.min(24, Number(process.env.DOCTOR_DEX_FALLBACK_LOOKBACK_HOURS || 6)));
+        const pairs = await getNewPairs("solana", fallbackLookbackHours);
+        const existingAddresses = new Set(merged.map((token) => String((token as any).address || "").trim()));
+        const maxDexFallback = Math.max(10, Math.min(40, Number(process.env.DOCTOR_DEX_FALLBACK_LIMIT || 24)));
+        const nowMs = Date.now();
+
+        return pairs
+          .slice(0, 260)
+          .map((pair) => {
+            const mapped = pairToTokenData(pair);
+            const mint = String(mapped.address || pair.baseToken?.address || "").trim();
+            const createdAtMs = Number(pair.pairCreatedAt || 0);
+            const ageSeconds = createdAtMs > 0 ? Math.max(0, Math.trunc((nowMs - createdAtMs) / 1000)) : 0;
+            const marketCapUsd = Number(mapped.marketCap || pair.marketCap || pair.fdv || 0);
+            const liquidityUsd = Number(mapped.liquidity || pair.liquidity?.usd || 0);
+            const volume24h = Number(mapped.volume24h || pair.volume?.h24 || 0);
+            const buys5m = Number(pair.txns?.m5?.buys || 0);
+            const sells5m = Number(pair.txns?.m5?.sells || 0);
+            const buyRatioPct = Number((((buys5m + 1) / Math.max(1, buys5m + sells5m + 2)) * 100).toFixed(2));
+            const launchSource = normalizeLaunchSource(String(mapped.dexId || pair.dexId || "dexscreener"));
+            const confidenceScore = Math.max(35, Math.min(88,
+              (Math.max(0, 45 - Math.min(45, ageSeconds / 6)))
+              + Math.min(20, liquidityUsd / 1500)
+              + Math.min(13, volume24h / 10000)
+              + Math.min(10, buys5m * 1.5),
+            ));
+            return {
+              mint,
+              symbol: String(mapped.symbol || pair.baseToken?.symbol || "UNKNOWN"),
+              liquidityUsd,
+              volume5m: Number(pair.volume?.m5 || 0),
+              volume24h,
+              marketCapUsd,
+              buys5m,
+              sells5m,
+              buyRatioPct,
+              priceUsd: Number(mapped.priceUsd || pair.priceUsd || 0),
+              priceChange1h: Number(pair.priceChange?.h1 || 0),
+              launchSource,
+              ageSeconds,
+              createdAtIso: createdAtMs > 0 ? new Date(createdAtMs).toISOString() : nowIso(),
+              confidenceScore,
+            };
+          })
+          .filter((token) => Boolean(token.mint))
+          .filter((token) => !existingAddresses.has(String(token.mint || "")))
+          .filter((token) => token.ageSeconds > 0 && token.ageSeconds <= strictMaxTokenAgeSeconds)
+          .filter((token) => token.marketCapUsd >= minMarketCapUsd && token.marketCapUsd <= effectiveMaxMarketCapUsd)
+          .filter((token) => token.liquidityUsd >= Math.max(2_500, Number(doctorRuntime.controls.min_liquidity_usd || 0) * 0.4))
+          .sort((a, b) => {
+            const scoreDiff = Number(b.confidenceScore || 0) - Number(a.confidenceScore || 0);
+            if (scoreDiff !== 0) return scoreDiff;
+            return Number(a.ageSeconds || 0) - Number(b.ageSeconds || 0);
+          })
+          .slice(0, maxDexFallback)
+          .map((token) => ({
+            symbol: token.symbol,
+            address: token.mint,
+            liquidity: token.liquidityUsd,
+            volume_5m: token.volume5m,
+            buy_ratio_pct: token.buyRatioPct,
+            buys_5m: token.buys5m,
+            sells_5m: token.sells5m,
+            liquidity_sol: Number((token.liquidityUsd / Math.max(1, Number(process.env.DOCTOR_SOL_PRICE_USD_DEFAULT || 150))).toFixed(4)),
+            volume_24h: token.volume24h,
+            market_cap_usd: token.marketCapUsd,
+            score: Number(token.confidenceScore.toFixed(2)),
+            price_usd: token.priceUsd,
+            price_change_1h: token.priceChange1h,
+            age_seconds: token.ageSeconds,
+            chain: "solana",
+            created_at: token.createdAtIso,
+            holders_count: 0,
+            top_holder_pct: 0,
+            dev_wallet_pct: 0,
+            launch_source: token.launchSource,
+            liquidity_locked: token.launchSource === "raydium" || token.launchSource === "bonk",
+            pool_address: "",
+            base_mint: String(getDoctorTradeBaseAssetMint()),
+            risk_level: token.confidenceScore >= 70 ? "SAFE" : token.confidenceScore >= 45 ? "MEDIUM" : "HIGH RISK",
+            source: "dexscreener_live_fallback",
+            reject_reasons: [],
+            eligible: false,
+            safety_tier: "soft",
+            soft_reason_count: 0,
+          }));
+      } catch {
+        return [] as Array<Record<string, any>>;
+      }
+    })();
+
+    return [...merged, ...dexPairsFallback].slice(0, 40);
   };
 
   const resolveCurrentPriceUsd = (token: Record<string, any>, fallbackPriceUsd: number) => {
@@ -7931,7 +8050,7 @@ export async function registerRoutes(
     const displayMinBuyRatioPct = Math.max(55, Number(doctorRuntime.controls.min_buy_ratio_pct || 55));
     const displayMinBuys5m = Math.max(1, Math.trunc(Number(doctorRuntime.controls.min_buys_5m || 3)));
     const displayMaxSells5m = Math.max(0, Math.trunc(Number(doctorRuntime.controls.max_sells_5m || 50)));
-    const displayActiveTokens = activeTokens
+    const displayFilteredTokens = activeTokens
       .filter((token) => isDoctorLaunchCandidateAllowed(token as Record<string, any>, displayMaxTokenAgeSeconds))
       .filter((token) => {
         const marketCapUsd = Number((token as any).market_cap_usd || (token as any).market_cap || 0);
@@ -7944,6 +8063,11 @@ export async function registerRoutes(
       })
       .filter((token) => Number((token as any).buys_5m || 0) >= displayMinBuys5m)
       .filter((token) => Number((token as any).sells_5m || 0) <= displayMaxSells5m);
+    const displayActiveTokens = displayFilteredTokens.length
+      ? displayFilteredTokens
+      : activeTokens
+          .filter((token) => isDoctorLaunchCandidateAllowed(token as Record<string, any>, displayMaxTokenAgeSeconds))
+          .slice(0, 40);
 
     const topTokenConfidence = displayActiveTokens
       .slice(0, 5)
@@ -12308,6 +12432,7 @@ export async function registerRoutes(
     const limitRaw = Number(req.query.limit || 20);
     const requestedLimit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(50, Math.trunc(limitRaw))) : 20;
     const responseLimit = Math.max(5, requestedLimit);
+    const safeBuyMaxAgeSeconds = Math.max(300, Number(process.env.DOCTOR_SAFE_BUY_MAX_AGE_SECONDS || 2 * 60 * 60));
 
     const toSafeRisk = (value: string) => {
       const normalized = String(value || "").toUpperCase();
@@ -12323,6 +12448,35 @@ export async function registerRoutes(
       dexscreener: `https://dexscreener.com/solana/${contractAddress}`,
     });
 
+    const resolveCreatedAtIso = (token: Record<string, any>) => {
+      const candidates = [
+        String(token.created_at || "").trim(),
+        String((token as any).first_seen_at || "").trim(),
+        String((token as any).pairCreatedAt || "").trim(),
+        String((token as any).createdAt || "").trim(),
+      ].filter(Boolean);
+      for (const candidate of candidates) {
+        const parsed = new Date(candidate).getTime();
+        if (Number.isFinite(parsed) && parsed > 0) {
+          return new Date(parsed).toISOString();
+        }
+      }
+      return "";
+    };
+
+    const resolveTokenAgeSeconds = (token: Record<string, any>) => {
+      const explicitAge = Number(token.age_seconds || 0);
+      const createdAtIso = resolveCreatedAtIso(token);
+      const createdAtMs = createdAtIso ? new Date(createdAtIso).getTime() : 0;
+      const historicalAge = Number.isFinite(createdAtMs) && createdAtMs > 0
+        ? Math.max(0, Math.trunc((Date.now() - createdAtMs) / 1000))
+        : 0;
+      if (explicitAge > 0 && historicalAge > 0) return Math.max(explicitAge, historicalAge);
+      if (explicitAge > 0) return explicitAge;
+      if (historicalAge > 0) return historicalAge;
+      return 0;
+    };
+
     const toSafeBuyItem = (token: Record<string, any>, sourceTier: "strict" | "soft" | "fallback") => {
       const contractAddress = String(token.address || token.contract_address || "").trim();
       const score = Number(token.score || token.safetyScore || 0);
@@ -12333,8 +12487,8 @@ export async function registerRoutes(
       const topHoldersPct = Number(token.top_holder_pct || token.top_holders_pct || 0);
       const devWalletPct = Number(token.dev_wallet_pct || 0);
       const buyRatio = Number(token.buy_ratio_pct || 0);
-      const createdAt = String(token.created_at || nowIso());
-      const ageSeconds = Number(token.age_seconds || 0);
+      const createdAt = resolveCreatedAtIso(token);
+      const ageSeconds = resolveTokenAgeSeconds(token);
 
       const recommendation = score >= 65 && sourceTier !== "fallback" ? "Safe Early Entry" : "Monitor";
       const shortSummary = score >= 65
@@ -12366,7 +12520,7 @@ export async function registerRoutes(
         source_platform: String(token.launch_source || token.source || token.dexId || "scanner"),
         logo_url: String(token.logo_url || token.logoUrl || "") || null,
         buy_links: buildBuyLinks(contractAddress),
-        created_at: createdAt,
+        created_at: createdAt || nowIso(),
       };
     };
 
@@ -12418,6 +12572,10 @@ export async function registerRoutes(
     const fillerFromScanned = scannedFallback
       .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
       .filter((token) => !usedAddresses.has(String(token.address || "")))
+      .filter((token) => {
+        const ageSeconds = resolveTokenAgeSeconds(token as Record<string, any>);
+        return ageSeconds > 0 && ageSeconds <= safeBuyMaxAgeSeconds;
+      })
       .sort((a, b) => Number(b.safetyScore || 0) - Number(a.safetyScore || 0))
       .map((token) =>
         toSafeBuyItem(
@@ -12436,8 +12594,8 @@ export async function registerRoutes(
             risk_level: String(token.riskLevel || "MEDIUM"),
             launch_source: String(token.dexId || "scanner"),
             price_change_1h: Number(token.priceChange1h || 0),
-            age_seconds: 0,
-            created_at: nowIso(),
+            age_seconds: resolveTokenAgeSeconds(token as Record<string, any>),
+            created_at: resolveCreatedAtIso(token as Record<string, any>) || nowIso(),
           },
           "fallback",
         ),
