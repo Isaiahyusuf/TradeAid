@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 const AuthPage = lazy(() => import("@/pages/AuthPage"));
 const DoctorTradePage = lazy(() => import("@/pages/DoctorTrade"));
 const WalletPage = lazy(() => import("@/pages/Wallet"));
+const AccountPage = lazy(() => import("@/pages/Account"));
 
 function RouteLoadingFallback() {
   return (
@@ -31,6 +32,7 @@ function AuthenticatedRouter() {
         <Route path="/" component={DoctorTradePage} />
         <Route path="/wallet" component={WalletPage} />
         <Route path="/doctortrade" component={DoctorTradePage} />
+        <Route path="/account" component={AccountPage} />
         <Route component={DoctorTradePage} />
       </Switch>
     </Suspense>
