@@ -9,19 +9,8 @@ import { Suspense, lazy } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const AuthPage = lazy(() => import("@/pages/AuthPage"));
-const Dashboard = lazy(() => import("@/pages/Dashboard"));
-const AlphaScanner = lazy(() => import("@/pages/AlphaScanner"));
-const RugShield = lazy(() => import("@/pages/RugShield"));
-const WhaleWatch = lazy(() => import("@/pages/WhaleWatch"));
-const MemeTrend = lazy(() => import("@/pages/MemeTrend"));
-const SafeBuy = lazy(() => import("@/pages/SafeBuy"));
-const AssistantPage = lazy(() => import("@/pages/Assistant"));
 const DoctorTradePage = lazy(() => import("@/pages/DoctorTrade"));
 const WalletPage = lazy(() => import("@/pages/Wallet"));
-const Account = lazy(() => import("@/pages/Account"));
-const Subscription = lazy(() => import("@/pages/Subscription"));
-const Disclaimer = lazy(() => import("@/pages/Disclaimer"));
-const NotFound = lazy(() => import("@/pages/not-found"));
 
 function RouteLoadingFallback() {
   return (
@@ -39,22 +28,10 @@ function AuthenticatedRouter() {
   return (
     <Suspense fallback={<RouteLoadingFallback />}>
       <Switch>
-        <Route path="/" component={Dashboard} />
-        <Route path="/dashboard" component={Dashboard} />
-        <Route path="/scanner" component={AlphaScanner} />
-        <Route path="/rugshield" component={RugShield} />
-        <Route path="/whalewatch" component={WhaleWatch} />
-        <Route path="/memetrend" component={MemeTrend} />
-        <Route path="/safebuy" component={SafeBuy} />
-        <Route path="/assistant" component={AssistantPage} />
+        <Route path="/" component={DoctorTradePage} />
         <Route path="/wallet" component={WalletPage} />
-        <Route path="/doctorstrange" component={AssistantPage} />
         <Route path="/doctortrade" component={DoctorTradePage} />
-        <Route path="/account" component={Account} />
-        <Route path="/settings" component={Account} />
-        <Route path="/subscription" component={Subscription} />
-        <Route path="/disclaimer" component={Disclaimer} />
-        <Route component={NotFound} />
+        <Route component={DoctorTradePage} />
       </Switch>
     </Suspense>
   );

@@ -12,10 +12,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bot, LogOut, Settings2 } from "lucide-react";
+import { Bot, LogOut } from "lucide-react";
 import { AnimatePresence, motion, useMotionValue } from "framer-motion";
 
 const DOCTORTRADE_POSITION_KEY = "doctortrade-launcher-position-v1";
@@ -86,7 +85,7 @@ export function Layout({ children }: { children: ReactNode }) {
           <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 rounded-2xl border border-primary/20 bg-card/80 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.28)] px-3 py-2 md:px-4 md:py-3">
             <button
               type="button"
-              onClick={() => setLocation("/")}
+              onClick={() => setLocation("/doctortrade")}
               className="inline-flex min-w-0 items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-primary/10 transition-colors"
               data-testid="button-global-logo-home"
             >
@@ -127,11 +126,6 @@ export function Layout({ children }: { children: ReactNode }) {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-44" data-testid="menu-profile-dropdown">
-                  <DropdownMenuItem onClick={() => setLocation("/account")} data-testid="menu-item-account">
-                    <Settings2 className="h-4 w-4 mr-2" />
-                    Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
                     onClick={logout}

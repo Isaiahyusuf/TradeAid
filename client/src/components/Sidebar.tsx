@@ -1,7 +1,6 @@
 import { useLocation } from "wouter";
 import { 
-  ShieldCheck, Eye, TrendingUp, LayoutDashboard, 
-  LogOut, User, Radar, Bell, Lock, Bot, Wallet, ChevronRight, AlertTriangle
+  LogOut, Bot, Wallet, ChevronRight
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
@@ -10,17 +9,8 @@ import { Button } from "@/components/ui/button";
 import { TradeAidLogo } from "@/components/brand/TradeAidLogo";
 
 const NAV_ITEMS = [
-  { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Scanner", href: "/scanner", icon: Radar },
-  { label: "RugShield", href: "/rugshield", icon: ShieldCheck },
-  { label: "WhaleWatch", href: "/whalewatch", icon: Eye },
-  { label: "Safe Buy", href: "/safebuy", icon: Lock },
-  { label: "Tokens", href: "/memetrend", icon: TrendingUp },
   { label: "DoctorTrade", href: "/doctortrade", icon: Bot },
   { label: "Wallet", href: "/wallet", icon: Wallet },
-  { label: "Subscription", href: "/subscription", icon: Bell },
-  { label: "Disclaimer", href: "/disclaimer", icon: AlertTriangle },
-  { label: "Settings", href: "/account", icon: User },
 ];
 
 const getNavTestId = (label: string) => `nav-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;

@@ -75,6 +75,18 @@ const ENABLE_PUMP_INGEST_LOGS = String(
 const ENABLE_BACKGROUND_WORKERS = String(
   process.env.ENABLE_BACKGROUND_WORKERS || "true",
 ).trim().toLowerCase() === "true";
+const TEMP_UI_LOCKDOWN_ENABLED = String(
+  process.env.TEMP_UI_LOCKDOWN_ENABLED || "true",
+).trim().toLowerCase() !== "false";
+const TEMP_UI_LOCKDOWN_ALLOWED_PREFIXES = [
+  "/api/auth",
+  "/api/login",
+  "/api/logout",
+  "/api/doctor",
+  "/api/ai",
+  "/api/user/settings",
+  "/api/system/health",
+];
 
 function resolveOpenAiApiKey(): string {
   return String(
@@ -208,6 +220,29 @@ export async function registerRoutes(
     });
 
     next();
+  });
+
+  app.use((req, res, next) => {
+    if (!TEMP_UI_LOCKDOWN_ENABLED) {
+      return next();
+    }
+    if (!req.path.startsWith("/api")) {
+      return next();
+    }
+
+    const isAllowed = TEMP_UI_LOCKDOWN_ALLOWED_PREFIXES.some(
+      (prefix) => req.path === prefix || req.path.startsWith(`${prefix}/`),
+    );
+
+    if (isAllowed) {
+      return next();
+    }
+
+    return res.status(403).json({
+      ok: false,
+      message: "Temporarily disabled while UI is limited to Wallet and DoctorTrade",
+      path: req.path,
+    });
   });
 
   // Setup auth FIRST (required before other routes)
