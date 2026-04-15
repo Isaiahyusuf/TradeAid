@@ -148,6 +148,13 @@ The app integrates with the Trade Aid Python backend. See full API docs at `http
 - API docs: Visit `http://localhost:8000/docs`
 - Expo docs: https://docs.expo.dev/
 
+## Store Submission Assets
+
+- Privacy Policy: `./PRIVACY_POLICY.md`
+- Terms of Service: `./TERMS_OF_SERVICE.md`
+
+Before submitting to stores, host these documents on a public HTTPS URL and use those links in App Store Connect and Google Play Console.
+
 ---
 
 Built with ❤️ using React Native and Expo

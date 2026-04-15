@@ -5,8 +5,13 @@ import * as SecureStore from 'expo-secure-store';
 
 const axios = axiosBrowser as typeof import('axios').default;
 
-// Default to local development or use environment variable
-const API_URL = Constants.expoConfig?.extra?.apiUrl || 'http://localhost:8000';
+const configuredApiUrl = Constants.expoConfig?.extra?.apiUrl as string | undefined;
+const isDevelopment = __DEV__;
+const API_URL = configuredApiUrl || (isDevelopment ? 'http://localhost:8000' : '');
+
+if (!API_URL) {
+  throw new Error('Missing API URL. Set EXPO_PUBLIC_API_URL for non-development builds.');
+}
 
 const api = axios.create({
   baseURL: API_URL,

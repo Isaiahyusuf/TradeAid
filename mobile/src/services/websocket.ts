@@ -1,7 +1,15 @@
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 
-const WS_URL = (Constants.expoConfig?.extra?.apiUrl || 'http://localhost:8000').replace('http', 'ws');
+const configuredApiUrl = Constants.expoConfig?.extra?.apiUrl as string | undefined;
+const isDevelopment = __DEV__;
+const apiUrl = configuredApiUrl || (isDevelopment ? 'http://localhost:8000' : '');
+
+if (!apiUrl) {
+  throw new Error('Missing API URL. Set EXPO_PUBLIC_API_URL for non-development builds.');
+}
+
+const WS_URL = apiUrl.replace('http', 'ws');
 
 type MessageHandler = (data: any) => void;
 type ConnectionHandler = () => void;
