@@ -152,6 +152,8 @@ The app integrates with the Trade Aid Python backend. See full API docs at `http
 
 - Privacy Policy: `./PRIVACY_POLICY.md`
 - Terms of Service: `./TERMS_OF_SERVICE.md`
+- Submission checklist: `./STORE_SUBMISSION_CHECKLIST.md`
+- Store listing template: `./STORE_LISTING_CONTENT_TEMPLATE.md`
 
 Before submitting to stores, host these documents on a public HTTPS URL and use those links in App Store Connect and Google Play Console.
 
