@@ -25,7 +25,10 @@ export function useAlerts(params?: { chain?: string; alert_type?: string; severi
   return useQuery({
     queryKey: ["alerts", params],
     queryFn: () => apiGet<{ alerts: Alert[]; count: number }>(`/api/alerts${qs ? `?${qs}` : ""}`),
-    refetchInterval: 5000,
+    staleTime: 20000,
+    refetchInterval: 20000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
     enabled: hasToken,
     retry: 1,
   });

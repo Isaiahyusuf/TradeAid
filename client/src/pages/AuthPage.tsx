@@ -205,6 +205,15 @@ export default function AuthPage() {
 
   const startOAuthSignIn = (provider: "google" | "apple") => {
     const configuredBase = String(import.meta.env.VITE_API_URL || "").trim();
+    const configuredOrigin = (() => {
+      const raw = configuredBase.replace(/^['\"]+|['\"]+$/g, "").trim();
+      if (!raw || !/^https?:\/\//i.test(raw)) return "";
+      try {
+        return new URL(raw).origin;
+      } catch {
+        return "";
+      }
+    })();
     const hostname = String(window.location.hostname || "").toLowerCase();
     const isTradeAidDomain = hostname === "tradeaid.ink"
       || hostname === "www.tradeaid.ink"
@@ -212,7 +221,7 @@ export default function AuthPage() {
       || hostname.endsWith(".tradeaid.ink");
     const apiBase = isTradeAidDomain
       ? "https://api.tradeaid.ink"
-      : configuredBase;
+      : configuredOrigin;
     if (!apiBase) {
       toast({ title: "Configuration required", description: "OAuth sign-in is unavailable. Missing VITE_API_URL.", variant: "destructive" });
       return;

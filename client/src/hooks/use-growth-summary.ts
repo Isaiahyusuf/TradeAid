@@ -26,8 +26,10 @@ export function useGrowthSummary() {
   return useQuery({
     queryKey: ["growth-summary"],
     queryFn: () => apiGet<GrowthSummary>("/api/growth/summary"),
-    staleTime: 15000,
-    refetchInterval: 30000,
+    staleTime: 120000,
+    refetchInterval: 120000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
     enabled: true,
     retry: 1,
   });

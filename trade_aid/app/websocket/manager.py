@@ -11,6 +11,7 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, Set[WebSocket]] = defaultdict(set)
         self._subscriber_task = None
+        self._reconnect_attempts = 0
 
     async def connect(self, websocket: WebSocket, user_id: str):
         await websocket.accept()
@@ -72,10 +73,13 @@ class ConnectionManager:
                 return
             pubsub = redis.pubsub()
             await pubsub.subscribe("alerts", "chain_events", "scores")
+            self._reconnect_attempts = 0
             logger.info("[WS] Redis subscriber started")
 
             async for message in pubsub.listen():
                 if message["type"] == "message":
+                    if not self.active_connections:
+                        continue
                     try:
                         data = json.loads(message["data"])
                         data["channel"] = message["channel"]
@@ -90,7 +94,9 @@ class ConnectionManager:
                         pass
         except Exception as e:
             logger.error(f"[WS] Redis subscriber error: {e}")
-            await asyncio.sleep(5)
+            self._reconnect_attempts = min(self._reconnect_attempts + 1, 8)
+            backoff_seconds = min(5 * (2 ** (self._reconnect_attempts - 1)), 60)
+            await asyncio.sleep(backoff_seconds)
             asyncio.create_task(self._subscribe_redis())
 
     async def stop(self):

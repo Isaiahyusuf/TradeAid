@@ -16,8 +16,10 @@ export function useAIInsight(chain: string | null, contractAddress: string | nul
     queryKey: ["ai-insight", chain, contractAddress],
     queryFn: () => apiGet<{ token: { contract_address: string; symbol: string; chain: string }; insight: AIInsight }>(`/api/scoring/insight/${chain}/${contractAddress}`),
     enabled: !!chain && !!contractAddress,
-    staleTime: 15000,
-    refetchInterval: 30000,
+    staleTime: 120000,
+    refetchInterval: 120000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
     retry: 1,
   });
 }

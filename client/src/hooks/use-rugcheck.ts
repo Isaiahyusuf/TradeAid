@@ -215,8 +215,10 @@ export function useScannerHealth() {
   return useQuery({
     queryKey: ["scanner-health"],
     queryFn: () => apiGet<ScannerHealthResult>("/api/scanner/health"),
-    staleTime: 5000,
-    refetchInterval: 10000,
+    staleTime: 30000,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
     retry: 1,
   });
 }

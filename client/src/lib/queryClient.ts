@@ -29,7 +29,7 @@ function resolveApiBaseUrl(): string {
       || hostname === "app.tradeaid.ink"
       || hostname.endsWith(".tradeaid.ink");
     if (API_URL) {
-      if (isTradeAidDomain && API_URL.includes("tradeaid-production.up.railway.app")) {
+      if (isTradeAidDomain && API_URL.includes(".railway.app")) {
         return TRADEAID_API_FALLBACK;
       }
       return API_URL;

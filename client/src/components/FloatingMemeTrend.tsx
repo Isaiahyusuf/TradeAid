@@ -22,7 +22,10 @@ export function FloatingMemeTrend() {
 
   const { data: trendingCoins } = useQuery<TrendingCoin[]>({
     queryKey: ["/api/memetrend/list"],
-    refetchInterval: 30000,
+    staleTime: 120000,
+    refetchInterval: 120000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
   });
 
   if (!isOpen) {

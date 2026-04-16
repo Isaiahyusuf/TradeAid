@@ -37,8 +37,10 @@ export function useTokens(
       options?.limit,
     ],
     queryFn: () => apiGet<TokenFeedResponse>(`/api/tokens${qs ? `?${qs}` : ""}`),
-    staleTime: 5000,
-    refetchInterval: 5000,
+    staleTime: 20000,
+    refetchInterval: 20000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
     enabled: true,
     retry: 1,
   });
@@ -48,8 +50,10 @@ export function useTokenStats() {
   return useQuery({
     queryKey: ["token-stats"],
     queryFn: () => apiGet<{ total_tokens: number; by_chain: Record<string, number> }>("/api/tokens/stats/overview"),
-    staleTime: 5000,
-    refetchInterval: 5000,
+    staleTime: 30000,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
     enabled: true,
     retry: 1,
   });
