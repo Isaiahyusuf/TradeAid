@@ -406,7 +406,7 @@ export function registerScannerRoutes(app: Express): void {
       const recentTokens = recentScanned.map((token) => {
         const social = (token.socialLinks || {}) as Record<string, unknown>;
         return {
-          id: token.id,
+          id: String(token.id),
           address: token.address,
           symbol: token.symbol,
           dexId: token.dexId,
