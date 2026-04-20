@@ -317,6 +317,10 @@ function normalizeUsername(value: unknown) {
   return String(value || "").trim().toLowerCase();
 }
 
+function emergencyUserIdForUsername(value: string): string {
+  return `emergency:${normalizeUsername(value)}`;
+}
+
 function getUsernameValidationMessage(value: string): string | null {
   if (!value) {
     return "Username is required.";
@@ -451,6 +455,21 @@ export function registerAuthRoutes(app: Express): void {
         user = usernameOrEmail.includes("@")
           ? getEmergencyUserByEmail(usernameOrEmail)
           : getEmergencyUserByUsername(normalizeUsername(usernameOrEmail));
+        if (!user && AUTH_EMERGENCY_FALLBACK_ENABLED) {
+          const normalized = usernameOrEmail.includes("@")
+            ? normalizeUsername(String(usernameOrEmail).split("@")[0])
+            : normalizeUsername(usernameOrEmail);
+          user = {
+            id: emergencyUserIdForUsername(normalized),
+            username: normalized,
+            email: usernameOrEmail.includes("@") ? String(usernameOrEmail).trim().toLowerCase() : `${normalized}@tradeaid.local`,
+            firstName: null,
+            profileImageUrl: null,
+            notificationsEnabled: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        }
       }
 
       if (!user) {
@@ -539,6 +558,10 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       let hashesByUserId = await getPasswordHashesByUserId();
+      const emergencyUserId = emergencyUserIdForUsername(username);
+      if (String(hashesByUserId[emergencyUserId] || "").trim()) {
+        return res.status(409).json({ message: "Username already taken" });
+      }
       const purgeGhostUserIfNeeded = async (user: any | undefined): Promise<boolean> => {
         if (!user?.id) return false;
         const existingHash = String(hashesByUserId[user.id] || "").trim() || await getPersistentPasswordHash(user.id);
@@ -596,7 +619,7 @@ export function registerAuthRoutes(app: Express): void {
         if (isDbConnectivityError(error) && AUTH_EMERGENCY_FALLBACK_ENABLED) {
           emergencyMode = true;
           const fallbackUser = {
-            id: randomUUID(),
+            id: emergencyUserIdForUsername(username),
             username,
             email,
             firstName: null,
@@ -672,11 +695,13 @@ export function registerAuthRoutes(app: Express): void {
         if (!isDbConnectivityError(error)) throw error;
         existing = getEmergencyUserByUsername(username);
       }
+      const hashesByUserId = await getPasswordHashesByUserId();
+      const hasEmergencyRegistration = Boolean(String(hashesByUserId[emergencyUserIdForUsername(username)] || "").trim());
       res.json({
         username,
-        available: !existing,
+        available: !existing && !hasEmergencyRegistration,
         valid: true,
-        message: existing ? "Username already taken" : "Username available",
+        message: existing || hasEmergencyRegistration ? "Username already taken" : "Username available",
         emergency_mode: false,
       });
     } catch (error) {
