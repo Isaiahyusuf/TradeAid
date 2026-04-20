@@ -45,12 +45,26 @@ const poolMax = Math.max(1, Math.min(12, Number(process.env.DB_POOL_MAX || 4)));
 const poolIdleTimeoutMs = Math.max(1000, Number(process.env.DB_POOL_IDLE_TIMEOUT_MS || 10000));
 const poolConnectTimeoutMs = Math.max(1000, Number(process.env.DB_POOL_CONNECT_TIMEOUT_MS || 5000));
 
+function shouldUseSsl(connectionString: string): boolean {
+  const forceSsl = String(process.env.DB_SSL_FORCE || "").trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(forceSsl)) return true;
+  try {
+    const url = new URL(connectionString);
+    const sslMode = String(url.searchParams.get("sslmode") || "").toLowerCase();
+    if (sslMode === "require" || sslMode === "prefer") return true;
+    return url.hostname.endsWith(".rlwy.net");
+  } catch {
+    return connectionString.includes("rlwy.net");
+  }
+}
+
 const buildPool = (connectionString: string) => new Pool({
   connectionString,
   max: poolMax,
   idleTimeoutMillis: poolIdleTimeoutMs,
   connectionTimeoutMillis: poolConnectTimeoutMs,
   keepAlive: true,
+  ssl: shouldUseSsl(connectionString) ? { rejectUnauthorized: false } : undefined,
 });
 
 export const pool = buildPool(primaryDatabaseUrl);
