@@ -5986,14 +5986,9 @@ export async function registerRoutes(
     let pendingRiskExitLock = false;
     const updatedPositions: Array<Record<string, any>> = [];
     let maxOpenPositions = Math.min(DOCTOR_MAX_ACTIVE_TRADES, getDoctorEffectiveMaxOpenPositions());
-    const activeSnipePreset = getDoctorActiveSnipePreset();
-    const isSpeedMode = isDoctorSpeedModePreset(activeSnipePreset);
-    const isMomentumMode = isDoctorMomentumTraderPreset(activeSnipePreset);
     const configuredMinProfitPct = Math.max(0.1, getDoctorEffectiveControlNumber("min_profit_pct", Number(doctorRuntime.controls.min_profit_pct || 0)));
     const configuredTakeProfitMultiplier = Math.max(1.01, getDoctorEffectiveControlNumber("take_profit_multiplier", Number(doctorRuntime.controls.take_profit_multiplier || 2)));
     const configuredStopLossPct = Math.max(DOCTOR_STOP_LOSS_PCT, getDoctorEffectiveControlNumber("stop_loss_pct", Number(doctorRuntime.controls.stop_loss_pct || 0)));
-    const configuredTrailingStopPct = Math.max(0.1, getDoctorEffectiveControlNumber("trailing_stop_pct", Number(doctorRuntime.controls.trailing_stop_pct || 0)));
-    const configuredMaxHoldMinutes = Math.max(DOCTOR_MAX_HOLD_SECONDS / 60, getDoctorEffectiveControlNumber("max_hold_minutes", Number(doctorRuntime.controls.max_hold_minutes || 120)));
     const configuredLiveSellFractionPct = Math.max(1, Math.min(100, getDoctorEffectiveControlNumber("live_sell_fraction_pct", Number(doctorRuntime.controls.live_sell_fraction_pct || 100))));
     const takeProfitPct = Math.max(
       DOCTOR_TAKE_PROFIT_PCT,
@@ -6018,42 +6013,16 @@ export async function registerRoutes(
         positionMinProfitPct,
         (positionTakeProfitMultiplier - 1) * 100,
       );
-      const positionTrailingActivationPct = Math.max(5, positionTakeProfitPct);
       const positionStopLossPct = Math.max(DOCTOR_STOP_LOSS_PCT, Number((position as any).stop_loss_pct || configuredStopLossPct));
-      const positionTrailingStopPct = Math.max(0.1, Number((position as any).trailing_stop_pct || configuredTrailingStopPct));
-      const drawdownFromPeakPct = peakPrice > 0 && currentPrice > 0 ? ((peakPrice - currentPrice) / peakPrice) * 100 : 0;
       const tpStage = Math.max(0, Math.trunc(Number((position as any).tp_stage || 0)));
-      const buys30s = estimateBuys30s((market || {}) as Record<string, any>);
-      const priceChange30sPct = estimatePriceChange30sPct((market || {}) as Record<string, any>);
-      const buys2m = estimateBuys2m((market || {}) as Record<string, any>);
-      const priceChange2mPct = estimatePriceChange2mPct((market || {}) as Record<string, any>);
 
       let sellReason = "";
       let sellFractionPct = 100;
-      if (isSpeedMode && buys30s <= 2 && priceChange30sPct <= -12) {
-        sellReason = "fast_momentum_exit";
-      } else if (isMomentumMode && buys2m < 5 && priceChange2mPct <= -10) {
-        sellReason = "momentum_hype_died_exit";
-      } else if (isMomentumMode && pnlPct >= 500 && tpStage < 3) {
-        sellReason = "take_profit_stage_3_full";
-      } else if (isMomentumMode && pnlPct >= 300 && tpStage < 2) {
-        sellReason = "take_profit_stage_2_partial";
-        sellFractionPct = 50;
-      } else if (isMomentumMode && pnlPct >= 200 && tpStage < 1) {
-        sellReason = "take_profit_stage_1_partial";
-        sellFractionPct = 40;
-      } else if (pnlPct >= positionTakeProfitPct) {
+      if (pnlPct >= positionTakeProfitPct) {
         sellReason = "take_profit_target_hit";
         sellFractionPct = configuredLiveSellFractionPct;
       } else if (pnlPct <= -positionStopLossPct) {
         sellReason = "stop_loss_hit";
-      } else if (
-        pnlPct >= positionTrailingActivationPct &&
-        drawdownFromPeakPct >= positionTrailingStopPct
-      ) {
-        sellReason = "trailing_stop_triggered";
-      } else if (holdMinutes >= configuredMaxHoldMinutes) {
-        sellReason = "max_hold_reached";
       }
 
       if (!sellReason) {
@@ -6082,9 +6051,7 @@ export async function registerRoutes(
         sellFractionPct,
       });
       if (!sellExecution.executed) {
-        const isRiskExitReason = sellReason === "stop_loss_hit"
-          || sellReason === "trailing_stop_triggered"
-          || sellReason === "max_hold_reached";
+        const isRiskExitReason = sellReason === "stop_loss_hit";
         const failedReason = String((sellExecution as any).reason || "").trim();
         if (failedReason === "live_sell_balance_zero") {
           markDoctorLifecycleExit(String(position.address || ""), "position_already_closed_onchain", nowMs);
