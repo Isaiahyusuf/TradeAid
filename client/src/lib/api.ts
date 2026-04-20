@@ -18,7 +18,7 @@ function normalizeApiUrl(rawValue: unknown): string {
 }
 
 const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL);
-const TRADEAID_API_FALLBACK = "https://api.tradeaid.ink";
+const TRADEAID_API_FALLBACK = "https://tradeaid-4e908.up.railway.app";
 
 function resolveApiBaseUrl(): string {
   if (typeof window !== "undefined") {
