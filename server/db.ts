@@ -41,7 +41,19 @@ if (!primaryDatabaseUrl) {
   );
 }
 
-export const pool = new Pool({ connectionString: primaryDatabaseUrl });
+const poolMax = Math.max(1, Math.min(12, Number(process.env.DB_POOL_MAX || 4)));
+const poolIdleTimeoutMs = Math.max(1000, Number(process.env.DB_POOL_IDLE_TIMEOUT_MS || 10000));
+const poolConnectTimeoutMs = Math.max(1000, Number(process.env.DB_POOL_CONNECT_TIMEOUT_MS || 5000));
+
+const buildPool = (connectionString: string) => new Pool({
+  connectionString,
+  max: poolMax,
+  idleTimeoutMillis: poolIdleTimeoutMs,
+  connectionTimeoutMillis: poolConnectTimeoutMs,
+  keepAlive: true,
+});
+
+export const pool = buildPool(primaryDatabaseUrl);
 export const db = drizzle(pool, { schema });
 
 const walletDatabaseUrl = firstNonEmpty(
@@ -56,8 +68,13 @@ const tradeDatabaseUrl = firstNonEmpty(
   primaryDatabaseUrl,
 );
 
-const walletPool = new Pool({ connectionString: walletDatabaseUrl });
-const tradePool = new Pool({ connectionString: tradeDatabaseUrl });
+const walletPool = walletDatabaseUrl === primaryDatabaseUrl
+  ? pool
+  : buildPool(walletDatabaseUrl);
+
+const tradePool = tradeDatabaseUrl === primaryDatabaseUrl
+  ? pool
+  : (tradeDatabaseUrl === walletDatabaseUrl ? walletPool : buildPool(tradeDatabaseUrl));
 
 export const walletDb = drizzle(walletPool, { schema });
 export const tradeDb = drizzle(tradePool, { schema });
