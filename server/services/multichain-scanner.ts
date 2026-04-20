@@ -202,6 +202,39 @@ export class MultichainLaunchpadScanner {
     return "";
   }
 
+  private isTransientStorageError(error: unknown): boolean {
+    const message = String((error as any)?.message || "").toLowerCase();
+    const code = String((error as any)?.code || "").toUpperCase();
+    return (
+      code === "ECONNRESET"
+      || code === "EPIPE"
+      || code === "ETIMEDOUT"
+      || message.includes("read econreset")
+      || message.includes("read econnreset")
+      || message.includes("connection terminated unexpectedly")
+      || message.includes("terminating connection")
+      || message.includes("timeout")
+    );
+  }
+
+  private async withStorageRetry<T>(operation: () => Promise<T>): Promise<T> {
+    let lastError: unknown;
+    let delayMs = 60;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        if (!this.isTransientStorageError(error) || attempt >= 3) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        delayMs *= 2;
+      }
+    }
+    throw lastError;
+  }
+
   private getSolanaRpcUrl() {
     return String(process.env.HELIUS_RPC_URL || process.env.SOLANA_RPC_URL || SOLANA_RPC_FALLBACK).trim();
   }
@@ -1599,7 +1632,7 @@ export class MultichainLaunchpadScanner {
     for (const token of tokens) {
       try {
         this.recordMintSourceObservation(token.address, token.launchpad, new Date(token.createdAt).getTime());
-        const existing = await storage.getScannedTokenByAddress(token.address);
+        const existing = await this.withStorageRetry(() => storage.getScannedTokenByAddress(token.address));
         
         const safetyScore = this.calculateSafetyScore(token);
         const riskLevel = safetyScore >= 70 ? "low" : safetyScore >= 50 ? "medium" : "high";
@@ -1640,9 +1673,9 @@ export class MultichainLaunchpadScanner {
         };
 
         if (existing) {
-          await storage.updateScannedToken(existing.id, tokenData);
+          await this.withStorageRetry(() => storage.updateScannedToken(existing.id, tokenData));
         } else {
-          await storage.createScannedToken(tokenData);
+          await this.withStorageRetry(() => storage.createScannedToken(tokenData));
         }
 
         const tokenAgeMinutes = Math.max(0, (Date.now() - freshness.firstSeenAt.getTime()) / 60000);

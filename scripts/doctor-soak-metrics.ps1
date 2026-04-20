@@ -23,6 +23,25 @@ function Get-Median {
   return [double](($sorted[$count / 2 - 1] + $sorted[$count / 2]) / 2.0)
 }
 
+function Get-WindowMinutes {
+  param([string]$Value)
+
+  $raw = [string]$Value
+  if ($raw -match '^(\d+)([smhdw])$') {
+    $n = [int]$matches[1]
+    $unit = $matches[2]
+    switch ($unit) {
+      's' { return [math]::Max(1, [math]::Round($n / 60.0, 3)) }
+      'm' { return [double]$n }
+      'h' { return [double]($n * 60) }
+      'd' { return [double]($n * 1440) }
+      'w' { return [double]($n * 10080) }
+    }
+  }
+
+  return 60.0
+}
+
 Write-Host "Linking Railway service..."
 railway link -p $ProjectId -e $Environment -s $Service | Out-Null
 
@@ -64,12 +83,13 @@ foreach ($line in $httpLogs) {
 
 $httpTotal = $httpEntries.Count
 $http5xx = ($httpEntries | Where-Object { [int]$_.httpStatus -ge 500 }).Count
+$windowMinutes = [double](Get-WindowMinutes -Value $Window)
 
 $result = [ordered]@{
   window = $Window
   ticker_requests_200 = $tickerRequests
   ticker_items_detected = $tickerItems
-  arrival_rate_per_min = if ($tickerRequests -gt 0) { [math]::Round($tickerRequests / ([int]($Window -replace "m$", "")), 3) } else { 0 }
+  arrival_rate_per_min = if ($windowMinutes -gt 0) { [math]::Round($tickerRequests / $windowMinutes, 3) } else { 0 }
   median_age_minutes = Get-Median -Values $ages
   median_freshness_score = Get-Median -Values $freshnessScores
   eligible_candidates_logged = $eligibleCandidates
