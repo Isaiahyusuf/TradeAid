@@ -34,7 +34,56 @@ const AUTH_FRESH_RESET_STATE_KEY = "auth.fresh_reset.v1";
 const PASSWORD_SALT_BYTES = 16;
 const PASSWORD_KEYLEN_BYTES = 64;
 const PASSWORD_MAX_BYTES = 72;
-const memoryPasswordHashesByUserId: Record<string, string> = {};
+const AUTH_EMERGENCY_FALLBACK_ENABLED = String(process.env.AUTH_EMERGENCY_FALLBACK_ENABLED || "true").trim().toLowerCase() !== "false";
+
+const emergencyUsersById = new Map<string, any>();
+const emergencyUserIdByUsername = new Map<string, string>();
+const emergencyUserIdByEmail = new Map<string, string>();
+const emergencyPasswordHashesByUserId = new Map<string, string>();
+
+function isDbConnectivityError(error: unknown): boolean {
+  const message = String((error as any)?.message || "").toLowerCase();
+  const code = String((error as any)?.code || "").toUpperCase();
+  if (["ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "ECONNREFUSED"].includes(code)) return true;
+  return (
+    message.includes("econnreset")
+    || message.includes("connection terminated unexpectedly")
+    || message.includes("connection reset")
+    || message.includes("timeout")
+    || message.includes("enotfound")
+  );
+}
+
+function cacheEmergencyUser(user: any | undefined): void {
+  if (!AUTH_EMERGENCY_FALLBACK_ENABLED || !user?.id) return;
+  const id = String(user.id);
+  const username = String(user.username || "").trim().toLowerCase();
+  const email = String(user.email || "").trim().toLowerCase();
+  emergencyUsersById.set(id, { ...user });
+  if (username) emergencyUserIdByUsername.set(username, id);
+  if (email) emergencyUserIdByEmail.set(email, id);
+}
+
+function getEmergencyUserById(userId: string): any | undefined {
+  if (!AUTH_EMERGENCY_FALLBACK_ENABLED) return undefined;
+  return emergencyUsersById.get(String(userId || "").trim());
+}
+
+function getEmergencyUserByUsername(username: string): any | undefined {
+  if (!AUTH_EMERGENCY_FALLBACK_ENABLED) return undefined;
+  const key = String(username || "").trim().toLowerCase();
+  if (!key) return undefined;
+  const userId = emergencyUserIdByUsername.get(key);
+  return userId ? emergencyUsersById.get(userId) : undefined;
+}
+
+function getEmergencyUserByEmail(email: string): any | undefined {
+  if (!AUTH_EMERGENCY_FALLBACK_ENABLED) return undefined;
+  const key = String(email || "").trim().toLowerCase();
+  if (!key) return undefined;
+  const userId = emergencyUserIdByEmail.get(key);
+  return userId ? emergencyUsersById.get(userId) : undefined;
+}
 
 function isStrongPassword(value: string): boolean {
   const password = String(value || "");
@@ -88,26 +137,28 @@ function verifyPassword(plainText: string, stored: string): boolean {
 }
 
 async function getPasswordHashesByUserId(): Promise<Record<string, string>> {
+  const merged: Record<string, string> = {};
+  for (const [userId, hash] of emergencyPasswordHashesByUserId.entries()) {
+    const normalizedUserId = String(userId || "").trim();
+    const normalizedHash = String(hash || "").trim();
+    if (!normalizedUserId || !normalizedHash) continue;
+    merged[normalizedUserId] = normalizedHash;
+  }
+
   try {
     const state = await storage.getAppState<Record<string, any>>(AUTH_PASSWORDS_STATE_KEY);
     if (!state || typeof state !== "object" || Array.isArray(state)) {
-      return { ...memoryPasswordHashesByUserId };
+      return merged;
     }
-    const out: Record<string, string> = {};
     for (const [userId, hash] of Object.entries(state)) {
       const normalizedUserId = String(userId || "").trim();
       const normalizedHash = String(hash || "").trim();
       if (!normalizedUserId || !normalizedHash) continue;
-      out[normalizedUserId] = normalizedHash;
+      merged[normalizedUserId] = normalizedHash;
     }
-    for (const [userId, hash] of Object.entries(memoryPasswordHashesByUserId)) {
-      if (!out[userId] && hash) {
-        out[userId] = hash;
-      }
-    }
-    return out;
+    return merged;
   } catch {
-    return { ...memoryPasswordHashesByUserId };
+    return merged;
   }
 }
 
@@ -116,7 +167,7 @@ async function setPasswordHashesByUserId(value: Record<string, string>): Promise
     const normalizedUserId = String(userId || "").trim();
     const normalizedHash = String(hash || "").trim();
     if (!normalizedUserId || !normalizedHash) continue;
-    memoryPasswordHashesByUserId[normalizedUserId] = normalizedHash;
+    emergencyPasswordHashesByUserId.set(normalizedUserId, normalizedHash);
   }
   try {
     await storage.setAppState(AUTH_PASSWORDS_STATE_KEY, value);
@@ -147,9 +198,13 @@ async function getPersistentPasswordHash(userId: string): Promise<string> {
       LIMIT 1
     `);
     const rows = (result as any)?.rows as Array<{ password_hash?: string }> | undefined;
-    return String(rows?.[0]?.password_hash || "").trim();
+    const value = String(rows?.[0]?.password_hash || "").trim();
+    if (value) {
+      emergencyPasswordHashesByUserId.set(normalizedUserId, value);
+    }
+    return value;
   } catch {
-    return "";
+    return String(emergencyPasswordHashesByUserId.get(normalizedUserId) || "").trim();
   }
 }
 
@@ -157,14 +212,18 @@ async function setPersistentPasswordHash(userId: string, passwordHash: string): 
   const normalizedUserId = String(userId || "").trim();
   const normalizedHash = String(passwordHash || "").trim();
   if (!normalizedUserId || !normalizedHash) return;
+  emergencyPasswordHashesByUserId.set(normalizedUserId, normalizedHash);
 
-  await ensurePasswordHashTable();
-  await db.execute(sql`
-    INSERT INTO auth_password_hashes (user_id, password_hash, updated_at)
-    VALUES (${normalizedUserId}, ${normalizedHash}, NOW())
-    ON CONFLICT (user_id)
-    DO UPDATE SET password_hash = EXCLUDED.password_hash, updated_at = NOW()
-  `);
+  try {
+    await ensurePasswordHashTable();
+    await db.execute(sql`
+      INSERT INTO auth_password_hashes (user_id, password_hash, updated_at)
+      VALUES (${normalizedUserId}, ${normalizedHash}, NOW())
+      ON CONFLICT (user_id)
+      DO UPDATE SET password_hash = EXCLUDED.password_hash, updated_at = NOW()
+    `);
+  } catch {
+  }
 }
 
 function requiredAccessCodeForRoute(routeType: "login" | "register"): string {
@@ -292,7 +351,14 @@ async function resolveUserFromRequest(req: any) {
   const accessToken = readBearerToken(req);
   const userIdFromToken = getSessionUserId(accessToken, "access");
   if (userIdFromToken) {
-    const user = await authStorage.getUser(userIdFromToken);
+    let user: any;
+    try {
+      user = await authStorage.getUser(userIdFromToken);
+      cacheEmergencyUser(user);
+    } catch (error) {
+      if (!isDbConnectivityError(error)) throw error;
+      user = getEmergencyUserById(userIdFromToken);
+    }
     if (user) {
       return user;
     }
@@ -303,18 +369,41 @@ async function resolveUserFromRequest(req: any) {
     return undefined;
   }
 
-  const existing = await authStorage.getUser(sub);
+  let existing: any;
+  try {
+    existing = await authStorage.getUser(sub);
+    cacheEmergencyUser(existing);
+  } catch (error) {
+    if (!isDbConnectivityError(error)) throw error;
+    existing = getEmergencyUserById(sub);
+  }
   if (existing) {
     return existing;
   }
 
-  return authStorage.upsertUser({
+  const profile = {
     id: sub,
     email: req.user?.claims?.email || null,
     username: req.user?.claims?.preferred_username || req.user?.claims?.name || `user_${sub.slice(0, 8)}`,
     firstName: req.user?.claims?.name || null,
     profileImageUrl: req.user?.claims?.profile_image_url || req.user?.claims?.picture || null,
-  });
+  };
+
+  try {
+    const created = await authStorage.upsertUser(profile);
+    cacheEmergencyUser(created);
+    return created;
+  } catch (error) {
+    if (!isDbConnectivityError(error)) throw error;
+    const fallbackUser = {
+      ...profile,
+      notificationsEnabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    cacheEmergencyUser(fallbackUser);
+    return fallbackUser;
+  }
 }
 
 // Register auth-specific routes
@@ -351,9 +440,18 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(401).json({ message: "Invalid access code" });
       }
 
-      const user = usernameOrEmail.includes("@")
-        ? await authStorage.getUserByEmail(usernameOrEmail)
-        : await authStorage.getUserByUsername(normalizeUsername(usernameOrEmail));
+      let user: any;
+      try {
+        user = usernameOrEmail.includes("@")
+          ? await authStorage.getUserByEmail(usernameOrEmail)
+          : await authStorage.getUserByUsername(normalizeUsername(usernameOrEmail));
+        cacheEmergencyUser(user);
+      } catch (error) {
+        if (!isDbConnectivityError(error)) throw error;
+        user = usernameOrEmail.includes("@")
+          ? getEmergencyUserByEmail(usernameOrEmail)
+          : getEmergencyUserByUsername(normalizeUsername(usernameOrEmail));
+      }
 
       if (!user) {
         return res.status(401).json({ message: "Invalid credentials" });
@@ -386,6 +484,10 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       const tokens = issueSessionTokens(user.id);
+      cacheEmergencyUser(user);
+      if (storedHash) {
+        emergencyPasswordHashesByUserId.set(String(user.id), storedHash);
+      }
       await recordLoginAudit({
         userId: user.id,
         username: user.username || "",
@@ -401,9 +503,13 @@ export function registerAuthRoutes(app: Express): void {
         access_token: tokens.accessToken,
         refresh_token: tokens.refreshToken,
         token_type: tokens.tokenType,
+        emergency_mode: false,
       });
     } catch (error) {
       console.error("Error during login:", error);
+      if (isDbConnectivityError(error) && AUTH_EMERGENCY_FALLBACK_ENABLED) {
+        return res.status(503).json({ message: "Database temporarily unavailable. Retry in a moment.", emergency_mode: true });
+      }
       res.status(500).json({ message: "Login failed" });
     }
   });
@@ -449,7 +555,14 @@ export function registerAuthRoutes(app: Express): void {
         return true;
       };
 
-      const existingByUsername = await authStorage.getUserByUsername(username);
+      let existingByUsername: any;
+      try {
+        existingByUsername = await authStorage.getUserByUsername(username);
+        cacheEmergencyUser(existingByUsername);
+      } catch (error) {
+        if (!isDbConnectivityError(error)) throw error;
+        existingByUsername = getEmergencyUserByUsername(username);
+      }
       if (existingByUsername) {
         const purged = await purgeGhostUserIfNeeded(existingByUsername);
         if (!purged) {
@@ -458,7 +571,14 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       if (email) {
-        const existingByEmail = await authStorage.getUserByEmail(email);
+        let existingByEmail: any;
+        try {
+          existingByEmail = await authStorage.getUserByEmail(email);
+          cacheEmergencyUser(existingByEmail);
+        } catch (error) {
+          if (!isDbConnectivityError(error)) throw error;
+          existingByEmail = getEmergencyUserByEmail(email);
+        }
         if (existingByEmail) {
           const purged = await purgeGhostUserIfNeeded(existingByEmail);
           if (!purged) {
@@ -467,11 +587,27 @@ export function registerAuthRoutes(app: Express): void {
         }
       }
 
+      let emergencyMode = false;
       let newUser = await authStorage.upsertUser({
         id: randomUUID(),
         username,
         email,
       }).catch(async (error) => {
+        if (isDbConnectivityError(error) && AUTH_EMERGENCY_FALLBACK_ENABLED) {
+          emergencyMode = true;
+          const fallbackUser = {
+            id: randomUUID(),
+            username,
+            email,
+            firstName: null,
+            profileImageUrl: null,
+            notificationsEnabled: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+          cacheEmergencyUser(fallbackUser);
+          return fallbackUser;
+        }
         const message = String((error as any)?.message || "").toLowerCase();
         if (!message.includes("hashed_password") && !message.includes("not-null") && !message.includes("violates")) {
           throw error;
@@ -490,14 +626,14 @@ export function registerAuthRoutes(app: Express): void {
         return fallbackUser;
       });
 
+      cacheEmergencyUser(newUser);
+
       hashesByUserId = await getPasswordHashesByUserId();
       const nextHash = hashPassword(password);
       hashesByUserId[newUser.id] = nextHash;
       await setPasswordHashesByUserId(hashesByUserId);
-      try {
-        await setPersistentPasswordHash(newUser.id, nextHash);
-      } catch {
-      }
+      await setPersistentPasswordHash(newUser.id, nextHash);
+      emergencyPasswordHashesByUserId.set(String(newUser.id), nextHash);
 
       res.json({
         user_id: newUser.id,
@@ -505,6 +641,7 @@ export function registerAuthRoutes(app: Express): void {
         email: newUser.email,
         requires_email_verification: false,
         verification_email_sent: false,
+        emergency_mode: emergencyMode,
       });
     } catch (error) {
       console.error("Error during registration:", error);
@@ -527,15 +664,32 @@ export function registerAuthRoutes(app: Express): void {
         });
       }
 
-      const existing = await authStorage.getUserByUsername(username);
+      let existing: any;
+      try {
+        existing = await authStorage.getUserByUsername(username);
+        cacheEmergencyUser(existing);
+      } catch (error) {
+        if (!isDbConnectivityError(error)) throw error;
+        existing = getEmergencyUserByUsername(username);
+      }
       res.json({
         username,
         available: !existing,
         valid: true,
         message: existing ? "Username already taken" : "Username available",
+        emergency_mode: false,
       });
     } catch (error) {
       console.error("Error checking username:", error);
+      if (isDbConnectivityError(error) && AUTH_EMERGENCY_FALLBACK_ENABLED) {
+        return res.json({
+          username: normalizeUsername(req.query.username),
+          available: !getEmergencyUserByUsername(normalizeUsername(req.query.username)),
+          valid: true,
+          message: "Username availability (emergency mode)",
+          emergency_mode: true,
+        });
+      }
       res.status(500).json({ message: "Check failed" });
     }
   });
