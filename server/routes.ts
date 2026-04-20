@@ -5982,6 +5982,9 @@ export async function registerRoutes(
     let pendingRiskExitLock = false;
     const updatedPositions: Array<Record<string, any>> = [];
     let maxOpenPositions = Math.min(DOCTOR_MAX_ACTIVE_TRADES, getDoctorEffectiveMaxOpenPositions());
+    const activeSnipePreset = getDoctorActiveSnipePreset();
+    const isSpeedMode = isDoctorSpeedModePreset(activeSnipePreset);
+    const isMomentumMode = isDoctorMomentumTraderPreset(activeSnipePreset);
     const configuredMinProfitPct = Math.max(0.1, getDoctorEffectiveControlNumber("min_profit_pct", Number(doctorRuntime.controls.min_profit_pct || 0)));
     const configuredTakeProfitMultiplier = Math.max(1.01, getDoctorEffectiveControlNumber("take_profit_multiplier", Number(doctorRuntime.controls.take_profit_multiplier || 2)));
     const configuredStopLossPct = Math.max(DOCTOR_STOP_LOSS_PCT, getDoctorEffectiveControlNumber("stop_loss_pct", Number(doctorRuntime.controls.stop_loss_pct || 0)));
