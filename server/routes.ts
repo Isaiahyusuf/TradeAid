@@ -8283,6 +8283,19 @@ export async function registerRoutes(
     }
 
     const scannerHealthSnapshot = getScannerHealthStatus();
+    const scannerIngestionSnapshot = (() => {
+      try {
+        return multichainScanner.getIngestionDiagnostics(80);
+      } catch {
+        return {
+          generatedAt: nowIso(),
+          trackedMintCount: 0,
+          pendingPumpLaunches: 0,
+          sourceCounts: [],
+          additionalProgramWatchers: [],
+        };
+      }
+    })();
 
     return {
       user_id: statusUserId || null,
