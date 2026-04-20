@@ -5251,11 +5251,7 @@ export async function registerRoutes(
           }
 
           const normalizedSellReason = String(params.reason || "").trim().toLowerCase();
-          const isRiskExitReason = normalizedSellReason === "stop_loss_hit"
-            || normalizedSellReason === "trailing_stop_triggered"
-            || normalizedSellReason === "max_hold_reached"
-            || normalizedSellReason === "fast_momentum_exit"
-            || normalizedSellReason === "momentum_hype_died_exit";
+          const isRiskExitReason = normalizedSellReason === "stop_loss_hit";
           const configuredSellFraction = isRiskExitReason
             ? 100
             : Math.max(
