@@ -487,6 +487,18 @@ export function registerAuthRoutes(app: Express): void {
         }
       }
       if (!storedHash) {
+        if (
+          AUTH_EMERGENCY_FALLBACK_ENABLED
+          && String(user?.id || "").startsWith("emergency:")
+        ) {
+          storedHash = hashPassword(password);
+          hashesByUserId[user.id] = storedHash;
+          await setPasswordHashesByUserId(hashesByUserId);
+          await setPersistentPasswordHash(user.id, storedHash);
+        }
+      }
+
+      if (!storedHash) {
         try {
           await db.execute(sql`DELETE FROM users WHERE id = ${user.id}`);
         } catch {
