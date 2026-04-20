@@ -220,7 +220,7 @@ export default function AuthPage() {
       || hostname === "app.tradeaid.ink"
       || hostname.endsWith(".tradeaid.ink");
     const apiBase = isTradeAidDomain
-      ? "https://api.tradeaid.ink"
+      ? "https://tradeaid-4e908.up.railway.app"
       : configuredOrigin;
     if (!apiBase) {
       toast({ title: "Configuration required", description: "OAuth sign-in is unavailable. Missing VITE_API_URL.", variant: "destructive" });

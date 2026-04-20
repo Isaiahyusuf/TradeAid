@@ -39,7 +39,21 @@ function normalizeApiUrl(rawValue: unknown): string {
 
 export function useScannerStream(onEvent: (event: ScannerStreamEvent) => void) {
   const [connected, setConnected] = useState(false);
-  const apiBase = normalizeApiUrl((import.meta as ViteMeta).env?.VITE_API_URL);
+  const configuredApiBase = normalizeApiUrl((import.meta as ViteMeta).env?.VITE_API_URL);
+  const apiBase = useMemo(() => {
+    if (typeof window === "undefined") {
+      return configuredApiBase;
+    }
+    const hostname = String(window.location.hostname || "").toLowerCase();
+    const isTradeAidDomain = hostname === "tradeaid.ink"
+      || hostname === "www.tradeaid.ink"
+      || hostname === "app.tradeaid.ink"
+      || hostname.endsWith(".tradeaid.ink");
+    if (isTradeAidDomain) {
+      return "https://tradeaid-4e908.up.railway.app";
+    }
+    return configuredApiBase;
+  }, [configuredApiBase]);
   const wsUrl = useMemo(() => toWsUrl(apiBase), [apiBase]);
 
   useEffect(() => {

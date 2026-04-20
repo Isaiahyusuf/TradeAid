@@ -19,7 +19,7 @@ function normalizeApiUrl(rawValue: unknown): string {
 }
 
 const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL);
-const TRADEAID_API_FALLBACK = "https://api.tradeaid.ink";
+const TRADEAID_API_FALLBACK = "https://tradeaid-4e908.up.railway.app";
 
 function resolveApiBaseUrl(): string {
   if (typeof window !== "undefined") {
@@ -28,14 +28,11 @@ function resolveApiBaseUrl(): string {
       || hostname === "www.tradeaid.ink"
       || hostname === "app.tradeaid.ink"
       || hostname.endsWith(".tradeaid.ink");
-    if (API_URL) {
-      if (isTradeAidDomain && API_URL.includes(".railway.app")) {
-        return TRADEAID_API_FALLBACK;
-      }
-      return API_URL;
-    }
     if (isTradeAidDomain) {
       return TRADEAID_API_FALLBACK;
+    }
+    if (API_URL) {
+      return API_URL;
     }
     return window.location.origin;
   }
