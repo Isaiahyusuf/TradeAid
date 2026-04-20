@@ -27,14 +27,11 @@ function resolveApiBaseUrl(): string {
       || hostname === "www.tradeaid.ink"
       || hostname === "app.tradeaid.ink"
       || hostname.endsWith(".tradeaid.ink");
-    if (API_URL) {
-      if (isTradeAidDomain && API_URL.includes(".railway.app")) {
-        return TRADEAID_API_FALLBACK;
-      }
-      return API_URL;
-    }
     if (isTradeAidDomain) {
       return TRADEAID_API_FALLBACK;
+    }
+    if (API_URL) {
+      return API_URL;
     }
     return window.location.origin;
   }
