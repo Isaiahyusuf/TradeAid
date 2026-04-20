@@ -126,6 +126,50 @@ export class MultichainLaunchpadScanner {
   private isRaydiumPolling = false;
   private raydiumDebugSamples = 0;
 
+  getIngestionDiagnostics(limit = 20) {
+    const safeLimit = Math.max(1, Math.min(200, Math.trunc(limit)));
+    const nowMs = Date.now();
+    this.prunePumpListenerCaches(nowMs);
+
+    const sourceCounts = new Map<string, number>();
+    for (const snapshot of this.mintSourceSnapshots.values()) {
+      const source = String(snapshot.bestSource || snapshot.firstSeenBy || "unknown").trim().toLowerCase();
+      sourceCounts.set(source, (sourceCounts.get(source) || 0) + 1);
+    }
+
+    const recentMints = Array.from(this.mintSourceSnapshots.entries())
+      .sort((left, right) => right[1].firstSeenAt - left[1].firstSeenAt)
+      .slice(0, safeLimit)
+      .map(([mint, snapshot]) => ({
+        mint,
+        firstSeenAt: new Date(snapshot.firstSeenAt).toISOString(),
+        firstSeenBy: snapshot.firstSeenBy,
+        bestSource: snapshot.bestSource,
+        bestWeight: Number(snapshot.bestWeight.toFixed(4)),
+      }));
+
+    const additionalProgramWatchers = getAdditionalLaunchpadProgramWatchers([
+      PUMPFUN_PROGRAM_ID,
+      ...RAYDIUM_PROGRAM_IDS,
+    ]);
+
+    return {
+      scannerInstanceId: this.scannerInstanceId,
+      isScanning: this.isScanning,
+      runtimeInitialized: this.runtimeInitialized,
+      pumpListenerStarted: this.pumpListenerStarted,
+      supplementalListenersStarted: this.supplementalListenersStarted,
+      pendingPumpLaunches: this.pendingPumpLaunches.length,
+      trackedMintCount: this.mintSourceSnapshots.size,
+      sourceCounts: Array.from(sourceCounts.entries())
+        .map(([source, count]) => ({ source, count }))
+        .sort((left, right) => right.count - left.count),
+      additionalProgramWatchers,
+      recentMints,
+      generatedAt: new Date(nowMs).toISOString(),
+    };
+  }
+
   private getSolanaWsUrl() {
     const explicitWsUrl = String(process.env.SOLANA_WS_URL || "").trim();
     if (explicitWsUrl) {

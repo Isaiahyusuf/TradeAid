@@ -391,6 +391,44 @@ export function registerScannerRoutes(app: Express): void {
     }
   });
 
+  app.get("/api/scanner/ingestion-debug", async (req: Request, res: Response) => {
+    try {
+      const limitRaw = Number(req.query.limit || 20);
+      const limit = Math.max(1, Math.min(100, Number.isFinite(limitRaw) ? Math.trunc(limitRaw) : 20));
+
+      const runtime = multichainScanner.getIngestionDiagnostics(limit);
+      const recentScanned = await db.select()
+        .from(scannedTokens)
+        .where(eq(scannedTokens.chain, "solana"))
+        .orderBy(desc(scannedTokens.createdAt))
+        .limit(limit);
+
+      const recentTokens = recentScanned.map((token) => {
+        const social = (token.socialLinks || {}) as Record<string, unknown>;
+        return {
+          id: token.id,
+          address: token.address,
+          symbol: token.symbol,
+          dexId: token.dexId,
+          createdAt: token.createdAt ? new Date(token.createdAt).toISOString() : null,
+          firstSeenAt: typeof social.firstSeenAt === "string" ? social.firstSeenAt : null,
+          firstSeenSource: typeof social.firstSeenSource === "string" ? social.firstSeenSource : null,
+          bestSource: typeof social.bestSource === "string" ? social.bestSource : null,
+          sourceWeight: typeof social.sourceWeight === "number" ? social.sourceWeight : null,
+          freshnessScore: typeof social.freshnessScore === "number" ? social.freshnessScore : null,
+        };
+      });
+
+      res.json({
+        runtime,
+        recentTokens,
+      });
+    } catch (error) {
+      console.error("Error fetching scanner ingestion debug:", error);
+      res.status(500).json({ error: "Failed to fetch scanner ingestion debug" });
+    }
+  });
+
   app.get("/api/search", async (req: Request, res: Response) => {
     try {
       const { q } = req.query;
