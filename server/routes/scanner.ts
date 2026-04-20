@@ -33,6 +33,38 @@ const startScannerSchema = z.object({
   intervalMinutes: z.number().min(1).max(60).default(5),
 });
 
+const SCANNER_DB_MAX_RETRIES = Math.max(1, Number(process.env.SCANNER_DB_MAX_RETRIES || 3));
+const SCANNER_DB_RETRY_DELAY_MS = Math.max(50, Number(process.env.SCANNER_DB_RETRY_DELAY_MS || 150));
+
+function isTransientScannerDbError(error: unknown): boolean {
+  const code = String((error as any)?.code || "").toUpperCase();
+  const message = String((error as any)?.message || "").toLowerCase();
+  if (["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "57P01"].includes(code)) return true;
+  return (
+    message.includes("econnreset")
+    || message.includes("connection terminated unexpectedly")
+    || message.includes("connection reset")
+    || message.includes("timeout")
+    || message.includes("terminating connection")
+  );
+}
+
+async function withScannerDbRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= SCANNER_DB_MAX_RETRIES; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientScannerDbError(error) || attempt >= SCANNER_DB_MAX_RETRIES) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, SCANNER_DB_RETRY_DELAY_MS * attempt));
+    }
+  }
+  throw lastError;
+}
+
 async function buildDexFallbackTokens(chain: string, limit: number): Promise<TokenFeedItem[]> {
   const normalizedChain = String(chain || "solana").toLowerCase();
   const profiles = await getLatestTokenProfiles();
@@ -121,10 +153,10 @@ export function registerScannerRoutes(app: Express): void {
 
       let tokens: typeof scannedTokens.$inferSelect[] = [];
       try {
-        tokens = await db.select()
+        tokens = await withScannerDbRetry(() => db.select()
           .from(scannedTokens)
           .orderBy(desc(scannedTokens.safetyScore))
-          .limit(parsedLimit);
+          .limit(parsedLimit));
       } catch {
         if (normalizedChain === "all") {
           const fallback = await buildDexFallbackTokens("solana", parsedLimit);
@@ -229,14 +261,14 @@ export function registerScannerRoutes(app: Express): void {
 
   app.get("/api/tokens/hot", async (req: Request, res: Response) => {
     try {
-      const tokens = await db.select()
+      const tokens = await withScannerDbRetry(() => db.select()
         .from(scannedTokens)
         .where(and(
           gte(scannedTokens.safetyScore, 50),
           gte(scannedTokens.volume24h, 5000)
         ))
         .orderBy(desc(scannedTokens.volume24h))
-        .limit(20);
+        .limit(20));
       res.json(tokens);
     } catch (error) {
       console.error("Error fetching hot tokens:", error);
@@ -246,7 +278,7 @@ export function registerScannerRoutes(app: Express): void {
 
   app.get("/api/tokens/safe-picks", async (req: Request, res: Response) => {
     try {
-      const tokens = await db.select()
+      const tokens = await withScannerDbRetry(() => db.select()
         .from(scannedTokens)
         .where(and(
           gte(scannedTokens.safetyScore, 65),
@@ -255,7 +287,7 @@ export function registerScannerRoutes(app: Express): void {
           sql`${scannedTokens.aiSignal} IN ('buy', 'strong_buy')`
         ))
         .orderBy(desc(scannedTokens.safetyScore), desc(scannedTokens.volume24h))
-        .limit(10);
+        .limit(10));
       res.json(tokens);
     } catch (error) {
       console.error("Error fetching safe picks:", error);
@@ -266,20 +298,20 @@ export function registerScannerRoutes(app: Express): void {
   app.get("/api/tokens/:address([1-9A-HJ-NP-Za-km-z]{20,64})", async (req: Request, res: Response) => {
     try {
       const { address } = req.params;
-      const [token] = await db.select()
+      const [token] = await withScannerDbRetry(() => db.select()
         .from(scannedTokens)
         .where(eq(scannedTokens.address, address))
-        .limit(1);
+        .limit(1));
       
       if (!token) {
         return res.status(404).json({ error: "Token not found" });
       }
       
-      const signals = await db.select()
+      const signals = await withScannerDbRetry(() => db.select()
         .from(tokenSignals)
         .where(eq(tokenSignals.tokenAddress, address))
         .orderBy(desc(tokenSignals.createdAt))
-        .limit(5);
+        .limit(5));
       
       res.json({ token, signals });
     } catch (error) {
@@ -332,10 +364,10 @@ export function registerScannerRoutes(app: Express): void {
       
       const signalsWithTokens = await Promise.all(
         signals.map(async (signal) => {
-          const [token] = await db.select()
+          const [token] = await withScannerDbRetry(() => db.select()
             .from(scannedTokens)
             .where(eq(scannedTokens.address, signal.tokenAddress))
-            .limit(1);
+            .limit(1));
           return { ...signal, token };
         })
       );
@@ -401,11 +433,11 @@ export function registerScannerRoutes(app: Express): void {
       let dbWarning: string | null = null;
 
       try {
-        recentScanned = await db.select()
+        recentScanned = await withScannerDbRetry(() => db.select()
           .from(scannedTokens)
           .where(eq(scannedTokens.chain, "solana"))
           .orderBy(desc(scannedTokens.createdAt))
-          .limit(limit);
+          .limit(limit));
       } catch (dbError) {
         dbWarning = dbError instanceof Error ? dbError.message : "failed_to_load_recent_scanned_tokens";
       }
@@ -455,11 +487,11 @@ export function registerScannerRoutes(app: Express): void {
   app.get("/api/alerts", async (req: Request, res: Response) => {
     try {
       const userId = String((req as any)?.user?.claims?.sub || "").trim();
-      const alerts = await db.select()
+      const alerts = await withScannerDbRetry(() => db.select()
         .from(userAlerts)
         .where(eq(userAlerts.userId, userId))
         .orderBy(desc(userAlerts.createdAt))
-        .limit(50);
+        .limit(50));
       res.json(alerts);
     } catch (error) {
       console.error("Error fetching alerts:", error);
@@ -483,9 +515,9 @@ export function registerScannerRoutes(app: Express): void {
 
   app.get("/api/stats", async (req: Request, res: Response) => {
     try {
-      const [tokenCount] = await db.select({ count: sql<number>`count(*)` }).from(scannedTokens);
-      const [signalCount] = await db.select({ count: sql<number>`count(*)` }).from(tokenSignals).where(eq(tokenSignals.isActive, true));
-      const [safeTokens] = await db.select({ count: sql<number>`count(*)` }).from(scannedTokens).where(gte(scannedTokens.safetyScore, 70));
+      const [tokenCount] = await withScannerDbRetry(() => db.select({ count: sql<number>`count(*)` }).from(scannedTokens));
+      const [signalCount] = await withScannerDbRetry(() => db.select({ count: sql<number>`count(*)` }).from(tokenSignals).where(eq(tokenSignals.isActive, true)));
+      const [safeTokens] = await withScannerDbRetry(() => db.select({ count: sql<number>`count(*)` }).from(scannedTokens).where(gte(scannedTokens.safetyScore, 70)));
       
       res.json({
         totalTokens: tokenCount?.count || 0,

@@ -585,6 +585,7 @@ export async function registerRoutes(
     const eligible = rug <= 85 && liquidityUsd >= 2000;
 
     const scannerHealthSnapshot = getScannerHealthStatus();
+    const scannerIngestionSnapshot = multichainScanner.getIngestionDiagnostics(12);
 
     return {
       contract_address: contractAddress,
@@ -875,6 +876,8 @@ export async function registerRoutes(
       min_unique_buyers: 8,
       min_buy_ratio_pct: 62,
       max_early_spike_pct: 200,
+      min_freshness_score: Math.max(0, Math.min(100, Number(process.env.DOCTOR_MIN_FRESHNESS_SCORE || 0))),
+      allowed_first_seen_sources: String(process.env.DOCTOR_ALLOWED_FIRST_SEEN_SOURCES || "all").trim() || "all",
       ml_learning_enabled: true,
       ml_min_closed_trades: 8,
       ml_lookback_trades: 40,
@@ -3976,10 +3979,22 @@ export async function registerRoutes(
       });
     }
 
+    const minFreshnessScoreControl = Math.max(0, Math.min(100, Number((doctorRuntime.controls as any).min_freshness_score || 0)));
+    const allowedFirstSeenSourcesRaw = String((doctorRuntime.controls as any).allowed_first_seen_sources || "all").trim().toLowerCase();
+    const allowedFirstSeenSources = allowedFirstSeenSourcesRaw && allowedFirstSeenSourcesRaw !== "all"
+      ? new Set(allowedFirstSeenSourcesRaw.split(",").map((item) => item.trim()).filter(Boolean))
+      : null;
+
     const scored = Array.from(byMint.values())
       .map((token) => {
         const firstSeenMs = new Date(String(token.first_seen_at || "")).getTime();
         const ageSeconds = Number.isFinite(firstSeenMs) && firstSeenMs > 0 ? Math.max(0, Math.trunc((nowMs - firstSeenMs) / 1000)) : 0;
+        const socialLinks = ((token as any).social_links || (token as any).socialLinks || {}) as Record<string, any>;
+        const freshnessScoreFromMetadata = Number((token as any).freshness_score || socialLinks.freshnessScore || 0);
+        const sourceWeightFromMetadata = Number((token as any).source_weight || socialLinks.sourceWeight || 0);
+        const firstSeenSource = String((token as any).first_seen_source || socialLinks.firstSeenSource || token.launch_source || token.source || "unknown")
+          .trim()
+          .toLowerCase();
         const liquidityUsd = Number(token.liquidity_usd || 0);
         const marketCapUsd = Number(token.market_cap_usd || 0);
         const volume24h = Number(token.volume_24h || 0);
@@ -4036,6 +4051,12 @@ export async function registerRoutes(
           : minBuyRatioPct;
         if (buyRatioPct > 0 && buyRatioPct < effectiveMinBuyRatioPct) rejectReasons.push("buy_ratio_below_threshold");
         if (!isLaunchSourceAllowed(launchSource)) rejectReasons.push("launch_source_not_allowed");
+        if (minFreshnessScoreControl > 0 && freshnessScoreFromMetadata > 0 && freshnessScoreFromMetadata < minFreshnessScoreControl) {
+          rejectReasons.push("freshness_below_threshold");
+        }
+        if (allowedFirstSeenSources && !allowedFirstSeenSources.has(firstSeenSource)) {
+          rejectReasons.push("first_seen_source_not_allowed");
+        }
         if (confidenceScore < 45) rejectReasons.push("confidence_below_threshold");
 
         return {
@@ -4045,6 +4066,9 @@ export async function registerRoutes(
           liquidity_locked: liquidityLocked,
           age_seconds: ageSeconds,
           confidence_score: confidenceScore,
+          freshness_score: freshnessScoreFromMetadata,
+          source_weight: sourceWeightFromMetadata,
+          first_seen_source: firstSeenSource,
           eligible: rejectReasons.length === 0,
           reject_reasons: rejectReasons,
         };
@@ -4098,6 +4122,9 @@ export async function registerRoutes(
           base_mint: String((token as any).base_mint || ""),
           risk_level: score >= 70 ? "SAFE" : score >= 45 ? "MEDIUM" : "HIGH RISK",
           source: String(token.source || "solana_early"),
+          first_seen_source: String((token as any).first_seen_source || "unknown"),
+          freshness_score: Number((token as any).freshness_score || 0),
+          source_weight: Number((token as any).source_weight || 0),
           reject_reasons: token.reject_reasons || [],
           eligible: true,
           safety_tier: "strict",
@@ -4151,6 +4178,9 @@ export async function registerRoutes(
           base_mint: String((token as any).base_mint || ""),
           risk_level: score >= 70 ? "SAFE" : score >= 45 ? "MEDIUM" : "HIGH RISK",
           source: String(token.source || "solana_early"),
+          first_seen_source: String((token as any).first_seen_source || "unknown"),
+          freshness_score: Number((token as any).freshness_score || 0),
+          source_weight: Number((token as any).source_weight || 0),
           reject_reasons: reasons,
           eligible: false,
           safety_tier: "soft",
@@ -4253,6 +4283,9 @@ export async function registerRoutes(
             base_mint: String(getDoctorTradeBaseAssetMint()),
             risk_level: token.confidenceScore >= 70 ? "SAFE" : token.confidenceScore >= 45 ? "MEDIUM" : "HIGH RISK",
             source: "dexscreener_live_fallback",
+            first_seen_source: token.launchSource,
+            freshness_score: Number(Math.max(0, Math.min(100, 100 - (token.ageSeconds / Math.max(1, strictMaxTokenAgeSeconds)) * 100)).toFixed(2)),
+            source_weight: 0.7,
             reject_reasons: [],
             eligible: false,
             safety_tier: "soft",
@@ -8429,6 +8462,17 @@ export async function registerRoutes(
             : 0,
         },
       },
+      scanner_ingestion: {
+        tracked_mints: Number(scannerIngestionSnapshot.trackedMintCount || 0),
+        pending_launches: Number(scannerIngestionSnapshot.pendingPumpLaunches || 0),
+        source_counts: Array.isArray(scannerIngestionSnapshot.sourceCounts)
+          ? scannerIngestionSnapshot.sourceCounts.slice(0, 8)
+          : [],
+        watchers: Array.isArray(scannerIngestionSnapshot.additionalProgramWatchers)
+          ? scannerIngestionSnapshot.additionalProgramWatchers
+          : [],
+        generated_at: scannerIngestionSnapshot.generatedAt || nowIso(),
+      },
     };
   };
 
@@ -8982,6 +9026,7 @@ export async function registerRoutes(
       "min_unique_buyers",
       "min_buy_ratio_pct",
       "max_early_spike_pct",
+      "min_freshness_score",
       "ml_min_closed_trades",
       "ml_lookback_trades",
       "ml_bonus_cap_score",
@@ -9011,6 +9056,10 @@ export async function registerRoutes(
     }
     if (typeof payload.ml_learning_enabled === "boolean") {
       (doctorRuntime.controls as any).ml_learning_enabled = payload.ml_learning_enabled;
+    }
+    if (typeof payload.allowed_first_seen_sources === "string") {
+      const normalized = String(payload.allowed_first_seen_sources || "all").trim().toLowerCase();
+      (doctorRuntime.controls as any).allowed_first_seen_sources = normalized || "all";
     }
 
     // Keep market-cap ceiling aligned to selected option unless caller explicitly opts out.
@@ -9081,6 +9130,8 @@ export async function registerRoutes(
       Number((doctorRuntime.controls as any).ml_size_min_multiplier || 0.7),
       Number((doctorRuntime.controls as any).ml_size_max_multiplier || 1.2),
     );
+    (doctorRuntime.controls as any).min_freshness_score = Math.max(0, Math.min(100, Number((doctorRuntime.controls as any).min_freshness_score || 0)));
+    (doctorRuntime.controls as any).allowed_first_seen_sources = String((doctorRuntime.controls as any).allowed_first_seen_sources || "all").trim().toLowerCase() || "all";
     if (isDoctorDexTurboEnabled() && !isDoctorSpeedModePreset() && doctorRuntime.controls.max_token_age_seconds < DOCTOR_MAX_TOKEN_AGE_SECONDS) {
       doctorRuntime.controls.max_token_age_seconds = DOCTOR_MAX_TOKEN_AGE_SECONDS;
     }

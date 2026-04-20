@@ -68,10 +68,17 @@ export function getLaunchSourceWeight(source: string): number {
 
 function parseProgramWatchersFromEnv(): ProgramWatcher[] {
   const raw = String(process.env.SOLANA_EXTRA_LAUNCHPAD_PROGRAMS || "").trim();
-  if (!raw) return [];
+  const rawIds = String(process.env.SOLANA_LAUNCHPAD_PROGRAM_IDS || "").trim();
+  const defaultsRaw = String(process.env.SOLANA_DEFAULT_LAUNCHPAD_PROGRAMS || "raydium_launchlab:LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj").trim();
+
+  if (!raw && !rawIds && !defaultsRaw) return [];
 
   const watchers: ProgramWatcher[] = [];
-  const groups = raw.split(";").map((part) => part.trim()).filter(Boolean);
+  const groups = [defaultsRaw, raw]
+    .filter(Boolean)
+    .flatMap((input) => input.split(";"))
+    .map((part) => part.trim())
+    .filter(Boolean);
 
   for (const group of groups) {
     const [labelRaw, programsRaw] = group.split(":");
@@ -86,6 +93,14 @@ function parseProgramWatchersFromEnv(): ProgramWatcher[] {
     for (const programId of programs) {
       watchers.push({ label, programId });
     }
+  }
+
+  const listedIds = rawIds
+    .split(",")
+    .map((programId) => programId.trim())
+    .filter(Boolean);
+  for (const programId of listedIds) {
+    watchers.push({ label: "custom_program", programId });
   }
 
   return watchers;

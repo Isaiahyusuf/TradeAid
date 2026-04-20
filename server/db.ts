@@ -44,6 +44,9 @@ if (!primaryDatabaseUrl) {
 const poolMax = Math.max(1, Math.min(12, Number(process.env.DB_POOL_MAX || 4)));
 const poolIdleTimeoutMs = Math.max(1000, Number(process.env.DB_POOL_IDLE_TIMEOUT_MS || 10000));
 const poolConnectTimeoutMs = Math.max(1000, Number(process.env.DB_POOL_CONNECT_TIMEOUT_MS || 5000));
+const poolMaxUses = Math.max(100, Number(process.env.DB_POOL_MAX_USES || 5000));
+const poolQueryTimeoutMs = Math.max(500, Number(process.env.DB_POOL_QUERY_TIMEOUT_MS || 8000));
+const poolStatementTimeoutMs = Math.max(500, Number(process.env.DB_POOL_STATEMENT_TIMEOUT_MS || 8000));
 
 function shouldUseSsl(connectionString: string): boolean {
   const forceSsl = String(process.env.DB_SSL_FORCE || "").trim().toLowerCase();
@@ -61,9 +64,13 @@ function shouldUseSsl(connectionString: string): boolean {
 const buildPool = (connectionString: string) => new Pool({
   connectionString,
   max: poolMax,
+  maxUses: poolMaxUses,
   idleTimeoutMillis: poolIdleTimeoutMs,
   connectionTimeoutMillis: poolConnectTimeoutMs,
+  query_timeout: poolQueryTimeoutMs,
+  statement_timeout: poolStatementTimeoutMs,
   keepAlive: true,
+  keepAliveInitialDelayMillis: Math.max(1000, Number(process.env.DB_POOL_KEEPALIVE_INITIAL_DELAY_MS || 5000)),
   ssl: shouldUseSsl(connectionString) ? { rejectUnauthorized: false } : undefined,
 });
 

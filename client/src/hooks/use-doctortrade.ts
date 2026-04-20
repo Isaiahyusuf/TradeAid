@@ -154,6 +154,8 @@ export type DoctorStatus = {
     min_buys_5m?: number;
     max_sells_5m?: number;
     max_token_age_seconds?: number;
+    min_freshness_score?: number;
+    allowed_first_seen_sources?: string;
     gas_priority_lamports?: number;
     live_sell_fraction_pct?: number;
     max_sell_notional_usd?: number;
@@ -252,6 +254,43 @@ export type DoctorStatus = {
       success_rate_pct?: number;
     };
   };
+  scanner_ingestion?: {
+    tracked_mints?: number;
+    pending_launches?: number;
+    source_counts?: Array<{ source?: string; count?: number }>;
+    watchers?: Array<{ label?: string; programId?: string }>;
+    generated_at?: string;
+  };
+};
+
+export type DoctorScannerIngestionDebug = {
+  runtime?: {
+    trackedMintCount?: number;
+    pendingPumpLaunches?: number;
+    sourceCounts?: Array<{ source?: string; count?: number }>;
+    additionalProgramWatchers?: Array<{ label?: string; programId?: string }>;
+    recentMints?: Array<{
+      mint?: string;
+      firstSeenAt?: string;
+      firstSeenBy?: string;
+      bestSource?: string;
+      bestWeight?: number;
+    }>;
+    generatedAt?: string;
+  };
+  recentTokens?: Array<{
+    id?: string;
+    address?: string;
+    symbol?: string;
+    dexId?: string;
+    createdAt?: string | null;
+    firstSeenAt?: string | null;
+    firstSeenSource?: string | null;
+    bestSource?: string | null;
+    sourceWeight?: number | null;
+    freshnessScore?: number | null;
+  }>;
+  dbWarning?: string | null;
 };
 
 export function useDoctorStatus() {
@@ -300,6 +339,8 @@ export function useDoctorConfig() {
       min_momentum_profit_pct?: number;
       quality_min_volume_spike_pct?: number;
       quality_max_top_holder_pct?: number;
+      min_freshness_score?: number;
+      allowed_first_seen_sources?: string;
       gas_priority_lamports?: number;
       live_sell_fraction_pct?: number;
       max_sell_notional_usd?: number;
@@ -407,6 +448,20 @@ export function useDoctorTicker(limit = 24) {
   return useQuery({
     queryKey: ["doctortrade", "ticker", limit],
     queryFn: () => apiGet<{ ok: boolean; items: DoctorTickerItem[]; as_of: string }>(`/api/doctor/ticker?limit=${limit}`),
+    enabled: true,
+    staleTime: 12_000,
+    refetchInterval: 12_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+    retry: 1,
+  });
+}
+
+export function useDoctorScannerIngestionDebug(limit = 12) {
+  return useQuery({
+    queryKey: ["doctortrade", "scanner-ingestion-debug", limit],
+    queryFn: () => apiGet<DoctorScannerIngestionDebug>(`/api/scanner/ingestion-debug?limit=${limit}`),
     enabled: true,
     staleTime: 12_000,
     refetchInterval: 12_000,

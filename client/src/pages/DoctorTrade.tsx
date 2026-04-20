@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Bot, Power, Activity, Wallet, TrendingUp, BarChart3, Radio, Copy } from "lucide-react";
 import { FaTelegramPlane } from "react-icons/fa";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorResetLearning, useDoctorRunOnce, useDoctorStatus } from "@/hooks/use-doctortrade";
+import { useDoctorConfig, useDoctorConnectWallet, useDoctorControl, useDoctorDirectBuy, useDoctorDirectSell, useDoctorDisconnectWallet, useDoctorResetLearning, useDoctorRunOnce, useDoctorScannerIngestionDebug, useDoctorStatus } from "@/hooks/use-doctortrade";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -123,6 +123,7 @@ export default function DoctorTrade() {
     // Only show new launches on Solana (created within 24h and chain is solana)
     // (Declarations moved below after viewData is defined)
   const { data, isLoading, isFetching, refetch, dataUpdatedAt } = useDoctorStatus();
+  const { data: scannerIngestionDebug } = useDoctorScannerIngestionDebug(8);
   const { toast } = useToast();
   const controlMutation = useDoctorControl();
   const configMutation = useDoctorConfig();
@@ -199,6 +200,10 @@ export default function DoctorTrade() {
       .slice(0, 20),
     [viewData?.active_tokens],
   );
+  const scannerOps = scannerIngestionDebug?.runtime;
+  const scannerOpsSourceCounts = (scannerOps?.sourceCounts || []).slice(0, 4);
+  const scannerOpsWatchers = (scannerOps?.additionalProgramWatchers || []).slice(0, 3);
+  const scannerOpsRecent = (scannerIngestionDebug?.recentTokens || []).slice(0, 3);
   const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
   const autoAction = String(searchParams.get("action") || "").trim().toLowerCase();
   const autoBuyContract = String(searchParams.get("contract") || "").trim();
@@ -1641,6 +1646,61 @@ export default function DoctorTrade() {
                   </div>
                 ))}
                 {!tickerTokens.length && <p className="text-xs text-muted-foreground">No new Solana launches to snipe (last 24h).</p>}
+              </div>
+            </Card>
+
+            <Card className="rounded-2xl border-slate-700/70 bg-slate-900/75 p-3 backdrop-blur-md">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-xs font-semibold">Scanner Ops</p>
+                <Badge variant="outline" className="border-cyan-500/40 text-cyan-300">
+                  {Number(scannerOps?.trackedMintCount || 0)} tracked
+                </Badge>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-[11px] mb-2">
+                <div className="rounded-md border border-slate-700/80 bg-slate-900/80 px-2 py-1.5">
+                  <p className="text-muted-foreground">Tracked Mints</p>
+                  <p className="font-semibold">{Number(scannerOps?.trackedMintCount || 0)}</p>
+                </div>
+                <div className="rounded-md border border-slate-700/80 bg-slate-900/80 px-2 py-1.5">
+                  <p className="text-muted-foreground">Pending Queue</p>
+                  <p className="font-semibold">{Number(scannerOps?.pendingPumpLaunches || 0)}</p>
+                </div>
+                <div className="rounded-md border border-slate-700/80 bg-slate-900/80 px-2 py-1.5 md:col-span-2">
+                  <p className="text-muted-foreground">Top Sources</p>
+                  <p className="font-semibold truncate">
+                    {scannerOpsSourceCounts.length
+                      ? scannerOpsSourceCounts.map((entry: any) => `${String(entry?.source || "unknown")}:${Number(entry?.count || 0)}`).join(" | ")
+                      : "No source stats yet"}
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
+                <div className="rounded-md border border-slate-700/80 bg-slate-900/80 px-2 py-1.5">
+                  <p className="text-muted-foreground">Program Watchers</p>
+                  <p className="font-medium break-all">
+                    {scannerOpsWatchers.length
+                      ? scannerOpsWatchers.map((watcher: any) => `${String(watcher?.label || "watch")}:${String(watcher?.programId || "")}`).join(" | ")
+                      : "No extra watchers configured"}
+                  </p>
+                </div>
+                <div className="rounded-md border border-slate-700/80 bg-slate-900/80 px-2 py-1.5">
+                  <p className="text-muted-foreground">DB Warning</p>
+                  <p className="font-medium">{String(scannerIngestionDebug?.dbWarning || "none")}</p>
+                </div>
+              </div>
+              <div className="mt-2 rounded-md border border-slate-700/80 bg-slate-900/80 px-2 py-1.5 text-[11px]">
+                <p className="text-muted-foreground mb-1">Recent Freshness Snapshot</p>
+                {scannerOpsRecent.length ? (
+                  <div className="space-y-1">
+                    {scannerOpsRecent.map((token: any, index: number) => (
+                      <p key={`${String(token?.address || "")}-${index}`} className="truncate">
+                        {String(token?.symbol || "UNKNOWN")} | freshness {Number(token?.freshnessScore || 0)} | {String(token?.firstSeenSource || "unknown")}
+                      </p>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">No recent scanner freshness rows yet.</p>
+                )}
               </div>
             </Card>
 
