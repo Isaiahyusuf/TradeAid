@@ -34,6 +34,7 @@ const AUTH_FRESH_RESET_STATE_KEY = "auth.fresh_reset.v1";
 const PASSWORD_SALT_BYTES = 16;
 const PASSWORD_KEYLEN_BYTES = 64;
 const PASSWORD_MAX_BYTES = 72;
+const memoryPasswordHashesByUserId: Record<string, string> = {};
 
 function isStrongPassword(value: string): boolean {
   const password = String(value || "");
@@ -90,7 +91,7 @@ async function getPasswordHashesByUserId(): Promise<Record<string, string>> {
   try {
     const state = await storage.getAppState<Record<string, any>>(AUTH_PASSWORDS_STATE_KEY);
     if (!state || typeof state !== "object" || Array.isArray(state)) {
-      return {};
+      return { ...memoryPasswordHashesByUserId };
     }
     const out: Record<string, string> = {};
     for (const [userId, hash] of Object.entries(state)) {
@@ -99,13 +100,24 @@ async function getPasswordHashesByUserId(): Promise<Record<string, string>> {
       if (!normalizedUserId || !normalizedHash) continue;
       out[normalizedUserId] = normalizedHash;
     }
+    for (const [userId, hash] of Object.entries(memoryPasswordHashesByUserId)) {
+      if (!out[userId] && hash) {
+        out[userId] = hash;
+      }
+    }
     return out;
   } catch {
-    return {};
+    return { ...memoryPasswordHashesByUserId };
   }
 }
 
 async function setPasswordHashesByUserId(value: Record<string, string>): Promise<void> {
+  for (const [userId, hash] of Object.entries(value || {})) {
+    const normalizedUserId = String(userId || "").trim();
+    const normalizedHash = String(hash || "").trim();
+    if (!normalizedUserId || !normalizedHash) continue;
+    memoryPasswordHashesByUserId[normalizedUserId] = normalizedHash;
+  }
   try {
     await storage.setAppState(AUTH_PASSWORDS_STATE_KEY, value);
   } catch {
@@ -482,7 +494,10 @@ export function registerAuthRoutes(app: Express): void {
       const nextHash = hashPassword(password);
       hashesByUserId[newUser.id] = nextHash;
       await setPasswordHashesByUserId(hashesByUserId);
-      await setPersistentPasswordHash(newUser.id, nextHash);
+      try {
+        await setPersistentPasswordHash(newUser.id, nextHash);
+      } catch {
+      }
 
       res.json({
         user_id: newUser.id,
