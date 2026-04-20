@@ -51,7 +51,7 @@ let runtimeAccessToken: string | null = null;
 let runtimeRefreshToken: string | null = null;
 
 let refreshInFlight: Promise<string | null> | null = null;
-const API_TIMEOUT_MS = 20000;
+const API_TIMEOUT_MS = 45000;
 
 function getToken(): string | null {
   if (runtimeAccessToken) {
