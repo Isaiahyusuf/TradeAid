@@ -1,6 +1,11 @@
 import { storage } from "../storage";
 import type { InsertScannedToken } from "@shared/schema";
 import { logStructured } from "./structured-logger";
+import {
+  getAdditionalLaunchpadProgramWatchers,
+  getLaunchSourceWeight,
+  resolveLaunchpadLabel,
+} from "./launchpad-registry";
 import WebSocket from "ws";
 
 interface LaunchpadToken {
@@ -35,6 +40,13 @@ interface PumpLaunchEvent {
   retries: number;
   source?: string;
 }
+
+type MintSourceSnapshot = {
+  firstSeenAt: number;
+  firstSeenBy: string;
+  bestSource: string;
+  bestWeight: number;
+};
 
 // Only Solana launchpads are supported in production builds for this app.
 const LAUNCHPADS = {
@@ -107,6 +119,9 @@ export class MultichainLaunchpadScanner {
   private readonly seenPumpFeedMints = new Map<string, number>();
   private readonly seenDexProfileMints = new Map<string, number>();
   private readonly seenRaydiumSignatures = new Map<string, number>();
+  private readonly seenProgramWatchSignatures = new Map<string, number>();
+  private readonly mintSourceSnapshots = new Map<string, MintSourceSnapshot>();
+  private isProgramWatcherPolling = false;
   private lastRaydiumPollReportAt = 0;
   private isRaydiumPolling = false;
   private raydiumDebugSamples = 0;
@@ -174,6 +189,62 @@ export class MultichainLaunchpadScanner {
         this.seenRaydiumSignatures.delete(signature);
       }
     }
+    for (const [signature, seenAt] of Array.from(this.seenProgramWatchSignatures.entries())) {
+      if (nowMs - seenAt > ttlMs) {
+        this.seenProgramWatchSignatures.delete(signature);
+      }
+    }
+    for (const [mint, snapshot] of Array.from(this.mintSourceSnapshots.entries())) {
+      if (nowMs - snapshot.firstSeenAt > ttlMs) {
+        this.mintSourceSnapshots.delete(mint);
+      }
+    }
+  }
+
+  private recordMintSourceObservation(mint: string, source: string, observedAtMs = Date.now()) {
+    const normalizedMint = String(mint || "").trim();
+    const normalizedSource = String(source || "unknown").trim().toLowerCase();
+    if (!normalizedMint) return;
+
+    const candidateWeight = getLaunchSourceWeight(normalizedSource);
+    const existing = this.mintSourceSnapshots.get(normalizedMint);
+    if (!existing) {
+      this.mintSourceSnapshots.set(normalizedMint, {
+        firstSeenAt: observedAtMs,
+        firstSeenBy: normalizedSource,
+        bestSource: normalizedSource,
+        bestWeight: candidateWeight,
+      });
+      return;
+    }
+
+    if (observedAtMs < existing.firstSeenAt) {
+      existing.firstSeenAt = observedAtMs;
+      existing.firstSeenBy = normalizedSource;
+    }
+
+    if (candidateWeight > existing.bestWeight) {
+      existing.bestWeight = candidateWeight;
+      existing.bestSource = normalizedSource;
+    }
+
+    this.mintSourceSnapshots.set(normalizedMint, existing);
+  }
+
+  private resolveLaunchpadForMint(mint: string, fallbackSource: string) {
+    const normalizedMint = String(mint || "").trim();
+    const snapshot = this.mintSourceSnapshots.get(normalizedMint);
+    const source = String(snapshot?.bestSource || fallbackSource || "unknown").trim().toLowerCase();
+    return resolveLaunchpadLabel(source);
+  }
+
+  private getFirstSeenAtForMint(mint: string, fallbackDate: Date) {
+    const normalizedMint = String(mint || "").trim();
+    const snapshot = this.mintSourceSnapshots.get(normalizedMint);
+    if (!snapshot?.firstSeenAt) {
+      return fallbackDate;
+    }
+    return new Date(snapshot.firstSeenAt);
   }
 
   private enqueueDetectedMint(mint: string, creator: string, signature: string, source: string) {
@@ -181,6 +252,7 @@ export class MultichainLaunchpadScanner {
     if (!normalizedMint || EXCLUDED_SOL_MINTS.has(normalizedMint)) return;
 
     const nowMs = Date.now();
+    this.recordMintSourceObservation(normalizedMint, source, nowMs);
     this.prunePumpListenerCaches(nowMs);
     if (this.seenPumpMints.has(normalizedMint)) return;
 
@@ -216,8 +288,9 @@ export class MultichainLaunchpadScanner {
     const pumpIntervalMs = Math.max(2_000, Number(process.env.PUMPFUN_FEED_POLL_MS || 5_000));
     const dexIntervalMs = Math.max(4_000, Number(process.env.DEX_PROFILES_POLL_MS || 10_000));
     const raydiumIntervalMs = Math.max(4_000, Number(process.env.RAYDIUM_POOLS_POLL_MS || 8_000));
+    const launchpadProgramPollMs = Math.max(4_000, Number(process.env.LAUNCHPAD_PROGRAM_WATCH_POLL_MS || 8_000));
 
-    logMultichainVerbose("[Pipeline] Supplemental listeners started (pumpfun feed + dex profiles + raydium pools)");
+    logMultichainVerbose("[Pipeline] Supplemental listeners started (pumpfun feed + dex profiles + raydium pools + launchpad program watchers)");
 
     void this.pollPumpFunFeed();
     setInterval(() => {
@@ -233,6 +306,11 @@ export class MultichainLaunchpadScanner {
     setInterval(() => {
       void this.pollRaydiumPools();
     }, raydiumIntervalMs);
+
+    void this.pollAdditionalLaunchpadPrograms();
+    setInterval(() => {
+      void this.pollAdditionalLaunchpadPrograms();
+    }, launchpadProgramPollMs);
   }
 
   private async pollPumpFunFeed() {
@@ -474,6 +552,114 @@ export class MultichainLaunchpadScanner {
     }
   }
 
+  private extractCandidateMintsFromProgramTx(tx: Record<string, any> | null, programId: string) {
+    const candidates = new Set<string>();
+    const pushMint = (value: unknown) => {
+      const mint = String(value || "").trim();
+      if (!mint) return;
+      if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)) return;
+      if (EXCLUDED_SOL_MINTS.has(mint)) return;
+      if (mint === PUMPFUN_PROGRAM_ID) return;
+      if (RAYDIUM_PROGRAM_IDS.includes(mint)) return;
+      if (mint === programId) return;
+      candidates.add(mint);
+    };
+
+    const postTokenBalances = Array.isArray(tx?.meta?.postTokenBalances)
+      ? tx!.meta.postTokenBalances as Array<Record<string, any>>
+      : [];
+    const preTokenBalances = Array.isArray(tx?.meta?.preTokenBalances)
+      ? tx!.meta.preTokenBalances as Array<Record<string, any>>
+      : [];
+
+    for (const row of postTokenBalances) pushMint(row?.mint);
+    for (const row of preTokenBalances) pushMint(row?.mint);
+
+    const accountKeys = this.getTxAccountKeys(tx);
+    const message = (tx?.transaction?.message || {}) as Record<string, any>;
+    const topLevelInstructions = Array.isArray(message?.instructions)
+      ? message.instructions as Array<Record<string, any>>
+      : [];
+    const innerGroups = Array.isArray(tx?.meta?.innerInstructions)
+      ? tx!.meta.innerInstructions as Array<Record<string, any>>
+      : [];
+    const innerInstructions = innerGroups.flatMap((group) =>
+      Array.isArray(group?.instructions) ? group.instructions as Array<Record<string, any>> : [],
+    );
+
+    for (const instruction of [...topLevelInstructions, ...innerInstructions]) {
+      const instructionProgramId = this.getInstructionProgramId(instruction, accountKeys);
+      if (instructionProgramId !== programId) continue;
+      const accounts = this.getInstructionAccounts(instruction, accountKeys);
+      for (const account of accounts) {
+        pushMint(account);
+      }
+    }
+
+    return Array.from(candidates.values());
+  }
+
+  private async pollAdditionalLaunchpadPrograms() {
+    if (this.isProgramWatcherPolling) return;
+    this.isProgramWatcherPolling = true;
+
+    try {
+      const watchers = getAdditionalLaunchpadProgramWatchers([
+        PUMPFUN_PROGRAM_ID,
+        ...RAYDIUM_PROGRAM_IDS,
+      ]);
+      if (watchers.length === 0) {
+        return;
+      }
+
+      const signatureLimit = Math.max(8, Number(process.env.LAUNCHPAD_PROGRAM_SIGNATURE_LIMIT || 24));
+      const txPerProgramLimit = Math.max(3, Number(process.env.LAUNCHPAD_PROGRAM_TX_PER_SOURCE_LIMIT || 12));
+      let added = 0;
+
+      for (const watcher of watchers) {
+        const signatures = await this.rpcCall("getSignaturesForAddress", [watcher.programId, { limit: signatureLimit }]);
+        const rows = Array.isArray(signatures) ? signatures as Array<Record<string, any>> : [];
+        const candidateSignatures = rows
+          .map((row) => String(row?.signature || "").trim())
+          .filter((signature) => {
+            if (!signature) return false;
+            const key = `${watcher.programId}:${signature}`;
+            return !this.seenProgramWatchSignatures.has(key);
+          })
+          .slice(0, txPerProgramLimit);
+
+        await Promise.all(candidateSignatures.map(async (signature) => {
+          const key = `${watcher.programId}:${signature}`;
+          this.seenProgramWatchSignatures.set(key, Date.now());
+
+          const tx = await this.rpcCall("getTransaction", [
+            signature,
+            {
+              encoding: "jsonParsed",
+              maxSupportedTransactionVersion: 0,
+              commitment: "confirmed",
+            },
+          ]) as Record<string, any> | null;
+          if (!tx) return;
+
+          const mints = this.extractCandidateMintsFromProgramTx(tx, watcher.programId);
+          for (const mint of mints) {
+            this.enqueueDetectedMint(mint, "", signature, `program_watch:${watcher.label}`);
+            added += 1;
+          }
+        }));
+      }
+
+      if (added > 0) {
+        logMultichainVerbose(`[Pipeline] Additional launchpad program watchers added ${added} candidate mints`);
+      }
+    } catch (error) {
+      console.warn("[Pipeline] Additional launchpad watcher error", error instanceof Error ? error.message : String(error || "unknown_error"));
+    } finally {
+      this.isProgramWatcherPolling = false;
+    }
+  }
+
   private async fetchSolanaParsedTransaction(signature: string) {
     const rpcUrl = this.getSolanaRpcUrl();
     if (!rpcUrl || !signature) return null;
@@ -659,23 +845,9 @@ export class MultichainLaunchpadScanner {
     if (!detected) return;
     logMultichainVerbose("[Pump.fun] Possible token launch");
 
-    const nowMs = Date.now();
-    this.prunePumpListenerCaches(nowMs);
-    if (this.seenPumpSignatures.has(detected.signature)) return;
-    this.seenPumpSignatures.set(detected.signature, nowMs);
-
     const mint = String(detected.mint || "").trim();
-    if (!mint || this.seenPumpMints.has(mint)) return;
-
     const creator = String(detected.creator || "").trim();
-    this.seenPumpMints.set(mint, nowMs);
-    this.pendingPumpLaunches.unshift({
-      mint,
-      creator,
-      signature: detected.signature,
-      detectedAt: new Date(),
-      retries: 0,
-    });
+    this.enqueueDetectedMint(mint, creator, detected.signature, "pumpfun_program_listener");
 
     logMultichainVerbose("[Pump.fun] NEW TOKEN DETECTED");
     logMultichainVerbose(`[Pump.fun] Mint: ${mint}`);
@@ -866,6 +1038,8 @@ export class MultichainLaunchpadScanner {
           continue;
         }
 
+        this.recordMintSourceObservation(selectedAddress, event.source || "pumpfun_feed", event.detectedAt.getTime());
+
         const selectedSymbol = String(selectedToken.symbol || "???").trim().toUpperCase();
         if (!selectedSymbol || EXCLUDED_SOL_SYMBOLS.has(selectedSymbol)) {
           continue;
@@ -877,14 +1051,14 @@ export class MultichainLaunchpadScanner {
           symbol: selectedSymbol,
           name: String(selectedToken.name || "Unknown").slice(0, 80),
           chain: "solana",
-          launchpad: "pump.fun",
+          launchpad: this.resolveLaunchpadForMint(selectedAddress, event.source || "pumpfun_feed"),
           priceUsd: String(bestPair.priceUsd || "0"),
           liquidity: Number(bestPair.liquidity?.usd || 0),
           marketCap: Number(bestPair.marketCap || bestPair.fdv || 0),
           volume24h: Number(bestPair.volume?.h24 || 0),
           topHoldersPercentage: holderAnalysis.topHoldersPercentage,
           devWalletPercentage: holderAnalysis.devWalletPercentage,
-          createdAt: event.detectedAt,
+          createdAt: this.getFirstSeenAtForMint(selectedAddress, event.detectedAt),
         });
       } catch {
         if (event.retries < 8) {
@@ -1353,6 +1527,23 @@ export class MultichainLaunchpadScanner {
     return Math.max(0, Math.min(100, score));
   }
 
+  private calculateFreshnessScore(tokenAddress: string, tokenCreatedAt: Date) {
+    const snapshot = this.mintSourceSnapshots.get(String(tokenAddress || "").trim());
+    const sourceWeight = snapshot?.bestWeight ?? getLaunchSourceWeight(snapshot?.firstSeenBy || "unknown");
+    const ageMinutes = Math.max(0, (Date.now() - new Date(tokenCreatedAt).getTime()) / 60000);
+    const ageComponent = Math.max(0, 1 - (ageMinutes / 30)) * 70;
+    const sourceComponent = Math.max(0, Math.min(1, sourceWeight)) * 30;
+    const freshnessScore = Math.round(Math.max(0, Math.min(100, ageComponent + sourceComponent)));
+
+    return {
+      freshnessScore,
+      firstSeenAt: snapshot?.firstSeenAt ? new Date(snapshot.firstSeenAt) : new Date(tokenCreatedAt),
+      firstSeenSource: String(snapshot?.firstSeenBy || "unknown"),
+      bestSource: String(snapshot?.bestSource || snapshot?.firstSeenBy || "unknown"),
+      sourceWeight,
+    };
+  }
+
   private async saveTokens(tokens: LaunchpadToken[]): Promise<void> {
     const nowMs = Date.now();
     for (const [mint, at] of Array.from(this.emittedFreshMints.entries())) {
@@ -1363,17 +1554,20 @@ export class MultichainLaunchpadScanner {
 
     for (const token of tokens) {
       try {
+        this.recordMintSourceObservation(token.address, token.launchpad, new Date(token.createdAt).getTime());
         const existing = await storage.getScannedTokenByAddress(token.address);
         
         const safetyScore = this.calculateSafetyScore(token);
         const riskLevel = safetyScore >= 70 ? "low" : safetyScore >= 50 ? "medium" : "high";
+        const freshness = this.calculateFreshnessScore(token.address, token.createdAt);
+        const launchpad = this.resolveLaunchpadForMint(token.address, token.launchpad);
 
         const tokenData: InsertScannedToken = {
           address: token.address,
           symbol: token.symbol,
           name: token.name,
           chain: token.chain,
-          dexId: token.launchpad,
+          dexId: launchpad,
           pairAddress: "",
           priceUsd: token.priceUsd,
           priceNative: "0",
@@ -1391,8 +1585,14 @@ export class MultichainLaunchpadScanner {
           mintAuthorityDisabled: false,
           isHoneypot: false,
           riskLevel,
-          socialLinks: {},
-          pairCreatedAt: token.createdAt,
+          socialLinks: {
+            firstSeenAt: freshness.firstSeenAt.toISOString(),
+            firstSeenSource: freshness.firstSeenSource,
+            bestSource: freshness.bestSource,
+            sourceWeight: Number(freshness.sourceWeight.toFixed(4)),
+            freshnessScore: freshness.freshnessScore,
+          },
+          pairCreatedAt: freshness.firstSeenAt,
         };
 
         if (existing) {
@@ -1401,7 +1601,7 @@ export class MultichainLaunchpadScanner {
           await storage.createScannedToken(tokenData);
         }
 
-        const tokenAgeMinutes = Math.max(0, (Date.now() - new Date(token.createdAt).getTime()) / 60000);
+        const tokenAgeMinutes = Math.max(0, (Date.now() - freshness.firstSeenAt.getTime()) / 60000);
         const symbol = String(token.symbol || "").trim().toUpperCase();
         const isEarlySafe = token.chain === "solana"
           && !EXCLUDED_SOL_MINTS.has(String(token.address || "").trim())
@@ -1432,6 +1632,9 @@ export class MultichainLaunchpadScanner {
               marketCapUsd: Number(token.marketCap || 0),
               volumeUsd: Number(token.volume24h || 0),
               pairAgeMinutes: Number(tokenAgeMinutes.toFixed(4)),
+              firstSeenAt: freshness.firstSeenAt.toISOString(),
+              firstSeenSource: freshness.firstSeenSource,
+              freshnessScore: freshness.freshnessScore,
               ageLimitSeconds: FRESH_LISTENER_MAX_AGE_SECONDS,
             });
           }
