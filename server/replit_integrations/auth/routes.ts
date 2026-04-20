@@ -519,17 +519,20 @@ export function registerAuthRoutes(app: Express): void {
       if (storedHash) {
         emergencyPasswordHashesByUserId.set(String(user.id), storedHash);
       }
-      await recordLoginAudit({
-        userId: user.id,
-        username: user.username || "",
-        email: user.email || "",
-        method: "password",
-        source: "/api/auth/login",
-        success: true,
-        clientIp: resolveClientIp(req),
-        userAgent: String(req.headers?.["user-agent"] || ""),
-        requestHost: String(req.headers?.host || req.hostname || ""),
-      });
+      try {
+        await recordLoginAudit({
+          userId: user.id,
+          username: user.username || "",
+          email: user.email || "",
+          method: "password",
+          source: "/api/auth/login",
+          success: true,
+          clientIp: resolveClientIp(req),
+          userAgent: String(req.headers?.["user-agent"] || ""),
+          requestHost: String(req.headers?.host || req.hostname || ""),
+        });
+      } catch {
+      }
       res.json({
         access_token: tokens.accessToken,
         refresh_token: tokens.refreshToken,
