@@ -16,7 +16,7 @@ import {
   stopBackgroundScanner,
   getScannerHealthStatus,
 } from "../services/token-scanner";
-import { searchTokens, getTokenPairs } from "../services/dexscreener";
+import { searchTokens, getTokenPairs, getLatestTokenProfiles, getTokenPairsFast, pickBestPair } from "../services/dexscreener";
 import { multichainScanner } from "../services/multichain-scanner";
 import type { TokenFeedItem, TokenFeedResponse } from "@shared/token-contract";
 
@@ -33,6 +33,83 @@ const startScannerSchema = z.object({
   intervalMinutes: z.number().min(1).max(60).default(5),
 });
 
+async function buildDexFallbackTokens(chain: string, limit: number): Promise<TokenFeedItem[]> {
+  const normalizedChain = String(chain || "solana").toLowerCase();
+  const profiles = await getLatestTokenProfiles();
+  const chainProfiles = profiles
+    .filter((profile) => String(profile.chainId || "").toLowerCase() === normalizedChain)
+    .slice(0, Math.max(limit * 2, 20));
+
+  const pairResults = await Promise.all(
+    chainProfiles.slice(0, 30).map(async (profile) => {
+      const pairs = await getTokenPairsFast(profile.tokenAddress);
+      return pickBestPair(pairs, normalizedChain);
+    })
+  );
+
+  const selectedPairs = pairResults
+    .filter((pair): pair is NonNullable<typeof pair> => Boolean(pair))
+    .sort((left, right) => Number(right.liquidity?.usd || 0) - Number(left.liquidity?.usd || 0))
+    .slice(0, limit);
+
+  return selectedPairs.map((pair, index) => {
+    const liquidityUsd = Number(pair.liquidity?.usd || 0);
+    const volume24h = Number(pair.volume?.h24 || 0);
+    const rugProbability = Number(Math.max(0, Math.min(100, 70 - Math.min(60, liquidityUsd / 1500))).toFixed(2));
+    const confidence = Number((100 - rugProbability).toFixed(2));
+    const createdAtIso = pair.pairCreatedAt
+      ? new Date(pair.pairCreatedAt).toISOString()
+      : new Date().toISOString();
+
+    return {
+      id: `dex-fallback-${pair.pairAddress || pair.baseToken.address}-${index}`,
+      latest_score: {
+        rug_probability: rugProbability,
+        liquidity_stability: Number(Math.max(0, Math.min(100, (liquidityUsd / 25000) * 100)).toFixed(2)),
+        holder_distribution: 50,
+        smart_wallet_signal: Number(Math.max(0, Math.min(100, confidence * 0.85)).toFixed(2)),
+        trade_confidence_index: confidence,
+        eligible: liquidityUsd >= 2000,
+        scored_at: createdAtIso,
+      },
+      contract_address: String(pair.baseToken.address || ""),
+      chain: String(pair.chainId || normalizedChain).toLowerCase(),
+      name: String(pair.baseToken.name || "Unknown"),
+      symbol: String(pair.baseToken.symbol || "UNKNOWN"),
+      current_price_usd: Number(pair.priceUsd || 0),
+      market_cap_usd: Number(pair.marketCap || pair.fdv || 0),
+      liquidity_usd: liquidityUsd,
+      volume_5m: Number(pair.volume?.m5 || 0),
+      volume_1h: Number(pair.volume?.h1 || 0),
+      volume_6h: Number(pair.volume?.h6 || 0),
+      price_change_5m: Number(pair.priceChange?.m5 || 0),
+      price_change_1h: Number(pair.priceChange?.h1 || 0),
+      price_change_6h: Number(pair.priceChange?.h6 || 0),
+      buys_1h: Math.max(0, Math.trunc(Number(pair.txns?.h1?.buys || 0))),
+      sells_1h: Math.max(0, Math.trunc(Number(pair.txns?.h1?.sells || 0))),
+      new_wallets_count: 0,
+      top_holders_pct: 0,
+      dev_wallet_pct: 0,
+      logo_url: pair.info?.imageUrl || null,
+      website_url: pair.info?.websites?.[0]?.url || null,
+      twitter_url: pair.info?.socials?.find((social) => social.platform === "twitter")?.url || null,
+      telegram_url: pair.info?.socials?.find((social) => social.platform === "telegram")?.url || null,
+      description: null,
+      is_pump_fun: String(pair.dexId || "").toLowerCase().includes("pump"),
+      source_platform: pair.dexId || null,
+      buy_urls: pair.url ? [pair.url] : undefined,
+      holder_count: 0,
+      is_mintable: true,
+      is_ownership_renounced: false,
+      dex_id: String(pair.dexId || "unknown"),
+      pair_address: pair.pairAddress || null,
+      deployer_wallet: null,
+      total_supply: null,
+      created_at: createdAtIso,
+    };
+  });
+}
+
 export function registerScannerRoutes(app: Express): void {
   app.use(["/api/tokens", "/api/signals", "/api/scanner", "/api/search", "/api/alerts", "/api/stats"], isAuthenticated);
 
@@ -40,10 +117,33 @@ export function registerScannerRoutes(app: Express): void {
     try {
       const { limit = "50", chain = "all" } = req.query;
       const normalizedChain = String(chain || "all").trim().toLowerCase();
-      const tokens = await db.select()
-        .from(scannedTokens)
-        .orderBy(desc(scannedTokens.safetyScore))
-        .limit(parseInt(limit as string));
+      const parsedLimit = Math.max(1, Math.min(100, parseInt(limit as string) || 50));
+
+      let tokens: typeof scannedTokens.$inferSelect[] = [];
+      try {
+        tokens = await db.select()
+          .from(scannedTokens)
+          .orderBy(desc(scannedTokens.safetyScore))
+          .limit(parsedLimit);
+      } catch {
+        if (normalizedChain === "all") {
+          const fallback = await buildDexFallbackTokens("solana", parsedLimit);
+          const payload: TokenFeedResponse = {
+            tokens: fallback,
+            count: fallback.length,
+            total: fallback.length,
+          };
+          return res.json(payload);
+        }
+
+        const fallback = await buildDexFallbackTokens(normalizedChain, parsedLimit);
+        const payload: TokenFeedResponse = {
+          tokens: fallback,
+          count: fallback.length,
+          total: fallback.length,
+        };
+        return res.json(payload);
+      }
 
       const filtered = normalizedChain === "all"
         ? tokens
