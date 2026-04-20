@@ -397,11 +397,18 @@ export function registerScannerRoutes(app: Express): void {
       const limit = Math.max(1, Math.min(100, Number.isFinite(limitRaw) ? Math.trunc(limitRaw) : 20));
 
       const runtime = multichainScanner.getIngestionDiagnostics(limit);
-      const recentScanned = await db.select()
-        .from(scannedTokens)
-        .where(eq(scannedTokens.chain, "solana"))
-        .orderBy(desc(scannedTokens.createdAt))
-        .limit(limit);
+      let recentScanned: typeof scannedTokens.$inferSelect[] = [];
+      let dbWarning: string | null = null;
+
+      try {
+        recentScanned = await db.select()
+          .from(scannedTokens)
+          .where(eq(scannedTokens.chain, "solana"))
+          .orderBy(desc(scannedTokens.createdAt))
+          .limit(limit);
+      } catch (dbError) {
+        dbWarning = dbError instanceof Error ? dbError.message : "failed_to_load_recent_scanned_tokens";
+      }
 
       const recentTokens = recentScanned.map((token) => {
         const social = (token.socialLinks || {}) as Record<string, unknown>;
@@ -422,6 +429,7 @@ export function registerScannerRoutes(app: Express): void {
       res.json({
         runtime,
         recentTokens,
+        dbWarning,
       });
     } catch (error) {
       console.error("Error fetching scanner ingestion debug:", error);
