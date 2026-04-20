@@ -163,13 +163,23 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
   if (bearerToken) {
     const bearerUserId = getSessionUserId(bearerToken, "access");
     if (bearerUserId) {
-      const dbUser = await authStorage.getUser(bearerUserId);
+      const fallbackUsername = bearerUserId.startsWith("emergency:")
+        ? bearerUserId.replace("emergency:", "")
+        : undefined;
+      const fallbackEmail = fallbackUsername ? `${fallbackUsername}@tradeaid.local` : undefined;
+      let dbUser: Awaited<ReturnType<typeof authStorage.getUser>> | undefined;
+      try {
+        dbUser = await authStorage.getUser(bearerUserId);
+      } catch (error) {
+        dbUser = undefined;
+      }
+
       (req as any).user = {
         claims: {
           sub: bearerUserId,
-          email: dbUser?.email,
-          preferred_username: dbUser?.username,
-          name: dbUser?.firstName,
+          email: dbUser?.email || fallbackEmail,
+          preferred_username: dbUser?.username || fallbackUsername,
+          name: dbUser?.firstName || fallbackUsername,
           profile_image_url: dbUser?.profileImageUrl,
         },
         expires_at: Math.floor(Date.now() / 1000) + 3600,
