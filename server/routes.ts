@@ -9784,6 +9784,7 @@ export async function registerRoutes(
 
   const assistantStateKey = "assistant.runtime.v1";
   let assistantCurrentUserId = "";
+  const assistantRuntimeCacheByUser = new Map<string, Record<string, any>>();
   let assistantRuntimeRequestQueue: Promise<void> = Promise.resolve();
 
   const acquireAssistantRuntimeLock = async () => {
@@ -9843,6 +9844,10 @@ export async function registerRoutes(
       return;
     }
     try {
+      assistantRuntimeCacheByUser.set(userId, JSON.parse(JSON.stringify(assistantRuntime)) as Record<string, any>);
+    } catch {
+    }
+    try {
       await storage.setAppState(getAssistantStateKeyForUser(userId), assistantRuntime);
     } catch {
     }
@@ -9852,6 +9857,10 @@ export async function registerRoutes(
     const userId = String(userIdOverride || assistantCurrentUserId || "").trim();
     if (!userId) {
       throw new Error("missing_assistant_user_id");
+    }
+    try {
+      assistantRuntimeCacheByUser.set(userId, JSON.parse(JSON.stringify(assistantRuntime)) as Record<string, any>);
+    } catch {
     }
     await storage.setAppState(getAssistantStateKeyForUser(userId), assistantRuntime);
   };
@@ -9867,11 +9876,22 @@ export async function registerRoutes(
     resetAssistantRuntime();
     assistantCurrentUserId = normalizedUserId;
 
+    let loaded: Record<string, any> | undefined;
     try {
-      const loaded = await storage.getAppState<Record<string, any>>(getAssistantStateKeyForUser(normalizedUserId));
-      if (!loaded || typeof loaded !== "object") {
-        return;
+      const stored = await storage.getAppState<Record<string, any>>(getAssistantStateKeyForUser(normalizedUserId));
+      if (stored && typeof stored === "object") {
+        loaded = stored;
       }
+    } catch {
+      const cached = assistantRuntimeCacheByUser.get(normalizedUserId);
+      if (cached && typeof cached === "object") {
+        loaded = cached;
+      }
+    }
+
+    if (!loaded || typeof loaded !== "object") {
+      return;
+    }
 
       const wallet = loaded.wallet as Record<string, any> | undefined;
       if (wallet && typeof wallet === "object") {
@@ -9944,6 +9964,10 @@ export async function registerRoutes(
         solana: String(assistantRuntime.wallet.addresses_by_chain.solana || "").trim(),
       };
       assistantRuntime.trading.wallet_address = assistantRuntime.wallet.addresses_by_chain.solana || null;
+      try {
+        assistantRuntimeCacheByUser.set(normalizedUserId, JSON.parse(JSON.stringify(assistantRuntime)) as Record<string, any>);
+      } catch {
+      }
     } catch {
     }
   };
