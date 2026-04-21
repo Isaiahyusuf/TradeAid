@@ -328,11 +328,33 @@ export class DatabaseStorage implements IStorage {
 
   async getAppState<T = unknown>(key: string): Promise<T | undefined> {
     const target = this.getAppStateTargetForKey(key);
-    const stateDb = this.getStateDb(target);
-    await this.ensureAppStateTable(target);
-    const result = await stateDb.execute(sql`SELECT value FROM app_state WHERE key = ${key} LIMIT 1`);
-    const rows = (result as any)?.rows as Array<{ value?: T }> | undefined;
-    let value = rows?.[0]?.value;
+    const readFromTarget = async (resolvedTarget: "primary" | "wallet" | "trade") => {
+      const stateDb = this.getStateDb(resolvedTarget);
+      await this.ensureAppStateTable(resolvedTarget);
+      const result = await stateDb.execute(sql`SELECT value FROM app_state WHERE key = ${key} LIMIT 1`);
+      const rows = (result as any)?.rows as Array<{ value?: T }> | undefined;
+      return rows?.[0]?.value;
+    };
+
+    let value: T | undefined;
+    try {
+      value = await readFromTarget(target);
+    } catch (error) {
+      if (target !== "primary" && this.isRetryableAppStateDbError(error)) {
+        value = await readFromTarget("primary");
+      } else {
+        throw error;
+      }
+    }
+
+    if (value === undefined && target !== "primary") {
+      // Read-through fallback for keys that were persisted to primary during a transient wallet/trade DB outage.
+      try {
+        value = await readFromTarget("primary");
+      } catch {
+      }
+    }
+
     if (value !== undefined && this.shouldEncryptAppStateKey(key)) {
       const maybeEnvelope = value as unknown as Record<string, unknown>;
       if (maybeEnvelope && typeof maybeEnvelope === "object" && maybeEnvelope.__enc_v1 === true) {
@@ -344,18 +366,47 @@ export class DatabaseStorage implements IStorage {
 
   async setAppState<T = unknown>(key: string, value: T): Promise<void> {
     const target = this.getAppStateTargetForKey(key);
-    const stateDb = this.getStateDb(target);
-    await this.ensureAppStateTable(target);
     const payload = this.shouldEncryptAppStateKey(key)
       ? this.encryptAppStateValue(value)
       : (value ?? null);
     const serialized = JSON.stringify(payload);
-    await stateDb.execute(sql`
-      INSERT INTO app_state (key, value, updated_at)
-      VALUES (${key}, ${serialized}::jsonb, NOW())
-      ON CONFLICT (key)
-      DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
-    `);
+
+    const writeToTarget = async (resolvedTarget: "primary" | "wallet" | "trade") => {
+      const stateDb = this.getStateDb(resolvedTarget);
+      await this.ensureAppStateTable(resolvedTarget);
+      await stateDb.execute(sql`
+        INSERT INTO app_state (key, value, updated_at)
+        VALUES (${key}, ${serialized}::jsonb, NOW())
+        ON CONFLICT (key)
+        DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+      `);
+    };
+
+    try {
+      await writeToTarget(target);
+    } catch (error) {
+      if (target !== "primary" && this.isRetryableAppStateDbError(error)) {
+        await writeToTarget("primary");
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  private isRetryableAppStateDbError(error: unknown): boolean {
+    const message = String((error as any)?.message || error || "").toLowerCase();
+    if (!message) {
+      return false;
+    }
+    return (
+      message.includes("econnreset")
+      || message.includes("etimedout")
+      || message.includes("econnrefused")
+      || message.includes("connection terminated")
+      || message.includes("connection reset")
+      || message.includes("socket hang up")
+      || message.includes("timeout")
+    );
   }
 }
 
