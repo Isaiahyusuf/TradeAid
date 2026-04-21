@@ -2635,6 +2635,7 @@ export async function registerRoutes(
   const doctorDexWorkerStateKey = "doctortrade.dex.worker.v1";
   let doctorDexWorkerTimer: NodeJS.Timeout | null = null;
   let doctorDexWorkerRunning = false;
+  let doctorDexWorkerStateLoaded = false;
   let doctorDexWorkerLastPollAt: string | null = null;
   let doctorWalletBalanceCache: { address: string; at: number; balanceSol: number } | null = null;
   let doctorWalletTokensCache: { address: string; at: number; tokens: Array<Record<string, any>> } | null = null;
@@ -3069,11 +3070,9 @@ export async function registerRoutes(
         if (!normalizedUserId) continue;
         const runtime = (runtimeAny && typeof runtimeAny === "object") ? runtimeAny as Record<string, any> : {};
         const runtimeEnabled = Boolean(runtime.enabled) && !Boolean(runtime.killSwitch);
-        const walletSnapshot = await getDoctorWalletSnapshotForUser(normalizedUserId).catch(() => null as any);
-        const walletConnected = Boolean(walletSnapshot?.connected);
         const intervalSeconds = Math.max(1, Math.trunc(Number(runtime.scanIntervalSeconds || 10)));
 
-        if (!runtimeEnabled || !walletConnected) {
+        if (!runtimeEnabled) {
           delete jobs[normalizedUserId];
           continue;
         }
@@ -3664,6 +3663,45 @@ export async function registerRoutes(
         message: String(error?.message || "unknown_error"),
       });
     });
+  };
+
+  const ensureDoctorRealtimeWorkers = async () => {
+    if (!doctorSchedulerTimer || !doctorSchedulerReconcileTimer) {
+      startDoctorScheduler();
+    }
+
+    if (!doctorDexWorkerStateLoaded) {
+      await loadDoctorDexWorkerState();
+      doctorDexWorkerStateLoaded = true;
+    }
+    if (!doctorDexWorkerTimer) {
+      startDoctorDexWorker();
+    }
+
+    startPumpFunPrebondListener({
+      onDetected: (token) => {
+        multichainScanner.enqueuePrebondMint(token.mint, token.signature, token.source);
+      },
+    });
+
+    const scannerIntervalMs = Math.max(10_000, Number(process.env.BACKGROUND_SCANNER_INTERVAL_MS || 20_000));
+    startBackgroundScanner(scannerIntervalMs);
+
+    const multichainIntervalMs = Math.max(2_000, Number(process.env.MULTICHAIN_SCAN_INTERVAL_MS || 5_000));
+    if (!multichainSchedulerStarted) {
+      multichainSchedulerStarted = true;
+      console.log(`[Multichain] Scheduler started (interval=${multichainIntervalMs}ms)`);
+
+      setInterval(() => {
+        multichainSchedulerTickCount += 1;
+        if (multichainSchedulerTickCount % 30 === 1) {
+          console.log(`[Multichain] Scheduler heartbeat tick=${multichainSchedulerTickCount}`);
+        }
+        multichainScanner.scanAllLaunchpads().catch(console.error);
+      }, multichainIntervalMs);
+
+      multichainScanner.scanAllLaunchpads().catch(console.error);
+    }
   };
 
   const normalizeLaunchSource = (value: string) => {
@@ -9033,6 +9071,7 @@ export async function registerRoutes(
 
     await runDoctorTaskWithTimeout("control.stop_cycle", userId, stopDoctorCycleForUser(userId), 3_000);
     if (doctorRuntime.enabled) {
+      await runDoctorTaskWithTimeout("control.ensure_realtime_workers", userId, ensureDoctorRealtimeWorkers(), 6_000);
       await runDoctorTaskWithTimeout("control.ensure_live", userId, ensureDoctorLiveExecutionModeIfCapable(userId), 3_000);
       await runDoctorTaskWithTimeout("control.start_cycle", userId, startDoctorCycleForUser(userId), 5_000);
       // Guard against stale runtime snapshots immediately after start.
@@ -10107,6 +10146,7 @@ export async function registerRoutes(
 
   if (ENABLE_BACKGROUND_WORKERS) {
     await loadDoctorDexWorkerState();
+    doctorDexWorkerStateLoaded = true;
     startDoctorDexWorker();
   } else {
     console.log("[DoctorTrade] Dex worker disabled (set ENABLE_BACKGROUND_WORKERS=true to enable)");
