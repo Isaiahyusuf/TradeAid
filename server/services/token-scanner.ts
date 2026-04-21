@@ -198,7 +198,8 @@ export async function scanHotTokens(chain: string = "solana"): Promise<ScanResul
   scannerHealth.lastScanAt = new Date().toISOString();
   scannerHealth.lastDurationMs = Date.now() - startedAt;
   scannerHealth.candidatesProcessed = processed;
-  scannerHealth.successfulScans = successful;
+  // Track successful scan cycles (not per-token successes) for reliable health ratio.
+  scannerHealth.successfulScans = Math.max(0, Number(scannerHealth.successfulScans || 0)) + 1;
   scannerHealth.newTokensSaved = newSaved;
   scannerHealth.cycleCount += 1;
   

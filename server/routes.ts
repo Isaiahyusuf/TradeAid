@@ -3672,7 +3672,20 @@ export async function registerRoutes(
       await persistDoctorDexWorkerState();
       await runDoctorSchedulerTick();
     } catch (error) {
-      doctorRuntime.lastError = error instanceof Error ? error.message : "doctor_dex_worker_failed";
+      const errorMessage = String((error as any)?.message || error || "").toLowerCase();
+      const transientError =
+        errorMessage.includes("econnreset")
+        || errorMessage.includes("etimedout")
+        || errorMessage.includes("socket hang up")
+        || errorMessage.includes("connection terminated")
+        || errorMessage.includes("connection reset");
+      if (transientError) {
+        logStructured("warn", "doctor.dex_worker.transient_error", {
+          message: String((error as any)?.message || "unknown_error"),
+        });
+      } else {
+        doctorRuntime.lastError = error instanceof Error ? error.message : "doctor_dex_worker_failed";
+      }
     } finally {
       doctorDexWorkerRunning = false;
     }
@@ -9493,6 +9506,42 @@ export async function registerRoutes(
             resolvedPrivateKey = await getAssistantWalletPrivateKeyForUser(userId);
             if (resolvedPrivateKey) {
               const assistantAddress = deriveSolanaAddressFromPrivateKey(resolvedPrivateKey);
+              if (assistantAddress) {
+                doctorRuntime.wallet.address = assistantAddress;
+              }
+              await setDoctorLivePrivateKeyForUser(userId, resolvedPrivateKey);
+              await persistDoctorRuntime(userId);
+            }
+          }
+
+          if (!resolvedPrivateKey) {
+            // First-run recovery: auto-provision assistant wallet so Connect Wallet succeeds.
+            await loadAssistantRuntime(userId);
+            const hasAssistantWallet = Boolean(assistantRuntime.wallet.has_wallet)
+              && Boolean(String(assistantRuntime.wallet.private_keys_by_chain?.solana || "").trim());
+
+            if (!hasAssistantWallet) {
+              const mnemonic = generateMnemonic();
+              const walletBundle = buildAssistantWalletFromMnemonic(mnemonic);
+
+              assistantRuntime.wallet.has_wallet = true;
+              assistantRuntime.wallet.backup_confirmed = false;
+              assistantRuntime.wallet.backup_confirmed_at = null;
+              assistantRuntime.wallet.created_at = nowIso();
+              assistantRuntime.wallet.addresses_by_chain = walletBundle.addresses_by_chain;
+              assistantRuntime.wallet.private_keys_by_chain = walletBundle.private_keys_by_chain;
+              assistantRuntime.wallet.mnemonic = walletBundle.mnemonic;
+              assistantRuntime.trading.wallets_by_chain = walletBundle.addresses_by_chain;
+              assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
+
+              await persistAssistantRuntime(userId);
+              await seedDoctorWalletFromAssistantBundle(userId, walletBundle);
+            }
+
+            resolvedPrivateKey = String(assistantRuntime.wallet.private_keys_by_chain?.solana || "").trim();
+            if (resolvedPrivateKey) {
+              const assistantAddress = String(assistantRuntime.wallet.addresses_by_chain?.solana || "").trim()
+                || deriveSolanaAddressFromPrivateKey(resolvedPrivateKey);
               if (assistantAddress) {
                 doctorRuntime.wallet.address = assistantAddress;
               }
