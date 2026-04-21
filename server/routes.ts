@@ -8534,8 +8534,25 @@ export async function registerRoutes(
 
       const prioritizeEarly = String(req.query?.early || "1").trim() !== "0";
       const uniqueOnly = String(req.query?.unique || "1").trim() !== "0";
+      const maxMarketCapUsd = Number(req.query?.max_market_cap_usd || req.query?.max_market_cap || Number.POSITIVE_INFINITY);
+      const minAgeMinutes = Math.max(0, Number(req.query?.min_age_minutes || 0));
+      const maxAgeMinutes = Number(req.query?.max_age_minutes || Number.POSITIVE_INFINITY);
       const responseCandidates = doctorTickerQueue
         .slice()
+        .filter((item: Record<string, any>) => {
+          const marketCapUsd = Number(item.market_cap_usd || 0);
+          const ageMinutes = Math.max(0, Number(item.age_minutes || 0));
+          if (Number.isFinite(maxMarketCapUsd) && marketCapUsd > 0 && marketCapUsd > maxMarketCapUsd) {
+            return false;
+          }
+          if (ageMinutes < minAgeMinutes) {
+            return false;
+          }
+          if (Number.isFinite(maxAgeMinutes) && ageMinutes > maxAgeMinutes) {
+            return false;
+          }
+          return true;
+        })
         .sort((a: Record<string, any>, b: Record<string, any>) => {
           if (!prioritizeEarly) {
             return new Date(String(b.created_at || 0)).getTime() - new Date(String(a.created_at || 0)).getTime();
