@@ -9784,16 +9784,7 @@ export async function registerRoutes(
 
   const assistantStateKey = "assistant.runtime.v1";
   let assistantCurrentUserId = "";
-  const assistantRuntimeMemoryByUser = new Map<string, Record<string, any>>();
   let assistantRuntimeRequestQueue: Promise<void> = Promise.resolve();
-
-  const snapshotAssistantRuntime = () => {
-    try {
-      return JSON.parse(JSON.stringify(assistantRuntime)) as Record<string, any>;
-    } catch {
-      return null;
-    }
-  };
 
   const acquireAssistantRuntimeLock = async () => {
     const previous = assistantRuntimeRequestQueue;
@@ -9851,14 +9842,18 @@ export async function registerRoutes(
     if (!userId) {
       return;
     }
-    const runtimeSnapshot = snapshotAssistantRuntime();
-    if (runtimeSnapshot && typeof runtimeSnapshot === "object") {
-      assistantRuntimeMemoryByUser.set(userId, runtimeSnapshot);
-    }
     try {
       await storage.setAppState(getAssistantStateKeyForUser(userId), assistantRuntime);
     } catch {
     }
+  };
+
+  const persistAssistantRuntimeStrict = async (userIdOverride?: string) => {
+    const userId = String(userIdOverride || assistantCurrentUserId || "").trim();
+    if (!userId) {
+      throw new Error("missing_assistant_user_id");
+    }
+    await storage.setAppState(getAssistantStateKeyForUser(userId), assistantRuntime);
   };
 
   const loadAssistantRuntime = async (userId: string) => {
@@ -9873,15 +9868,9 @@ export async function registerRoutes(
     assistantCurrentUserId = normalizedUserId;
 
     try {
-      let loaded = await storage.getAppState<Record<string, any>>(getAssistantStateKeyForUser(normalizedUserId));
+      const loaded = await storage.getAppState<Record<string, any>>(getAssistantStateKeyForUser(normalizedUserId));
       if (!loaded || typeof loaded !== "object") {
-        const cached = assistantRuntimeMemoryByUser.get(normalizedUserId);
-        if (!cached || typeof cached !== "object") {
-          return;
-        }
-        loaded = cached;
-      } else {
-        assistantRuntimeMemoryByUser.set(normalizedUserId, loaded);
+        return;
       }
 
       const wallet = loaded.wallet as Record<string, any> | undefined;
@@ -11090,7 +11079,12 @@ export async function registerRoutes(
     assistantRuntime.trading.wallets_by_chain = walletBundle.addresses_by_chain;
     assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
 
-    await persistAssistantRuntime();
+    try {
+      await persistAssistantRuntimeStrict(userId);
+    } catch {
+      logStructured("error", "wallet.create.persist_failed", { userId, overwrite });
+      return res.status(503).json({ message: "wallet state persistence failed; retry" });
+    }
     void seedDoctorWalletFromAssistantBundle(userId, walletBundle).catch(() => undefined);
     void syncDoctorWalletFromAssistantRuntime(userId).catch(() => undefined);
 
@@ -11139,7 +11133,12 @@ export async function registerRoutes(
     assistantRuntime.trading.wallets_by_chain = walletBundle.addresses_by_chain;
     assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
 
-    await persistAssistantRuntime();
+    try {
+      await persistAssistantRuntimeStrict(userId);
+    } catch {
+      logStructured("error", "wallet.import.persist_failed", { userId, overwrite, wordsCount });
+      return res.status(503).json({ message: "wallet state persistence failed; retry" });
+    }
     void seedDoctorWalletFromAssistantBundle(userId, walletBundle).catch(() => undefined);
     void syncDoctorWalletFromAssistantRuntime(userId).catch(() => undefined);
 
@@ -11184,7 +11183,12 @@ export async function registerRoutes(
     assistantRuntime.trading.wallets_by_chain = walletBundle.addresses_by_chain;
     assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
 
-    await persistAssistantRuntime();
+    try {
+      await persistAssistantRuntimeStrict(userId);
+    } catch {
+      logStructured("error", "wallet.import.private_key.persist_failed", { userId, overwrite });
+      return res.status(503).json({ message: "wallet state persistence failed; retry" });
+    }
     void seedDoctorWalletFromAssistantBundle(userId, walletBundle).catch(() => undefined);
     void syncDoctorWalletFromAssistantRuntime(userId).catch(() => undefined);
 
