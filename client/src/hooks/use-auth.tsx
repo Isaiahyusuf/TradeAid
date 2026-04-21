@@ -74,6 +74,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     checkAuth();
   }, [checkAuth]);
 
+  const hydrateUserProfile = useCallback(async () => {
+    try {
+      const me = await apiGet<User>("/api/auth/me");
+      setUser(me);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      const normalized = message.toLowerCase();
+      if (
+        message.includes("401")
+        || normalized.includes("unauthorized")
+        || normalized.includes("not authenticated")
+      ) {
+        clearToken();
+        setUser(null);
+        setTokenState(false);
+      }
+    } finally {
+      queryClient.invalidateQueries();
+    }
+  }, [queryClient]);
+
   const login = async (username: string, password: string, accessCode?: string, totp_code?: string) => {
     const data = await apiPost<{ access_token: string; refresh_token?: string; token_type: string }>("/api/auth/login", {
       username,
@@ -83,18 +104,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     });
     setAuthTokens(data.access_token, data.refresh_token);
     setTokenState(true);
-    const me = await apiGet<User>("/api/auth/me");
-    setUser(me);
-    queryClient.invalidateQueries();
+    // Allow route transition immediately after successful token issuance.
+    setUser((prev) => prev || {
+      user_id: String(username || "").trim().toLowerCase() || "pending",
+      username: String(username || "").trim() || "pending",
+      email: "",
+      is_admin: false,
+      totp_enabled: false,
+      email_verified: true,
+      display_name: "",
+      avatar_url: "",
+      telemetry_opt_in: true,
+    });
+    void hydrateUserProfile();
     return data;
   };
 
   const consumeOAuthTokens = async (accessToken: string, refreshToken?: string) => {
     setAuthTokens(accessToken, refreshToken);
     setTokenState(true);
-    const me = await apiGet<User>("/api/auth/me");
-    setUser(me);
-    queryClient.invalidateQueries();
+    setUser((prev) => prev || {
+      user_id: "pending",
+      username: "pending",
+      email: "",
+      is_admin: false,
+      totp_enabled: false,
+      email_verified: true,
+      display_name: "",
+      avatar_url: "",
+      telemetry_opt_in: true,
+    });
+    void hydrateUserProfile();
   };
 
   const register = async (username: string, email: string | undefined, password: string, accessCode?: string) => {
