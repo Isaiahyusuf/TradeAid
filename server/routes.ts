@@ -10023,26 +10023,14 @@ export async function registerRoutes(
   };
 
   app.use("/api/ai", isAuthenticated, async (req: any, res, next) => {
-    const releaseAssistantRuntimeLock = await acquireAssistantRuntimeLock();
-    let lockReleased = false;
-    const releaseLock = () => {
-      if (lockReleased) return;
-      lockReleased = true;
-      releaseAssistantRuntimeLock();
-    };
-    res.on("finish", releaseLock);
-    res.on("close", releaseLock);
-
     try {
       const userId = String(req?.user?.claims?.sub || "").trim();
       if (!userId) {
-        releaseLock();
         return res.status(401).json({ message: "Unauthorized" });
       }
       await loadAssistantRuntime(userId);
       return next();
     } catch {
-      releaseLock();
       return res.status(500).json({ message: "Failed to initialize assistant context" });
     }
   });
@@ -10197,7 +10185,10 @@ export async function registerRoutes(
         }
 
         const fromActive = activeTokenMap.get(mintKey) || {};
-        const fromDb = await storage.getScannedTokenByAddress(mintKey).catch(() => undefined) as Record<string, any> | undefined;
+        const fromDb = await Promise.race([
+          storage.getScannedTokenByAddress(mintKey).catch(() => undefined),
+          new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), rpcTimeoutMs)),
+        ]) as Record<string, any> | undefined;
         const fromDexPair = await (async () => {
           try {
             const pairs = await Promise.race([
