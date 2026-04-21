@@ -3,9 +3,9 @@ import { db } from "../../db";
 import { eq } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 
-const AUTH_DB_MAX_RETRIES = Math.max(1, Number(process.env.AUTH_DB_MAX_RETRIES || 3));
-const AUTH_DB_RETRY_DELAY_MS = Math.max(25, Number(process.env.AUTH_DB_RETRY_DELAY_MS || 120));
-const AUTH_DB_QUERY_TIMEOUT_MS = Math.max(250, Number(process.env.AUTH_DB_QUERY_TIMEOUT_MS || 2500));
+const AUTH_DB_MAX_RETRIES = Math.max(1, Number(process.env.AUTH_DB_MAX_RETRIES || 2));
+const AUTH_DB_RETRY_DELAY_MS = Math.max(25, Number(process.env.AUTH_DB_RETRY_DELAY_MS || 80));
+const AUTH_DB_QUERY_TIMEOUT_MS = Math.max(250, Number(process.env.AUTH_DB_QUERY_TIMEOUT_MS || 900));
 
 function isTransientDbError(error: unknown): boolean {
   const message = String((error as any)?.message || "").toLowerCase();

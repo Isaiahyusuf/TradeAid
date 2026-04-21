@@ -35,11 +35,35 @@ const PASSWORD_SALT_BYTES = 16;
 const PASSWORD_KEYLEN_BYTES = 64;
 const PASSWORD_MAX_BYTES = 72;
 const AUTH_EMERGENCY_FALLBACK_ENABLED = String(process.env.AUTH_EMERGENCY_FALLBACK_ENABLED || "true").trim().toLowerCase() !== "false";
+const AUTH_FAST_STATE_TIMEOUT_MS = Math.max(300, Number(process.env.AUTH_FAST_STATE_TIMEOUT_MS || 1200));
+const AUTH_PASSWORD_HASH_CACHE_TTL_MS = Math.max(5_000, Number(process.env.AUTH_PASSWORD_HASH_CACHE_TTL_MS || 60_000));
 
 const emergencyUsersById = new Map<string, any>();
 const emergencyUserIdByUsername = new Map<string, string>();
 const emergencyUserIdByEmail = new Map<string, string>();
 const emergencyPasswordHashesByUserId = new Map<string, string>();
+let cachedPasswordHashesByUserId: Record<string, string> | null = null;
+let cachedPasswordHashesLoadedAtMs = 0;
+
+async function withAuthFastTimeout<T>(operation: Promise<T>): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => {
+      const timeoutError = new Error(`auth_fast_timeout_${AUTH_FAST_STATE_TIMEOUT_MS}ms`) as Error & { code?: string };
+      timeoutError.code = "ETIMEDOUT";
+      reject(timeoutError);
+    }, AUTH_FAST_STATE_TIMEOUT_MS);
+    timer.unref?.();
+  });
+
+  try {
+    return await Promise.race([operation, timeoutPromise]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
 
 function isDbConnectivityError(error: unknown): boolean {
   const message = String((error as any)?.message || "").toLowerCase();
@@ -145,17 +169,34 @@ async function getPasswordHashesByUserId(): Promise<Record<string, string>> {
     merged[normalizedUserId] = normalizedHash;
   }
 
-  try {
-    const state = await storage.getAppState<Record<string, any>>(AUTH_PASSWORDS_STATE_KEY);
-    if (!state || typeof state !== "object" || Array.isArray(state)) {
-      return merged;
-    }
-    for (const [userId, hash] of Object.entries(state)) {
+  const nowMs = Date.now();
+  if (cachedPasswordHashesByUserId && (nowMs - cachedPasswordHashesLoadedAtMs) <= AUTH_PASSWORD_HASH_CACHE_TTL_MS) {
+    for (const [userId, hash] of Object.entries(cachedPasswordHashesByUserId)) {
       const normalizedUserId = String(userId || "").trim();
       const normalizedHash = String(hash || "").trim();
       if (!normalizedUserId || !normalizedHash) continue;
       merged[normalizedUserId] = normalizedHash;
     }
+    return merged;
+  }
+
+  try {
+    const state = await withAuthFastTimeout(storage.getAppState<Record<string, any>>(AUTH_PASSWORDS_STATE_KEY));
+    if (!state || typeof state !== "object" || Array.isArray(state)) {
+      cachedPasswordHashesByUserId = {};
+      cachedPasswordHashesLoadedAtMs = nowMs;
+      return merged;
+    }
+    const snapshot: Record<string, string> = {};
+    for (const [userId, hash] of Object.entries(state)) {
+      const normalizedUserId = String(userId || "").trim();
+      const normalizedHash = String(hash || "").trim();
+      if (!normalizedUserId || !normalizedHash) continue;
+      merged[normalizedUserId] = normalizedHash;
+      snapshot[normalizedUserId] = normalizedHash;
+    }
+    cachedPasswordHashesByUserId = snapshot;
+    cachedPasswordHashesLoadedAtMs = nowMs;
     return merged;
   } catch {
     return merged;
@@ -163,14 +204,18 @@ async function getPasswordHashesByUserId(): Promise<Record<string, string>> {
 }
 
 async function setPasswordHashesByUserId(value: Record<string, string>): Promise<void> {
+  const snapshot: Record<string, string> = {};
   for (const [userId, hash] of Object.entries(value || {})) {
     const normalizedUserId = String(userId || "").trim();
     const normalizedHash = String(hash || "").trim();
     if (!normalizedUserId || !normalizedHash) continue;
     emergencyPasswordHashesByUserId.set(normalizedUserId, normalizedHash);
+    snapshot[normalizedUserId] = normalizedHash;
   }
+  cachedPasswordHashesByUserId = snapshot;
+  cachedPasswordHashesLoadedAtMs = Date.now();
   try {
-    await storage.setAppState(AUTH_PASSWORDS_STATE_KEY, value);
+    await withAuthFastTimeout(storage.setAppState(AUTH_PASSWORDS_STATE_KEY, value));
   } catch {
   }
 }
@@ -190,13 +235,13 @@ async function getPersistentPasswordHash(userId: string): Promise<string> {
   if (!normalizedUserId) return "";
 
   try {
-    await ensurePasswordHashTable();
-    const result = await db.execute(sql`
+    await withAuthFastTimeout(ensurePasswordHashTable());
+    const result = await withAuthFastTimeout(db.execute(sql`
       SELECT password_hash
       FROM auth_password_hashes
       WHERE user_id = ${normalizedUserId}
       LIMIT 1
-    `);
+    `));
     const rows = (result as any)?.rows as Array<{ password_hash?: string }> | undefined;
     const value = String(rows?.[0]?.password_hash || "").trim();
     if (value) {
