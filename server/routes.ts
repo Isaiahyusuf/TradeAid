@@ -9968,8 +9968,6 @@ export async function registerRoutes(
         assistantRuntimeCacheByUser.set(normalizedUserId, JSON.parse(JSON.stringify(assistantRuntime)) as Record<string, any>);
       } catch {
       }
-    } catch {
-    }
   };
 
   const SOLANA_DERIVATION_PATH = "m/44'/501'/0'/0'";
