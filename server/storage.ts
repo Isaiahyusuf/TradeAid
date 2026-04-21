@@ -51,6 +51,7 @@ export class DatabaseStorage implements IStorage {
     trade: null,
   };
   private whaleWatchTenantColumnsReady: Promise<void> | null = null;
+  private readonly appStateRetryDelaysMs = [75, 200, 500];
 
   private getAppStateTargetForKey(key: string): "primary" | "wallet" | "trade" {
     const normalized = String(key || "").trim();
@@ -338,10 +339,10 @@ export class DatabaseStorage implements IStorage {
 
     let value: T | undefined;
     try {
-      value = await readFromTarget(target);
+      value = await this.runAppStateWithRetry(() => readFromTarget(target));
     } catch (error) {
       if (target !== "primary" && this.isRetryableAppStateDbError(error)) {
-        value = await readFromTarget("primary");
+        value = await this.runAppStateWithRetry(() => readFromTarget("primary"));
       } else {
         throw error;
       }
@@ -350,7 +351,7 @@ export class DatabaseStorage implements IStorage {
     if (value === undefined && target !== "primary") {
       // Read-through fallback for keys that were persisted to primary during a transient wallet/trade DB outage.
       try {
-        value = await readFromTarget("primary");
+        value = await this.runAppStateWithRetry(() => readFromTarget("primary"));
       } catch {
       }
     }
@@ -382,15 +383,41 @@ export class DatabaseStorage implements IStorage {
       `);
     };
 
-    try {
-      await writeToTarget(target);
-    } catch (error) {
-      if (target !== "primary" && this.isRetryableAppStateDbError(error)) {
-        await writeToTarget("primary");
-      } else {
-        throw error;
+    const targets: Array<"primary" | "wallet" | "trade"> = target === "primary"
+      ? ["primary"]
+      : [target, "primary"];
+
+    let lastError: unknown = null;
+    for (const resolvedTarget of targets) {
+      try {
+        await this.runAppStateWithRetry(() => writeToTarget(resolvedTarget));
+        return;
+      } catch (error) {
+        lastError = error;
+        if (!this.isRetryableAppStateDbError(error)) {
+          throw error;
+        }
       }
     }
+
+    throw lastError;
+  }
+
+  private async runAppStateWithRetry<T>(fn: () => Promise<T>): Promise<T> {
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt <= this.appStateRetryDelaysMs.length; attempt += 1) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+        if (!this.isRetryableAppStateDbError(error) || attempt >= this.appStateRetryDelaysMs.length) {
+          throw error;
+        }
+        const waitMs = this.appStateRetryDelaysMs[attempt];
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+      }
+    }
+    throw lastError;
   }
 
   private isRetryableAppStateDbError(error: unknown): boolean {
