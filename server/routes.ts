@@ -9515,30 +9515,49 @@ export async function registerRoutes(
           }
 
           if (!resolvedPrivateKey) {
-            // First-run recovery: auto-provision assistant wallet so Connect Wallet succeeds.
-            await loadAssistantRuntime(userId);
-            const hasAssistantWallet = Boolean(assistantRuntime.wallet.has_wallet)
-              && Boolean(String(assistantRuntime.wallet.private_keys_by_chain?.solana || "").trim());
+            // First-run recovery: auto-provision wallet with graceful fallback if app-state DB is transiently unavailable.
+            try {
+              await loadAssistantRuntime(userId);
+              const hasAssistantWallet = Boolean(assistantRuntime.wallet.has_wallet)
+                && Boolean(String(assistantRuntime.wallet.private_keys_by_chain?.solana || "").trim());
 
-            if (!hasAssistantWallet) {
-              const mnemonic = generateMnemonic();
-              const walletBundle = buildAssistantWalletFromMnemonic(mnemonic);
+              if (!hasAssistantWallet) {
+                const mnemonic = generateMnemonic();
+                const walletBundle = buildAssistantWalletFromMnemonic(mnemonic);
 
-              assistantRuntime.wallet.has_wallet = true;
-              assistantRuntime.wallet.backup_confirmed = false;
-              assistantRuntime.wallet.backup_confirmed_at = null;
-              assistantRuntime.wallet.created_at = nowIso();
-              assistantRuntime.wallet.addresses_by_chain = walletBundle.addresses_by_chain;
-              assistantRuntime.wallet.private_keys_by_chain = walletBundle.private_keys_by_chain;
-              assistantRuntime.wallet.mnemonic = walletBundle.mnemonic;
-              assistantRuntime.trading.wallets_by_chain = walletBundle.addresses_by_chain;
-              assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
+                assistantRuntime.wallet.has_wallet = true;
+                assistantRuntime.wallet.backup_confirmed = false;
+                assistantRuntime.wallet.backup_confirmed_at = null;
+                assistantRuntime.wallet.created_at = nowIso();
+                assistantRuntime.wallet.addresses_by_chain = walletBundle.addresses_by_chain;
+                assistantRuntime.wallet.private_keys_by_chain = walletBundle.private_keys_by_chain;
+                assistantRuntime.wallet.mnemonic = walletBundle.mnemonic;
+                assistantRuntime.trading.wallets_by_chain = walletBundle.addresses_by_chain;
+                assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
 
-              await persistAssistantRuntime(userId);
-              await seedDoctorWalletFromAssistantBundle(userId, walletBundle);
+                await persistAssistantRuntime(userId);
+                await seedDoctorWalletFromAssistantBundle(userId, walletBundle);
+              }
+
+              resolvedPrivateKey = String(assistantRuntime.wallet.private_keys_by_chain?.solana || "").trim();
+            } catch (autoProvisionError: any) {
+              logConnect("warn", "doctor.connect_wallet.autoprovision_fallback", {
+                message: String(autoProvisionError?.message || "unknown_error"),
+              });
+              const fallbackBundle = buildAssistantWalletFromMnemonic(generateMnemonic());
+              resolvedPrivateKey = String(fallbackBundle.private_keys_by_chain?.solana || "").trim();
+              if (resolvedPrivateKey) {
+                const fallbackAddress = String(fallbackBundle.addresses_by_chain?.solana || "").trim();
+                if (fallbackAddress) {
+                  doctorRuntime.wallet.address = fallbackAddress;
+                }
+                try {
+                  await seedDoctorWalletFromAssistantBundle(userId, fallbackBundle);
+                } catch {
+                }
+              }
             }
 
-            resolvedPrivateKey = String(assistantRuntime.wallet.private_keys_by_chain?.solana || "").trim();
             if (resolvedPrivateKey) {
               const assistantAddress = String(assistantRuntime.wallet.addresses_by_chain?.solana || "").trim()
                 || deriveSolanaAddressFromPrivateKey(resolvedPrivateKey);
