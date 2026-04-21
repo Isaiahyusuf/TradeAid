@@ -11101,13 +11101,7 @@ export async function registerRoutes(
     assistantRuntime.trading.wallets_by_chain = walletBundle.addresses_by_chain;
     assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
 
-    try {
-      await persistAssistantRuntimeStrict(userId);
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : "unknown_error";
-      logStructured("error", "wallet.create.persist_failed", { userId, overwrite, detail });
-      return res.status(503).json({ message: "wallet state persistence failed; retry", detail });
-    }
+    await persistAssistantRuntime(userId);
     void seedDoctorWalletFromAssistantBundle(userId, walletBundle).catch(() => undefined);
     void syncDoctorWalletFromAssistantRuntime(userId).catch(() => undefined);
 
@@ -11156,13 +11150,7 @@ export async function registerRoutes(
     assistantRuntime.trading.wallets_by_chain = walletBundle.addresses_by_chain;
     assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
 
-    try {
-      await persistAssistantRuntimeStrict(userId);
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : "unknown_error";
-      logStructured("error", "wallet.import.persist_failed", { userId, overwrite, wordsCount, detail });
-      return res.status(503).json({ message: "wallet state persistence failed; retry", detail });
-    }
+    await persistAssistantRuntime(userId);
     void seedDoctorWalletFromAssistantBundle(userId, walletBundle).catch(() => undefined);
     void syncDoctorWalletFromAssistantRuntime(userId).catch(() => undefined);
 
@@ -11207,13 +11195,7 @@ export async function registerRoutes(
     assistantRuntime.trading.wallets_by_chain = walletBundle.addresses_by_chain;
     assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
 
-    try {
-      await persistAssistantRuntimeStrict(userId);
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : "unknown_error";
-      logStructured("error", "wallet.import.private_key.persist_failed", { userId, overwrite, detail });
-      return res.status(503).json({ message: "wallet state persistence failed; retry", detail });
-    }
+    await persistAssistantRuntime(userId);
     void seedDoctorWalletFromAssistantBundle(userId, walletBundle).catch(() => undefined);
     void syncDoctorWalletFromAssistantRuntime(userId).catch(() => undefined);
 
