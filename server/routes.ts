@@ -11072,8 +11072,8 @@ export async function registerRoutes(
     assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
 
     await persistAssistantRuntime();
-  await seedDoctorWalletFromAssistantBundle(userId, walletBundle);
-    await syncDoctorWalletFromAssistantRuntime(getRequestUserId(req));
+    void seedDoctorWalletFromAssistantBundle(userId, walletBundle).catch(() => undefined);
+    void syncDoctorWalletFromAssistantRuntime(userId).catch(() => undefined);
 
     logStructured("info", "wallet.create.success", {
       userId,
@@ -11121,8 +11121,8 @@ export async function registerRoutes(
     assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
 
     await persistAssistantRuntime();
-  await seedDoctorWalletFromAssistantBundle(userId, walletBundle);
-    await syncDoctorWalletFromAssistantRuntime(getRequestUserId(req));
+    void seedDoctorWalletFromAssistantBundle(userId, walletBundle).catch(() => undefined);
+    void syncDoctorWalletFromAssistantRuntime(userId).catch(() => undefined);
 
     logStructured("info", "wallet.import.mnemonic_success", {
       userId,
@@ -11166,8 +11166,8 @@ export async function registerRoutes(
     assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
 
     await persistAssistantRuntime();
-  await seedDoctorWalletFromAssistantBundle(userId, walletBundle);
-    await syncDoctorWalletFromAssistantRuntime(getRequestUserId(req));
+    void seedDoctorWalletFromAssistantBundle(userId, walletBundle).catch(() => undefined);
+    void syncDoctorWalletFromAssistantRuntime(userId).catch(() => undefined);
 
     logStructured("info", "wallet.import.private_key_success", {
       userId,
