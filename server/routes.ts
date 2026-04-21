@@ -2705,6 +2705,7 @@ export async function registerRoutes(
     symbol?: string;
     name?: string;
     priceUsd?: number;
+    marketCapUsd?: number;
     liquidityUsd?: number;
     volume5mUsd?: number;
     ageMinutes?: number;
@@ -2755,6 +2756,7 @@ export async function registerRoutes(
       name: tokenName,
       symbol,
       price_usd: Math.max(0, Number(payload.priceUsd || 0)),
+      market_cap_usd: Math.max(0, Number(payload.marketCapUsd || 0)),
       liquidity_usd: liquidityUsd,
       volume_5m_usd: volume5mUsd,
       age_minutes: Number(ageMinutes.toFixed(1)),
@@ -8482,7 +8484,26 @@ export async function registerRoutes(
     try {
       await loadDoctorRuntimeForUser(userId);
       const activeTokens = await getDoctorActiveTokens().catch(() => [] as Array<Record<string, any>>);
-      const topCandidates = activeTokens.slice(0, 12);
+        const prioritizeEarly = String(req.query?.early || "1").trim() !== "0";
+        const earlyMaxMarketCapUsd = Math.max(1_000, Number(req.query?.max_market_cap_usd || req.query?.max_market_cap || 80_000));
+        const earlyMaxAgeMinutes = Math.max(1, Number(req.query?.max_age_minutes || 25));
+        const filteredEarlyCandidates = prioritizeEarly
+          ? activeTokens.filter((token: Record<string, any>) => {
+              const marketCapUsd = Number(token.market_cap_usd || 0);
+              const ageMinutes = Math.max(0, Number(token.age_seconds || 0) / 60);
+              return marketCapUsd > 0 && marketCapUsd <= earlyMaxMarketCapUsd && ageMinutes <= earlyMaxAgeMinutes;
+            })
+          : activeTokens;
+        const rankedCandidates = filteredEarlyCandidates
+          .slice()
+          .sort((a: Record<string, any>, b: Record<string, any>) => {
+            const ageDelta = Number(a.age_seconds || 0) - Number(b.age_seconds || 0);
+            if (ageDelta !== 0) return ageDelta;
+            const mcDelta = Number(a.market_cap_usd || 0) - Number(b.market_cap_usd || 0);
+            if (mcDelta !== 0) return mcDelta;
+            return Number(b.score || 0) - Number(a.score || 0);
+          });
+        const topCandidates = (rankedCandidates.length > 0 ? rankedCandidates : activeTokens).slice(0, 16);
       for (const token of topCandidates) {
         const row = token as Record<string, any>;
         enqueueDoctorTickerSignal({
@@ -8497,6 +8518,8 @@ export async function registerRoutes(
           sells5m: Number(row.sells_5m || 0),
           source: String(row.source || "doctor_engine"),
           launchSource: String(row.launch_source || "unknown"),
+            logoUrl: String(row.logo_url || "").trim(),
+            marketCapUsd: Number(row.market_cap_usd || 0),
           smartMoney: Number(row.buy_ratio_pct || 0) >= 75 && Number(row.buys_5m || 0) >= 4,
           rejectReasons: Array.isArray(row.reject_reasons) ? row.reject_reasons : [],
         });
@@ -8509,9 +8532,37 @@ export async function registerRoutes(
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
 
-    return res.json({
+      const prioritizeEarly = String(req.query?.early || "1").trim() !== "0";
+      const uniqueOnly = String(req.query?.unique || "1").trim() !== "0";
+      const responseCandidates = doctorTickerQueue
+        .slice()
+        .sort((a: Record<string, any>, b: Record<string, any>) => {
+          if (!prioritizeEarly) {
+            return new Date(String(b.created_at || 0)).getTime() - new Date(String(a.created_at || 0)).getTime();
+          }
+          const ageDelta = Number(a.age_minutes || 0) - Number(b.age_minutes || 0);
+          if (ageDelta !== 0) return ageDelta;
+          const liqDelta = Number(a.liquidity_usd || 0) - Number(b.liquidity_usd || 0);
+          if (liqDelta !== 0) return liqDelta;
+          return new Date(String(b.created_at || 0)).getTime() - new Date(String(a.created_at || 0)).getTime();
+        });
+
+      const items: Array<Record<string, any>> = [];
+      const seenKeys = new Set<string>();
+      for (const item of responseCandidates) {
+        const mint = String((item as any)?.mint || "").trim();
+        const symbol = String((item as any)?.symbol || "").trim().toUpperCase();
+        const key = mint || `symbol:${symbol}`;
+        if (!key) continue;
+        if (uniqueOnly && seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        items.push(item as Record<string, any>);
+        if (items.length >= limit) break;
+      }
+
+      return res.json({
       ok: true,
-      items: doctorTickerQueue.slice(0, limit),
+        items,
       as_of: nowIso(),
     });
   });
