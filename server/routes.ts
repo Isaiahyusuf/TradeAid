@@ -8634,6 +8634,16 @@ export async function registerRoutes(
           if (!prioritizeEarly) {
             return new Date(String(b.created_at || 0)).getTime() - new Date(String(a.created_at || 0)).getTime();
           }
+          const aLaunch = String(a.signal || "").toLowerCase() === "launch" || String(a.signal_prefix || "").toUpperCase() === "NEW";
+          const bLaunch = String(b.signal || "").toLowerCase() === "launch" || String(b.signal_prefix || "").toUpperCase() === "NEW";
+          if (aLaunch !== bLaunch) {
+            return aLaunch ? -1 : 1;
+          }
+          const aVeryFresh = Number(a.age_minutes || 0) <= 3;
+          const bVeryFresh = Number(b.age_minutes || 0) <= 3;
+          if (aVeryFresh !== bVeryFresh) {
+            return aVeryFresh ? -1 : 1;
+          }
           const ageDelta = Number(a.age_minutes || 0) - Number(b.age_minutes || 0);
           if (ageDelta !== 0) return ageDelta;
           const liqDelta = Number(a.liquidity_usd || 0) - Number(b.liquidity_usd || 0);
