@@ -8560,6 +8560,68 @@ export async function registerRoutes(
         if (items.length >= limit) break;
       }
 
+      if (items.length < limit) {
+        const remaining = limit - items.length;
+        const earlyMaxMarketCapUsd = Math.max(1_000, Number(req.query?.max_market_cap_usd || req.query?.max_market_cap || 80_000));
+        const earlyMaxAgeMinutes = Math.max(1, Number(req.query?.max_age_minutes || 25));
+        const fallbackMaxAgeHours = Math.max(1, Math.min(24, Math.ceil(earlyMaxAgeMinutes / 60)));
+
+        try {
+          const fallbackPairs = await getNewPairs("solana", fallbackMaxAgeHours);
+          const nowMs = Date.now();
+          const fallbackItems = fallbackPairs
+            .map((pair) => {
+              const token = pairToTokenData(pair);
+              const pairCreatedAt = Number(pair.pairCreatedAt || token.pairCreatedAt?.getTime?.() || 0);
+              const ageMinutes = pairCreatedAt > 0 ? Math.max(0, (nowMs - pairCreatedAt) / 60000) : Number.POSITIVE_INFINITY;
+              const marketCapUsd = Number(token.marketCap || pair.marketCap || pair.fdv || 0);
+              const liquidityUsd = Number(token.liquidity || pair.liquidity?.usd || 0);
+              const volume5mUsd = Number(token.volume24h || pair.volume?.h24 || 0) / 288;
+              return {
+                mint: String(token.address || pair.baseToken?.address || "").trim(),
+                symbol: String(token.symbol || pair.baseToken?.symbol || "UNKNOWN").trim().toUpperCase(),
+                name: String(token.name || pair.baseToken?.name || "TOKEN").trim(),
+                price_usd: Number(token.priceUsd || pair.priceUsd || 0),
+                market_cap_usd: marketCapUsd,
+                liquidity_usd: liquidityUsd,
+                volume_5m_usd: volume5mUsd,
+                age_minutes: Number(ageMinutes.toFixed(1)),
+                source: "DexScreener Fresh",
+                launch_source: normalizeLaunchSource(String(token.dexId || pair.dexId || "dexscreener")),
+                chart_url: String(pair.url || `https://dexscreener.com/solana/${String(token.address || pair.baseToken?.address || "").trim()}`),
+                created_at: nowIso(),
+              } as Record<string, any>;
+            })
+            .filter((item) => {
+              if (!item.mint || !item.symbol) return false;
+              if (!Number.isFinite(item.age_minutes) || item.age_minutes > earlyMaxAgeMinutes) return false;
+              if (!Number.isFinite(item.market_cap_usd) || item.market_cap_usd <= 0 || item.market_cap_usd > earlyMaxMarketCapUsd) return false;
+              return true;
+            })
+            .sort((a, b) => {
+              const ageDelta = Number(a.age_minutes || 0) - Number(b.age_minutes || 0);
+              if (ageDelta !== 0) return ageDelta;
+              return Number(a.market_cap_usd || 0) - Number(b.market_cap_usd || 0);
+            });
+
+          for (const item of fallbackItems) {
+            const mint = String(item.mint || "").trim();
+            const symbol = String(item.symbol || "").trim().toUpperCase();
+            const key = symbol ? `symbol:${symbol}` : (mint ? `mint:${mint}` : "");
+            if (!key) continue;
+            if (uniqueOnly && seenKeys.has(key)) continue;
+            seenKeys.add(key);
+            item.id = `ticker_fresh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            item.signal = "Early";
+            item.signal_prefix = "EARLY";
+            item.message = `EARLY ${item.symbol} | MC ${formatTickerCompactUsd(Number(item.market_cap_usd || 0))} | Age ${Number(item.age_minutes || 0).toFixed(1)}m`;
+            items.push(item);
+            if (items.length >= limit || items.length >= remaining + (limit - remaining)) break;
+          }
+        } catch {
+        }
+      }
+
       return res.json({
       ok: true,
         items,
