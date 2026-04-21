@@ -2,6 +2,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 
+const withIntervalJitter = (baseMs: number, jitterMs: number) => {
+  const randomOffset = Math.floor((Math.random() * 2 - 1) * Math.max(0, jitterMs));
+  return Math.max(3_000, baseMs + randomOffset);
+};
+
 export type AssistantTradingStatus = {
   enabled: boolean;
   pending_approval: boolean;
@@ -182,7 +187,7 @@ export function useAssistantTradingStatus() {
     queryFn: () => apiGet<{ trading: AssistantTradingStatus }>("/api/ai/trading/status"),
     enabled: hasToken,
     retry: 1,
-    refetchInterval: hasToken ? 5_000 : false,
+    refetchInterval: hasToken ? withIntervalJitter(9_000, 1_250) : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
@@ -196,7 +201,7 @@ export function useAssistantWalletStatus() {
     queryFn: () => apiGet<{ wallet: AssistantWalletStatus }>("/api/ai/wallets/status"),
     enabled: hasToken,
     retry: 1,
-    refetchInterval: hasToken ? 4_000 : false,
+    refetchInterval: hasToken ? withIntervalJitter(8_000, 1_250) : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
@@ -210,7 +215,7 @@ export function useAssistantWalletPortfolio() {
     queryFn: () => apiGet<{ wallet: AssistantWalletStatus; portfolio: AssistantWalletPortfolio }>("/api/ai/wallets/portfolio"),
     enabled: hasToken,
     retry: 1,
-    refetchInterval: hasToken ? 4_000 : false,
+    refetchInterval: hasToken ? withIntervalJitter(10_000, 1_500) : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
@@ -224,7 +229,7 @@ export function useAssistantWalletTransactions(limit: number = 25, enabled = tru
     queryFn: () => apiGet<{ transactions: AssistantWalletTransaction[]; count: number }>(`/api/ai/wallets/transactions?limit=${limit}`),
     enabled: hasToken && enabled,
     retry: 1,
-    refetchInterval: hasToken && enabled ? 4_000 : false,
+    refetchInterval: hasToken && enabled ? withIntervalJitter(9_000, 1_500) : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
@@ -238,7 +243,7 @@ export function useAssistantProfitJarStatus(enabled = true) {
     queryFn: () => apiGet<{ profit_jar: AssistantProfitJarStatus }>("/api/ai/profit-jar/status"),
     enabled: hasToken && enabled,
     retry: 1,
-    refetchInterval: hasToken && enabled ? 4_000 : false,
+    refetchInterval: hasToken && enabled ? withIntervalJitter(10_000, 1_500) : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
@@ -252,7 +257,7 @@ export function useAssistantProfitJarLedger(limit = 50, enabled = true) {
     queryFn: () => apiGet<{ ledger: AssistantProfitJarLedgerRow[]; count: number }>(`/api/ai/profit-jar/ledger?limit=${limit}`),
     enabled: hasToken && enabled,
     retry: 1,
-    refetchInterval: hasToken && enabled ? 5_000 : false,
+    refetchInterval: hasToken && enabled ? withIntervalJitter(10_000, 1_500) : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
@@ -577,7 +582,7 @@ export function useAssistantContextOverview(days: number = 30, enabled = true) {
     queryFn: () => apiGet<{ context: AssistantContextOverview; user_id: string }>(`/api/ai/context/overview?days=${days}`),
     enabled: hasToken && enabled,
     retry: 1,
-    refetchInterval: hasToken && enabled ? 5_000 : false,
+    refetchInterval: hasToken && enabled ? withIntervalJitter(12_000, 2_000) : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });

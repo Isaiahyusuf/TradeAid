@@ -212,6 +212,14 @@ export default function WalletPage() {
     () => (usingDoctorWalletTokenFallback ? doctorWalletTokens : solanaPortfolioTokens),
     [usingDoctorWalletTokenFallback, doctorWalletTokens, solanaPortfolioTokens],
   );
+  const burnableTokens = useMemo(
+    () => solanaSplTokens.filter((token) => Number(token?.ui_amount || 0) > 0),
+    [solanaSplTokens],
+  );
+  const selectedBurnToken = useMemo(
+    () => burnableTokens.find((token) => String(token.mint || "").trim() === String(burnTokenMint || "").trim()) || null,
+    [burnableTokens, burnTokenMint],
+  );
 
   const activeChainsCount = Object.values(addressesByChain).filter(Boolean).length;
 
@@ -474,6 +482,13 @@ export default function WalletPage() {
       toast({ title: "Create wallet first", description: "Generate or import your wallet before burning.", variant: "destructive" });
       return;
     }
+    if (!burnableTokens.length) {
+      toast({ title: "No tokens to burn", description: "This wallet has no burnable SPL token balance yet.", variant: "destructive" });
+      return;
+    }
+    const defaultToken = burnableTokens[0];
+    setBurnTokenMint(String(defaultToken?.mint || ""));
+    setBurnAmountTokens(String(Number(Number(defaultToken?.ui_amount || 0).toFixed(9))));
     setBurnOpen(true);
   };
 
@@ -673,7 +688,12 @@ export default function WalletPage() {
       return;
     }
 
-    const token = solanaSplTokens.find((row) => String((row as any).mint || "").trim() === mint);
+    const token = burnableTokens.find((row) => String((row as any).mint || "").trim() === mint);
+    const maxAmount = Number(token?.ui_amount || 0);
+    if (Number.isFinite(maxAmount) && maxAmount > 0 && amount > maxAmount + 1e-9) {
+      toast({ title: "Burn failed", description: "Amount exceeds available token balance.", variant: "destructive" });
+      return;
+    }
     const symbol = String(token?.symbol || "TOKEN").trim() || "TOKEN";
     const amountLabel = amount.toLocaleString(undefined, { maximumFractionDigits: 9 });
     const confirmed = window.confirm(`Burn ${amountLabel} ${symbol}? This cannot be undone.`);
@@ -1588,15 +1608,51 @@ export default function WalletPage() {
             </SheetHeader>
             <div className="space-y-3 py-4">
               <div className="space-y-2">
-                <Label>Token Mint (CA)</Label>
-                <Input
-                  placeholder="Enter Solana token mint address"
+                <Label>Select Token</Label>
+                <select
                   value={burnTokenMint}
-                  onChange={(e) => setBurnTokenMint(e.target.value)}
-                />
+                  onChange={(e) => {
+                    const nextMint = String(e.target.value || "").trim();
+                    setBurnTokenMint(nextMint);
+                    const nextToken = burnableTokens.find((token) => String(token.mint || "").trim() === nextMint);
+                    if (nextToken) {
+                      setBurnAmountTokens(String(Number(Number(nextToken.ui_amount || 0).toFixed(9))));
+                    }
+                  }}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  {burnableTokens.map((token) => {
+                    const mint = String(token.mint || "").trim();
+                    const symbol = String(token.symbol || "TOKEN").trim() || "TOKEN";
+                    const amount = Number(token.ui_amount || 0);
+                    return (
+                      <option key={mint} value={mint}>
+                        {symbol} - {amount.toLocaleString(undefined, { maximumFractionDigits: 9 })}
+                      </option>
+                    );
+                  })}
+                </select>
+                <div className="rounded-md border border-border/60 bg-muted/20 p-2 space-y-1">
+                  <p className="text-xs text-muted-foreground">Token CA</p>
+                  <p className="text-xs break-all">{String(selectedBurnToken?.mint || "-")}</p>
+                </div>
               </div>
               <div className="space-y-2">
-                <Label>Amount</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Amount</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => {
+                      if (!selectedBurnToken) return;
+                      setBurnAmountTokens(String(Number(Number(selectedBurnToken.ui_amount || 0).toFixed(9))));
+                    }}
+                    disabled={!selectedBurnToken}
+                  >
+                    Max
+                  </Button>
+                </div>
                 <Input
                   type="number"
                   min={0.000000001}
@@ -1604,8 +1660,13 @@ export default function WalletPage() {
                   value={burnAmountTokens}
                   onChange={(e) => setBurnAmountTokens(e.target.value)}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Available: {selectedBurnToken
+                    ? Number(selectedBurnToken.ui_amount || 0).toLocaleString(undefined, { maximumFractionDigits: 9 })
+                    : "0"}
+                </p>
               </div>
-              <p className="text-xs text-muted-foreground">Tip: Copy token mint from Token Holdings and paste here. Burn is irreversible.</p>
+              <p className="text-xs text-muted-foreground">Select a token from your wallet, choose amount, then burn. Burn is irreversible.</p>
             </div>
             <SheetFooter>
               <Button variant="outline" onClick={() => setBurnOpen(false)}>Cancel</Button>
