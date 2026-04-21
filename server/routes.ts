@@ -9474,8 +9474,6 @@ export async function registerRoutes(
           });
           return res.status(401).json({ message: "Unauthorized" });
         }
-        await loadDoctorRuntimeForUser(userId);
-
         const payload = req.body || {};
         const explicitAddress = String(payload.public_address || "").trim();
         const explicitPrivateKey = String(payload.private_key || "").trim();
@@ -9490,14 +9488,76 @@ export async function registerRoutes(
           explicitAddress: explicitAddress || null,
         });
 
+        const safeLoadDoctorRuntime = async () => {
+          try {
+            await loadDoctorRuntimeForUser(userId);
+          } catch (error: any) {
+            logConnect("warn", "doctor.connect_wallet.runtime_load_failed", {
+              message: String(error?.message || "unknown_error"),
+            });
+            doctorRuntime.ownerUserId = userId;
+            doctorRuntime.wallet.address = String(doctorRuntime.wallet.address || "").trim();
+            doctorRuntime.wallet.balanceSol = Math.max(0, Number(doctorRuntime.wallet.balanceSol || 0));
+          }
+        };
+
+        const safeGetDoctorWalletsByUser = async () => {
+          try {
+            return await getStoredDoctorWalletsByUser();
+          } catch (error: any) {
+            logConnect("warn", "doctor.connect_wallet.wallet_map_read_failed", {
+              message: String(error?.message || "unknown_error"),
+            });
+            return {} as Record<string, Record<string, any>>;
+          }
+        };
+
+        const safeSetDoctorWalletsByUser = async (wallets: Record<string, any>) => {
+          try {
+            await setStoredDoctorWalletsByUser(wallets);
+            return true;
+          } catch (error: any) {
+            logConnect("warn", "doctor.connect_wallet.wallet_map_write_failed", {
+              message: String(error?.message || "unknown_error"),
+            });
+            return false;
+          }
+        };
+
+        const safeSetDoctorLivePrivateKey = async (privateKey: string) => {
+          try {
+            await setDoctorLivePrivateKeyForUser(userId, privateKey);
+            return true;
+          } catch (error: any) {
+            logConnect("warn", "doctor.connect_wallet.live_key_write_failed", {
+              message: String(error?.message || "unknown_error"),
+            });
+            return false;
+          }
+        };
+
+        const safePersistDoctorRuntime = async () => {
+          try {
+            await persistDoctorRuntime(userId);
+            return true;
+          } catch (error: any) {
+            logConnect("warn", "doctor.connect_wallet.runtime_persist_failed", {
+              message: String(error?.message || "unknown_error"),
+            });
+            return false;
+          }
+        };
+
+        await safeLoadDoctorRuntime();
+
         if (!resolvedPrivateKey && useExistingWallet) {
-          const wallets = await getStoredDoctorWalletsByUser();
+          const wallets = await safeGetDoctorWalletsByUser();
           const existingWallet = wallets[userId] as Record<string, any> | undefined;
           resolvedPrivateKey = decryptDoctorPrivateKey(getDoctorWalletStoredPrivateKey(existingWallet));
 
           if (!resolvedPrivateKey) {
             await syncDoctorWalletFromAssistantRuntime(userId);
-            const refreshedWallets = await getStoredDoctorWalletsByUser();
+            const refreshedWallets = await safeGetDoctorWalletsByUser();
             const refreshedWallet = refreshedWallets[userId] as Record<string, any> | undefined;
             resolvedPrivateKey = decryptDoctorPrivateKey(getDoctorWalletStoredPrivateKey(refreshedWallet));
           }
@@ -9509,8 +9569,8 @@ export async function registerRoutes(
               if (assistantAddress) {
                 doctorRuntime.wallet.address = assistantAddress;
               }
-              await setDoctorLivePrivateKeyForUser(userId, resolvedPrivateKey);
-              await persistDoctorRuntime(userId);
+              await safeSetDoctorLivePrivateKey(resolvedPrivateKey);
+              await safePersistDoctorRuntime();
             }
           }
 
@@ -9564,8 +9624,8 @@ export async function registerRoutes(
               if (assistantAddress) {
                 doctorRuntime.wallet.address = assistantAddress;
               }
-              await setDoctorLivePrivateKeyForUser(userId, resolvedPrivateKey);
-              await persistDoctorRuntime(userId);
+              await safeSetDoctorLivePrivateKey(resolvedPrivateKey);
+              await safePersistDoctorRuntime();
             }
           }
         }
@@ -9621,13 +9681,13 @@ export async function registerRoutes(
           }
         }
 
-        await setDoctorLivePrivateKeyForUser(userId, resolvedPrivateKey);
+        await safeSetDoctorLivePrivateKey(resolvedPrivateKey);
         logConnect("info", "doctor.connect_wallet.live_private_key_set", {
           walletAddress: String(doctorRuntime.wallet.address || "").trim() || null,
         });
 
         {
-          const wallets = await getStoredDoctorWalletsByUser();
+          const wallets = await safeGetDoctorWalletsByUser();
           const existing = wallets[userId] as Record<string, any> | undefined;
           wallets[userId] = {
             ...(existing || {}),
@@ -9638,11 +9698,12 @@ export async function registerRoutes(
             autoHydrateBlocked: false,
             updatedAt: nowIso(),
           };
-          await setStoredDoctorWalletsByUser(wallets);
+          const persistedWalletMap = await safeSetDoctorWalletsByUser(wallets);
           pruneDoctorWalletDisconnectedSniperLogs(userId, String(wallets[userId]?.connectedAt || wallets[userId]?.updatedAt || ""));
           logConnect("info", "doctor.connect_wallet.wallet_map_persisted", {
             walletAddress: String(wallets[userId]?.address || "").trim() || null,
             autoHydrateBlocked: wallets[userId]?.autoHydrateBlocked === true,
+            persisted: persistedWalletMap,
           });
         }
 
@@ -9652,7 +9713,7 @@ export async function registerRoutes(
         doctorRuntime.execution.mode = "live";
         doctorRuntime.enabled = true;
         doctorRuntime.killSwitch = false;
-        await persistDoctorRuntime(userId);
+        await safePersistDoctorRuntime();
         logConnect("info", "doctor.connect_wallet.runtime_persisted", {
           walletAddress: String(doctorRuntime.wallet.address || "").trim() || null,
           enabled: doctorRuntime.enabled,
