@@ -8552,7 +8552,7 @@ export async function registerRoutes(
       for (const item of responseCandidates) {
         const mint = String((item as any)?.mint || "").trim();
         const symbol = String((item as any)?.symbol || "").trim().toUpperCase();
-        const key = mint || `symbol:${symbol}`;
+        const key = symbol ? `symbol:${symbol}` : (mint ? `mint:${mint}` : "");
         if (!key) continue;
         if (uniqueOnly && seenKeys.has(key)) continue;
         seenKeys.add(key);
