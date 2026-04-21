@@ -9784,7 +9784,16 @@ export async function registerRoutes(
 
   const assistantStateKey = "assistant.runtime.v1";
   let assistantCurrentUserId = "";
+  const assistantRuntimeMemoryByUser = new Map<string, Record<string, any>>();
   let assistantRuntimeRequestQueue: Promise<void> = Promise.resolve();
+
+  const snapshotAssistantRuntime = () => {
+    try {
+      return JSON.parse(JSON.stringify(assistantRuntime)) as Record<string, any>;
+    } catch {
+      return null;
+    }
+  };
 
   const acquireAssistantRuntimeLock = async () => {
     const previous = assistantRuntimeRequestQueue;
@@ -9842,6 +9851,10 @@ export async function registerRoutes(
     if (!userId) {
       return;
     }
+    const runtimeSnapshot = snapshotAssistantRuntime();
+    if (runtimeSnapshot && typeof runtimeSnapshot === "object") {
+      assistantRuntimeMemoryByUser.set(userId, runtimeSnapshot);
+    }
     try {
       await storage.setAppState(getAssistantStateKeyForUser(userId), assistantRuntime);
     } catch {
@@ -9860,9 +9873,15 @@ export async function registerRoutes(
     assistantCurrentUserId = normalizedUserId;
 
     try {
-      const loaded = await storage.getAppState<Record<string, any>>(getAssistantStateKeyForUser(normalizedUserId));
+      let loaded = await storage.getAppState<Record<string, any>>(getAssistantStateKeyForUser(normalizedUserId));
       if (!loaded || typeof loaded !== "object") {
-        return;
+        const cached = assistantRuntimeMemoryByUser.get(normalizedUserId);
+        if (!cached || typeof cached !== "object") {
+          return;
+        }
+        loaded = cached;
+      } else {
+        assistantRuntimeMemoryByUser.set(normalizedUserId, loaded);
       }
 
       const wallet = loaded.wallet as Record<string, any> | undefined;
