@@ -2703,8 +2703,8 @@ export async function registerRoutes(
   };
 
   const getDoctorDexPollIntervalSeconds = () => {
-    const configured = Math.trunc(Number(process.env.DOCTOR_DEX_POLL_SECONDS || 2));
-    return Math.max(1, Math.min(2, configured || 2));
+    const configured = Math.trunc(Number(process.env.DOCTOR_DEX_POLL_SECONDS || 1));
+    return Math.max(1, Math.min(1, configured || 1));
   };
 
   const enqueueDoctorTickerSignal = (payload: {
