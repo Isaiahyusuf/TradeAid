@@ -2696,9 +2696,15 @@ export async function registerRoutes(
   };
 
   const getTickerSignalPrefix = (signal: string) => {
+    if (signal === "Launch") return "NEW";
     if (signal === "Pumping") return "ROCKET";
     if (signal === "Smart Money") return "BRAIN";
     return "FIRE";
+  };
+
+  const getDoctorDexPollIntervalSeconds = () => {
+    const configured = Math.trunc(Number(process.env.DOCTOR_DEX_POLL_SECONDS || 2));
+    return Math.max(1, Math.min(2, configured || 2));
   };
 
   const enqueueDoctorTickerSignal = (payload: {
@@ -2740,12 +2746,22 @@ export async function registerRoutes(
     const volumeFloorUsd = Math.max(0, Number(process.env.DOCTOR_TICKER_MIN_VOLUME_5M_USD || 8_000));
     const maxAgeMinutes = Math.max(1, Number(process.env.DOCTOR_TICKER_MAX_AGE_MINUTES || 45));
 
-    const liquidityPass = liquidityUsd >= liquidityFloorUsd;
-    const volumeSpikePass = volume5mUsd >= volumeFloorUsd || buys5m >= Math.max(3, sells5m * 1.25);
+    const normalizedSource = String(payload.source || "").trim().toLowerCase();
+    const isRealtimeLaunchSignal =
+      normalizedSource.includes("prebond") ||
+      normalizedSource.includes("launch") ||
+      normalizedSource.includes("pumpfun_prebond");
+
+    const liquidityPass = isRealtimeLaunchSignal ? true : liquidityUsd >= liquidityFloorUsd;
+    const volumeSpikePass = isRealtimeLaunchSignal
+      ? true
+      : (volume5mUsd >= volumeFloorUsd || buys5m >= Math.max(3, sells5m * 1.25));
     const agePass = ageMinutes <= maxAgeMinutes;
     if (!liquidityPass || !volumeSpikePass || !agePass) return;
 
-    const signal = getTickerSignalLabel({ smartMoney, volume5mUsd, liquidityUsd, ageMinutes, buys5m, sells5m });
+    const signal = isRealtimeLaunchSignal
+      ? "Launch"
+      : getTickerSignalLabel({ smartMoney, volume5mUsd, liquidityUsd, ageMinutes, buys5m, sells5m });
     const prefix = getTickerSignalPrefix(signal);
     const symbol = String(payload.symbol || "UNKNOWN").trim().toUpperCase();
     const tokenName = String(payload.name || symbol || "TOKEN").trim();
@@ -2785,6 +2801,28 @@ export async function registerRoutes(
         doctorTickerSeenByMint.delete(seenMint);
       }
     }
+  };
+
+  const enqueueDoctorLaunchSignal = (token: { mint: string; source?: string }) => {
+    const mint = String(token.mint || "").trim();
+    if (!mint) return;
+    const shortMint = mint.slice(0, 6).toUpperCase();
+    enqueueDoctorTickerSignal({
+      mint,
+      symbol: `NEW${shortMint}`,
+      name: "Pump.fun Launch",
+      priceUsd: 0,
+      marketCapUsd: 0,
+      liquidityUsd: 0,
+      volume5mUsd: 0,
+      ageMinutes: 0,
+      buys5m: 0,
+      sells5m: 0,
+      source: String(token.source || "pumpfun_prebond_listener"),
+      launchSource: "pumpfun",
+      smartMoney: false,
+      rejectReasons: [],
+    });
   };
 
   const getDoctorSniperLogsForUser = (userId?: string) => {
@@ -3646,7 +3684,7 @@ export async function registerRoutes(
       doctorDexWorkerTimer = null;
     }
 
-    const intervalSeconds = Math.max(2, Math.trunc(Number(process.env.DOCTOR_DEX_POLL_SECONDS || 3)));
+    const intervalSeconds = getDoctorDexPollIntervalSeconds();
     doctorDexWorkerTimer = setInterval(async () => {
       try {
         await runDoctorDexWorkerPoll();
@@ -3680,6 +3718,7 @@ export async function registerRoutes(
 
     startPumpFunPrebondListener({
       onDetected: (token) => {
+        enqueueDoctorLaunchSignal(token);
         multichainScanner.enqueuePrebondMint(token.mint, token.signature, token.source);
       },
     });
@@ -8436,7 +8475,7 @@ export async function registerRoutes(
       sniper_logs: statusSniperLogs,
       discovery: {
         dexscreener_primary: true,
-        poll_interval_seconds: Math.max(5, Math.trunc(Number(process.env.DOCTOR_DEX_POLL_SECONDS || 7))),
+        poll_interval_seconds: getDoctorDexPollIntervalSeconds(),
         worker_running: Boolean(doctorDexWorkerTimer),
         last_poll_at: doctorDexWorkerLastPollAt,
         processed_mints: doctorProcessedMints.size,
@@ -13380,6 +13419,7 @@ export async function registerRoutes(
   if (ENABLE_BACKGROUND_WORKERS) {
     startPumpFunPrebondListener({
       onDetected: (token) => {
+        enqueueDoctorLaunchSignal(token);
         multichainScanner.enqueuePrebondMint(token.mint, token.signature, token.source);
       },
     });
