@@ -9746,6 +9746,8 @@ export async function registerRoutes(
         let resolvedPrivateKey = explicitPrivateKey;
         let liveKeyPersisted = false;
         let walletMapPersisted = false;
+        let hadStoredWalletCredentials = false;
+        const strictPersistenceRequired = !useExistingWallet;
         const walletBalanceTimeoutMs = Math.max(300, Number(process.env.DOCTOR_WALLET_BALANCE_TIMEOUT_MS || 1200));
 
         logConnect("info", "doctor.connect_wallet.request", {
@@ -9820,6 +9822,7 @@ export async function registerRoutes(
         if (!resolvedPrivateKey && useExistingWallet) {
           const wallets = await safeGetDoctorWalletsByUser();
           const existingWallet = wallets[userId] as Record<string, any> | undefined;
+          hadStoredWalletCredentials = Boolean(String(getDoctorWalletStoredPrivateKey(existingWallet) || "").trim());
           resolvedPrivateKey = decryptDoctorPrivateKey(getDoctorWalletStoredPrivateKey(existingWallet));
 
           if (!resolvedPrivateKey) {
@@ -9903,7 +9906,11 @@ export async function registerRoutes(
           }
         }
 
-        liveKeyPersisted = liveKeyPersisted || await safeSetDoctorLivePrivateKey(resolvedPrivateKey);
+        if (!hadStoredWalletCredentials || !useExistingWallet) {
+          liveKeyPersisted = liveKeyPersisted || await safeSetDoctorLivePrivateKey(resolvedPrivateKey);
+        } else {
+          liveKeyPersisted = true;
+        }
         logConnect("info", "doctor.connect_wallet.live_private_key_set", {
           walletAddress: String(doctorRuntime.wallet.address || "").trim() || null,
           persisted: liveKeyPersisted,
@@ -9924,17 +9931,21 @@ export async function registerRoutes(
             autoHydrateBlocked: false,
             updatedAt: nowIso(),
           };
-          const persistedWalletMap = await safeSetDoctorWalletsByUser(wallets);
-          walletMapPersisted = Boolean(persistedWalletMap);
+          if (!hadStoredWalletCredentials || !useExistingWallet || !existingEncryptedKey) {
+            const persistedWalletMap = await safeSetDoctorWalletsByUser(wallets);
+            walletMapPersisted = Boolean(persistedWalletMap);
+          } else {
+            walletMapPersisted = true;
+          }
           pruneDoctorWalletDisconnectedSniperLogs(userId, String(wallets[userId]?.connectedAt || wallets[userId]?.updatedAt || ""));
           logConnect("info", "doctor.connect_wallet.wallet_map_persisted", {
             walletAddress: String(wallets[userId]?.address || "").trim() || null,
             autoHydrateBlocked: wallets[userId]?.autoHydrateBlocked === true,
-            persisted: persistedWalletMap,
+            persisted: walletMapPersisted,
           });
         }
 
-        if (!liveKeyPersisted || !walletMapPersisted) {
+        if (strictPersistenceRequired && (!liveKeyPersisted || !walletMapPersisted)) {
           logConnect("error", "doctor.connect_wallet.persistence_unavailable", {
             liveKeyPersisted,
             walletMapPersisted,
