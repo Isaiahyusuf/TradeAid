@@ -2675,6 +2675,7 @@ export async function registerRoutes(
   const doctorProcessedMints = new Map<string, number>();
   const doctorRejectedMints = new Map<string, number>();
   let doctorSniperLogsByUser = new Map<string, Array<Record<string, any>>>();
+  const doctorTokenCallCooldownByUserMint = new Map<string, number>();
   const doctorTickerQueue: Array<Record<string, any>> = [];
   const doctorTickerSeenByMint = new Map<string, number>();
 
@@ -2977,6 +2978,82 @@ export async function registerRoutes(
       if (!response.ok) {
         return { sent: false, reason: `telegram_http_${response.status}` } as const;
       }
+      return { sent: true } as const;
+    } catch (error: any) {
+      return { sent: false, reason: String(error?.message || "telegram_send_failed") } as const;
+    }
+  };
+
+  const sendDoctorTokenCallNotification = async (payload: {
+    userId: string;
+    symbol: string;
+    mint: string;
+    score: number;
+    riskLevel?: string;
+    liquidityUsd: number;
+    marketCapUsd: number;
+    volume5mUsd: number;
+    source?: string;
+    launchSource?: string;
+  }) => {
+    const enabled = String(process.env.DOCTOR_NOTIFY_ON_TOKEN_CALL_ENABLED || "true").trim().toLowerCase() !== "false";
+    if (!enabled) {
+      return { sent: false, reason: "token_call_notification_disabled" } as const;
+    }
+
+    const userSettings = payload.userId
+      ? await getUserSettings(payload.userId)
+      : { telegram_chat_id: "" };
+    const userChatId = String((userSettings as any)?.telegram_chat_id || "").trim();
+    const botToken = resolveDoctorNotificationTelegramBotToken();
+    const chatId = userChatId || resolveDoctorNotificationTelegramChatId();
+    if (!botToken || !chatId) {
+      return { sent: false, reason: "telegram_not_configured" } as const;
+    }
+
+    const normalizedMint = String(payload.mint || "").trim();
+    const normalizedUserId = String(payload.userId || "").trim();
+    if (!normalizedMint || !normalizedUserId) {
+      return { sent: false, reason: "invalid_notification_payload" } as const;
+    }
+
+    const cooldownMinutes = Math.max(1, Math.trunc(Number(process.env.DOCTOR_NOTIFY_TOKEN_CALL_COOLDOWN_MINUTES || 25)));
+    const cooldownMs = cooldownMinutes * 60 * 1000;
+    const key = `${normalizedUserId}:${normalizedMint}`;
+    const lastSentAt = doctorTokenCallCooldownByUserMint.get(key) || 0;
+    if (lastSentAt > 0 && (Date.now() - lastSentAt) < cooldownMs) {
+      return { sent: false, reason: "token_call_cooldown_active" } as const;
+    }
+
+    const riskLabel = String(payload.riskLevel || "MEDIUM").trim() || "MEDIUM";
+    const score = Number(payload.score || 0);
+    const confidenceEmoji = score >= 75 ? "🟢" : score >= 55 ? "🟡" : "🟠";
+    const lines = [
+      "DoctorTrade Token Call 📣",
+      `User: ${normalizedUserId}`,
+      `${confidenceEmoji} Token: ${String(payload.symbol || "UNKNOWN")} (${normalizedMint})`,
+      `Safety Score: ${score.toFixed(1)} | Risk: ${riskLabel}`,
+      `Liquidity: ${formatTickerCompactUsd(Number(payload.liquidityUsd || 0))} | MC: ${formatTickerCompactUsd(Number(payload.marketCapUsd || 0))}`,
+      `5m Volume: ${formatTickerCompactUsd(Number(payload.volume5mUsd || 0))}`,
+      `Source: ${String(payload.source || "doctor_runtime")}`,
+      `Launch: ${String(payload.launchSource || "unknown")}`,
+      `Time: ${nowIso()}`,
+    ];
+
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: lines.join("\n"),
+          disable_web_page_preview: true,
+        }),
+      });
+      if (!response.ok) {
+        return { sent: false, reason: `telegram_http_${response.status}` } as const;
+      }
+      doctorTokenCallCooldownByUserMint.set(key, Date.now());
       return { sent: true } as const;
     } catch (error: any) {
       return { sent: false, reason: String(error?.message || "telegram_send_failed") } as const;
@@ -6722,6 +6799,31 @@ export async function registerRoutes(
         candidate_pool_size: candidatePool.length,
         candidate_pool_non_open_size: candidatePoolNonOpen.length,
         top_reject_reasons: topRejectReasons,
+      }, scopedUserId);
+    }
+
+    if (buyCandidate) {
+      const tokenCallNotification = await sendDoctorTokenCallNotification({
+        userId: scopedUserId,
+        symbol: String((buyCandidate as any).symbol || "UNKNOWN"),
+        mint: String((buyCandidate as any).address || ""),
+        score: Number((buyCandidate as any).score || 0),
+        riskLevel: String((buyCandidate as any).risk_level || "MEDIUM"),
+        liquidityUsd: Number((buyCandidate as any).liquidity || 0),
+        marketCapUsd: Number((buyCandidate as any).market_cap_usd || 0),
+        volume5mUsd: Number((buyCandidate as any).volume_5m || 0),
+        source: String((buyCandidate as any).source || "doctor_runtime"),
+        launchSource: String((buyCandidate as any).launch_source || "unknown"),
+      });
+      appendDoctorSniperLog({
+        event: "notify",
+        source: String((buyCandidate as any).source || "doctor_runtime"),
+        symbol: String((buyCandidate as any).symbol || "UNKNOWN"),
+        mint: String((buyCandidate as any).address || ""),
+        reason: tokenCallNotification.sent ? "token_call_notification_sent" : "token_call_notification_not_sent",
+        notify_channel: "telegram",
+        notify_status: tokenCallNotification.sent ? "sent" : "skipped",
+        notify_detail: String((tokenCallNotification as any)?.reason || "ok"),
       }, scopedUserId);
     }
 

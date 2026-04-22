@@ -1195,66 +1195,80 @@ export default function DoctorTrade() {
 
         {doctorTab === "pnl" && (
           <Card className="rounded-2xl border-indigo-500/20 bg-gradient-to-br from-slate-900/85 to-indigo-950/40 p-4 backdrop-blur-md">
-            <div className="flex items-center justify-between gap-2 mb-3">
-              <h3 className="text-sm font-semibold">PnL Tracker</h3>
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-semibold tracking-wide text-indigo-100">PnL Command Center</h3>
+                <p className="text-[11px] text-indigo-200/70">Clean performance view for called coins and executed exits.</p>
+              </div>
               <Badge
                 variant="outline"
-                className={pnlSummary.realizedPnlUsd >= 0 ? "border-green-500/40 text-green-400" : "border-red-500/40 text-red-400"}
+                className={pnlSummary.realizedPnlUsd >= 0 ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-300" : "border-rose-400/40 bg-rose-500/10 text-rose-300"}
               >
-                Realized {pnlSummary.realizedPnlUsd >= 0 ? "+" : ""}${pnlSummary.realizedPnlUsd.toFixed(2)}
+                {pnlSummary.realizedPnlUsd >= 0 ? "📈" : "📉"} Realized {pnlSummary.realizedPnlUsd >= 0 ? "+" : ""}${pnlSummary.realizedPnlUsd.toFixed(2)}
               </Badge>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 mb-3 text-sm">
-              <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
-                <p className="text-xs text-muted-foreground">Realized PnL</p>
-                <p className={pnlSummary.realizedPnlUsd >= 0 ? "font-semibold text-green-400" : "font-semibold text-red-400"}>
+            <div className="mb-4 grid grid-cols-2 gap-2 text-sm lg:grid-cols-6">
+              <div className="rounded-xl border border-indigo-500/20 bg-slate-950/50 px-3 py-2">
+                <p className="text-[11px] text-indigo-200/70">Realized PnL</p>
+                <p className={pnlSummary.realizedPnlUsd >= 0 ? "font-semibold text-emerald-300" : "font-semibold text-rose-300"}>
                   {pnlSummary.realizedPnlUsd >= 0 ? "+" : ""}${pnlSummary.realizedPnlUsd.toFixed(2)}
                 </p>
               </div>
-              <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
-                <p className="text-xs text-muted-foreground">Closed Trades</p>
+              <div className="rounded-xl border border-indigo-500/20 bg-slate-950/50 px-3 py-2">
+                <p className="text-[11px] text-indigo-200/70">Closed Trades</p>
                 <p className="font-semibold">{pnlSummary.realizedCount}</p>
               </div>
-              <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
-                <p className="text-xs text-muted-foreground">Win Rate</p>
+              <div className="rounded-xl border border-indigo-500/20 bg-slate-950/50 px-3 py-2">
+                <p className="text-[11px] text-indigo-200/70">Win Rate</p>
                 <p className="font-semibold">{pnlSummary.winRatePct.toFixed(1)}%</p>
               </div>
-              <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
-                <p className="text-xs text-muted-foreground">Wins</p>
-                <p className="font-semibold text-green-400">{pnlSummary.wins}</p>
+              <div className="rounded-xl border border-indigo-500/20 bg-slate-950/50 px-3 py-2">
+                <p className="text-[11px] text-indigo-200/70">Wins</p>
+                <p className="font-semibold text-emerald-300">🏆 {pnlSummary.wins}</p>
               </div>
-              <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
-                <p className="text-xs text-muted-foreground">Losses</p>
-                <p className="font-semibold text-red-400">{pnlSummary.losses}</p>
+              <div className="rounded-xl border border-indigo-500/20 bg-slate-950/50 px-3 py-2">
+                <p className="text-[11px] text-indigo-200/70">Losses</p>
+                <p className="font-semibold text-rose-300">⚠️ {pnlSummary.losses}</p>
               </div>
-              <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2">
-                <p className="text-xs text-muted-foreground">Avg Closed PnL %</p>
-                <p className={pnlSummary.avgRealizedPnlPct >= 0 ? "font-semibold text-green-400" : "font-semibold text-red-400"}>
+              <div className="rounded-xl border border-indigo-500/20 bg-slate-950/50 px-3 py-2">
+                <p className="text-[11px] text-indigo-200/70">Avg Closed PnL %</p>
+                <p className={pnlSummary.avgRealizedPnlPct >= 0 ? "font-semibold text-emerald-300" : "font-semibold text-rose-300"}>
                   {pnlSummary.avgRealizedPnlPct >= 0 ? "+" : ""}{pnlSummary.avgRealizedPnlPct.toFixed(2)}%
                 </p>
               </div>
             </div>
 
-            <div className="space-y-2 max-h-80 overflow-auto">
+            <div className="max-h-80 space-y-2 overflow-auto pr-1">
               {pnlRows.slice(0, 20).map((trade: any, index: number) => {
                 const action = String(trade?.action || "-").toUpperCase();
                 const pnlPct = Number(trade?.pnl_pct || 0);
                 const pnlUsd = Number(trade?.pnl_usd || 0);
                 const isSell = action === "SELL";
+                const performanceEmoji = !isSell
+                  ? "🟦"
+                  : pnlPct >= 20
+                    ? "🚀"
+                    : pnlPct >= 8
+                      ? "🔥"
+                      : pnlPct > 0
+                        ? "✅"
+                        : pnlPct <= -10
+                          ? "🛑"
+                          : "⚠️";
                 return (
-                  <div key={`${trade.address || "pnl"}-${index}`} className="border rounded-md p-2">
+                  <div key={`${trade.address || "pnl"}-${index}`} className="rounded-xl border border-indigo-500/20 bg-slate-950/40 p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-semibold">{trade.token || "UNKNOWN"}</p>
-                      <Badge variant="outline" className="text-[10px]">{action}</Badge>
+                      <p className="text-sm font-semibold text-indigo-100">{performanceEmoji} {trade.token || "UNKNOWN"}</p>
+                      <Badge variant="outline" className="border-indigo-400/40 bg-indigo-500/10 text-[10px] text-indigo-100">{action}</Badge>
                     </div>
-                    <p className="text-[11px] text-muted-foreground">{trade.status || "unknown"} · {trade.reason || "-"}</p>
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-[11px] text-indigo-200/70">{trade.status || "unknown"} · {trade.reason || "-"}</p>
+                    <p className="text-[11px] text-indigo-200/60">
                       {fmtTs(trade.timestamp)} · {isSell ? "Closed" : "Open/Entry"}
                     </p>
                     {isSell && (
-                      <p className={pnlPct >= 0 ? "text-[11px] text-green-400" : "text-[11px] text-red-400"}>
-                        PnL {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(2)}% · {pnlUsd >= 0 ? "+" : ""}${pnlUsd.toFixed(2)}
+                      <p className={pnlPct >= 0 ? "text-[11px] font-medium text-emerald-300" : "text-[11px] font-medium text-rose-300"}>
+                        {pnlPct >= 0 ? "💰" : "🧯"} PnL {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(2)}% · {pnlUsd >= 0 ? "+" : ""}${pnlUsd.toFixed(2)}
                       </p>
                     )}
                   </div>

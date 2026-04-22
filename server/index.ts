@@ -236,11 +236,15 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  const telegramBotEnabled = String(process.env.ENABLE_TELEGRAM_BOT || "").trim().toLowerCase() === "true";
+  const telegramBotToken = String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
+  const telegramBotFlag = String(process.env.ENABLE_TELEGRAM_BOT || "").trim().toLowerCase();
+  const telegramBotEnabled = telegramBotFlag === "false"
+    ? false
+    : Boolean(telegramBotToken);
   if (telegramBotEnabled) {
     registerTradeAidTelegramWebhookRoute(app);
   } else {
-    console.info("[TelegramBot] Startup disabled (set ENABLE_TELEGRAM_BOT=true to enable)");
+    console.info("[TelegramBot] Startup disabled (set TELEGRAM_BOT_TOKEN and ensure ENABLE_TELEGRAM_BOT is not false)");
   }
   await registerRoutes(httpServer, app);
 
