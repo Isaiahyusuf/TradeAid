@@ -51,7 +51,8 @@ export class DatabaseStorage implements IStorage {
     trade: null,
   };
   private whaleWatchTenantColumnsReady: Promise<void> | null = null;
-  private readonly appStateRetryDelaysMs = [250, 750, 1500, 3000, 6000, 10000];
+  private readonly appStateRetryDelaysMs = [150, 350, 700, 1200, 2000];
+  private readonly appStateOperationTimeoutMs = Math.max(500, Number(process.env.APP_STATE_DB_OP_TIMEOUT_MS || 2500));
 
   private getAppStateTargetForKey(key: string): "primary" | "wallet" | "trade" {
     const normalized = String(key || "").trim();
@@ -407,7 +408,12 @@ export class DatabaseStorage implements IStorage {
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= this.appStateRetryDelaysMs.length; attempt += 1) {
       try {
-        return await fn();
+        return await Promise.race<T>([
+          fn(),
+          new Promise<T>((_resolve, reject) => {
+            setTimeout(() => reject(new Error("app_state_db_timeout")), this.appStateOperationTimeoutMs);
+          }),
+        ]);
       } catch (error) {
         lastError = error;
         if (!this.isRetryableAppStateDbError(error) || attempt >= this.appStateRetryDelaysMs.length) {
