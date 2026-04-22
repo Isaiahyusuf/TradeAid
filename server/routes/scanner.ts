@@ -439,7 +439,11 @@ export function registerScannerRoutes(app: Express): void {
           .orderBy(desc(scannedTokens.createdAt))
           .limit(limit));
       } catch (dbError) {
-        dbWarning = dbError instanceof Error ? dbError.message : "failed_to_load_recent_scanned_tokens";
+        if (isTransientScannerDbError(dbError)) {
+          dbWarning = null;
+        } else {
+          dbWarning = dbError instanceof Error ? dbError.message : "failed_to_load_recent_scanned_tokens";
+        }
       }
 
       const recentTokens = recentScanned.map((token) => {
