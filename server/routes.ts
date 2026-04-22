@@ -9741,6 +9741,25 @@ export async function registerRoutes(
         })();
 
         const status = await buildDoctorStatus(userId);
+        if (resolvedPrivateKey) {
+          const statusWallet = ((status as any)?.wallet && typeof (status as any).wallet === "object")
+            ? (status as any).wallet
+            : {};
+          const statusTradeControls = ((status as any)?.trade_controls && typeof (status as any).trade_controls === "object")
+            ? (status as any).trade_controls
+            : {};
+          (status as any).wallet = {
+            ...statusWallet,
+            address: String(doctorRuntime.wallet.address || resolvedAddress || statusWallet.address || "").trim(),
+            balance_sol: Math.max(0, Number(doctorRuntime.wallet.balanceSol ?? statusWallet.balance_sol ?? 0)),
+            private_key_configured: true,
+            connection_status: "connected",
+          };
+          (status as any).trade_controls = {
+            ...statusTradeControls,
+            wallet_connected: true,
+          };
+        }
         logConnect("info", "doctor.connect_wallet.success", {
           walletAddress: String(doctorRuntime.wallet.address || "").trim() || null,
           privateKeyConfigured: Boolean((status as any)?.wallet?.private_key_configured),
