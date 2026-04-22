@@ -489,7 +489,7 @@ export function useDoctorConnectWallet() {
       apiFetch<DoctorStatus>("/api/doctor/connect-wallet", {
         method: "POST",
         body: JSON.stringify(payload || {}),
-        timeoutMs: 120_000,
+        timeoutMs: 15_000,
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["doctortrade"] }),
   });
