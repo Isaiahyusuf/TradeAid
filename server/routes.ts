@@ -9689,12 +9689,15 @@ export async function registerRoutes(
         {
           const wallets = await safeGetDoctorWalletsByUser();
           const existing = wallets[userId] as Record<string, any> | undefined;
+          const existingEncryptedKey = String(getDoctorWalletStoredPrivateKey(existing) || "").trim();
+          const ensuredEncryptedKey = existingEncryptedKey
+            || (resolvedPrivateKey ? encryptDoctorPrivateKey(resolvedPrivateKey) : "");
           wallets[userId] = {
             ...(existing || {}),
             address: String(doctorRuntime.wallet.address || existing?.address || "").trim(),
             balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol ?? existing?.balanceSol ?? 0)),
             separateWalletEnforced: (doctorRuntime.wallet.separateWalletEnforced ?? existing?.separateWalletEnforced) !== false,
-            livePrivateKey: String(existing?.livePrivateKey || "").trim(),
+            livePrivateKey: ensuredEncryptedKey,
             autoHydrateBlocked: false,
             updatedAt: nowIso(),
           };
