@@ -51,8 +51,8 @@ export class DatabaseStorage implements IStorage {
     trade: null,
   };
   private whaleWatchTenantColumnsReady: Promise<void> | null = null;
-  private readonly appStateRetryDelaysMs = [150, 350, 700, 1200, 2000];
-  private readonly appStateOperationTimeoutMs = Math.max(500, Number(process.env.APP_STATE_DB_OP_TIMEOUT_MS || 2500));
+  private readonly appStateRetryDelaysMs = [100, 200];
+  private readonly appStateOperationTimeoutMs = Math.max(400, Number(process.env.APP_STATE_DB_OP_TIMEOUT_MS || 1200));
 
   private getAppStateTargetForKey(key: string): "primary" | "wallet" | "trade" {
     const normalized = String(key || "").trim();
