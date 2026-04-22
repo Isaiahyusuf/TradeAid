@@ -137,6 +137,7 @@ export default function DoctorTrade() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tradingModeInput, setTradingModeInput] = useState<"doctor" | "retardio">("doctor");
   const [doctorTab, setDoctorTab] = useState<"trading" | "engine" | "pnl">("trading");
+  const [doctorToggleBusy, setDoctorToggleBusy] = useState(false);
   const [intervalInput, setIntervalInput] = useState("10");
   const [buyAmountInput, setBuyAmountInput] = useState("0.1");
   const [maxTradesInput, setMaxTradesInput] = useState("12");
@@ -514,7 +515,8 @@ export default function DoctorTrade() {
   const walletSolLabel = walletConnected && walletBalanceStale ? "Syncing..." : fmtSol(walletSolBalance);
   const walletPrivateKeyConfigured = Boolean(viewData?.wallet?.private_key_configured);
   const doctorSavingInProgress = Boolean(
-    controlMutation.isPending
+    doctorToggleBusy
+    || controlMutation.isPending
     || configMutation.isPending
     || connectWalletMutation.isPending
     || disconnectWalletMutation.isPending
@@ -527,7 +529,7 @@ export default function DoctorTrade() {
     ? "Connecting DoctorTrade wallet..."
     : disconnectWalletMutation.isPending
       ? "Disconnecting DoctorTrade wallet..."
-      : controlMutation.isPending
+      : controlMutation.isPending || doctorToggleBusy
         ? "Updating DoctorTrade engine state..."
         : configMutation.isPending
           ? "Saving DoctorTrade settings..."
@@ -762,10 +764,15 @@ export default function DoctorTrade() {
     );
   };
 
-  const recheckWalletConnection = async (attempts = 20, delayMs = 2000) => {
+  const recheckWalletConnection = async (attempts = 8, delayMs = 1200) => {
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
-      const latest = await refetch();
+      let latest;
+      try {
+        latest = await refetch();
+      } catch {
+        continue;
+      }
       const connected = isDoctorWalletConnected(
         (latest.data?.wallet as Record<string, any> | undefined) || null,
         (latest.data?.trade_controls as Record<string, any> | undefined) || null,
@@ -780,7 +787,7 @@ export default function DoctorTrade() {
   const connectWithRetries = async () => {
     let lastError: unknown = null;
 
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         const status = await connectWalletMutation.mutateAsync({ use_existing_wallet: true });
         const persistedConnected = isDoctorWalletConnected(
@@ -798,12 +805,12 @@ export default function DoctorTrade() {
         lastError = error;
       }
 
-      const connectedAfterRetry = await recheckWalletConnection(10, 1500);
+      const connectedAfterRetry = await recheckWalletConnection(6, 1000);
       if (connectedAfterRetry) {
         return true;
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+      await new Promise((resolve) => setTimeout(resolve, 700 * (attempt + 1)));
     }
 
     if (lastError) {
@@ -824,7 +831,7 @@ export default function DoctorTrade() {
           return;
         }
         toast({ title: "Wallet connected", description: "DoctorTrade linked to your app wallet." });
-        void refetch();
+        await refetch();
       } catch (error) {
         const rawMessage = error instanceof Error ? error.message : "";
         if (isAuthFailureMessage(rawMessage)) {
@@ -842,7 +849,7 @@ export default function DoctorTrade() {
         }
 
         if (isTransientConnectError(error)) {
-          const connectedAfterRetry = await recheckWalletConnection(25, 2000);
+          const connectedAfterRetry = await recheckWalletConnection(8, 1200);
           if (connectedAfterRetry) {
             toast({ title: "Wallet connected", description: "Connection was delayed but completed successfully." });
             return;
@@ -881,78 +888,41 @@ export default function DoctorTrade() {
   };
 
   const handleToggleDoctor = () => {
-    if (controlMutation.isPending) {
+    if (controlMutation.isPending || doctorToggleBusy) {
       return;
     }
 
-    const nextEnabled = !Boolean(viewData?.enabled);
-    if (nextEnabled && !walletConnected) {
-      void (async () => {
-        try {
-          const connected = await ensureDoctorWalletConnected();
+    void (async () => {
+      setDoctorToggleBusy(true);
+      try {
+        const nextEnabled = !Boolean(viewData?.enabled);
+        if (nextEnabled) {
+          let connected = walletConnected;
+
+          if (!connected) {
+            try {
+              const latest = await refetch();
+              connected = isDoctorWalletConnected(
+                (latest.data?.wallet as Record<string, any> | undefined) || null,
+                (latest.data?.trade_controls as Record<string, any> | undefined) || null,
+              );
+            } catch {
+            }
+          }
+
+          if (!connected) {
+            connected = await ensureDoctorWalletConnected();
+          }
+
           if (!connected) {
             promptWalletSetup();
             return;
           }
 
           toast({ title: "Wallet connected", description: "DoctorTrade linked to your app wallet." });
-          controlMutation.mutate(true, {
-            onSuccess: (startStatus) => {
-              if (!Boolean(startStatus?.enabled)) {
-                toast({
-                  title: "DoctorTrade did not start",
-                  description: String(startStatus?.last_error || "Could not start after wallet connect."),
-                  variant: "destructive",
-                });
-                return;
-              }
-              toast({ title: "DoctorTrade started", description: "Wallet connected and autonomous trading is now active." });
-              void refetch();
-            },
-            onError: (error) => {
-              toast({
-                title: "DoctorTrade update failed",
-                description: error instanceof Error ? error.message : "Could not update DoctorTrade state.",
-                variant: "destructive",
-              });
-            },
-          });
-        } catch (error) {
-          const rawMessage = error instanceof Error ? error.message : "";
-          if (isAuthFailureMessage(rawMessage)) {
-            toast({
-              title: "Sign in required",
-              description: "Your session expired. Sign in again, then retry Connect Wallet.",
-              variant: "destructive",
-            });
-            return;
-          }
-
-          if (isMissingAppWalletError(error)) {
-            promptWalletSetup();
-            return;
-          }
-
-          if (isTransientConnectError(error)) {
-            const connectedAfterRetry = await recheckWalletConnection(25, 2000);
-            if (connectedAfterRetry) {
-              toast({ title: "Wallet connected", description: "Connection was delayed but completed successfully." });
-              controlMutation.mutate(true);
-              return;
-            }
-          }
-
-          toast({
-            title: "Wallet connection failed",
-            description: rawMessage || "Could not connect wallet.",
-            variant: "destructive",
-          });
         }
-      })();
-      return;
-    }
-    controlMutation.mutate(nextEnabled, {
-      onSuccess: (status) => {
+
+        const status = await controlMutation.mutateAsync(nextEnabled);
         const enabledNow = Boolean(status?.enabled);
         if (nextEnabled && !enabledNow) {
           toast({
@@ -962,22 +932,57 @@ export default function DoctorTrade() {
           });
           return;
         }
+
         toast({
           title: enabledNow ? "DoctorTrade started" : "DoctorTrade stopped",
           description: enabledNow
             ? "Autonomous engine is now active and continues server-side even if you close your browser."
             : "Autonomous engine has been paused.",
         });
-        refetch();
-      },
-      onError: (error) => {
+        await refetch();
+      } catch (error) {
+        const rawMessage = error instanceof Error ? error.message : "";
+        if (isAuthFailureMessage(rawMessage)) {
+          toast({
+            title: "Sign in required",
+            description: "Your session expired. Sign in again, then retry Connect Wallet.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        if (isMissingAppWalletError(error)) {
+          promptWalletSetup();
+          return;
+        }
+
+        if (isTransientConnectError(error)) {
+          const connectedAfterRetry = await recheckWalletConnection(8, 1200);
+          if (connectedAfterRetry) {
+            try {
+              const started = await controlMutation.mutateAsync(true);
+              if (Boolean(started?.enabled)) {
+                toast({
+                  title: "DoctorTrade started",
+                  description: "Wallet connected and autonomous trading is now active.",
+                });
+                await refetch();
+                return;
+              }
+            } catch {
+            }
+          }
+        }
+
         toast({
           title: "DoctorTrade update failed",
-          description: error instanceof Error ? error.message : "Could not update DoctorTrade state.",
+          description: rawMessage || "Could not update DoctorTrade state.",
           variant: "destructive",
         });
-      },
-    });
+      } finally {
+        setDoctorToggleBusy(false);
+      }
+    })();
   };
 
   return (
@@ -1046,7 +1051,7 @@ export default function DoctorTrade() {
           <div className="flex flex-wrap gap-2 items-center">
             <Button
               onClick={handleToggleDoctor}
-              disabled={controlMutation.isPending}
+              disabled={controlMutation.isPending || doctorToggleBusy || connectWalletMutation.isPending}
               variant={viewData?.enabled ? "destructive" : "default"}
             >
               <Power className="w-4 h-4 mr-2" />
@@ -1977,7 +1982,7 @@ export default function DoctorTrade() {
                     className="flex-1"
                     variant={viewData?.enabled ? "destructive" : "default"}
                     onClick={handleToggleDoctor}
-                    disabled={controlMutation.isPending}
+                    disabled={controlMutation.isPending || doctorToggleBusy || connectWalletMutation.isPending}
                   >
                     {viewData?.enabled ? "Disarm" : "Arm Sniper"}
                   </Button>
