@@ -2351,6 +2351,23 @@ export async function registerRoutes(
 
   let doctorActiveUserId = "";
   let doctorCurrentCycleUserId = "";
+  const doctorRuntimeVolatileStateByUser = new Map<string, { enabled: boolean; killSwitch: boolean; updatedAt: number }>();
+
+  const setDoctorRuntimeVolatileState = (userId: string, patch: { enabled?: boolean; killSwitch?: boolean }) => {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return;
+    const existing = doctorRuntimeVolatileStateByUser.get(normalizedUserId) || {
+      enabled: Boolean(doctorRuntime.enabled),
+      killSwitch: Boolean(doctorRuntime.killSwitch),
+      updatedAt: Date.now(),
+    };
+    const next = {
+      enabled: patch.enabled ?? existing.enabled,
+      killSwitch: patch.killSwitch ?? existing.killSwitch,
+      updatedAt: Date.now(),
+    };
+    doctorRuntimeVolatileStateByUser.set(normalizedUserId, next);
+  };
 
   const persistDoctorRuntime = async (userId?: string) => {
     const snapshot = JSON.parse(JSON.stringify(doctorRuntime));
@@ -2630,6 +2647,12 @@ export async function registerRoutes(
           (doctorRuntime as any)[key] = currentRuntimeSnapshot[key];
         });
       }
+    }
+
+    const volatileState = doctorRuntimeVolatileStateByUser.get(normalizedUserId);
+    if (volatileState) {
+      doctorRuntime.killSwitch = Boolean(volatileState.killSwitch);
+      doctorRuntime.enabled = !doctorRuntime.killSwitch && Boolean(volatileState.enabled);
     }
 
     // Enforce persisted per-user preset so runtime fallbacks cannot reset to default.
@@ -9355,6 +9378,10 @@ export async function registerRoutes(
       doctorRuntime.killSwitch = false;
     }
     doctorRuntime.enabled = enabled;
+    setDoctorRuntimeVolatileState(userId, {
+      enabled: doctorRuntime.enabled,
+      killSwitch: doctorRuntime.killSwitch,
+    });
     (doctorRuntime.controls as any).snipe_preset = presetBeforeToggle;
     if (enabled) {
       doctorRuntime.lastError = null;
@@ -9365,11 +9392,15 @@ export async function registerRoutes(
     if (doctorRuntime.enabled) {
       await runDoctorTaskWithTimeout("control.ensure_realtime_workers", userId, ensureDoctorRealtimeWorkers(), 6_000);
       await runDoctorTaskWithTimeout("control.ensure_live", userId, ensureDoctorLiveExecutionModeIfCapable(userId), 3_000);
-      await runDoctorTaskWithTimeout("control.start_cycle", userId, startDoctorCycleForUser(userId), 5_000);
+      await runDoctorTaskWithTimeout("control.start_cycle", userId, startDoctorCycleForUser(userId), 12_000);
       // Guard against stale runtime snapshots immediately after start.
       await loadDoctorRuntimeForUser(userId);
       if (!doctorRuntime.killSwitch && !doctorRuntime.enabled) {
         doctorRuntime.enabled = true;
+        setDoctorRuntimeVolatileState(userId, {
+          enabled: doctorRuntime.enabled,
+          killSwitch: doctorRuntime.killSwitch,
+        });
         doctorRuntime.lastError = null;
         await persistDoctorRuntime(userId);
       }
@@ -9404,6 +9435,10 @@ export async function registerRoutes(
       if (doctorRuntime.killSwitch) {
         doctorRuntime.enabled = false;
       }
+      setDoctorRuntimeVolatileState(userId, {
+        enabled: doctorRuntime.enabled,
+        killSwitch: doctorRuntime.killSwitch,
+      });
     }
     if (Number.isFinite(Number(payload.scan_interval_seconds))) {
       doctorRuntime.scanIntervalSeconds = Math.max(1, Math.trunc(Number(payload.scan_interval_seconds)));
@@ -9605,7 +9640,7 @@ export async function registerRoutes(
     await runDoctorTaskWithTimeout("config.stop_cycle", userId, stopDoctorCycleForUser(userId), 3_000);
     if (doctorRuntime.enabled) {
       await runDoctorTaskWithTimeout("config.ensure_live", userId, ensureDoctorLiveExecutionModeIfCapable(userId), 3_000);
-      await runDoctorTaskWithTimeout("config.start_cycle", userId, startDoctorCycleForUser(userId), 5_000);
+      await runDoctorTaskWithTimeout("config.start_cycle", userId, startDoctorCycleForUser(userId), 12_000);
     }
 
     await runDoctorTaskWithTimeout("config.save_wallet", userId, saveDoctorWalletForUser(userId), 3_000);
