@@ -9744,6 +9744,8 @@ export async function registerRoutes(
         const explicitPrivateKey = String(payload.private_key || "").trim();
         const useExistingWallet = payload.use_existing_wallet === true;
         let resolvedPrivateKey = explicitPrivateKey;
+        let liveKeyPersisted = false;
+        let walletMapPersisted = false;
         const walletBalanceTimeoutMs = Math.max(300, Number(process.env.DOCTOR_WALLET_BALANCE_TIMEOUT_MS || 1200));
 
         logConnect("info", "doctor.connect_wallet.request", {
@@ -9834,64 +9836,19 @@ export async function registerRoutes(
               if (assistantAddress) {
                 doctorRuntime.wallet.address = assistantAddress;
               }
-              await safeSetDoctorLivePrivateKey(resolvedPrivateKey);
+              liveKeyPersisted = await safeSetDoctorLivePrivateKey(resolvedPrivateKey);
               await safePersistDoctorRuntime();
             }
           }
 
           if (!resolvedPrivateKey) {
-            // First-run recovery: auto-provision wallet with graceful fallback if app-state DB is transiently unavailable.
-            try {
-              await loadAssistantRuntime(userId);
-              const hasAssistantWallet = Boolean(assistantRuntime.wallet.has_wallet)
-                && Boolean(String(assistantRuntime.wallet.private_keys_by_chain?.solana || "").trim());
-
-              if (!hasAssistantWallet) {
-                const mnemonic = generateMnemonic();
-                const walletBundle = buildAssistantWalletFromMnemonic(mnemonic);
-
-                assistantRuntime.wallet.has_wallet = true;
-                assistantRuntime.wallet.backup_confirmed = false;
-                assistantRuntime.wallet.backup_confirmed_at = null;
-                assistantRuntime.wallet.created_at = nowIso();
-                assistantRuntime.wallet.addresses_by_chain = walletBundle.addresses_by_chain;
-                assistantRuntime.wallet.private_keys_by_chain = walletBundle.private_keys_by_chain;
-                assistantRuntime.wallet.mnemonic = walletBundle.mnemonic;
-                assistantRuntime.trading.wallets_by_chain = walletBundle.addresses_by_chain;
-                assistantRuntime.trading.wallet_address = walletBundle.addresses_by_chain.solana || null;
-
-                await persistAssistantRuntime(userId);
-                await seedDoctorWalletFromAssistantBundle(userId, walletBundle);
-              }
-
-              resolvedPrivateKey = String(assistantRuntime.wallet.private_keys_by_chain?.solana || "").trim();
-            } catch (autoProvisionError: any) {
-              logConnect("warn", "doctor.connect_wallet.autoprovision_fallback", {
-                message: String(autoProvisionError?.message || "unknown_error"),
-              });
-              const fallbackBundle = buildAssistantWalletFromMnemonic(generateMnemonic());
-              resolvedPrivateKey = String(fallbackBundle.private_keys_by_chain?.solana || "").trim();
-              if (resolvedPrivateKey) {
-                const fallbackAddress = String(fallbackBundle.addresses_by_chain?.solana || "").trim();
-                if (fallbackAddress) {
-                  doctorRuntime.wallet.address = fallbackAddress;
-                }
-                try {
-                  await seedDoctorWalletFromAssistantBundle(userId, fallbackBundle);
-                } catch {
-                }
-              }
-            }
-
-            if (resolvedPrivateKey) {
-              const assistantAddress = String(assistantRuntime.wallet.addresses_by_chain?.solana || "").trim()
-                || deriveSolanaAddressFromPrivateKey(resolvedPrivateKey);
-              if (assistantAddress) {
-                doctorRuntime.wallet.address = assistantAddress;
-              }
-              await safeSetDoctorLivePrivateKey(resolvedPrivateKey);
-              await safePersistDoctorRuntime();
-            }
+            logConnect("warn", "doctor.connect_wallet.rejected", {
+              reason: "existing_wallet_not_found",
+            });
+            return res.status(409).json({
+              message: "existing_wallet_not_found",
+              detail: "No saved wallet was found for this account. Reconnect once with your private key.",
+            });
           }
         }
 
@@ -9946,9 +9903,10 @@ export async function registerRoutes(
           }
         }
 
-        await safeSetDoctorLivePrivateKey(resolvedPrivateKey);
+        liveKeyPersisted = liveKeyPersisted || await safeSetDoctorLivePrivateKey(resolvedPrivateKey);
         logConnect("info", "doctor.connect_wallet.live_private_key_set", {
           walletAddress: String(doctorRuntime.wallet.address || "").trim() || null,
+          persisted: liveKeyPersisted,
         });
 
         {
@@ -9967,11 +9925,23 @@ export async function registerRoutes(
             updatedAt: nowIso(),
           };
           const persistedWalletMap = await safeSetDoctorWalletsByUser(wallets);
+          walletMapPersisted = Boolean(persistedWalletMap);
           pruneDoctorWalletDisconnectedSniperLogs(userId, String(wallets[userId]?.connectedAt || wallets[userId]?.updatedAt || ""));
           logConnect("info", "doctor.connect_wallet.wallet_map_persisted", {
             walletAddress: String(wallets[userId]?.address || "").trim() || null,
             autoHydrateBlocked: wallets[userId]?.autoHydrateBlocked === true,
             persisted: persistedWalletMap,
+          });
+        }
+
+        if (!liveKeyPersisted || !walletMapPersisted) {
+          logConnect("error", "doctor.connect_wallet.persistence_unavailable", {
+            liveKeyPersisted,
+            walletMapPersisted,
+          });
+          return res.status(503).json({
+            message: "wallet_persistence_temporarily_unavailable",
+            detail: "Could not save wallet right now. Retry in a few seconds.",
           });
         }
 
