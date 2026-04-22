@@ -1248,6 +1248,13 @@ export async function registerRoutes(
     return `${normalized.slice(0, 6)}...${normalized.slice(-4)}`;
   };
 
+  const doctorLiveWalletFallbackByUser = new Map<string, {
+    address: string;
+    encryptedPrivateKey: string;
+    connectedAt: string;
+    updatedAt: string;
+  }>();
+
   const getStoredDoctorWalletsByUser = async (): Promise<Record<string, any>> => {
     try {
       const state = await storage.getAppState<Record<string, any>>(doctorWalletByUserStateKey);
@@ -1552,10 +1559,20 @@ export async function registerRoutes(
 
   const setDoctorLivePrivateKeyForUser = async (userId: string, privateKey: string) => {
     const timestamp = nowIso();
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) {
+      return;
+    }
     const encryptedPrivateKey = encryptDoctorPrivateKey(privateKey);
+    doctorLiveWalletFallbackByUser.set(normalizedUserId, {
+      address: String(doctorRuntime.wallet.address || "").trim(),
+      encryptedPrivateKey,
+      connectedAt: timestamp,
+      updatedAt: timestamp,
+    });
     const wallets = await getStoredDoctorWalletsByUser();
-    const current = wallets[userId] as Record<string, any> | undefined;
-    wallets[userId] = {
+    const current = wallets[normalizedUserId] as Record<string, any> | undefined;
+    wallets[normalizedUserId] = {
       ...(current || {}),
       address: String(doctorRuntime.wallet.address || current?.address || "").trim(),
       balanceSol: Math.max(0, Number(doctorRuntime.wallet.balanceSol ?? current?.balanceSol ?? 0)),
@@ -1636,12 +1653,24 @@ export async function registerRoutes(
     const ownerWallet = ownerUserId ? (wallets[ownerUserId] as Record<string, any> | undefined) : undefined;
     const resolvedWallet = ownerWallet;
     const encryptedPrivateKey = getDoctorWalletStoredPrivateKey(resolvedWallet);
-    const userPrivateKey = decryptDoctorPrivateKey(encryptedPrivateKey);
+    let userPrivateKey = decryptDoctorPrivateKey(encryptedPrivateKey);
     const configuredPublicKey = String(resolvedWallet?.address || "").trim();
-    const derivedPublicKey = userPrivateKey
+    let derivedPublicKey = userPrivateKey
       ? deriveWalletPublicKeyFromPrivateKey(userPrivateKey)
       : "";
-    const userPublicKey = configuredPublicKey || derivedPublicKey;
+    let userPublicKey = configuredPublicKey || derivedPublicKey;
+
+    if (!userPrivateKey && ownerUserId) {
+      const fallback = doctorLiveWalletFallbackByUser.get(ownerUserId);
+      if (fallback) {
+        const fallbackPrivateKey = decryptDoctorPrivateKey(String(fallback.encryptedPrivateKey || "").trim());
+        if (fallbackPrivateKey) {
+          userPrivateKey = fallbackPrivateKey;
+          derivedPublicKey = deriveWalletPublicKeyFromPrivateKey(fallbackPrivateKey);
+          userPublicKey = configuredPublicKey || String(fallback.address || "").trim() || derivedPublicKey;
+        }
+      }
+    }
 
     if (ownerUserId && resolvedWallet && userPublicKey && userPublicKey !== configuredPublicKey) {
       wallets[ownerUserId] = {
@@ -1655,7 +1684,8 @@ export async function registerRoutes(
 
     const privateKeyPresent = Boolean(String(userPrivateKey || "").trim());
     const autoHydrateBlocked = Boolean(resolvedWallet?.autoHydrateBlocked);
-    const connectedAt = String(resolvedWallet?.connectedAt || resolvedWallet?.updatedAt || "").trim();
+    const fallbackConnectedAt = String(doctorLiveWalletFallbackByUser.get(ownerUserId || "")?.connectedAt || "").trim();
+    const connectedAt = String(resolvedWallet?.connectedAt || resolvedWallet?.updatedAt || fallbackConnectedAt || "").trim();
 
     if (userPublicKey && userPrivateKey) {
       return {
