@@ -3060,6 +3060,61 @@ export async function registerRoutes(
     }
   };
 
+  const notifyDoctorTickerCallsForUser = async (userId: string, items: Array<Record<string, any>>) => {
+    const scopedUserId = String(userId || "").trim();
+    if (!scopedUserId || !Array.isArray(items) || items.length === 0) return;
+
+    const maxPerRequest = Math.max(1, Math.min(5, Math.trunc(Number(process.env.DOCTOR_NOTIFY_TICKER_MAX_PER_REQUEST || 2))));
+    let sentOrAttempted = 0;
+
+    for (const item of items) {
+      if (sentOrAttempted >= maxPerRequest) break;
+
+      const mint = String(item?.mint || "").trim();
+      if (!mint) continue;
+
+      const signal = String(item?.signal || item?.signal_prefix || "").trim().toLowerCase();
+      const isInterestingSignal = signal.includes("launch") || signal.includes("early") || signal.includes("hot") || signal.includes("pump");
+      if (!isInterestingSignal) {
+        continue;
+      }
+
+      const inferredScore = signal.includes("launch")
+        ? 78
+        : signal.includes("early")
+          ? 70
+          : signal.includes("hot") || signal.includes("pump")
+            ? 74
+            : 65;
+
+      const tokenCallNotification = await sendDoctorTokenCallNotification({
+        userId: scopedUserId,
+        symbol: String(item?.symbol || "UNKNOWN"),
+        mint,
+        score: Number(item?.score || inferredScore),
+        riskLevel: String(item?.risk_level || "MEDIUM"),
+        liquidityUsd: Number(item?.liquidity_usd || 0),
+        marketCapUsd: Number(item?.market_cap_usd || 0),
+        volume5mUsd: Number(item?.volume_5m_usd || 0),
+        source: String(item?.source || "doctor_ticker"),
+        launchSource: String(item?.launch_source || "unknown"),
+      });
+
+      appendDoctorSniperLog({
+        event: "notify",
+        source: String(item?.source || "doctor_ticker"),
+        symbol: String(item?.symbol || "UNKNOWN"),
+        mint,
+        reason: tokenCallNotification.sent ? "ticker_token_call_sent" : "ticker_token_call_not_sent",
+        notify_channel: "telegram",
+        notify_status: tokenCallNotification.sent ? "sent" : "skipped",
+        notify_detail: String((tokenCallNotification as any)?.reason || "ok"),
+      }, scopedUserId);
+
+      sentOrAttempted += 1;
+    }
+  };
+
   const getDoctorSchedulerState = async (): Promise<Record<string, any>> => {
     try {
       const value = await storage.getAppState<Record<string, any>>(doctorSchedulerStateKey);
@@ -8870,6 +8925,8 @@ export async function registerRoutes(
         } catch {
         }
       }
+
+      void notifyDoctorTickerCallsForUser(userId, items);
 
       return res.json({
       ok: true,
