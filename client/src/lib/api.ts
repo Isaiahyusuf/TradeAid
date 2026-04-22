@@ -18,7 +18,6 @@ function normalizeApiUrl(rawValue: unknown): string {
 }
 
 const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL);
-const TRADEAID_API_FALLBACK = "https://api.tradeaid.ink";
 
 function resolveApiBaseUrl(): string {
   if (typeof window !== "undefined") {
@@ -28,7 +27,8 @@ function resolveApiBaseUrl(): string {
       || hostname === "app.tradeaid.ink"
       || hostname.endsWith(".tradeaid.ink");
     if (isTradeAidDomain) {
-      return TRADEAID_API_FALLBACK;
+      // Avoid cross-origin CORS variance by staying same-origin on custom domains.
+      return window.location.origin;
     }
     if (API_URL) {
       return API_URL;
@@ -48,7 +48,7 @@ let runtimeAccessToken: string | null = null;
 let runtimeRefreshToken: string | null = null;
 
 let refreshInFlight: Promise<string | null> | null = null;
-const API_TIMEOUT_MS = 45000;
+const API_TIMEOUT_MS = 20000;
 
 function getToken(): string | null {
   if (runtimeAccessToken) {
