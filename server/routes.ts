@@ -2926,6 +2926,29 @@ export async function registerRoutes(
     ).trim();
   };
 
+  const resolveDoctorNotificationTelegramChatIds = (preferredChatId?: string) => {
+    const candidates: string[] = [];
+    const preferred = String(preferredChatId || "").trim();
+    if (preferred) {
+      candidates.push(preferred);
+    }
+
+    const singleFallback = resolveDoctorNotificationTelegramChatId();
+    if (singleFallback) {
+      candidates.push(singleFallback);
+    }
+
+    const allowedChatIds = String(process.env.TELEGRAM_ALLOWED_CHAT_IDS || "")
+      .split(",")
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+    for (const chatId of allowedChatIds) {
+      candidates.push(chatId);
+    }
+
+    return Array.from(new Set(candidates));
+  };
+
   const sendDoctorBuyNotification = async (payload: {
     userId: string;
     symbol: string;
@@ -2946,8 +2969,8 @@ export async function registerRoutes(
       : { telegram_chat_id: "" };
     const userChatId = String((userSettings as any)?.telegram_chat_id || "").trim();
     const botToken = resolveDoctorNotificationTelegramBotToken();
-    const chatId = userChatId || resolveDoctorNotificationTelegramChatId();
-    if (!botToken || !chatId) {
+    const chatIds = resolveDoctorNotificationTelegramChatIds(userChatId);
+    if (!botToken || !chatIds.length) {
       return { sent: false, reason: "telegram_not_configured" } as const;
     }
 
@@ -2966,19 +2989,28 @@ export async function registerRoutes(
     }
 
     try {
-      const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: lines.join("\n"),
-          disable_web_page_preview: true,
-        }),
-      });
-      if (!response.ok) {
-        return { sent: false, reason: `telegram_http_${response.status}` } as const;
+      let sentCount = 0;
+      let lastFailureReason = "telegram_send_failed";
+      for (const chatId of chatIds) {
+        const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: lines.join("\n"),
+            disable_web_page_preview: true,
+          }),
+        });
+        if (response.ok) {
+          sentCount += 1;
+        } else {
+          lastFailureReason = `telegram_http_${response.status}`;
+        }
       }
-      return { sent: true } as const;
+      if (sentCount > 0) {
+        return { sent: true } as const;
+      }
+      return { sent: false, reason: lastFailureReason } as const;
     } catch (error: any) {
       return { sent: false, reason: String(error?.message || "telegram_send_failed") } as const;
     }
@@ -3006,8 +3038,8 @@ export async function registerRoutes(
       : { telegram_chat_id: "" };
     const userChatId = String((userSettings as any)?.telegram_chat_id || "").trim();
     const botToken = resolveDoctorNotificationTelegramBotToken();
-    const chatId = userChatId || resolveDoctorNotificationTelegramChatId();
-    if (!botToken || !chatId) {
+    const chatIds = resolveDoctorNotificationTelegramChatIds(userChatId);
+    if (!botToken || !chatIds.length) {
       return { sent: false, reason: "telegram_not_configured" } as const;
     }
 
@@ -3041,17 +3073,26 @@ export async function registerRoutes(
     ];
 
     try {
-      const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: lines.join("\n"),
-          disable_web_page_preview: true,
-        }),
-      });
-      if (!response.ok) {
-        return { sent: false, reason: `telegram_http_${response.status}` } as const;
+      let sentCount = 0;
+      let lastFailureReason = "telegram_send_failed";
+      for (const chatId of chatIds) {
+        const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: lines.join("\n"),
+            disable_web_page_preview: true,
+          }),
+        });
+        if (response.ok) {
+          sentCount += 1;
+        } else {
+          lastFailureReason = `telegram_http_${response.status}`;
+        }
+      }
+      if (sentCount === 0) {
+        return { sent: false, reason: lastFailureReason } as const;
       }
       doctorTokenCallCooldownByUserMint.set(key, Date.now());
       return { sent: true } as const;
