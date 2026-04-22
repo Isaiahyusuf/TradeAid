@@ -101,10 +101,11 @@ const TRADEAID_TELEGRAM_BOT_URL = "https://t.me/Tradeaid_bot";
 
 function isDoctorWalletConnected(wallet?: Record<string, any> | null, tradeControls?: Record<string, any> | null) {
   const address = String(wallet?.address || "").trim();
+  const hasAddress = Boolean(address);
   const statusConnected = String(wallet?.connection_status || "").trim().toLowerCase() === "connected";
   const keyConfigured = Boolean(wallet?.private_key_configured);
   const controlsConnected = Boolean(tradeControls?.wallet_connected);
-  return keyConfigured || controlsConnected || (statusConnected && Boolean(address));
+  return hasAddress && (statusConnected || controlsConnected || keyConfigured);
 }
 
 function isAuthFailureMessage(message: string): boolean {
@@ -744,9 +745,10 @@ export default function DoctorTrade() {
   const promptWalletSetup = () => {
     toast({
       title: "Wallet setup needed",
-      description: "DoctorTrade could not load a usable wallet key. Please retry Connect Wallet.",
+      description: "No app wallet was found. Redirecting you to Wallet setup now.",
       variant: "destructive",
     });
+    setLocation(`/wallet?action=connect&returnTo=${encodeURIComponent("/doctortrade")}`);
   };
 
   const isTransientConnectError = (error: unknown) => {
