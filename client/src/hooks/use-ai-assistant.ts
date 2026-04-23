@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 
+const WALLET_SECRET_REVEAL_CONFIRMATION = "I_UNDERSTAND_THIS_EXPOSES_PRIVATE_KEYS";
+
 const withIntervalJitter = (baseMs: number, jitterMs: number) => {
   const randomOffset = Math.floor((Math.random() * 2 - 1) * Math.max(0, jitterMs));
   return Math.max(3_000, baseMs + randomOffset);
@@ -291,7 +293,9 @@ export function useConfirmAssistantWalletBackup() {
 export function useRevealAssistantWallet() {
   return useMutation({
     mutationFn: async () =>
-      apiPost<{ wallet: AssistantWalletStatus; bundle: AssistantWalletBundle }>("/api/ai/wallets/reveal", {}),
+      apiPost<{ wallet: AssistantWalletStatus; bundle: AssistantWalletBundle }>("/api/ai/wallets/reveal", {
+        confirmation_phrase: WALLET_SECRET_REVEAL_CONFIRMATION,
+      }),
   });
 }
 
@@ -352,7 +356,10 @@ export function useDeleteAssistantWallet() {
 export function useExportAssistantWalletKey() {
   return useMutation({
     mutationFn: async (payload: { chain: string }) =>
-      apiPost<{ wallet_key: AssistantWalletKeyExport }>("/api/ai/wallets/export-key", payload),
+      apiPost<{ wallet_key: AssistantWalletKeyExport }>("/api/ai/wallets/export-key", {
+        ...payload,
+        confirmation_phrase: WALLET_SECRET_REVEAL_CONFIRMATION,
+      }),
   });
 }
 
