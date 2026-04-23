@@ -163,6 +163,11 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
   if (bearerToken) {
     const bearerUserId = getSessionUserId(bearerToken, "access");
     if (bearerUserId) {
+      const allowEmergencyTokens = String(process.env.AUTH_ALLOW_EMERGENCY_TOKENS || "false").trim().toLowerCase() === "true";
+      if (bearerUserId.startsWith("emergency:") && !allowEmergencyTokens) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
       const fallbackUsername = bearerUserId.startsWith("emergency:")
         ? bearerUserId.replace("emergency:", "")
         : undefined;

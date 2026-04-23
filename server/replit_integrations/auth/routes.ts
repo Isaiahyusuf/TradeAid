@@ -500,20 +500,11 @@ export function registerAuthRoutes(app: Express): void {
         user = usernameOrEmail.includes("@")
           ? getEmergencyUserByEmail(usernameOrEmail)
           : getEmergencyUserByUsername(normalizeUsername(usernameOrEmail));
-        if (!user && AUTH_EMERGENCY_FALLBACK_ENABLED) {
-          const normalized = usernameOrEmail.includes("@")
-            ? normalizeUsername(String(usernameOrEmail).split("@")[0])
-            : normalizeUsername(usernameOrEmail);
-          user = {
-            id: emergencyUserIdForUsername(normalized),
-            username: normalized,
-            email: usernameOrEmail.includes("@") ? String(usernameOrEmail).trim().toLowerCase() : `${normalized}@tradeaid.local`,
-            firstName: null,
-            profileImageUrl: null,
-            notificationsEnabled: true,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          };
+        if (!user) {
+          return res.status(503).json({
+            message: "Authentication database is temporarily unavailable. Please retry in a moment.",
+            code: "auth_db_unavailable",
+          });
         }
       }
 
@@ -531,18 +522,6 @@ export function registerAuthRoutes(app: Express): void {
           await setPasswordHashesByUserId(hashesByUserId);
         }
       }
-      if (!storedHash) {
-        if (
-          AUTH_EMERGENCY_FALLBACK_ENABLED
-          && String(user?.id || "").startsWith("emergency:")
-        ) {
-          storedHash = hashPassword(password);
-          hashesByUserId[user.id] = storedHash;
-          await setPasswordHashesByUserId(hashesByUserId);
-          await setPersistentPasswordHash(user.id, storedHash);
-        }
-      }
-
       if (!storedHash) {
         try {
           await db.execute(sql`DELETE FROM users WHERE id = ${user.id}`);
