@@ -2949,7 +2949,7 @@ export async function registerRoutes(
     ).trim();
   };
 
-  const resolveDoctorNotificationTelegramChatIds = (preferredChatId?: string) => {
+  const resolveDoctorNotificationTelegramChatIds = async (preferredChatId?: string) => {
     const candidates: string[] = [];
     const preferred = String(preferredChatId || "").trim();
     if (preferred) {
@@ -2967,6 +2967,22 @@ export async function registerRoutes(
       .filter(Boolean);
     for (const chatId of allowedChatIds) {
       candidates.push(chatId);
+    }
+
+    // Fallback to chats that have interacted with the Telegram bot.
+    // This keeps token-call delivery working even when per-user chat_id is unset.
+    try {
+      const pushState = await storage.getAppState<Record<string, any>>("telegram.bot.push.v1");
+      const chats = (pushState && typeof pushState === "object" && pushState.chats && typeof pushState.chats === "object")
+        ? pushState.chats as Record<string, any>
+        : {};
+      for (const chatId of Object.keys(chats)) {
+        const normalized = String(chatId || "").trim();
+        if (normalized) {
+          candidates.push(normalized);
+        }
+      }
+    } catch {
     }
 
     return Array.from(new Set(candidates));
@@ -2992,7 +3008,7 @@ export async function registerRoutes(
       : { telegram_chat_id: "" };
     const userChatId = String((userSettings as any)?.telegram_chat_id || "").trim();
     const botToken = resolveDoctorNotificationTelegramBotToken();
-    const chatIds = resolveDoctorNotificationTelegramChatIds(userChatId);
+    const chatIds = await resolveDoctorNotificationTelegramChatIds(userChatId);
     if (!botToken || !chatIds.length) {
       return { sent: false, reason: "telegram_not_configured" } as const;
     }
@@ -3061,7 +3077,7 @@ export async function registerRoutes(
       : { telegram_chat_id: "" };
     const userChatId = String((userSettings as any)?.telegram_chat_id || "").trim();
     const botToken = resolveDoctorNotificationTelegramBotToken();
-    const chatIds = resolveDoctorNotificationTelegramChatIds(userChatId);
+    const chatIds = await resolveDoctorNotificationTelegramChatIds(userChatId);
     if (!botToken || !chatIds.length) {
       return { sent: false, reason: "telegram_not_configured" } as const;
     }
