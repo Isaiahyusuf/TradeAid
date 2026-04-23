@@ -1411,6 +1411,42 @@ class TradeAidTelegramBot {
     await this.sendMessage(chatId, board.text, this.buildStartButtons(this.isSubscribed(chatId)), {
       parseMode: "Markdown",
     });
+
+    if (String(board.text || "").toLowerCase().includes("no tracked calls yet")) {
+      await this.sendDoctorTradeFallbackTokens(chatId, Math.max(3, Math.min(8, Math.trunc(limit / 2) || 5))).catch(() => undefined);
+    }
+  }
+
+  private async sendDoctorTradeFallbackTokens(chatId: string, limit = 5) {
+    const rows = await db
+      .select()
+      .from(scannedTokens)
+      .where(
+        and(
+          eq(scannedTokens.chain, "solana"),
+          gte(scannedTokens.safetyScore, 55),
+          gte(scannedTokens.liquidity, 2_500),
+          gte(scannedTokens.volume24h, 2_000),
+          eq(scannedTokens.isHoneypot, false),
+        ),
+      )
+      .orderBy(desc(scannedTokens.pairCreatedAt), desc(scannedTokens.safetyScore), desc(scannedTokens.volume24h))
+      .limit(Math.max(1, Math.min(10, limit)));
+
+    if (!rows.length) {
+      await this.sendMessage(chatId, "No live DoctorTrade tokens are available right now. Try /new in a minute.", this.buildStartButtons(this.isSubscribed(chatId)));
+      return;
+    }
+
+    await this.sendMessage(
+      chatId,
+      `<b>DoctorTrade Live Tokens</b>\nSending ${rows.length} current opportunities so you can start tracking calls now.`,
+      this.buildStartButtons(this.isSubscribed(chatId)),
+    );
+
+    for (const token of rows) {
+      await this.sendTokenCard(chatId, token, "compact", "DOCTOR LIVE", { trackCall: true, origin: "doctortrade_fallback" });
+    }
   }
 
   private async loadPushState() {
