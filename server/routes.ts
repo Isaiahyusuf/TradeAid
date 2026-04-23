@@ -9238,6 +9238,23 @@ export async function registerRoutes(
       }
     }
 
+    // Self-heal scheduler/workers for enabled users after deploy/restart so
+    // autonomous buy/sell continues without requiring a manual toggle.
+    if (doctorRuntime.enabled && !doctorRuntime.killSwitch) {
+      try {
+        await ensureDoctorRealtimeWorkers();
+        const schedulerJob = await getDoctorSchedulerJobForUser(userId);
+        if (!Boolean(schedulerJob?.enabled)) {
+          await startDoctorCycleForUser(userId);
+        }
+      } catch (error: any) {
+        console.warn("[DoctorTrade][status] scheduler self-heal failed", {
+          userId,
+          message: String(error?.message || "unknown_error"),
+        });
+      }
+    }
+
     const status = await buildDoctorStatus(userId);
     return res.json(status);
   });
