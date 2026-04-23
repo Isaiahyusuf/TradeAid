@@ -44,7 +44,7 @@ import {
   useTransferAssistantWallet,
   useWithdrawAssistantProfitJar,
 } from "@/hooks/use-ai-assistant";
-import { useDoctorStatus } from "@/hooks/use-doctortrade";
+import { useDoctorConnectWallet, useDoctorStatus } from "@/hooks/use-doctortrade";
 
 type SupportedWalletChain = (typeof SUPPORTED_CHAINS)[number];
 const WALLET_BALANCE_HIDDEN_KEY = "tradeaid-wallet-balance-hidden-v1";
@@ -70,6 +70,7 @@ export default function WalletPage() {
   const profitJarStatusQuery = useAssistantProfitJarStatus(true);
   const profitJarLedgerQuery = useAssistantProfitJarLedger(walletTab === "assets" ? 20 : 50, walletTab === "assets");
   const doctorStatusQuery = useDoctorStatus();
+  const doctorConnectWallet = useDoctorConnectWallet();
 
   const createWallet = useCreateAssistantWallet();
   const importWallet = useImportAssistantWallet();
@@ -769,6 +770,39 @@ export default function WalletPage() {
     setSwapSellAmountTokens(String(Number(amount.toFixed(9))));
   };
 
+  const isDoctorConnected = (status: any) => {
+    const walletAddress = String(status?.wallet?.address || "").trim();
+    const walletStatus = String(status?.wallet?.connection_status || "").trim().toLowerCase();
+    const tradeControlsConnected = Boolean(status?.trade_controls?.wallet_connected);
+    return Boolean(walletAddress) || walletStatus === "connected" || tradeControlsConnected;
+  };
+
+  const maybeLinkDoctorWallet = async () => {
+    const shouldLink = walletAction === "connect" || returnTo.toLowerCase().includes("doctortrade");
+    if (!shouldLink) return;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        await doctorConnectWallet.mutateAsync({ use_existing_wallet: true });
+      } catch {
+        // Ignore transient failures and verify through status fetch below.
+      }
+
+      const latest = await doctorStatusQuery.refetch();
+      if (isDoctorConnected(latest.data)) {
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 700 * (attempt + 1)));
+    }
+
+    toast({
+      title: "DoctorTrade link pending",
+      description: "Wallet was created, but DoctorTrade link is still syncing. Open DoctorTrade and tap Connect Wallet once.",
+      variant: "destructive",
+    });
+  };
+
   const handleCreateWallet = async (overwrite: boolean) => {
     await Promise.allSettled([
       queryClient.cancelQueries({ queryKey: ["ai-wallet-portfolio"] }),
@@ -782,6 +816,7 @@ export default function WalletPage() {
       const result = await createWallet.mutateAsync({ overwrite });
       setLatestBundle(result.bundle);
       await refreshWalletViews();
+      await maybeLinkDoctorWallet();
       toast({ title: "Wallet created", description: "Wallet is ready. Secret reveal/export is restricted by security policy." });
       if (returnTo) {
         setLocation(returnTo);
@@ -814,6 +849,7 @@ export default function WalletPage() {
       const result = await importWallet.mutateAsync({ mnemonic, overwrite });
       setLatestBundle(result.bundle);
       await refreshWalletViews();
+      await maybeLinkDoctorWallet();
       toast({ title: "Wallet imported", description: "Addresses loaded successfully. Secret reveal/export is restricted by default." });
       if (returnTo) {
         setLocation(returnTo);
@@ -841,6 +877,7 @@ export default function WalletPage() {
       const result = await importWalletPrivateKey.mutateAsync({ private_key: privateKey, overwrite });
       setLatestBundle(result.bundle);
       await refreshWalletViews();
+      await maybeLinkDoctorWallet();
       toast({ title: "Wallet connected", description: "Private key imported securely." });
       if (returnTo) {
         setLocation(returnTo);
@@ -1745,3 +1782,4 @@ export default function WalletPage() {
     </Layout>
   );
 }
+
