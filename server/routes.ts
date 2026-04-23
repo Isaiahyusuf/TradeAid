@@ -1377,7 +1377,8 @@ export async function registerRoutes(
     const resolvedAddress = configuredAddress || derivedAddress;
     const autoHydrateBlocked = Boolean(userWallet?.autoHydrateBlocked);
     const connectedAtRaw = String(userWallet?.connectedAt || userWallet?.updatedAt || "").trim();
-    const connectedAt = hasPrivateKey && resolvedAddress && connectedAtRaw ? connectedAtRaw : "";
+    const connectedAt = resolvedAddress && connectedAtRaw ? connectedAtRaw : "";
+    const stickyConnected = Boolean(resolvedAddress) && Boolean(connectedAt);
 
     if (userWallet && resolvedAddress && resolvedAddress !== configuredAddress) {
       wallets[userId] = {
@@ -1395,7 +1396,7 @@ export async function registerRoutes(
       privateKeyConfigured: hasPrivateKey,
       autoHydrateBlocked,
       connectedAt,
-      connected: Boolean(resolvedAddress) && hasPrivateKey,
+      connected: Boolean(resolvedAddress) && (hasPrivateKey || stickyConnected),
     };
   };
 
@@ -1631,7 +1632,7 @@ export async function registerRoutes(
       const ownerWallet = wallets[currentOwner] as Record<string, any> | undefined;
       const ownerWalletAddress = String(ownerWallet?.address || "").trim();
       const ownerPrivateKey = decryptDoctorPrivateKey(String(ownerWallet?.livePrivateKey || "").trim());
-      if (ownerWalletAddress && ownerPrivateKey) {
+      if (ownerWalletAddress) {
         doctorRuntime.wallet.address = ownerWalletAddress;
         hydrated = true;
       }
@@ -8251,7 +8252,8 @@ export async function registerRoutes(
           privateKeyConfigured: Boolean(walletSnapshotBase.privateKeyConfigured)
             || Boolean(String(liveCredentials.walletPrivateKey || "").trim()),
           connected: Boolean(runtimeWalletAddress || String(walletSnapshotBase.address || "").trim())
-            && (Boolean(walletSnapshotBase.privateKeyConfigured)
+            && (Boolean(walletSnapshotBase.connected)
+              || Boolean(walletSnapshotBase.privateKeyConfigured)
               || Boolean(String(liveCredentials.walletPrivateKey || "").trim())),
           connectedAt: String(walletSnapshotBase.connectedAt || (liveCredentials as any)?.connectedAt || "").trim(),
         }
