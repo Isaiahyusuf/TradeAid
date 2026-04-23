@@ -51,7 +51,7 @@ function UnauthenticatedRouter() {
 }
 
 function AppContent() {
-  const { isLoading, isAuthenticated } = useAuth();
+  const { isLoading, isAuthenticated, hasToken } = useAuth();
 
   if (isLoading) {
     return (
@@ -65,7 +65,7 @@ function AppContent() {
     );
   }
 
-  return isAuthenticated ? <AuthenticatedRouter /> : <UnauthenticatedRouter />;
+  return (isAuthenticated || hasToken) ? <AuthenticatedRouter /> : <UnauthenticatedRouter />;
 }
 
 function App() {
@@ -84,3 +84,4 @@ function App() {
 }
 
 export default App;
+

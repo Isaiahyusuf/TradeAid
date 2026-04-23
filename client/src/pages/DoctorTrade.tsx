@@ -957,6 +957,18 @@ export default function DoctorTrade() {
         }
 
         if (isTransientConnectError(error)) {
+          try {
+            const latest = await refetch();
+            if (Boolean(latest.data?.enabled)) {
+              toast({
+                title: "DoctorTrade started",
+                description: "Start request timed out, but engine is active on the server.",
+              });
+              return;
+            }
+          } catch {
+          }
+
           const connectedAfterRetry = await recheckWalletConnection(8, 1200);
           if (connectedAfterRetry) {
             try {

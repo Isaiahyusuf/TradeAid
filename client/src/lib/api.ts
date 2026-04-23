@@ -139,7 +139,12 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshInFlight;
 }
 
-export async function ensureAuthSession(): Promise<boolean> {
+export async function ensureAuthSession(forceRefresh: boolean = false): Promise<boolean> {
+  if (forceRefresh) {
+    if (!getRefreshToken()) return false;
+    const refreshedForced = await refreshAccessToken();
+    return Boolean(refreshedForced);
+  }
   const token = getToken();
   if (token) return true;
   if (!getRefreshToken()) return false;

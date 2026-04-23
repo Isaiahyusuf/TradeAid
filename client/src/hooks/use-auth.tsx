@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, createContext, useContext } from "react";
-import { apiGet, apiPost, apiPatch, setAuthTokens, clearToken, ensureAuthSession } from "@/lib/api";
+import { apiGet, apiPost, apiPatch, setAuthTokens, clearToken, ensureAuthSession, hasRefreshToken } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 
 export type User = {
@@ -55,11 +55,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       const message = error instanceof Error ? error.message : "";
       const normalized = message.toLowerCase();
       const hasStoredToken = !!localStorage.getItem("trade_aid_token");
-      if (
-        !hasStoredToken
-        || message.includes("401")
+      const unauthorized = (
+        message.includes("401")
         || normalized.includes("unauthorized")
         || normalized.includes("not authenticated")
+      );
+
+      if (unauthorized && hasStoredToken && hasRefreshToken()) {
+        const recovered = await ensureAuthSession(true);
+        if (recovered) {
+          try {
+            const retry = await apiGet<User>("/api/auth/me");
+            setUser(retry);
+            setTokenState(true);
+            return;
+          } catch {
+          }
+        }
+      }
+
+      if (
+        !hasStoredToken
+        || unauthorized
       ) {
         clearToken();
         setUser(null);
@@ -73,6 +90,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
+
+  useEffect(() => {
+    if (!tokenState || user) return;
+    const timer = window.setInterval(() => {
+      void checkAuth();
+    }, 15_000);
+    return () => window.clearInterval(timer);
+  }, [checkAuth, tokenState, user]);
 
   const hydrateUserProfile = useCallback(async () => {
     try {
