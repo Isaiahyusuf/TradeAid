@@ -2373,18 +2373,31 @@ export async function registerRoutes(
   const persistDoctorRuntime = async (userId?: string) => {
     const snapshot = JSON.parse(JSON.stringify(doctorRuntime));
     const targetUserId = String(userId || doctorActiveUserId || doctorRuntime.ownerUserId || "").trim();
-    try {
-      if (targetUserId) {
-        const runtimeByUser = await getStoredDoctorRuntimesByUser();
-        const presetByUser = await getStoredDoctorPresetsByUser();
-        presetByUser[targetUserId] = normalizeDoctorSnipePreset((snapshot?.controls as any)?.snipe_preset);
-        runtimeByUser[targetUserId] = snapshot;
-        await Promise.allSettled([
-          storage.setAppState(doctorRuntimeByUserStateKey, runtimeByUser),
-          storage.setAppState(doctorPresetByUserStateKey, presetByUser),
-        ]);
-      }
-    } catch {
+    if (!targetUserId) {
+      return;
+    }
+
+    const runtimeByUser = await getStoredDoctorRuntimesByUser();
+    const presetByUser = await getStoredDoctorPresetsByUser();
+    presetByUser[targetUserId] = normalizeDoctorSnipePreset((snapshot?.controls as any)?.snipe_preset);
+    runtimeByUser[targetUserId] = snapshot;
+
+    await Promise.all([
+      storage.setAppState(doctorRuntimeByUserStateKey, runtimeByUser),
+      storage.setAppState(doctorPresetByUserStateKey, presetByUser),
+    ]);
+
+    const persistedRuntimeByUser = await getStoredDoctorRuntimesByUser();
+    const persistedPresetByUser = await getStoredDoctorPresetsByUser();
+    const persistedRuntime = persistedRuntimeByUser[targetUserId] as Record<string, any> | undefined;
+    const persistedPreset = normalizeDoctorSnipePreset(persistedPresetByUser[targetUserId]);
+    const expectedPreset = normalizeDoctorSnipePreset((snapshot?.controls as any)?.snipe_preset);
+
+    if (!persistedRuntime || typeof persistedRuntime !== "object") {
+      throw new Error("doctor_runtime_persist_verify_failed");
+    }
+    if (persistedPreset !== expectedPreset) {
+      throw new Error("doctor_preset_persist_verify_failed");
     }
   };
 

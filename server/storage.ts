@@ -93,28 +93,48 @@ export class DatabaseStorage implements IStorage {
     );
   }
 
-  private resolveAppStateEncryptionSecret(): string {
-    return String(
-      process.env.APP_STATE_ENCRYPTION_KEY
-      || process.env.DOCTORTRADE_WALLET_ENCRYPTION_KEY
-      || process.env.DOCTORTRADE_ENCRYPTION_KEY
-      || process.env.SESSION_SECRET
-      || process.env.JWT_SECRET
-      || "",
-    ).trim();
+  private resolveAppStateEncryptionSecrets(): string[] {
+    const previousSecrets = String(process.env.APP_STATE_ENCRYPTION_KEY_PREVIOUS || "")
+      .split(",")
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+
+    const preferredSecrets = [
+      process.env.APP_STATE_ENCRYPTION_KEY,
+      process.env.ENCRYPTION_KEY,
+      process.env.JWT_SECRET_KEY,
+      process.env.MASTER_ACCESS_KEY,
+      process.env.DOCTORTRADE_WALLET_ENCRYPTION_KEY,
+      process.env.DOCTORTRADE_ENCRYPTION_KEY,
+      process.env.SESSION_SECRET,
+      process.env.JWT_SECRET,
+    ]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+
+    return Array.from(new Set([...preferredSecrets, ...previousSecrets]));
   }
 
-  private getAppStateEncryptionKey(): Buffer {
-    const secret = this.resolveAppStateEncryptionSecret();
+  private getPrimaryAppStateEncryptionKey(): Buffer {
+    const secrets = this.resolveAppStateEncryptionSecrets();
+    const secret = String(secrets[0] || "").trim();
     if (!secret) {
       throw new Error("APP_STATE_ENCRYPTION_KEY is required for encrypted app_state keys");
     }
     return createHash("sha256").update(secret, "utf8").digest();
   }
 
+  private getAllAppStateEncryptionKeys(): Buffer[] {
+    const secrets = this.resolveAppStateEncryptionSecrets();
+    if (!secrets.length) {
+      throw new Error("APP_STATE_ENCRYPTION_KEY is required for encrypted app_state keys");
+    }
+    return secrets.map((secret) => createHash("sha256").update(secret, "utf8").digest());
+  }
+
   private encryptAppStateValue(value: unknown): Record<string, unknown> {
     const iv = randomBytes(12);
-    const cipher = createCipheriv("aes-256-gcm", this.getAppStateEncryptionKey(), iv);
+    const cipher = createCipheriv("aes-256-gcm", this.getPrimaryAppStateEncryptionKey(), iv);
     const plaintext = Buffer.from(JSON.stringify(value ?? null), "utf8");
     const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
     const authTag = cipher.getAuthTag();
@@ -136,17 +156,26 @@ export class DatabaseStorage implements IStorage {
       throw new Error("invalid encrypted app_state envelope");
     }
 
-    const decipher = createDecipheriv(
-      "aes-256-gcm",
-      this.getAppStateEncryptionKey(),
-      Buffer.from(ivRaw, "base64"),
-    );
-    decipher.setAuthTag(Buffer.from(tagRaw, "base64"));
-    const decrypted = Buffer.concat([
-      decipher.update(Buffer.from(dataRaw, "base64")),
-      decipher.final(),
-    ]);
-    return JSON.parse(decrypted.toString("utf8")) as T;
+    const encryptedPayload = Buffer.from(dataRaw, "base64");
+    const iv = Buffer.from(ivRaw, "base64");
+    const authTag = Buffer.from(tagRaw, "base64");
+
+    let lastError: unknown = null;
+    for (const key of this.getAllAppStateEncryptionKeys()) {
+      try {
+        const decipher = createDecipheriv("aes-256-gcm", key, iv);
+        decipher.setAuthTag(authTag);
+        const decrypted = Buffer.concat([
+          decipher.update(encryptedPayload),
+          decipher.final(),
+        ]);
+        return JSON.parse(decrypted.toString("utf8")) as T;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error("failed_to_decrypt_app_state_value");
   }
 
   private async ensureAppStateTable(target: "primary" | "wallet" | "trade"): Promise<void> {
