@@ -9747,7 +9747,7 @@ export async function registerRoutes(
         let liveKeyPersisted = false;
         let walletMapPersisted = false;
         let hadStoredWalletCredentials = false;
-        const strictPersistenceRequired = !useExistingWallet;
+        let strictPersistenceRequired = !useExistingWallet;
         const walletBalanceTimeoutMs = Math.max(300, Number(process.env.DOCTOR_WALLET_BALANCE_TIMEOUT_MS || 1200));
 
         logConnect("info", "doctor.connect_wallet.request", {
@@ -9863,6 +9863,12 @@ export async function registerRoutes(
             message: "wallet_private_key_required",
             detail: "Connect your main app wallet first, or provide a private key once.",
           });
+        }
+
+        // If reconnect is not backed by an already persisted wallet key,
+        // treat it as strict persistence to prevent false "connected" states.
+        if (useExistingWallet && !hadStoredWalletCredentials) {
+          strictPersistenceRequired = true;
         }
 
         let resolvedAddress = explicitAddress;
@@ -9990,7 +9996,7 @@ export async function registerRoutes(
         })();
 
         const status = await buildDoctorStatus(userId);
-        if (resolvedPrivateKey) {
+        if (resolvedPrivateKey && (liveKeyPersisted || hadStoredWalletCredentials)) {
           const statusWallet = ((status as any)?.wallet && typeof (status as any).wallet === "object")
             ? (status as any).wallet
             : {};
