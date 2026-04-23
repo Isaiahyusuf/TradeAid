@@ -1655,6 +1655,10 @@ class TradeAidTelegramBot {
       return;
     }
 
+    // Auto-register the chat on first contact so downstream DoctorTrade
+    // notifications always have at least one reachable chat target.
+    await this.updateChatSubscription(chatId, true, firstName, username).catch(() => undefined);
+
     const lower = text.toLowerCase();
     if (lower === "/start" || lower === "/help") {
       await this.updateChatSubscription(chatId, this.isSubscribed(chatId), firstName, username);
