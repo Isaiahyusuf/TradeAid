@@ -448,6 +448,15 @@ async function resolveUserFromRequest(req: any) {
     if (user) {
       return user;
     }
+
+    if (AUTH_EMERGENCY_FALLBACK_ENABLED && userIdFromToken.startsWith("emergency:")) {
+      const fallbackUsername = String(userIdFromToken.slice("emergency:".length) || "").trim();
+      if (fallbackUsername) {
+        const fallbackUser = createEmergencyFallbackUser(fallbackUsername);
+        cacheEmergencyUser(fallbackUser);
+        return fallbackUser;
+      }
+    }
   }
 
   const sub = String(req.user?.claims?.sub || "").trim();
