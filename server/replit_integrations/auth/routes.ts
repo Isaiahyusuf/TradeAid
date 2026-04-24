@@ -37,6 +37,8 @@ const PASSWORD_MAX_BYTES = 72;
 const AUTH_EMERGENCY_FALLBACK_ENABLED = String(process.env.AUTH_EMERGENCY_FALLBACK_ENABLED || "true").trim().toLowerCase() !== "false";
 const AUTH_FAST_STATE_TIMEOUT_MS = Math.max(300, Number(process.env.AUTH_FAST_STATE_TIMEOUT_MS || 1200));
 const AUTH_PASSWORD_HASH_CACHE_TTL_MS = Math.max(5_000, Number(process.env.AUTH_PASSWORD_HASH_CACHE_TTL_MS || 60_000));
+const AUTH_DB_MAX_RETRIES = Math.max(0, Number(process.env.AUTH_DB_MAX_RETRIES || 2));
+const AUTH_DB_RETRY_DELAY_MS = Math.max(50, Number(process.env.AUTH_DB_RETRY_DELAY_MS || 100));
 
 const emergencyUsersById = new Map<string, any>();
 const emergencyUserIdByUsername = new Map<string, string>();
@@ -76,6 +78,27 @@ function isDbConnectivityError(error: unknown): boolean {
     || message.includes("timeout")
     || message.includes("enotfound")
   );
+}
+
+async function withAuthDbRetry<T>(operation: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= AUTH_DB_MAX_RETRIES; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isDbConnectivityError(error)) {
+        throw error;
+      }
+      lastError = error;
+      if (attempt >= AUTH_DB_MAX_RETRIES) {
+        break;
+      }
+      const delayMs = AUTH_DB_RETRY_DELAY_MS * (attempt + 1);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("auth_db_unavailable");
 }
 
 function cacheEmergencyUser(user: any | undefined): void {
@@ -491,40 +514,23 @@ export function registerAuthRoutes(app: Express): void {
 
       let user: any;
       try {
-        user = usernameOrEmail.includes("@")
-          ? await authStorage.getUserByEmail(usernameOrEmail)
-          : await authStorage.getUserByUsername(normalizeUsername(usernameOrEmail));
+        user = await withAuthDbRetry(() => (
+          usernameOrEmail.includes("@")
+            ? authStorage.getUserByEmail(usernameOrEmail)
+            : authStorage.getUserByUsername(normalizeUsername(usernameOrEmail))
+        ));
         cacheEmergencyUser(user);
       } catch (error) {
         if (!isDbConnectivityError(error)) throw error;
         user = usernameOrEmail.includes("@")
           ? getEmergencyUserByEmail(usernameOrEmail)
           : getEmergencyUserByUsername(normalizeUsername(usernameOrEmail));
-      }
-
-      if (!user && !usernameOrEmail.includes("@")) {
-        const emergencyUsername = normalizeUsername(usernameOrEmail);
-        const emergencyUserId = emergencyUserIdForUsername(emergencyUsername);
-        const hashesByUserId = await getPasswordHashesByUserId();
-        const emergencyHash = String(hashesByUserId[emergencyUserId] || "").trim();
-        if (emergencyHash && verifyPassword(password, emergencyHash)) {
-          user = {
-            id: emergencyUserId,
-            username: emergencyUsername,
-            email: `${emergencyUsername}@tradeaid.local`,
-            firstName: null,
-            profileImageUrl: null,
-            notificationsEnabled: true,
-          };
-          cacheEmergencyUser(user);
+        if (!user) {
+          return res.status(503).json({
+            message: "Authentication database is temporarily unavailable. Please retry in a moment.",
+            code: "auth_db_unavailable",
+          });
         }
-      }
-
-      if (!user) {
-        return res.status(503).json({
-          message: "Authentication database is temporarily unavailable. Please retry in a moment.",
-          code: "auth_db_unavailable",
-        });
       }
 
       if (!user) {
@@ -638,7 +644,7 @@ export function registerAuthRoutes(app: Express): void {
 
       let existingByUsername: any;
       try {
-        existingByUsername = await authStorage.getUserByUsername(username);
+        existingByUsername = await withAuthDbRetry(() => authStorage.getUserByUsername(username));
         cacheEmergencyUser(existingByUsername);
       } catch (error) {
         if (!isDbConnectivityError(error)) throw error;
@@ -654,7 +660,7 @@ export function registerAuthRoutes(app: Express): void {
       if (email) {
         let existingByEmail: any;
         try {
-          existingByEmail = await authStorage.getUserByEmail(email);
+          existingByEmail = await withAuthDbRetry(() => authStorage.getUserByEmail(email));
           cacheEmergencyUser(existingByEmail);
         } catch (error) {
           if (!isDbConnectivityError(error)) throw error;
@@ -669,12 +675,21 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       let emergencyMode = false;
-      let newUser = await authStorage.upsertUser({
-        id: randomUUID(),
-        username,
-        email,
-      }).catch(async (error) => {
+      let newUser: any;
+      try {
+        newUser = await withAuthDbRetry(() => authStorage.upsertUser({
+          id: randomUUID(),
+          username,
+          email,
+        }));
+      } catch (error) {
         if (isDbConnectivityError(error)) {
+          if (!AUTH_EMERGENCY_FALLBACK_ENABLED) {
+            return res.status(503).json({
+              message: "Authentication database is temporarily unavailable. Please retry in a moment.",
+              code: "auth_db_unavailable",
+            });
+          }
           emergencyMode = true;
           const fallbackUser = {
             id: emergencyUserIdForUsername(username),
@@ -687,25 +702,26 @@ export function registerAuthRoutes(app: Express): void {
             updatedAt: new Date(),
           };
           cacheEmergencyUser(fallbackUser);
-          return fallbackUser;
-        }
-        const message = String((error as any)?.message || "").toLowerCase();
-        if (!message.includes("hashed_password") && !message.includes("not-null") && !message.includes("violates")) {
-          throw error;
-        }
+          newUser = fallbackUser;
+        } else {
+          const message = String((error as any)?.message || "").toLowerCase();
+          if (!message.includes("hashed_password") && !message.includes("not-null") && !message.includes("violates")) {
+            throw error;
+          }
 
-        const generatedId = randomUUID();
-        await db.execute(sql`
-          INSERT INTO users (id, username, email, hashed_password, created_at, updated_at)
-          VALUES (${generatedId}::uuid, ${username}, ${email}, ${"!oauth-local-placeholder!"}, NOW(), NOW())
-        `);
+          const generatedId = randomUUID();
+          await withAuthDbRetry(() => db.execute(sql`
+            INSERT INTO users (id, username, email, hashed_password, created_at, updated_at)
+            VALUES (${generatedId}::uuid, ${username}, ${email}, ${"!oauth-local-placeholder!"}, NOW(), NOW())
+          `));
 
-        const fallbackUser = await authStorage.getUserByUsername(username);
-        if (!fallbackUser) {
-          throw error;
+          const fallbackUser = await withAuthDbRetry(() => authStorage.getUserByUsername(username));
+          if (!fallbackUser) {
+            throw error;
+          }
+          newUser = fallbackUser;
         }
-        return fallbackUser;
-      });
+      }
 
       cacheEmergencyUser(newUser);
 
@@ -726,6 +742,12 @@ export function registerAuthRoutes(app: Express): void {
       });
     } catch (error) {
       console.error("Error during registration:", error);
+      if (isDbConnectivityError(error)) {
+        return res.status(503).json({
+          message: "Authentication database is temporarily unavailable. Please retry in a moment.",
+          code: "auth_db_unavailable",
+        });
+      }
       const mapped = mapRegistrationError(error);
       res.status(mapped.status).json({ message: mapped.message });
     }
