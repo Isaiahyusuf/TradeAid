@@ -500,12 +500,31 @@ export function registerAuthRoutes(app: Express): void {
         user = usernameOrEmail.includes("@")
           ? getEmergencyUserByEmail(usernameOrEmail)
           : getEmergencyUserByUsername(normalizeUsername(usernameOrEmail));
-        if (!user) {
-          return res.status(503).json({
-            message: "Authentication database is temporarily unavailable. Please retry in a moment.",
-            code: "auth_db_unavailable",
-          });
+      }
+
+      if (!user && !usernameOrEmail.includes("@")) {
+        const emergencyUsername = normalizeUsername(usernameOrEmail);
+        const emergencyUserId = emergencyUserIdForUsername(emergencyUsername);
+        const hashesByUserId = await getPasswordHashesByUserId();
+        const emergencyHash = String(hashesByUserId[emergencyUserId] || "").trim();
+        if (emergencyHash && verifyPassword(password, emergencyHash)) {
+          user = {
+            id: emergencyUserId,
+            username: emergencyUsername,
+            email: `${emergencyUsername}@tradeaid.local`,
+            firstName: null,
+            profileImageUrl: null,
+            notificationsEnabled: true,
+          };
+          cacheEmergencyUser(user);
         }
+      }
+
+      if (!user) {
+        return res.status(503).json({
+          message: "Authentication database is temporarily unavailable. Please retry in a moment.",
+          code: "auth_db_unavailable",
+        });
       }
 
       if (!user) {
