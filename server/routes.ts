@@ -6589,9 +6589,29 @@ export async function registerRoutes(
     const minLiquiditySol = Math.max(0.1, getDoctorEffectiveControlNumber("min_liquidity_sol", 2));
     const maxLiquiditySol = Math.max(minLiquiditySol, getDoctorEffectiveControlNumber("max_liquidity_sol", 50));
     const requireLiquidityLock = Math.max(0, getDoctorEffectiveControlNumber("min_lock_hours", 24)) > 0;
+    const safeBuyMinScore = Math.max(1, Math.min(100, Number(process.env.DOCTOR_SAFE_BUY_AUTO_MIN_SCORE || 70)));
+    const isSafeBuyCandidate = (token: Record<string, any>) => {
+      const score = Number(token.score || token.safety_score || token.safetyScore || 0);
+      const riskLevel = String(token.risk_level || token.riskLevel || "").trim().toLowerCase();
+      const eligibleFlag = token.eligible !== false;
+      const rejectReasons = Array.isArray((token as any).reject_reasons)
+        ? (token as any).reject_reasons.map((item: unknown) => String(item || "").toLowerCase())
+        : [];
+      const hasHardReject = rejectReasons.some((reason) => {
+        return reason.includes("honeypot")
+          || reason.includes("rug")
+          || reason.includes("blacklist")
+          || reason.includes("liquidity")
+          || reason.includes("top_holder")
+          || reason.includes("dev_wallet")
+          || reason.includes("contract");
+      });
+      const riskOkay = !riskLevel || riskLevel.includes("low") || riskLevel.includes("safe") || riskLevel.includes("medium");
+      return eligibleFlag && score >= safeBuyMinScore && riskOkay && !hasHardReject;
+    };
     const openAddresses = new Set(doctorRuntime.positions.map((position) => String(position.address || "")));
 
-    const candidatePool = lifecycleActiveTokens
+    const baseCandidatePool = lifecycleActiveTokens
       .filter((token) => String(token.chain || "solana").toLowerCase() === "solana")
       .filter((token) => Boolean((token as any).lifecycle_passed ?? true))
       .filter((token) => Number(token.score || 0) >= Math.max(1, getDoctorEffectiveControlNumber("strong_move_threshold_pct", 40)))
@@ -6702,6 +6722,9 @@ export async function registerRoutes(
         if (marketCapDiff !== 0) return marketCapDiff;
         return Number(b.volume_5m || 0) - Number(a.volume_5m || 0);
       });
+
+    const safeBuyPriorityPool = baseCandidatePool.filter((token) => isSafeBuyCandidate(token as Record<string, any>));
+    const candidatePool = safeBuyPriorityPool.length > 0 ? safeBuyPriorityPool : baseCandidatePool;
 
     const candidatePoolNonOpen = candidatePool
       .filter((token) => !openAddresses.has(String(token.address || "")))
