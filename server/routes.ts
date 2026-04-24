@@ -6257,10 +6257,8 @@ export async function registerRoutes(
             .map((position) => String((position as any).address || "").trim().toLowerCase())
             .filter(Boolean),
         );
-        const configuredStopLossPct = Math.max(
-          DOCTOR_STOP_LOSS_PCT,
-          Number(doctorRuntime.controls.stop_loss_pct || DOCTOR_STOP_LOSS_PCT),
-        );
+        const configuredStopLossPct = Math.max(0.1, Number(doctorRuntime.controls.stop_loss_pct || DOCTOR_STOP_LOSS_PCT));
+        const configuredTrailingStopPct = Math.max(0.1, Number(doctorRuntime.controls.trailing_stop_pct || 10));
 
         for (const walletToken of walletTokens) {
           const mint = String((walletToken as any).mint || "").trim();
@@ -6289,7 +6287,7 @@ export async function registerRoutes(
             confidence: Number((market as any)?.score || 0),
             size_pct: 100,
             risk_status: String((market as any)?.risk_level || "MEDIUM"),
-            trailing_stop_pct: Number(doctorRuntime.controls.trailing_stop_pct || 10),
+            trailing_stop_pct: configuredTrailingStopPct,
             tp_stage: 0,
             amount_sol: tokenAmount,
             amount_raw: String((walletToken as any).amount_raw || "0"),
@@ -6335,7 +6333,8 @@ export async function registerRoutes(
     const isMomentumMode = isDoctorMomentumTraderPreset(activeSnipePreset);
     const configuredMinProfitPct = Math.max(0.1, getDoctorEffectiveControlNumber("min_profit_pct", Number(doctorRuntime.controls.min_profit_pct || 0)));
     const configuredTakeProfitMultiplier = Math.max(1.01, getDoctorEffectiveControlNumber("take_profit_multiplier", Number(doctorRuntime.controls.take_profit_multiplier || 2)));
-    const configuredStopLossPct = Math.max(DOCTOR_STOP_LOSS_PCT, getDoctorEffectiveControlNumber("stop_loss_pct", Number(doctorRuntime.controls.stop_loss_pct || 0)));
+    const configuredStopLossPct = Math.max(0.1, getDoctorEffectiveControlNumber("stop_loss_pct", Number(doctorRuntime.controls.stop_loss_pct || 0)));
+    const configuredTrailingStopPct = Math.max(0.1, getDoctorEffectiveControlNumber("trailing_stop_pct", Number(doctorRuntime.controls.trailing_stop_pct || 0)));
     const configuredLiveSellFractionPct = Math.max(1, Math.min(100, getDoctorEffectiveControlNumber("live_sell_fraction_pct", Number(doctorRuntime.controls.live_sell_fraction_pct || 100))));
     const takeProfitPct = Math.max(
       DOCTOR_TAKE_PROFIT_PCT,
@@ -6360,8 +6359,11 @@ export async function registerRoutes(
         positionMinProfitPct,
         (positionTakeProfitMultiplier - 1) * 100,
       );
-      const positionStopLossPct = Math.max(DOCTOR_STOP_LOSS_PCT, Number((position as any).stop_loss_pct || configuredStopLossPct));
+      const positionStopLossPct = Math.max(0.1, Number((position as any).stop_loss_pct || configuredStopLossPct));
+      const positionTrailingStopPct = Math.max(0.1, Number((position as any).trailing_stop_pct || configuredTrailingStopPct));
       const tpStage = Math.max(0, Math.trunc(Number((position as any).tp_stage || 0)));
+      const peakPnlPct = entryPrice > 0 && peakPrice > 0 ? ((peakPrice - entryPrice) / entryPrice) * 100 : 0;
+      const drawdownFromPeakPct = peakPrice > 0 && currentPrice > 0 ? ((peakPrice - currentPrice) / peakPrice) * 100 : 0;
 
       let sellReason = "";
       let sellFractionPct = 100;
@@ -6370,11 +6372,18 @@ export async function registerRoutes(
         sellFractionPct = configuredLiveSellFractionPct;
       } else if (pnlPct <= -positionStopLossPct) {
         sellReason = "stop_loss_hit";
+      } else if (
+        peakPnlPct >= Math.max(1, positionMinProfitPct)
+        && drawdownFromPeakPct >= positionTrailingStopPct
+      ) {
+        sellReason = "trailing_stop_hit";
       }
 
       if (!sellReason) {
         updatedPositions.push({
           ...position,
+          stop_loss_pct: configuredStopLossPct,
+          trailing_stop_pct: configuredTrailingStopPct,
           risk_exit_pending_at: null,
           current_price: currentPrice,
           peak_price: peakPrice,

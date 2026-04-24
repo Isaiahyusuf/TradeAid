@@ -655,7 +655,7 @@ export function registerAuthRoutes(app: Express): void {
         username,
         email,
       }).catch(async (error) => {
-        if (isDbConnectivityError(error) && AUTH_EMERGENCY_FALLBACK_ENABLED) {
+        if (isDbConnectivityError(error)) {
           emergencyMode = true;
           const fallbackUser = {
             id: emergencyUserIdForUsername(username),
