@@ -33,6 +33,20 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function isTransientAuthUnavailable(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || "");
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("auth_db_unavailable")
+    || normalized.includes("temporarily unavailable")
+    || normalized.includes("request failed") && normalized.includes("503")
+  );
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -121,12 +135,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   }, [queryClient]);
 
   const login = async (username: string, password: string, accessCode?: string, totp_code?: string) => {
-    const data = await apiPost<{ access_token: string; refresh_token?: string; token_type: string }>("/api/auth/login", {
-      username,
-      password,
-      access_code: accessCode,
-      totp_code,
-    });
+    const maxAttempts = 3;
+    let data: { access_token: string; refresh_token?: string; token_type: string } | null = null;
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        data = await apiPost<{ access_token: string; refresh_token?: string; token_type: string }>("/api/auth/login", {
+          username,
+          password,
+          access_code: accessCode,
+          totp_code,
+        });
+        break;
+      } catch (error) {
+        lastError = error;
+        if (attempt >= maxAttempts || !isTransientAuthUnavailable(error)) {
+          throw error;
+        }
+        await sleep(400 * attempt);
+      }
+    }
+
+    if (!data) {
+      throw lastError instanceof Error ? lastError : new Error("Login failed");
+    }
+
     setAuthTokens(data.access_token, data.refresh_token);
     setTokenState(true);
     // Allow route transition immediately after successful token issuance.

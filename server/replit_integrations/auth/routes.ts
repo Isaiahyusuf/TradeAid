@@ -389,6 +389,20 @@ function emergencyUserIdForUsername(value: string): string {
   return `emergency:${normalizeUsername(value)}`;
 }
 
+function createEmergencyFallbackUser(username: string): any {
+  const normalizedUsername = normalizeUsername(username);
+  return {
+    id: emergencyUserIdForUsername(normalizedUsername),
+    username: normalizedUsername,
+    email: `${normalizedUsername}@tradeaid.local`,
+    firstName: null,
+    profileImageUrl: null,
+    notificationsEnabled: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+}
+
 function getUsernameValidationMessage(value: string): string | null {
   if (!value) {
     return "Username is required.";
@@ -513,23 +527,42 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       let user: any;
+      const normalizedUsername = usernameOrEmail.includes("@") ? "" : normalizeUsername(usernameOrEmail);
       try {
         user = await withAuthDbRetry(() => (
           usernameOrEmail.includes("@")
             ? authStorage.getUserByEmail(usernameOrEmail)
-            : authStorage.getUserByUsername(normalizeUsername(usernameOrEmail))
+            : authStorage.getUserByUsername(normalizedUsername)
         ));
         cacheEmergencyUser(user);
       } catch (error) {
         if (!isDbConnectivityError(error)) throw error;
         user = usernameOrEmail.includes("@")
           ? getEmergencyUserByEmail(usernameOrEmail)
-          : getEmergencyUserByUsername(normalizeUsername(usernameOrEmail));
+          : getEmergencyUserByUsername(normalizedUsername);
         if (!user) {
-          return res.status(503).json({
-            message: "Authentication database is temporarily unavailable. Please retry in a moment.",
-            code: "auth_db_unavailable",
-          });
+          if (!usernameOrEmail.includes("@") && AUTH_EMERGENCY_FALLBACK_ENABLED && normalizedUsername) {
+            const hashesByUserId = await getPasswordHashesByUserId();
+            const emergencyUserId = emergencyUserIdForUsername(normalizedUsername);
+            let emergencyHash = String(hashesByUserId[emergencyUserId] || "").trim();
+            if (!emergencyHash) {
+              emergencyHash = await getPersistentPasswordHash(emergencyUserId);
+              if (emergencyHash) {
+                hashesByUserId[emergencyUserId] = emergencyHash;
+                await setPasswordHashesByUserId(hashesByUserId);
+              }
+            }
+            if (emergencyHash) {
+              user = createEmergencyFallbackUser(normalizedUsername);
+              cacheEmergencyUser(user);
+            }
+          }
+          if (!user) {
+            return res.status(503).json({
+              message: "Authentication database is temporarily unavailable. Please retry in a moment.",
+              code: "auth_db_unavailable",
+            });
+          }
         }
       }
 
